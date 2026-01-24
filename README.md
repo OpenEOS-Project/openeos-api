@@ -457,4 +457,4 @@ docker-compose down -v
 
 ## License
 
-MIT
+AGPLv3
