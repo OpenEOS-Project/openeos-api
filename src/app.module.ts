@@ -74,6 +74,7 @@ import { ShiftsModule } from './modules/shifts';
         migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
         synchronize: configService.get<boolean>('database.synchronize'),
         logging: configService.get<boolean>('database.logging'),
+        migrationsRun: configService.get<boolean>('database.migrationsRun'),
         poolSize: 10,
       }),
       inject: [ConfigService],

@@ -67,55 +67,23 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/v1/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     networks:
       - frontend
       - openeos-internal
     labels:
-      # Enable Traefik
       - "traefik.enable=true"
-      - "traefik.docker.network=frontend"
-
-      # ============================================
-      # API Router (api.openeos.de)
-      # ============================================
-      - "traefik.http.routers.openeos-api.rule=Host(`api.openeos.de`)"
-      - "traefik.http.routers.openeos-api.entrypoints=websecure"
-      - "traefik.http.routers.openeos-api.tls=true"
-      - "traefik.http.routers.openeos-api.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.openeos-api.service=openeos-api"
-
-      # ============================================
-      # Display WebSocket Router (display.openeos.de)
-      # ============================================
-      - "traefik.http.routers.openeos-display.rule=Host(`display.openeos.de`)"
-      - "traefik.http.routers.openeos-display.entrypoints=websecure"
-      - "traefik.http.routers.openeos-display.tls=true"
-      - "traefik.http.routers.openeos-display.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.openeos-display.service=openeos-api"
-
-      # ============================================
-      # Printer WebSocket Router (printer.openeos.de)
-      # ============================================
-      - "traefik.http.routers.openeos-printer.rule=Host(`printer.openeos.de`)"
-      - "traefik.http.routers.openeos-printer.entrypoints=websecure"
-      - "traefik.http.routers.openeos-printer.tls=true"
-      - "traefik.http.routers.openeos-printer.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.openeos-printer.service=openeos-api"
-
-      # ============================================
-      # Service Configuration
-      # ============================================
+      # HTTPS Router - api.openeos.de
+      - "traefik.http.routers.openeos-api-secure.rule=Host(`api.openeos.de`)"
+      - "traefik.http.routers.openeos-api-secure.entrypoints=websecure"
+      - "traefik.http.routers.openeos-api-secure.tls=true"
+      - "traefik.http.routers.openeos-api-secure.tls.certresolver=letsencrypt"
+      # Service
       - "traefik.http.services.openeos-api.loadbalancer.server.port=3000"
-      # Sticky sessions for WebSocket (optional, useful for scaling)
-      - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie=true"
-      - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie.name=openeos_server"
-      - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie.secure=true"
-      - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie.httpOnly=true"
 
     # Uncomment for multiple instances:
     # deploy:
