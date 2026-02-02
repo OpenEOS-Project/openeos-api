@@ -44,7 +44,5 @@ docker-compose*
 # Misc
 .eslintrc.js
 .prettierrc
-tsconfig.build.json
-nest-cli.json
 uploads
 *.log
