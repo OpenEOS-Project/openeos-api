@@ -6,8 +6,8 @@ services:
     image: ghcr.io/YOUR_GITHUB_USER/openeos-api:latest
     container_name: openeos-api
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -34,7 +34,7 @@ services:
       JWT_REFRESH_TOKEN_EXPIRATION: ${JWT_REFRESH_TOKEN_EXPIRATION:-7d}
 
       # CORS
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://app.openeos.de}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://app.openeos.de,https://display.openeos.de,https://printer.openeos.de}
 
       # Rate Limiting
       THROTTLE_TTL: ${THROTTLE_TTL:-60000}
@@ -73,8 +73,51 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - openeos-network
-    # Uncomment for multiple instances behind a load balancer:
+      - frontend
+      - openeos-internal
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "traefik.docker.network=frontend"
+
+      # ============================================
+      # API Router (api.openeos.de)
+      # ============================================
+      - "traefik.http.routers.openeos-api.rule=Host(`api.openeos.de`)"
+      - "traefik.http.routers.openeos-api.entrypoints=websecure"
+      - "traefik.http.routers.openeos-api.tls=true"
+      - "traefik.http.routers.openeos-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.openeos-api.service=openeos-api"
+
+      # ============================================
+      # Display WebSocket Router (display.openeos.de)
+      # ============================================
+      - "traefik.http.routers.openeos-display.rule=Host(`display.openeos.de`)"
+      - "traefik.http.routers.openeos-display.entrypoints=websecure"
+      - "traefik.http.routers.openeos-display.tls=true"
+      - "traefik.http.routers.openeos-display.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.openeos-display.service=openeos-api"
+
+      # ============================================
+      # Printer WebSocket Router (printer.openeos.de)
+      # ============================================
+      - "traefik.http.routers.openeos-printer.rule=Host(`printer.openeos.de`)"
+      - "traefik.http.routers.openeos-printer.entrypoints=websecure"
+      - "traefik.http.routers.openeos-printer.tls=true"
+      - "traefik.http.routers.openeos-printer.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.openeos-printer.service=openeos-api"
+
+      # ============================================
+      # Service Configuration
+      # ============================================
+      - "traefik.http.services.openeos-api.loadbalancer.server.port=3000"
+      # Sticky sessions for WebSocket (optional, useful for scaling)
+      - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie=true"
+      - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie.name=openeos_server"
+      - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie.secure=true"
+      - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie.httpOnly=true"
+
+    # Uncomment for multiple instances:
     # deploy:
     #   replicas: 2
 
@@ -94,10 +137,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - openeos-network
-    # Don't expose in production - only internal network access
-    # ports:
-    #   - "5432:5432"
+      - openeos-internal
 
   redis:
     image: redis:7-alpine
@@ -112,10 +152,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - openeos-network
-    # Don't expose in production - only internal network access
-    # ports:
-    #   - "6379:6379"
+      - openeos-internal
 
 volumes:
   postgres_data:
@@ -123,5 +160,9 @@ volumes:
   uploads:
 
 networks:
-  openeos-network:
+  # External network shared with Traefik
+  frontend:
+    external: true
+  # Internal network for database/cache (not exposed)
+  openeos-internal:
     driver: bridge

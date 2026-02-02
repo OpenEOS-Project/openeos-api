@@ -348,7 +348,7 @@ export class DevicesService {
     return {
       status: device.status,
       deviceId: device.id,
-      organizationId: device.status === DeviceStatus.VERIFIED ? device.organizationId : undefined,
+      organizationId: device.status === DeviceStatus.VERIFIED && device.organizationId ? device.organizationId : undefined,
       organizationName: device.status === DeviceStatus.VERIFIED ? device.organization?.name : undefined,
       deviceClass: device.status === DeviceStatus.VERIFIED ? device.type : undefined,
     };
@@ -378,6 +378,13 @@ export class DevicesService {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Gerät ist noch nicht verifiziert',
+      });
+    }
+
+    if (!device.organizationId) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Gerät ist keiner Organisation zugeordnet',
       });
     }
 

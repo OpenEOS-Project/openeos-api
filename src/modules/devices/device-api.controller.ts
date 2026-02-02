@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader } from '@nestjs/swagger';
@@ -37,6 +38,20 @@ import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { CreateOrderDto } from '../orders/dto';
 import { CreatePaymentDto } from '../payments/dto';
+
+/**
+ * Helper to ensure device has an organization.
+ * Returns the organizationId as string (non-null).
+ */
+function requireOrganization(device: Device): string {
+  if (!device.organizationId) {
+    throw new ForbiddenException({
+      code: ErrorCodes.FORBIDDEN,
+      message: 'Gerät ist keiner Organisation zugeordnet',
+    });
+  }
+  return device.organizationId;
+}
 
 @ApiTags('Device API')
 @ApiHeader({
@@ -70,8 +85,9 @@ export class DeviceApiController {
   @Get('organization')
   @ApiOperation({ summary: 'Get organization info and settings for device' })
   async getOrganization(@CurrentDevice() device: Device) {
+    const organizationId = requireOrganization(device);
     const organization = await this.organizationRepository.findOne({
-      where: { id: device.organizationId },
+      where: { id: organizationId },
     });
 
     if (!organization) {
@@ -94,9 +110,10 @@ export class DeviceApiController {
   @Get('events')
   @ApiOperation({ summary: 'Get active events for device organization' })
   async getEvents(@CurrentDevice() device: Device) {
+    const organizationId = requireOrganization(device);
     const events = await this.eventRepository.find({
       where: {
-        organizationId: device.organizationId,
+        organizationId,
         status: EventStatus.ACTIVE,
       },
       order: { startDate: 'ASC' },
@@ -111,10 +128,11 @@ export class DeviceApiController {
     @CurrentDevice() device: Device,
     @Param('eventId', ParseUUIDPipe) eventId: string,
   ) {
+    const organizationId = requireOrganization(device);
     const event = await this.eventRepository.findOne({
       where: {
         id: eventId,
-        organizationId: device.organizationId,
+        organizationId,
       },
     });
 
@@ -131,9 +149,10 @@ export class DeviceApiController {
     @CurrentDevice() device: Device,
     @Param('eventId', ParseUUIDPipe) eventId: string,
   ) {
+    const organizationId = requireOrganization(device);
     // Verify event belongs to device's organization
     const event = await this.eventRepository.findOne({
-      where: { id: eventId, organizationId: device.organizationId },
+      where: { id: eventId, organizationId },
     });
 
     if (!event) {
@@ -154,9 +173,10 @@ export class DeviceApiController {
     @CurrentDevice() device: Device,
     @Param('eventId', ParseUUIDPipe) eventId: string,
   ) {
+    const organizationId = requireOrganization(device);
     // Verify event belongs to device's organization
     const event = await this.eventRepository.findOne({
-      where: { id: eventId, organizationId: device.organizationId },
+      where: { id: eventId, organizationId },
     });
 
     if (!event) {
@@ -176,9 +196,10 @@ export class DeviceApiController {
   @Get('orders/open')
   @ApiOperation({ summary: 'Get open (unpaid/partly paid) orders for device organization' })
   async getOpenOrders(@CurrentDevice() device: Device) {
+    const organizationId = requireOrganization(device);
     const orders = await this.orderRepository.find({
       where: {
-        organizationId: device.organizationId,
+        organizationId,
         paymentStatus: In([PaymentStatus.UNPAID, PaymentStatus.PARTLY_PAID]),
         status: In([OrderStatus.OPEN, OrderStatus.IN_PROGRESS]),
       },
@@ -195,7 +216,7 @@ export class DeviceApiController {
     @CurrentDevice() device: Device,
     @Body() createDto: CreateOrderDto,
   ) {
-    const organizationId = device.organizationId;
+    const organizationId = requireOrganization(device);
 
     // Validate event
     if (createDto.eventId) {
@@ -267,7 +288,7 @@ export class DeviceApiController {
     @CurrentDevice() device: Device,
     @Body() createDto: CreatePaymentDto,
   ) {
-    const organizationId = device.organizationId;
+    const organizationId = requireOrganization(device);
 
     const order = await this.orderRepository.findOne({
       where: { id: createDto.orderId, organizationId },
@@ -345,7 +366,7 @@ export class DeviceApiController {
       items: Array<{ orderItemId: string; quantity: number }>;
     },
   ) {
-    const organizationId = device.organizationId;
+    const organizationId = requireOrganization(device);
 
     const order = await this.orderRepository.findOne({
       where: { id: createDto.orderId, organizationId },

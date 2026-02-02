@@ -87,7 +87,7 @@ export class AppGateway
 
       if (deviceToken) {
         const device = await this.devicesService.findByToken(deviceToken as string);
-        if (device) {
+        if (device && device.organizationId) {
           client.device = {
             id: device.id,
             organizationId: device.organizationId,
