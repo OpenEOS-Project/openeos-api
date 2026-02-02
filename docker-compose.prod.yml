@@ -3,7 +3,7 @@
 
 services:
   api:
-    image: ghcr.io/YOUR_GITHUB_USER/openeos-api:latest
+    image: ghcr.io/openeos-project/openeos-api:latest
     container_name: openeos-api
     restart: unless-stopped
     expose:
