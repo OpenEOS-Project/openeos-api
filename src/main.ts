@@ -9,7 +9,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters';
-import { TransformInterceptor, LoggingInterceptor } from './common/interceptors';
+import { TransformInterceptor, LoggingInterceptor, SentryContextInterceptor } from './common/interceptors';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -52,6 +52,7 @@ async function bootstrap() {
 
   // Global Interceptors
   app.useGlobalInterceptors(
+    new SentryContextInterceptor(),
     new LoggingInterceptor(),
     new TransformInterceptor(),
   );

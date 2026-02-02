@@ -4,8 +4,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { CacheModule } from '@nestjs/cache-manager';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { redisStore } from 'cache-manager-redis-yet';
+import { SentryModule, SentryGlobalFilter } from '@sentry/nestjs/setup';
 
 import {
   configuration,
@@ -46,6 +47,9 @@ import { ShiftsModule } from './modules/shifts';
 
 @Module({
   imports: [
+    // Sentry Error Tracking (must be first)
+    SentryModule.forRoot(),
+
     // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
@@ -138,6 +142,11 @@ import { ShiftsModule } from './modules/shifts';
   ],
   controllers: [],
   providers: [
+    // Global Sentry Exception Filter (must be first to catch all errors)
+    {
+      provide: APP_FILTER,
+      useClass: SentryGlobalFilter,
+    },
     // Global JWT Auth Guard
     {
       provide: APP_GUARD,
