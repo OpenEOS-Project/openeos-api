@@ -1,0 +1,127 @@
+# Production Docker Compose for OpenEOS API
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  api:
+    image: ghcr.io/YOUR_GITHUB_USER/openeos-api:latest
+    container_name: openeos-api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_PREFIX: api
+      API_VERSION: 1
+
+      # Database
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: ${DATABASE_USER:-openeos}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD is required}
+      DATABASE_NAME: ${DATABASE_NAME:-openeos}
+      DATABASE_SYNCHRONIZE: "false"
+      DATABASE_LOGGING: "false"
+      DATABASE_MIGRATIONS_RUN: "true"
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      # JWT - CHANGE THESE IN PRODUCTION!
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ACCESS_TOKEN_EXPIRATION: ${JWT_ACCESS_TOKEN_EXPIRATION:-30m}
+      JWT_REFRESH_TOKEN_EXPIRATION: ${JWT_REFRESH_TOKEN_EXPIRATION:-7d}
+
+      # CORS
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://app.openeos.de}
+
+      # Rate Limiting
+      THROTTLE_TTL: ${THROTTLE_TTL:-60000}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-300}
+
+      # 2FA
+      TWO_FACTOR_ENCRYPTION_KEY: ${TWO_FACTOR_ENCRYPTION_KEY:?TWO_FACTOR_ENCRYPTION_KEY is required}
+      TWO_FACTOR_ISSUER: ${TWO_FACTOR_ISSUER:-OpenEOS}
+
+      # Optional: Stripe
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+
+      # Optional: Email
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_USER: ${EMAIL_USER:-}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@openeos.de}
+
+      # Optional: Sentry
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - openeos-network
+    # Uncomment for multiple instances behind a load balancer:
+    # deploy:
+    #   replicas: 2
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: openeos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-openeos}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD is required}
+      POSTGRES_DB: ${DATABASE_NAME:-openeos}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-openeos} -d ${DATABASE_NAME:-openeos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - openeos-network
+    # Don't expose in production - only internal network access
+    # ports:
+    #   - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: openeos-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - openeos-network
+    # Don't expose in production - only internal network access
+    # ports:
+    #   - "6379:6379"
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads:
+
+networks:
+  openeos-network:
+    driver: bridge

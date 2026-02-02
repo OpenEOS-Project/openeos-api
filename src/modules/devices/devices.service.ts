@@ -14,7 +14,7 @@ import { DeviceStatus, DeviceType } from '../../database/entities/device.entity'
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
-import { CreateDeviceDto, UpdateDeviceDto, RegisterDeviceDto } from './dto';
+import { CreateDeviceDto, UpdateDeviceDto, RegisterDeviceDto, InitDeviceDto, LinkDeviceDto } from './dto';
 
 @Injectable()
 export class DevicesService {
@@ -176,6 +176,111 @@ export class DevicesService {
   // Public Device Registration Methods
   // ============================================
 
+  /**
+   * Initialize a new device without organization (TV flow)
+   * The device will be created with status PENDING and no organization.
+   * An admin must link it to an organization using the verification code.
+   */
+  async initDevice(initDto: InitDeviceDto): Promise<{
+    deviceId: string;
+    deviceToken: string;
+    verificationCode: string;
+  }> {
+    // Generate tokens
+    const deviceToken = this.generateDeviceToken();
+    const verificationCode = this.generateVerificationCode();
+
+    // Create pending device without organization
+    const device = this.deviceRepository.create({
+      organizationId: null,
+      name: initDto.suggestedName || 'Unbenanntes Gerät',
+      suggestedName: initDto.suggestedName || null,
+      type: initDto.deviceType || DeviceType.DISPLAY_MENU,
+      deviceToken,
+      verificationCode,
+      userAgent: initDto.userAgent || null,
+      status: DeviceStatus.PENDING,
+      isActive: true,
+    });
+
+    await this.deviceRepository.save(device);
+    this.logger.log(`Device initialized: ${device.id} - awaiting link to organization`);
+
+    return {
+      deviceId: device.id,
+      deviceToken,
+      verificationCode,
+    };
+  }
+
+  /**
+   * Find a pending device by verification code (for admin linking)
+   */
+  async findByVerificationCode(code: string): Promise<{
+    deviceId: string;
+    suggestedName: string | null;
+    userAgent: string | null;
+    deviceType: DeviceType;
+    createdAt: Date;
+  } | null> {
+    const device = await this.deviceRepository.findOne({
+      where: {
+        verificationCode: code,
+        status: DeviceStatus.PENDING,
+      },
+    });
+
+    if (!device) {
+      return null;
+    }
+
+    return {
+      deviceId: device.id,
+      suggestedName: device.suggestedName,
+      userAgent: device.userAgent,
+      deviceType: device.type,
+      createdAt: device.createdAt,
+    };
+  }
+
+  /**
+   * Link a pending device to an organization (admin action)
+   */
+  async linkDevice(linkDto: LinkDeviceDto, user: User): Promise<Device> {
+    // Check user has admin role in the target organization
+    await this.checkRole(linkDto.organizationId, user.id, OrganizationRole.ADMIN);
+
+    // Find device by verification code
+    const device = await this.deviceRepository.findOne({
+      where: {
+        verificationCode: linkDto.code,
+        status: DeviceStatus.PENDING,
+      },
+    });
+
+    if (!device) {
+      throw new BadRequestException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Ungültiger Verifizierungscode oder Gerät bereits verknüpft',
+      });
+    }
+
+    // Update device with organization info
+    device.organizationId = linkDto.organizationId;
+    device.name = linkDto.name || device.suggestedName || 'Display';
+    device.type = linkDto.deviceType || device.type;
+    device.status = DeviceStatus.VERIFIED;
+    device.verifiedAt = new Date();
+    device.verifiedById = user.id;
+    device.verificationCode = null; // Clear the code after linking
+
+    await this.deviceRepository.save(device);
+    this.logger.log(`Device linked: ${device.name} (${device.id}) to org ${linkDto.organizationId} by user ${user.email}`);
+
+    return device;
+  }
+
+  // Legacy method - register with organization slug
   async registerDevice(registerDto: RegisterDeviceDto): Promise<{
     deviceId: string;
     deviceToken: string;

@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DevicesController } from './devices.controller';
 import { DevicesPublicController } from './devices-public.controller';
+import { DevicesLinkController } from './devices-link.controller';
 import { DeviceApiController } from './device-api.controller';
 import { DevicesService } from './devices.service';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
@@ -33,7 +34,7 @@ import {
     ]),
     forwardRef(() => GatewayModule),
   ],
-  controllers: [DevicesController, DevicesPublicController, DeviceApiController],
+  controllers: [DevicesController, DevicesPublicController, DevicesLinkController, DeviceApiController],
   providers: [DevicesService, DeviceAuthGuard],
   exports: [DevicesService, DeviceAuthGuard],
 })

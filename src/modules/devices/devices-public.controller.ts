@@ -4,13 +4,17 @@ import {
   Get,
   Body,
   Headers,
+  Query,
   BadRequestException,
   UnauthorizedException,
+  NotFoundException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiHeader } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { DevicesService } from './devices.service';
-import { RegisterDeviceDto } from './dto';
+import { RegisterDeviceDto, InitDeviceDto, LinkDeviceDto } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { User } from '../../database/entities';
 import { ErrorCodes } from '../../common/constants/error-codes';
 
 @ApiTags('Devices')
@@ -30,8 +34,41 @@ export class DevicesPublicController {
     return token;
   }
 
+  @Post('init')
+  @ApiOperation({ summary: 'Initialize a new device (TV flow - no organization required)' })
+  async initDevice(@Body() initDto: InitDeviceDto) {
+    const result = await this.devicesService.initDevice(initDto);
+    return {
+      data: result,
+    };
+  }
+
+  @Get('lookup')
+  @ApiOperation({ summary: 'Lookup pending device by verification code' })
+  @ApiQuery({ name: 'code', description: '6-digit verification code', required: true })
+  async lookupByCode(@Query('code') code: string) {
+    if (!code || code.length !== 6) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Ungültiger Verifizierungscode',
+      });
+    }
+
+    const result = await this.devicesService.findByVerificationCode(code);
+    if (!result) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Gerät nicht gefunden oder bereits verknüpft',
+      });
+    }
+
+    return {
+      data: result,
+    };
+  }
+
   @Post('register')
-  @ApiOperation({ summary: 'Register a new device' })
+  @ApiOperation({ summary: 'Register a new device (legacy - requires organization slug)' })
   async register(@Body() registerDto: RegisterDeviceDto) {
     const result = await this.devicesService.registerDevice(registerDto);
     return {

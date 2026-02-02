@@ -9,6 +9,9 @@ export enum DeviceType {
   POS = 'pos',
   DISPLAY_KITCHEN = 'display_kitchen',
   DISPLAY_DELIVERY = 'display_delivery',
+  DISPLAY_MENU = 'display_menu',
+  DISPLAY_PICKUP = 'display_pickup',
+  DISPLAY_SALES = 'display_sales',
   ADMIN = 'admin',
 }
 
@@ -28,8 +31,11 @@ export interface DeviceSettings {
 @Entity('devices')
 @Index(['organizationId'])
 export class Device extends BaseEntity {
-  @Column({ name: 'organization_id', type: 'uuid' })
-  organizationId: string;
+  @Column({ name: 'organization_id', type: 'uuid', nullable: true })
+  organizationId: string | null;
+
+  @Column({ name: 'suggested_name', type: 'varchar', length: 255, nullable: true })
+  suggestedName: string | null;
 
   @Column({ type: 'varchar', length: 255 })
   name: string;
@@ -65,9 +71,9 @@ export class Device extends BaseEntity {
   settings: DeviceSettings;
 
   // Relations
-  @ManyToOne(() => Organization, (org) => org.devices, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Organization, (org) => org.devices, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'organization_id' })
-  organization: Organization;
+  organization: Organization | null;
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'verified_by_id' })

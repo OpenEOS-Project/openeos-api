@@ -1,0 +1,50 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build output
+dist
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Environment files (don't include secrets in image)
+.env
+.env.*
+!.env.example
+
+# Test files
+coverage
+test
+*.spec.ts
+*.test.ts
+jest.config.js
+jest-e2e.json
+
+# Documentation
+*.md
+!README.md
+docs
+
+# Docker files (not needed inside container)
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# GitHub
+.github
+
+# Misc
+.eslintrc.js
+.prettierrc
+tsconfig.build.json
+nest-cli.json
+uploads
+*.log

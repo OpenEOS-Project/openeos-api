@@ -14,6 +14,7 @@ export const dataSourceOptions: DataSourceOptions = {
   migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
   synchronize: process.env.DATABASE_SYNCHRONIZE === 'true',
   logging: process.env.DATABASE_LOGGING === 'true',
+  migrationsRun: process.env.DATABASE_MIGRATIONS_RUN === 'true',
 };
 
 const dataSource = new DataSource(dataSourceOptions);
