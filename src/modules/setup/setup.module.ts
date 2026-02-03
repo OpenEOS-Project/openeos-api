@@ -11,12 +11,7 @@ import { SetupService } from './setup.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      User,
-      Organization,
-      UserOrganization,
-      CreditPackage,
-    ]),
+    TypeOrmModule.forFeature([User, Organization, UserOrganization, CreditPackage]),
   ],
   controllers: [SetupController],
   providers: [SetupService],

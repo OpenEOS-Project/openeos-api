@@ -1,14 +1,30 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
   IsString,
+  IsEnum,
+  IsOptional,
   MinLength,
   MaxLength,
   Matches,
+  ValidateIf,
 } from 'class-validator';
 
+export enum SetupMode {
+  SINGLE = 'single',
+  MULTI = 'multi',
+}
+
 export class SetupDto {
-  @ApiProperty({ example: 'admin@example.com', description: 'E-Mail-Adresse des Super-Admins' })
+  @ApiProperty({
+    enum: SetupMode,
+    example: SetupMode.SINGLE,
+    description: 'Installationsmodus: "single" für Einzelbetrieb, "multi" für Multi-Mandanten (SaaS)',
+  })
+  @IsEnum(SetupMode, { message: 'Modus muss "single" oder "multi" sein' })
+  mode: SetupMode;
+
+  @ApiProperty({ example: 'admin@example.com', description: 'E-Mail-Adresse des Admins' })
   @IsEmail({}, { message: 'Ungültige E-Mail-Adresse' })
   email: string;
 
@@ -38,14 +54,15 @@ export class SetupDto {
   @MaxLength(100, { message: 'Nachname darf maximal 100 Zeichen lang sein' })
   lastName: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'Mein Verein e.V.',
-    description: 'Name der ersten Organisation',
+    description: 'Name der Organisation (nur bei mode="single" erforderlich)',
     minLength: 2,
     maxLength: 200,
   })
-  @IsString()
+  @ValidateIf((o) => o.mode === SetupMode.SINGLE)
+  @IsString({ message: 'Organisationsname ist bei Single-Modus erforderlich' })
   @MinLength(2, { message: 'Organisationsname muss mindestens 2 Zeichen lang sein' })
   @MaxLength(200, { message: 'Organisationsname darf maximal 200 Zeichen lang sein' })
-  organizationName: string;
+  organizationName?: string;
 }
