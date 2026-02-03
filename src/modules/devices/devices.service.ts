@@ -478,6 +478,23 @@ export class DevicesService {
     return device;
   }
 
+  async unblockDevice(
+    organizationId: string,
+    deviceId: string,
+    user: User,
+  ): Promise<Device> {
+    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+
+    const device = await this.findOne(organizationId, deviceId, user);
+    device.status = DeviceStatus.VERIFIED;
+    device.isActive = true;
+
+    await this.deviceRepository.save(device);
+    this.logger.log(`Device unblocked: ${device.name} (${device.id}) by user ${user.email}`);
+
+    return device;
+  }
+
   private async checkMembership(organizationId: string, userId: string): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
