@@ -49,8 +49,8 @@ export class AppGateway
 
   private readonly logger = new Logger(AppGateway.name);
 
-  // Track connected devices: Map<deviceId, { socketId, organizationId }>
-  private connectedDevices = new Map<string, { socketId: string; organizationId: string }>();
+  // Track connected devices: Map<deviceId, { socketId, organizationId, type }>
+  private connectedDevices = new Map<string, { socketId: string; organizationId: string; type: string }>();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -97,10 +97,21 @@ export class AppGateway
           // Auto-join organization room
           client.join(`org:${device.organizationId}`);
 
+          // Join display-type-specific room if device is a display
+          if (device.type.startsWith('display_')) {
+            const displayType = device.type.replace('display_', '');
+            client.join(`org:${device.organizationId}:display:${displayType}`);
+            this.logger.debug(`Device ${device.id} joined display room: org:${device.organizationId}:display:${displayType}`);
+          }
+
+          // Join device-specific room for targeted settings updates
+          client.join(`org:${device.organizationId}:device:${device.id}`);
+
           // Track connected device
           this.connectedDevices.set(device.id, {
             socketId: client.id,
             organizationId: device.organizationId,
+            type: device.type,
           });
 
           // Update last seen
@@ -201,6 +212,18 @@ export class AppGateway
 
   emitToAll(event: string, data: unknown) {
     this.server.emit(event, data);
+  }
+
+  emitToDisplayType(organizationId: string, displayType: string, event: string, data: unknown) {
+    const roomName = `org:${organizationId}:display:${displayType}`;
+    this.server.to(roomName).emit(event, data);
+    this.logger.debug(`Emitted ${event} to room ${roomName}`);
+  }
+
+  emitToDevice(organizationId: string, deviceId: string, event: string, data: unknown) {
+    const roomName = `org:${organizationId}:device:${deviceId}`;
+    this.server.to(roomName).emit(event, data);
+    this.logger.debug(`Emitted ${event} to device room ${roomName}`);
   }
 
   // Get online device IDs for an organization

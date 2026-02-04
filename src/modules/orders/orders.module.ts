@@ -11,6 +11,7 @@ import {
   Event,
 } from '../../database/entities';
 import { WorkflowsModule } from '../workflows/workflows.module';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { WorkflowsModule } from '../workflows/workflows.module';
       Event,
     ]),
     forwardRef(() => WorkflowsModule),
+    forwardRef(() => GatewayModule),
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

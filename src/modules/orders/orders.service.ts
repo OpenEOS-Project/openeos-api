@@ -4,6 +4,8 @@ import {
   ForbiddenException,
   BadRequestException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
@@ -32,6 +34,7 @@ import {
   CancelOrderDto,
 } from './dto';
 import { WorkflowsService, WorkflowTriggerTypes } from '../workflows/workflows.service';
+import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
 export class OrdersService {
@@ -51,6 +54,8 @@ export class OrdersService {
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
     private readonly workflowsService: WorkflowsService,
+    @Inject(forwardRef(() => GatewayService))
+    private readonly gatewayService: GatewayService,
   ) {}
 
   async create(
@@ -127,6 +132,32 @@ export class OrdersService {
     }).catch((error) => {
       this.logger.error(`Failed to trigger workflows for order ${order.id}: ${error.message}`);
     });
+
+    // Notify kitchen displays if there are items
+    if (createdOrder.items && createdOrder.items.length > 0) {
+      this.gatewayService.notifyKitchenNewOrder(
+        organizationId,
+        {
+          id: createdOrder.id,
+          orderNumber: createdOrder.orderNumber,
+          dailyNumber: createdOrder.dailyNumber,
+          tableNumber: createdOrder.tableNumber || undefined,
+          customerName: createdOrder.customerName || undefined,
+          priority: createdOrder.priority,
+          createdAt: createdOrder.createdAt.toISOString(),
+        },
+        createdOrder.items.map((item) => ({
+          id: item.id,
+          productName: item.productName,
+          categoryName: item.categoryName,
+          quantity: item.quantity,
+          status: item.status,
+          notes: item.notes || undefined,
+          kitchenNotes: item.kitchenNotes || undefined,
+          options: item.options,
+        })),
+      );
+    }
 
     return createdOrder;
   }
@@ -441,6 +472,7 @@ export class OrdersService {
       });
     }
 
+    const previousStatus = item.status;
     item.status = OrderItemStatus.READY;
     item.readyAt = new Date();
     await this.orderItemRepository.save(item);
@@ -448,7 +480,41 @@ export class OrdersService {
 
     this.logger.log(`Item marked ready: ${item.id} in order ${order.orderNumber}`);
 
-    return this.findOne(organizationId, orderId, user);
+    // Notify kitchen displays about item status change
+    this.gatewayService.notifyKitchenItemStatus(organizationId, {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      itemId: item.id,
+      productName: item.productName,
+      status: item.status,
+      previousStatus,
+    });
+
+    // Check if all items are ready
+    const updatedOrder = await this.findOne(organizationId, orderId, user);
+    const activeItems = updatedOrder.items.filter(i => i.status !== OrderItemStatus.CANCELLED);
+    const allReady = activeItems.length > 0 && activeItems.every(i => i.status === OrderItemStatus.READY || i.status === OrderItemStatus.DELIVERED);
+
+    if (allReady) {
+      // Notify pickup display (personal)
+      this.gatewayService.notifyPickupOrderReady(organizationId, {
+        orderId: updatedOrder.id,
+        orderNumber: updatedOrder.orderNumber,
+        dailyNumber: updatedOrder.dailyNumber,
+        customerName: updatedOrder.customerName || undefined,
+        tableNumber: updatedOrder.tableNumber || undefined,
+        itemCount: activeItems.length,
+      });
+
+      // Notify customer display (public)
+      this.gatewayService.notifyCustomerOrderReady(
+        organizationId,
+        updatedOrder.orderNumber,
+        updatedOrder.dailyNumber,
+      );
+    }
+
+    return updatedOrder;
   }
 
   async markItemDelivered(
@@ -476,7 +542,48 @@ export class OrdersService {
 
     this.logger.log(`Item marked delivered: ${item.id} in order ${order.orderNumber}`);
 
-    return this.findOne(organizationId, orderId, user);
+    // Check if all items are delivered (collected)
+    const updatedOrder = await this.findOne(organizationId, orderId, user);
+    const activeItems = updatedOrder.items.filter(i => i.status !== OrderItemStatus.CANCELLED);
+    const allDelivered = activeItems.length > 0 && activeItems.every(i => i.status === OrderItemStatus.DELIVERED);
+
+    if (allDelivered) {
+      // Notify pickup display that order is collected
+      this.gatewayService.notifyPickupOrderCollected(
+        organizationId,
+        updatedOrder.id,
+        updatedOrder.orderNumber,
+      );
+
+      // Notify customer display to remove order
+      this.gatewayService.notifyCustomerOrderCollected(
+        organizationId,
+        updatedOrder.orderNumber,
+      );
+    }
+
+    return updatedOrder;
+  }
+
+  async callOrder(
+    organizationId: string,
+    orderId: string,
+    user: User,
+  ): Promise<Order> {
+    await this.checkRole(organizationId, user.id, OrganizationRole.DELIVERY);
+
+    const order = await this.findOne(organizationId, orderId, user);
+
+    // Notify customer display to highlight/blink this order
+    this.gatewayService.notifyCustomerOrderCalled(
+      organizationId,
+      order.orderNumber,
+      order.dailyNumber,
+    );
+
+    this.logger.log(`Order called: ${order.orderNumber}`);
+
+    return order;
   }
 
   async completeOrder(
@@ -555,6 +662,19 @@ export class OrdersService {
     await this.orderRepository.save(order);
 
     this.logger.log(`Order cancelled: ${order.orderNumber}`);
+
+    // Notify kitchen displays
+    this.gatewayService.notifyKitchenOrderCancelled(
+      organizationId,
+      order.id,
+      order.orderNumber,
+    );
+
+    // Notify customer display to remove order (if it was showing)
+    this.gatewayService.notifyCustomerOrderCollected(
+      organizationId,
+      order.orderNumber,
+    );
 
     return this.findOne(organizationId, orderId, user);
   }

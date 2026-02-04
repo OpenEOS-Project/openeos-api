@@ -3,6 +3,8 @@ import {
   NotFoundException,
   ForbiddenException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,6 +12,7 @@ import { Category, User, UserOrganization, Event } from '../../database/entities
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { CreateCategoryDto, UpdateCategoryDto, ReorderCategoriesDto } from './dto';
+import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
 export class CategoriesService {
@@ -22,6 +25,8 @@ export class CategoriesService {
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
+    @Inject(forwardRef(() => GatewayService))
+    private readonly gatewayService: GatewayService,
   ) {}
 
   async create(
@@ -38,6 +43,14 @@ export class CategoriesService {
 
     await this.categoryRepository.save(category);
     this.logger.log(`Category created: ${category.name} (${category.id})`);
+
+    // Notify menu displays
+    this.gatewayService.notifyCategoryUpdated(event.organizationId, eventId, {
+      id: category.id,
+      name: category.name,
+      sortOrder: category.sortOrder,
+      isActive: category.isActive,
+    });
 
     return category;
   }
@@ -76,7 +89,7 @@ export class CategoriesService {
     updateDto: UpdateCategoryDto,
     user: User,
   ): Promise<Category> {
-    await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
+    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
 
     const category = await this.findOne(eventId, categoryId, user);
     Object.assign(category, updateDto);
@@ -84,16 +97,27 @@ export class CategoriesService {
 
     this.logger.log(`Category updated: ${category.name} (${category.id})`);
 
+    // Notify menu displays
+    this.gatewayService.notifyCategoryUpdated(event.organizationId, eventId, {
+      id: category.id,
+      name: category.name,
+      sortOrder: category.sortOrder,
+      isActive: category.isActive,
+    });
+
     return category;
   }
 
   async remove(eventId: string, categoryId: string, user: User): Promise<void> {
-    await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.ADMIN);
+    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.ADMIN);
 
     const category = await this.findOne(eventId, categoryId, user);
     await this.categoryRepository.remove(category);
 
     this.logger.log(`Category deleted: ${category.name} (${category.id})`);
+
+    // Notify menu displays
+    this.gatewayService.notifyCategoryDeleted(event.organizationId, eventId, categoryId);
   }
 
   async reorder(
@@ -101,7 +125,7 @@ export class CategoriesService {
     reorderDto: ReorderCategoriesDto,
     user: User,
   ): Promise<void> {
-    await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
+    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
 
     for (let i = 0; i < reorderDto.categoryIds.length; i++) {
       await this.categoryRepository.update(
@@ -111,6 +135,9 @@ export class CategoriesService {
     }
 
     this.logger.log(`Categories reordered for event ${eventId}`);
+
+    // Notify menu displays to refresh
+    this.gatewayService.notifyMenuRefresh(event.organizationId, eventId, 'reorder');
   }
 
   private async getEvent(eventId: string): Promise<Event> {

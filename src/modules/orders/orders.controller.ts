@@ -134,6 +134,16 @@ export class OrdersController {
     return this.ordersService.markItemDelivered(organizationId, orderId, itemId, user);
   }
 
+  @Post(':orderId/call')
+  @HttpCode(HttpStatus.OK)
+  callOrder(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.ordersService.callOrder(organizationId, orderId, user);
+  }
+
   @Post(':orderId/complete')
   @HttpCode(HttpStatus.OK)
   completeOrder(

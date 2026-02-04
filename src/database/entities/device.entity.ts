@@ -12,6 +12,7 @@ export enum DeviceType {
   DISPLAY_MENU = 'display_menu',
   DISPLAY_PICKUP = 'display_pickup',
   DISPLAY_SALES = 'display_sales',
+  DISPLAY_CUSTOMER = 'display_customer',
   ADMIN = 'admin',
 }
 

@@ -5,6 +5,8 @@ import {
   BadRequestException,
   UnauthorizedException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -15,6 +17,7 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
 import { CreateDeviceDto, UpdateDeviceDto, RegisterDeviceDto, InitDeviceDto, LinkDeviceDto } from './dto';
+import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
 export class DevicesService {
@@ -27,6 +30,8 @@ export class DevicesService {
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     @InjectRepository(Organization)
     private readonly organizationRepository: Repository<Organization>,
+    @Inject(forwardRef(() => GatewayService))
+    private readonly gatewayService: GatewayService,
   ) {}
 
   async create(
@@ -117,10 +122,32 @@ export class DevicesService {
     await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
 
     const device = await this.findOne(organizationId, deviceId, user);
+    const previousName = device.name;
+    const previousType = device.type;
+    const previousSettings = device.settings;
+
     Object.assign(device, updateDto);
     await this.deviceRepository.save(device);
 
     this.logger.log(`Device updated: ${device.name} (${device.id})`);
+
+    // Notify device about settings changes
+    if (updateDto.settings && JSON.stringify(updateDto.settings) !== JSON.stringify(previousSettings)) {
+      this.gatewayService.notifyDeviceSettingsUpdated(organizationId, deviceId, device.settings);
+    }
+
+    // Notify device about config changes (name, type)
+    const nameChanged = updateDto.name !== undefined && updateDto.name !== previousName;
+    const typeChanged = updateDto.type !== undefined && updateDto.type !== previousType;
+
+    if (nameChanged || typeChanged) {
+      this.gatewayService.notifyDeviceConfigUpdated(
+        organizationId,
+        deviceId,
+        nameChanged ? device.name : undefined,
+        typeChanged ? device.type : undefined,
+      );
+    }
 
     return device;
   }

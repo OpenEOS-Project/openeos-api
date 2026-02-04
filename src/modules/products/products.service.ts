@@ -3,6 +3,8 @@ import {
   NotFoundException,
   ForbiddenException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -12,6 +14,7 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
 import { CreateProductDto, UpdateProductDto, AdjustStockDto } from './dto';
+import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
 export class ProductsService {
@@ -26,6 +29,8 @@ export class ProductsService {
     private readonly stockMovementRepository: Repository<StockMovement>,
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
+    @Inject(forwardRef(() => GatewayService))
+    private readonly gatewayService: GatewayService,
   ) {}
 
   async create(
@@ -42,6 +47,17 @@ export class ProductsService {
 
     await this.productRepository.save(product);
     this.logger.log(`Product created: ${product.name} (${product.id})`);
+
+    // Notify menu displays
+    this.gatewayService.notifyProductUpdated(event.organizationId, eventId, {
+      id: product.id,
+      name: product.name,
+      categoryId: product.categoryId,
+      price: Number(product.price),
+      isAvailable: product.isAvailable,
+      isActive: product.isActive,
+      stockQuantity: product.trackInventory ? product.stockQuantity : undefined,
+    });
 
     return product;
   }
@@ -91,7 +107,7 @@ export class ProductsService {
     updateDto: UpdateProductDto,
     user: User,
   ): Promise<Product> {
-    await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
+    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
 
     const product = await this.findOne(eventId, productId, user);
     Object.assign(product, updateDto);
@@ -99,16 +115,30 @@ export class ProductsService {
 
     this.logger.log(`Product updated: ${product.name} (${product.id})`);
 
+    // Notify menu displays
+    this.gatewayService.notifyProductUpdated(event.organizationId, eventId, {
+      id: product.id,
+      name: product.name,
+      categoryId: product.categoryId,
+      price: Number(product.price),
+      isAvailable: product.isAvailable,
+      isActive: product.isActive,
+      stockQuantity: product.trackInventory ? product.stockQuantity : undefined,
+    });
+
     return product;
   }
 
   async remove(eventId: string, productId: string, user: User): Promise<void> {
-    await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.ADMIN);
+    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.ADMIN);
 
     const product = await this.findOne(eventId, productId, user);
     await this.productRepository.softRemove(product);
 
     this.logger.log(`Product deleted: ${product.name} (${product.id})`);
+
+    // Notify menu displays
+    this.gatewayService.notifyProductDeleted(event.organizationId, eventId, productId);
   }
 
   async updateAvailability(
@@ -117,13 +147,24 @@ export class ProductsService {
     isAvailable: boolean,
     user: User,
   ): Promise<Product> {
-    await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.CASHIER);
+    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.CASHIER);
 
     const product = await this.findOne(eventId, productId, user);
     product.isAvailable = isAvailable;
     await this.productRepository.save(product);
 
     this.logger.log(`Product availability updated: ${product.name} - ${isAvailable}`);
+
+    // Notify menu displays
+    this.gatewayService.notifyProductUpdated(event.organizationId, eventId, {
+      id: product.id,
+      name: product.name,
+      categoryId: product.categoryId,
+      price: Number(product.price),
+      isAvailable: product.isAvailable,
+      isActive: product.isActive,
+      stockQuantity: product.trackInventory ? product.stockQuantity : undefined,
+    });
 
     return product;
   }
