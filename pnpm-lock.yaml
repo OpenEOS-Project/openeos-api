@@ -53,6 +53,9 @@ importers:
       '@sentry/profiling-node':
         specifier: ^10.32.1
         version: 10.32.1
+      '@sumup/sdk':
+        specifier: ^0.0.12
+        version: 0.0.12
       '@types/pdfkit':
         specifier: ^0.17.4
         version: 0.17.4
@@ -1632,6 +1635,10 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@sumup/sdk@0.0.12':
+    resolution: {integrity: sha512-mdib9U6ADCilQc3pe+lpmNAWjyszNq8Sko5NBhyA65R6celkV+fjjZPYequxTgxqOtTg1S4yWyo74nW48NymGw==}
+    engines: {node: '>=18'}
 
   '@swc/helpers@0.5.18':
     resolution: {integrity: sha512-TXTnIcNJQEKwThMMqBXsZ4VGAza6bvN4pa41Rkqoio6QBKMvo+5lexeTMScGCIxtzgQJzElcvIltani+adC5PQ==}
@@ -6517,6 +6524,8 @@ snapshots:
   '@sqltools/formatter@1.2.5': {}
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@sumup/sdk@0.0.12': {}
 
   '@swc/helpers@0.5.18':
     dependencies:
