@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, In } from 'typeorm';
+import { Repository, Like, In, MoreThanOrEqual } from 'typeorm';
 import {
   Organization,
   User,
@@ -25,6 +25,7 @@ import { CreditPaymentStatus } from '../../database/entities/credit-purchase.ent
 import { InvoiceStatus } from '../../database/entities/invoice.entity';
 import { RentalHardwareStatus } from '../../database/entities/rental-hardware.entity';
 import { RentalAssignmentStatus } from '../../database/entities/rental-assignment.entity';
+import { EventStatus } from '../../database/entities/event.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import {
   QueryOrganizationsDto,
@@ -301,7 +302,9 @@ export class AdminService {
   ): Promise<{ data: User[]; total: number; page: number; limit: number }> {
     const { search, isLocked, page = 1, limit = 20 } = queryDto;
 
-    const queryBuilder = this.userRepository.createQueryBuilder('user');
+    const queryBuilder = this.userRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.userOrganizations', 'uo')
+      .leftJoinAndSelect('uo.organization', 'org');
 
     if (search) {
       queryBuilder.where(
@@ -328,6 +331,20 @@ export class AdminService {
     });
 
     return { data, total, page, limit };
+  }
+
+  async getUser(userId: string): Promise<User> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['userOrganizations', 'userOrganizations.organization'],
+    });
+
+    if (!user) {
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Benutzer nicht gefunden' });
+    }
+
+    delete (user as Partial<User>).passwordHash;
+    return user;
   }
 
   async unlockUser(
@@ -810,13 +827,21 @@ export class AdminService {
     totalCredits: number;
     pendingPurchases: number;
     activeRentals: number;
+    activeEvents: number;
+    newUsersThisMonth: number;
+    newOrganizationsThisMonth: number;
   }> {
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
     const [
       totalOrganizations,
       totalUsers,
       totalCreditsResult,
       pendingPurchases,
       activeRentals,
+      activeEvents,
+      newUsersThisMonth,
+      newOrganizationsThisMonth,
     ] = await Promise.all([
       this.organizationRepository.count(),
       this.userRepository.count(),
@@ -830,6 +855,15 @@ export class AdminService {
       this.rentalAssignmentRepository.count({
         where: { status: RentalAssignmentStatus.ACTIVE },
       }),
+      this.eventRepository.count({
+        where: { status: In([EventStatus.ACTIVE, EventStatus.SCHEDULED]) },
+      }),
+      this.userRepository.count({
+        where: { createdAt: MoreThanOrEqual(startOfMonth) },
+      }),
+      this.organizationRepository.count({
+        where: { createdAt: MoreThanOrEqual(startOfMonth) },
+      }),
     ]);
 
     return {
@@ -838,6 +872,9 @@ export class AdminService {
       totalCredits: Number(totalCreditsResult?.total || 0),
       pendingPurchases,
       activeRentals,
+      activeEvents,
+      newUsersThisMonth,
+      newOrganizationsThisMonth,
     };
   }
 
@@ -970,6 +1007,30 @@ export class AdminService {
 
     this.logger.log(`Subscription config updated: ${config.name}`);
 
+    return config;
+  }
+
+  async upsertSubscriptionConfig(
+    updateDto: UpdateSubscriptionConfigDto,
+  ): Promise<SubscriptionConfig> {
+    let config = await this.subscriptionConfigRepository.findOne({
+      where: { isActive: true },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (config) {
+      Object.assign(config, updateDto);
+    } else {
+      config = this.subscriptionConfigRepository.create({
+        name: updateDto.name ?? 'Monatsabo',
+        ...updateDto,
+        isActive: true,
+        features: {},
+      });
+    }
+
+    await this.subscriptionConfigRepository.save(config);
+    this.logger.log(`Subscription config upserted: ${config.name}`);
     return config;
   }
 
@@ -1124,6 +1185,80 @@ export class AdminService {
     await this.creditPackageRepository.remove(pkg);
 
     this.logger.log(`Credit package deleted: ${pkg.name} (${pkg.slug})`);
+  }
+
+  // === Default Packages ===
+
+  async ensureDefaultPackages(): Promise<CreditPackage[]> {
+    const defaults = [
+      { slug: '1-day', name: '1 Tag', credits: 1, price: 25, sortOrder: 1, savingsPercent: 0 },
+      { slug: 'weekend', name: 'Wochenende', credits: 3, price: 65, sortOrder: 2, savingsPercent: 14 },
+      { slug: '1-week', name: '1 Woche', credits: 7, price: 140, sortOrder: 3, savingsPercent: 20 },
+    ];
+
+    for (const def of defaults) {
+      const existing = await this.creditPackageRepository.findOne({
+        where: { slug: def.slug },
+      });
+
+      if (!existing) {
+        const pkg = this.creditPackageRepository.create({
+          ...def,
+          pricePerCredit: def.price / def.credits,
+          isActive: true,
+          isFeatured: def.slug === 'weekend',
+        });
+        await this.creditPackageRepository.save(pkg);
+        this.logger.log(`Created default package: ${def.name} (${def.slug})`);
+      }
+    }
+
+    return this.creditPackageRepository.find({
+      where: { slug: In(['1-day', 'weekend', '1-week']) },
+      order: { sortOrder: 'ASC' },
+    });
+  }
+
+  async updatePackagePrices(
+    prices: { slug: string; price: number }[],
+  ): Promise<CreditPackage[]> {
+    // Ensure default packages exist
+    await this.ensureDefaultPackages();
+
+    // Find the 1-day price for savings calculation
+    const oneDayEntry = prices.find((p) => p.slug === '1-day');
+    const oneDayPrice = oneDayEntry?.price ?? 25;
+
+    for (const entry of prices) {
+      const pkg = await this.creditPackageRepository.findOne({
+        where: { slug: entry.slug },
+      });
+
+      if (!pkg) {
+        throw new NotFoundException({
+          code: ErrorCodes.NOT_FOUND,
+          message: `Paket mit Slug "${entry.slug}" nicht gefunden`,
+        });
+      }
+
+      pkg.price = entry.price;
+      pkg.pricePerCredit = entry.price / pkg.credits;
+
+      // Calculate savings relative to 1-day package
+      const fullPrice = oneDayPrice * pkg.credits;
+      pkg.savingsPercent = fullPrice > 0
+        ? Math.round((1 - entry.price / fullPrice) * 100)
+        : 0;
+
+      await this.creditPackageRepository.save(pkg);
+    }
+
+    this.logger.log('Package prices updated');
+
+    return this.creditPackageRepository.find({
+      where: { slug: In(['1-day', 'weekend', '1-week']) },
+      order: { sortOrder: 'ASC' },
+    });
   }
 
   // === Private Helper ===

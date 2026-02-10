@@ -34,9 +34,11 @@ import {
   UpdateSubscriptionConfigDto,
   CreateCreditPackageDto,
   UpdateCreditPackageDto,
+  UpdatePackagePricesDto,
 } from './dto';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { StripeService } from '../stripe/stripe.service';
 import type { User } from '../../database/entities';
 
 @ApiTags('Admin')
@@ -44,7 +46,10 @@ import type { User } from '../../database/entities';
 @Controller('admin')
 @UseGuards(SuperAdminGuard)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly stripeService: StripeService,
+  ) {}
 
   private getClientInfo(req: Request): { ip: string; userAgent?: string } {
     const ip = (req as { ip?: string }).ip || req.socket?.remoteAddress || '0.0.0.0';
@@ -158,6 +163,12 @@ export class AdminController {
         pages: Math.ceil(result.total / result.limit),
       },
     };
+  }
+
+  @Get('users/:id')
+  async getUser(@Param('id') id: string) {
+    const user = await this.adminService.getUser(id);
+    return { data: user };
   }
 
   @Post('users/:id/unlock')
@@ -358,6 +369,12 @@ export class AdminController {
     return { data: config };
   }
 
+  @Patch('subscription-config')
+  async upsertSubscriptionConfig(@Body() updateDto: UpdateSubscriptionConfigDto) {
+    const config = await this.adminService.upsertSubscriptionConfig(updateDto);
+    return { data: config };
+  }
+
   @Patch('subscription-config/:id')
   async updateSubscriptionConfig(
     @Param('id') id: string,
@@ -414,5 +431,46 @@ export class AdminController {
   async deleteCreditPackage(@Param('id') id: string) {
     await this.adminService.deleteCreditPackage(id);
     return { data: { success: true } };
+  }
+
+  // === Pricing (Bulk Package Updates) ===
+
+  @Post('pricing/ensure-packages')
+  async ensureDefaultPackages() {
+    const packages = await this.adminService.ensureDefaultPackages();
+    return { data: packages };
+  }
+
+  @Patch('pricing/packages')
+  async updatePackagePrices(@Body() dto: UpdatePackagePricesDto) {
+    const packages = await this.adminService.updatePackagePrices(dto.packages);
+    return { data: packages };
+  }
+
+  // === Stripe Sync ===
+
+  @Post('stripe/sync')
+  async syncStripe() {
+    const packages = await this.adminService.findAllCreditPackages({ isActive: true, page: 1, limit: 100 });
+    let syncedPackages = 0;
+
+    for (const pkg of packages.data) {
+      try {
+        await this.stripeService.syncPackageToStripe(pkg.id);
+        syncedPackages++;
+      } catch {
+        // Skip packages that fail to sync (e.g. Stripe not configured)
+      }
+    }
+
+    let syncedSubscription = false;
+    try {
+      await this.stripeService.syncSubscriptionToStripe();
+      syncedSubscription = true;
+    } catch {
+      // Skip if Stripe not configured
+    }
+
+    return { data: { syncedPackages, syncedSubscription } };
   }
 }

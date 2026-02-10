@@ -46,6 +46,10 @@ export const ErrorCodes = {
   PAYMENT_PENDING: 'PAYMENT_PENDING',
   PURCHASE_FAILED: 'PURCHASE_FAILED',
   INVALID_PACKAGE: 'INVALID_PACKAGE',
+
+  // SumUp Errors
+  SUMUP_NOT_CONFIGURED: 'SUMUP_NOT_CONFIGURED',
+  SUMUP_API_ERROR: 'SUMUP_API_ERROR',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -93,4 +97,7 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.PAYMENT_PENDING]: 'Zahlung noch nicht abgeschlossen',
   [ErrorCodes.PURCHASE_FAILED]: 'Guthabenkauf fehlgeschlagen',
   [ErrorCodes.INVALID_PACKAGE]: 'Ungültiges Paket',
+
+  [ErrorCodes.SUMUP_NOT_CONFIGURED]: 'SumUp ist nicht konfiguriert',
+  [ErrorCodes.SUMUP_API_ERROR]: 'SumUp API Fehler',
 };

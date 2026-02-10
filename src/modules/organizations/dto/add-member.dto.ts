@@ -12,7 +12,7 @@ export class AddMemberDto {
   @IsEnum(OrganizationRole, { message: 'Ungültige Rolle' })
   role: OrganizationRole;
 
-  @ApiPropertyOptional({ example: { canManageProducts: true, canViewReports: false }, description: 'Individuelle Berechtigungen' })
+  @ApiPropertyOptional({ example: { products: true, events: false }, description: 'Modulberechtigungen (bei role=member)' })
   @IsOptional()
   @IsObject()
   permissions?: OrganizationPermissions;
@@ -24,7 +24,7 @@ export class UpdateMemberDto {
   @IsEnum(OrganizationRole, { message: 'Ungültige Rolle' })
   role?: OrganizationRole;
 
-  @ApiPropertyOptional({ example: { canManageProducts: true, canViewReports: true }, description: 'Individuelle Berechtigungen' })
+  @ApiPropertyOptional({ example: { products: true, events: true }, description: 'Modulberechtigungen (bei role=member)' })
   @IsOptional()
   @IsObject()
   permissions?: OrganizationPermissions;

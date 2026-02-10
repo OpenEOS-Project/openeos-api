@@ -5,6 +5,7 @@ import { AppGateway } from './app.gateway';
 import { GatewayService } from './gateway.service';
 import { DevicesModule } from '../devices';
 import { PrintersModule } from '../printers';
+import { PrintJobsModule } from '../print-jobs';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { PrintersModule } from '../printers';
     }),
     forwardRef(() => DevicesModule),
     forwardRef(() => PrintersModule),
+    forwardRef(() => PrintJobsModule),
   ],
   providers: [AppGateway, GatewayService],
   exports: [GatewayService],

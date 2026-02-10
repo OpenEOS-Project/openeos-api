@@ -24,7 +24,7 @@ export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Get('sales')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getSalesReport(
     @CurrentOrganization() organization: Organization,
     @Query() queryDto: QueryReportsDto,
@@ -34,7 +34,7 @@ export class ReportsController {
   }
 
   @Get('products')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getProductsReport(
     @CurrentOrganization() organization: Organization,
     @Query() queryDto: QueryReportsDto,
@@ -44,7 +44,7 @@ export class ReportsController {
   }
 
   @Get('payments')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getPaymentsReport(
     @CurrentOrganization() organization: Organization,
     @Query() queryDto: QueryReportsDto,
@@ -54,7 +54,7 @@ export class ReportsController {
   }
 
   @Get('hourly')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getHourlyReport(
     @CurrentOrganization() organization: Organization,
     @Query() queryDto: QueryReportsDto,
@@ -64,14 +64,14 @@ export class ReportsController {
   }
 
   @Get('inventory')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getInventoryReport(@CurrentOrganization() organization: Organization) {
     const report = await this.reportsService.getInventoryReport(organization.id);
     return { data: report };
   }
 
   @Get('stock-movements')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getStockMovementsReport(
     @CurrentOrganization() organization: Organization,
     @Query() queryDto: QueryReportsDto,
@@ -81,7 +81,7 @@ export class ReportsController {
   }
 
   @Get('export')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async exportReport(
     @CurrentOrganization() organization: Organization,
     @Query() exportDto: ExportReportsDto,

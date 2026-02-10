@@ -39,7 +39,7 @@ export class DevicesService {
     createDto: CreateDeviceDto,
     user: User,
   ): Promise<Device> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     // Generate unique device token
     const deviceToken = this.generateDeviceToken();
@@ -119,7 +119,7 @@ export class DevicesService {
     updateDto: UpdateDeviceDto,
     user: User,
   ): Promise<Device> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     const device = await this.findOne(organizationId, deviceId, user);
     const previousName = device.name;
@@ -153,7 +153,7 @@ export class DevicesService {
   }
 
   async remove(organizationId: string, deviceId: string, user: User): Promise<void> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     const device = await this.findOne(organizationId, deviceId, user);
     await this.deviceRepository.remove(device);
@@ -166,7 +166,7 @@ export class DevicesService {
     deviceId: string,
     user: User,
   ): Promise<Device> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     const device = await this.findOne(organizationId, deviceId, user);
     device.deviceToken = this.generateDeviceToken();
@@ -275,7 +275,7 @@ export class DevicesService {
    */
   async linkDevice(linkDto: LinkDeviceDto, user: User): Promise<Device> {
     // Check user has admin role in the target organization
-    await this.checkRole(linkDto.organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkPermission(linkDto.organizationId, user.id, 'devices');
 
     // Find device by verification code
     const device = await this.deviceRepository.findOne({
@@ -450,7 +450,7 @@ export class DevicesService {
     code: string,
     user: User,
   ): Promise<Device> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     const device = await this.deviceRepository.findOne({
       where: { id: deviceId, organizationId },
@@ -493,7 +493,7 @@ export class DevicesService {
     deviceId: string,
     user: User,
   ): Promise<Device> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     const device = await this.findOne(organizationId, deviceId, user);
     device.status = DeviceStatus.BLOCKED;
@@ -510,7 +510,7 @@ export class DevicesService {
     deviceId: string,
     user: User,
   ): Promise<Device> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     const device = await this.findOne(organizationId, deviceId, user);
     device.status = DeviceStatus.VERIFIED;
@@ -535,10 +535,10 @@ export class DevicesService {
     }
   }
 
-  private async checkRole(
+  private async checkPermission(
     organizationId: string,
     userId: string,
-    requiredRole: OrganizationRole,
+    permission: 'products' | 'events' | 'devices' | 'members' | 'shiftPlans',
   ): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
@@ -551,15 +551,11 @@ export class DevicesService {
       });
     }
 
-    const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
-    };
+    if (membership.role === OrganizationRole.ADMIN) {
+      return;
+    }
 
-    if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
+    if (!membership.permissions?.[permission]) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

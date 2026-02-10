@@ -13,6 +13,7 @@ import { InventoryCount } from './inventory-count.entity';
 
 export enum EventStatus {
   DRAFT = 'draft',
+  SCHEDULED = 'scheduled',
   ACTIVE = 'active',
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',

@@ -6,6 +6,7 @@ import {
   IsDateString,
   IsUUID,
   IsBoolean,
+  IsArray,
   Min,
   Max,
   MaxLength,
@@ -402,4 +403,25 @@ export class UpdateCreditPackageDto {
   @IsNumber()
   @Min(0)
   sortOrder?: number;
+}
+
+// === Bulk Package Price Update ===
+
+export class PackagePriceEntryDto {
+  @ApiProperty({ example: '1-day', description: 'Slug des Pakets' })
+  @IsString()
+  slug: string;
+
+  @ApiProperty({ example: 25, description: 'Neuer Preis in Euro' })
+  @IsNumber()
+  @Min(0)
+  price: number;
+}
+
+export class UpdatePackagePricesDto {
+  @ApiProperty({ type: [PackagePriceEntryDto], description: 'Array mit Slug und neuem Preis' })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PackagePriceEntryDto)
+  packages: PackagePriceEntryDto[];
 }

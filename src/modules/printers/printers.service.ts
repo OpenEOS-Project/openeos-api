@@ -28,7 +28,7 @@ export class PrintersService {
     createDto: CreatePrinterDto,
     user: User,
   ): Promise<Printer> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     const printer = this.printerRepository.create({
       organizationId,
@@ -90,7 +90,7 @@ export class PrintersService {
     updateDto: UpdatePrinterDto,
     user: User,
   ): Promise<Printer> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     const printer = await this.findOne(organizationId, printerId, user);
     Object.assign(printer, updateDto);
@@ -102,7 +102,7 @@ export class PrintersService {
   }
 
   async remove(organizationId: string, printerId: string, user: User): Promise<void> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     const printer = await this.findOne(organizationId, printerId, user);
     await this.printerRepository.remove(printer);
@@ -122,7 +122,7 @@ export class PrintersService {
     printerId: string,
     user: User,
   ): Promise<{ success: boolean; message: string }> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     const printer = await this.findOne(organizationId, printerId, user);
 
@@ -154,10 +154,10 @@ export class PrintersService {
     }
   }
 
-  private async checkRole(
+  private async checkPermission(
     organizationId: string,
     userId: string,
-    requiredRole: OrganizationRole,
+    permission: 'products' | 'events' | 'devices' | 'members' | 'shiftPlans',
   ): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
@@ -170,15 +170,11 @@ export class PrintersService {
       });
     }
 
-    const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
-    };
+    if (membership.role === OrganizationRole.ADMIN) {
+      return;
+    }
 
-    if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
+    if (!membership.permissions?.[permission]) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

@@ -114,7 +114,7 @@ export class DeviceApiController {
     const events = await this.eventRepository.find({
       where: {
         organizationId,
-        status: EventStatus.ACTIVE,
+        status: In([EventStatus.ACTIVE, EventStatus.DRAFT, EventStatus.SCHEDULED]),
       },
       order: { startDate: 'ASC' },
     });
@@ -231,7 +231,7 @@ export class DeviceApiController {
         });
       }
 
-      if (event.status !== EventStatus.ACTIVE) {
+      if (event.status !== EventStatus.ACTIVE && event.status !== EventStatus.DRAFT && event.status !== EventStatus.SCHEDULED) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
           message: 'Event ist nicht aktiv',

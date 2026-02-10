@@ -29,7 +29,7 @@ export class PrintTemplatesService {
     createDto: CreatePrintTemplateDto,
     user: User,
   ): Promise<PrintTemplate> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkAdmin(organizationId, user.id);
 
     // If this is marked as default, unset other defaults of the same type
     if (createDto.isDefault) {
@@ -102,7 +102,7 @@ export class PrintTemplatesService {
     updateDto: UpdatePrintTemplateDto,
     user: User,
   ): Promise<PrintTemplate> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkAdmin(organizationId, user.id);
 
     const template = await this.findOne(organizationId, templateId, user);
 
@@ -120,7 +120,7 @@ export class PrintTemplatesService {
   }
 
   async remove(organizationId: string, templateId: string, user: User): Promise<void> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkAdmin(organizationId, user.id);
 
     const template = await this.findOne(organizationId, templateId, user);
     await this.printTemplateRepository.remove(template);
@@ -186,10 +186,9 @@ export class PrintTemplatesService {
     }
   }
 
-  private async checkRole(
+  private async checkAdmin(
     organizationId: string,
     userId: string,
-    requiredRole: OrganizationRole,
   ): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
@@ -202,15 +201,7 @@ export class PrintTemplatesService {
       });
     }
 
-    const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
-    };
-
-    if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
+    if (membership.role !== OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

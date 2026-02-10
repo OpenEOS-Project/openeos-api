@@ -6,4 +6,5 @@ export {
   UpdateSubscriptionConfigDto,
   CreateCreditPackageDto,
   UpdateCreditPackageDto,
+  UpdatePackagePricesDto,
 } from './update-admin.dto';

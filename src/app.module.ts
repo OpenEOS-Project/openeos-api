@@ -44,6 +44,7 @@ import { HealthModule } from './modules/health';
 import { SetupModule } from './modules/setup';
 import { EmailModule } from './modules/email';
 import { ShiftsModule } from './modules/shifts';
+import { SumUpModule } from './modules/sumup';
 
 @Module({
   imports: [
@@ -140,6 +141,7 @@ import { ShiftsModule } from './modules/shifts';
     SetupModule,
     EmailModule,
     ShiftsModule,
+    SumUpModule,
   ],
   controllers: [],
   providers: [

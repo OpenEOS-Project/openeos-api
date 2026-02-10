@@ -18,9 +18,13 @@ import type {
   LeaveRoomPayload,
   DeviceHeartbeatEvent,
   PrinterHeartbeatEvent,
+  PrinterJobCompleteEvent,
+  PrinterJobFailedEvent,
 } from './dto';
 import { DevicesService } from '../devices/devices.service';
 import { PrintersService } from '../printers/printers.service';
+import { PrintJobsService } from '../print-jobs/print-jobs.service';
+import { PrintJobStatus } from '../../database/entities/print-job.entity';
 
 interface AuthenticatedSocket extends Socket {
   user?: {
@@ -57,6 +61,7 @@ export class AppGateway
     private readonly configService: ConfigService,
     private readonly devicesService: DevicesService,
     private readonly printersService: PrintersService,
+    private readonly printJobsService: PrintJobsService,
   ) {}
 
   afterInit(server: Server) {
@@ -198,6 +203,63 @@ export class AppGateway
   ) {
     await this.printersService.updateOnlineStatus(payload.printerId, payload.isOnline);
     return { success: true };
+  }
+
+  @SubscribeMessage(GatewayEvents.PRINTER_JOB_COMPLETE)
+  async handlePrinterJobComplete(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() payload: PrinterJobCompleteEvent,
+  ) {
+    if (!client.device) {
+      return { error: 'Not a device connection' };
+    }
+    try {
+      await this.printJobsService.updateJobStatus(payload.jobId, PrintJobStatus.COMPLETED);
+      this.logger.log(`Print job completed: ${payload.jobId} (agent: ${payload.agentId})`);
+
+      // Notify organization about status change
+      this.emitToOrganization(client.device.organizationId, GatewayEvents.PRINT_JOB_STATUS_CHANGED, {
+        jobId: payload.jobId,
+        printerId: '',
+        status: PrintJobStatus.COMPLETED,
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Failed to update job ${payload.jobId}: ${error.message}`);
+      return { error: 'Failed to update job status' };
+    }
+  }
+
+  @SubscribeMessage(GatewayEvents.PRINTER_JOB_FAILED)
+  async handlePrinterJobFailed(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() payload: PrinterJobFailedEvent,
+  ) {
+    if (!client.device) {
+      return { error: 'Not a device connection' };
+    }
+    try {
+      await this.printJobsService.updateJobStatus(
+        payload.jobId,
+        PrintJobStatus.FAILED,
+        `${payload.errorCode}: ${payload.errorMessage}`,
+      );
+      this.logger.warn(`Print job failed: ${payload.jobId} - ${payload.errorCode}: ${payload.errorMessage}`);
+
+      // Notify organization about status change
+      this.emitToOrganization(client.device.organizationId, GatewayEvents.PRINT_JOB_STATUS_CHANGED, {
+        jobId: payload.jobId,
+        printerId: '',
+        status: PrintJobStatus.FAILED,
+        error: `${payload.errorCode}: ${payload.errorMessage}`,
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.logger.error(`Failed to update job ${payload.jobId}: ${error.message}`);
+      return { error: 'Failed to update job status' };
+    }
   }
 
   // Public methods for other services to emit events

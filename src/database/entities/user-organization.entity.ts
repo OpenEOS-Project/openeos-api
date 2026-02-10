@@ -5,20 +5,15 @@ import { Organization } from './organization.entity';
 
 export enum OrganizationRole {
   ADMIN = 'admin',
-  MANAGER = 'manager',
-  CASHIER = 'cashier',
-  KITCHEN = 'kitchen',
-  DELIVERY = 'delivery',
+  MEMBER = 'member',
 }
 
 export interface OrganizationPermissions {
-  canManageProducts?: boolean;
-  canManageOrders?: boolean;
-  canProcessPayments?: boolean;
-  canViewReports?: boolean;
-  canManageDevices?: boolean;
-  canManageWorkflows?: boolean;
-  [key: string]: boolean | undefined;
+  products?: boolean;
+  events?: boolean;
+  devices?: boolean;
+  members?: boolean;
+  shiftPlans?: boolean;
 }
 
 @Entity('user_organizations')
@@ -34,7 +29,7 @@ export class UserOrganization extends BaseEntity {
 
   @Column({
     type: 'enum',
-    enum: ['admin', 'manager', 'cashier', 'kitchen', 'delivery'],
+    enum: ['admin', 'member'],
     enumName: 'organization_role',
   })
   role: OrganizationRole;

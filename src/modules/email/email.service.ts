@@ -16,10 +16,13 @@ export class EmailService {
   private transporter: Transporter | null = null;
   private readonly isEnabled: boolean;
   private readonly fromAddress: string;
+  private readonly appUrl: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.isEnabled = this.configService.get<string>('EMAIL_ENABLED') === 'true';
-    this.fromAddress = this.configService.get<string>('EMAIL_FROM') || 'noreply@openeos.de';
+    this.isEnabled = this.configService.get<boolean>('email.enabled') === true;
+    const fromEmail = this.configService.get<string>('email.from') || 'noreply@openeos.de';
+    this.fromAddress = `OpenEOS <${fromEmail}>`;
+    this.appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
 
     if (this.isEnabled) {
       this.initializeTransporter();
@@ -29,10 +32,10 @@ export class EmailService {
   }
 
   private initializeTransporter(): void {
-    const host = this.configService.get<string>('EMAIL_HOST');
-    const port = this.configService.get<number>('EMAIL_PORT') || 587;
-    const user = this.configService.get<string>('EMAIL_USER');
-    const pass = this.configService.get<string>('EMAIL_PASSWORD');
+    const host = this.configService.get<string>('email.host');
+    const port = this.configService.get<number>('email.port') || 587;
+    const user = this.configService.get<string>('email.user');
+    const pass = this.configService.get<string>('email.password');
 
     if (!host || !user || !pass) {
       this.logger.error('Email configuration incomplete. Check EMAIL_HOST, EMAIL_USER, EMAIL_PASSWORD.');
@@ -93,6 +96,38 @@ export class EmailService {
       .replace(/<[^>]*>/g, '')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  // ============ Organization Invitation Email Templates ============
+
+  async sendInvitationEmail(
+    email: string,
+    organizationName: string,
+    inviterName: string,
+    acceptUrl: string,
+    role: string,
+  ): Promise<boolean> {
+    const roleLabel = role === 'admin' ? 'Administrator' : 'Mitglied';
+    const subject = `Einladung: ${organizationName}`;
+    const html = this.getBaseTemplate(`
+      <h1>Sie wurden eingeladen!</h1>
+      <p><strong>${inviterName}</strong> hat Sie als <strong>${roleLabel}</strong> zur Organisation <strong>${organizationName}</strong> eingeladen.</p>
+      <p>Klicken Sie auf den folgenden Button, um die Einladung anzunehmen:</p>
+      <p style="text-align: center; margin: 30px 0;">
+        <a href="${acceptUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+          Einladung annehmen
+        </a>
+      </p>
+      <p style="color: #666; font-size: 14px;">
+        Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:<br>
+        <a href="${acceptUrl}" style="color: #2563eb;">${acceptUrl}</a>
+      </p>
+      <p style="color: #666; font-size: 14px;">
+        Die Einladung ist 7 Tage gültig. Falls Sie diese Einladung nicht erwartet haben, können Sie sie ignorieren.
+      </p>
+    `);
+
+    return this.sendEmail({ to: email, subject, html });
   }
 
   // ============ Shift Registration Email Templates ============
@@ -211,6 +246,8 @@ export class EmailService {
   }
 
   private getBaseTemplate(content: string): string {
+    const logoUrl = `${this.appUrl}/logo_dark.png`;
+
     return `
 <!DOCTYPE html>
 <html>
@@ -218,13 +255,38 @@ export class EmailService {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  ${content}
-  <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-  <p style="color: #999; font-size: 12px; text-align: center;">
-    Diese E-Mail wurde automatisch von OpenEOS gesendet.<br>
-    Bitte antworte nicht direkt auf diese E-Mail.
-  </p>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f5;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; width: 100%;">
+          <!-- Logo -->
+          <tr>
+            <td align="center" style="padding-bottom: 24px;">
+              <a href="${this.appUrl}" style="text-decoration: none;">
+                <img src="${logoUrl}" alt="OpenEOS" height="36" style="height: 36px; width: auto;" />
+              </a>
+            </td>
+          </tr>
+          <!-- Content Card -->
+          <tr>
+            <td style="background-color: #ffffff; border-radius: 12px; padding: 32px 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+              ${content}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding-top: 24px;">
+              <p style="color: #a1a1aa; font-size: 12px; margin: 0;">
+                Diese E-Mail wurde automatisch von OpenEOS gesendet.<br>
+                Bitte antworte nicht direkt auf diese E-Mail.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>
     `.trim();

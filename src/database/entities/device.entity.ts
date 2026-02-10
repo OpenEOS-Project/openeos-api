@@ -26,6 +26,7 @@ export interface DeviceSettings {
   defaultPrinterId?: string;
   soundEnabled?: boolean;
   autoLogout?: number;
+  sumupReaderId?: string;
   [key: string]: unknown;
 }
 

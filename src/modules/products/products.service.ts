@@ -38,7 +38,7 @@ export class ProductsService {
     createDto: CreateProductDto,
     user: User,
   ): Promise<Product> {
-    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
+    const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
 
     const product = this.productRepository.create({
       eventId: event.id,
@@ -107,7 +107,7 @@ export class ProductsService {
     updateDto: UpdateProductDto,
     user: User,
   ): Promise<Product> {
-    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
+    const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
 
     const product = await this.findOne(eventId, productId, user);
     Object.assign(product, updateDto);
@@ -130,7 +130,7 @@ export class ProductsService {
   }
 
   async remove(eventId: string, productId: string, user: User): Promise<void> {
-    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.ADMIN);
+    const event = await this.getEventAndCheckAdmin(eventId, user.id);
 
     const product = await this.findOne(eventId, productId, user);
     await this.productRepository.softRemove(product);
@@ -147,7 +147,7 @@ export class ProductsService {
     isAvailable: boolean,
     user: User,
   ): Promise<Product> {
-    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.CASHIER);
+    const event = await this.getEventAndCheckMembership(eventId, user.id);
 
     const product = await this.findOne(eventId, productId, user);
     product.isAvailable = isAvailable;
@@ -175,7 +175,7 @@ export class ProductsService {
     adjustDto: AdjustStockDto,
     user: User,
   ): Promise<Product> {
-    await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
+    await this.getEventAndCheckPermission(eventId, user.id, 'products');
 
     const product = await this.findOne(eventId, productId, user);
 
@@ -256,10 +256,10 @@ export class ProductsService {
     return event;
   }
 
-  private async getEventAndCheckRole(
+  private async getEventAndCheckPermission(
     eventId: string,
     userId: string,
-    requiredRole: OrganizationRole,
+    permission: 'products' | 'events' | 'devices' | 'members' | 'shiftPlans',
   ): Promise<Event> {
     const event = await this.getEvent(eventId);
 
@@ -274,15 +274,34 @@ export class ProductsService {
       });
     }
 
-    const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
-    };
+    if (membership.role !== OrganizationRole.ADMIN && !membership.permissions?.[permission]) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Keine ausreichenden Berechtigungen',
+      });
+    }
 
-    if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
+    return event;
+  }
+
+  private async getEventAndCheckAdmin(
+    eventId: string,
+    userId: string,
+  ): Promise<Event> {
+    const event = await this.getEvent(eventId);
+
+    const membership = await this.userOrganizationRepository.findOne({
+      where: { organizationId: event.organizationId, userId },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Kein Zugriff auf dieses Event',
+      });
+    }
+
+    if (membership.role !== OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

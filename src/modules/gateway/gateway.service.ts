@@ -8,6 +8,7 @@ import {
   PaymentReceivedEvent,
   PrintJobCreatedEvent,
   PrintJobStatusChangedEvent,
+  PrinterJobEvent,
   BroadcastMessageEvent,
   ProductUpdatedEvent,
   ProductDeletedEvent,
@@ -104,6 +105,13 @@ export class GatewayService {
     this.logger.debug(`Emitting printJobStatusChanged for job ${data.jobId}`);
 
     this.appGateway.emitToOrganization(organizationId, GatewayEvents.PRINT_JOB_STATUS_CHANGED, payload);
+  }
+
+  sendPrintJobToAgent(organizationId: string, data: PrinterJobEvent) {
+    this.logger.debug(`Sending print job ${data.jobId} to agent via organization ${organizationId}`);
+
+    // Send to all devices in the organization (the agent will filter by printerId)
+    this.appGateway.emitToOrganization(organizationId, GatewayEvents.PRINTER_JOB, data);
   }
 
   // Broadcast Messages

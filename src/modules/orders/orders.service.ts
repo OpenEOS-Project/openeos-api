@@ -63,7 +63,7 @@ export class OrdersService {
     createDto: CreateOrderDto,
     user: User,
   ): Promise<Order> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.CASHIER);
+    await this.checkMembership(organizationId, user.id);
 
     // Validate event if provided
     if (createDto.eventId) {
@@ -78,7 +78,7 @@ export class OrdersService {
         });
       }
 
-      if (event.status !== EventStatus.ACTIVE) {
+      if (event.status !== EventStatus.ACTIVE && event.status !== EventStatus.DRAFT && event.status !== EventStatus.SCHEDULED) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
           message: 'Event ist nicht aktiv',
@@ -238,7 +238,7 @@ export class OrdersService {
     updateDto: UpdateOrderDto,
     user: User,
   ): Promise<Order> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.CASHIER);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
 
@@ -263,7 +263,7 @@ export class OrdersService {
   }
 
   async remove(organizationId: string, orderId: string, user: User): Promise<void> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
 
@@ -291,7 +291,7 @@ export class OrdersService {
     itemDto: AddOrderItemDto,
     user: User,
   ): Promise<Order> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.CASHIER);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
 
@@ -318,7 +318,7 @@ export class OrdersService {
     updateDto: UpdateOrderItemDto,
     user: User,
   ): Promise<Order> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.CASHIER);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
 
@@ -407,7 +407,7 @@ export class OrdersService {
     itemId: string,
     user: User,
   ): Promise<Order> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.CASHIER);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
 
@@ -453,7 +453,7 @@ export class OrdersService {
     itemId: string,
     user: User,
   ): Promise<Order> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.KITCHEN);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
     const item = order.items.find(i => i.id === itemId);
@@ -523,7 +523,7 @@ export class OrdersService {
     itemId: string,
     user: User,
   ): Promise<Order> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.DELIVERY);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
     const item = order.items.find(i => i.id === itemId);
@@ -570,7 +570,7 @@ export class OrdersService {
     orderId: string,
     user: User,
   ): Promise<Order> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.DELIVERY);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
 
@@ -591,7 +591,7 @@ export class OrdersService {
     orderId: string,
     user: User,
   ): Promise<Order> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.CASHIER);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
 
@@ -631,7 +631,7 @@ export class OrdersService {
     cancelDto: CancelOrderDto,
     user: User,
   ): Promise<Order> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
 
@@ -920,38 +920,6 @@ export class OrdersService {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Kein Zugriff auf diese Organisation',
-      });
-    }
-  }
-
-  private async checkRole(
-    organizationId: string,
-    userId: string,
-    requiredRole: OrganizationRole,
-  ): Promise<void> {
-    const membership = await this.userOrganizationRepository.findOne({
-      where: { organizationId, userId },
-    });
-
-    if (!membership) {
-      throw new ForbiddenException({
-        code: ErrorCodes.FORBIDDEN,
-        message: 'Kein Zugriff auf diese Organisation',
-      });
-    }
-
-    const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
-    };
-
-    if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
-      throw new ForbiddenException({
-        code: ErrorCodes.FORBIDDEN,
-        message: 'Keine ausreichenden Berechtigungen',
       });
     }
   }

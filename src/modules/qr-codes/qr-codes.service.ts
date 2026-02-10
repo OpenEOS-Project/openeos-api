@@ -29,7 +29,7 @@ export class QrCodesService {
     createDto: CreateQrCodeDto,
     user: User,
   ): Promise<QrCode> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user.id, 'events');
 
     const code = this.generateCode();
 
@@ -55,7 +55,7 @@ export class QrCodesService {
     bulkDto: BulkCreateQrCodesDto,
     user: User,
   ): Promise<QrCode[]> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user.id, 'events');
 
     const qrCodes: QrCode[] = [];
     const startNum = bulkDto.startNumber || 1;
@@ -148,7 +148,7 @@ export class QrCodesService {
     updateDto: UpdateQrCodeDto,
     user: User,
   ): Promise<QrCode> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user.id, 'events');
 
     const qrCode = await this.findOne(organizationId, qrCodeId, user);
     Object.assign(qrCode, updateDto);
@@ -160,7 +160,7 @@ export class QrCodesService {
   }
 
   async remove(organizationId: string, qrCodeId: string, user: User): Promise<void> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user.id, 'events');
 
     const qrCode = await this.findOne(organizationId, qrCodeId, user);
     await this.qrCodeRepository.remove(qrCode);
@@ -230,10 +230,10 @@ export class QrCodesService {
     }
   }
 
-  private async checkRole(
+  private async checkPermission(
     organizationId: string,
     userId: string,
-    requiredRole: OrganizationRole,
+    permission: 'products' | 'events' | 'devices' | 'members' | 'shiftPlans',
   ): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
@@ -246,15 +246,7 @@ export class QrCodesService {
       });
     }
 
-    const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
-    };
-
-    if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
+    if (membership.role !== OrganizationRole.ADMIN && !membership.permissions?.[permission]) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

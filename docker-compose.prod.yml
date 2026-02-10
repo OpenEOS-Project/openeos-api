@@ -82,8 +82,18 @@ services:
       - "traefik.http.routers.openeos-api-secure.entrypoints=websecure"
       - "traefik.http.routers.openeos-api-secure.tls=true"
       - "traefik.http.routers.openeos-api-secure.tls.certresolver=letsencrypt"
+      # HTTPS Router - display.openeos.de (für TV/Display-Geräte)
+      - "traefik.http.routers.openeos-display-secure.rule=Host(`display.openeos.de`)"
+      - "traefik.http.routers.openeos-display-secure.entrypoints=websecure"
+      - "traefik.http.routers.openeos-display-secure.tls=true"
+      - "traefik.http.routers.openeos-display-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.openeos-display-secure.service=openeos-api"
       # Service
       - "traefik.http.services.openeos-api.loadbalancer.server.port=3000"
+      # WebSocket support - enable sticky sessions for socket.io
+      - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie=true"
+      - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie.name=io"
+      - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie.secure=true"
 
     # Uncomment for multiple instances:
     # deploy:

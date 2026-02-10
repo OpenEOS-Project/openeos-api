@@ -15,6 +15,8 @@ import {
   EventLicense,
   Category,
   Product,
+  Order,
+  OrderItem,
 } from '../../database/entities';
 import { EventStatus } from '../../database/entities/event.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
@@ -23,7 +25,7 @@ import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../com
 import { CreateEventDto, UpdateEventDto, CopyProductsDto } from './dto';
 
 // Credits required per day for event activation
-const CREDITS_PER_DAY = 10;
+const CREDITS_PER_DAY = 1;
 
 @Injectable()
 export class EventsService {
@@ -42,6 +44,10 @@ export class EventsService {
     private readonly categoryRepository: Repository<Category>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
+    @InjectRepository(OrderItem)
+    private readonly orderItemRepository: Repository<OrderItem>,
   ) {}
 
   async create(
@@ -49,8 +55,8 @@ export class EventsService {
     createDto: CreateEventDto,
     user: User,
   ): Promise<Event> {
-    // Check user has permission
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    // Check user has events permission
+    await this.checkPermission(organizationId, user.id, 'events');
 
     // Validate dates
     const startDate = new Date(createDto.startDate);
@@ -127,16 +133,16 @@ export class EventsService {
     updateDto: UpdateEventDto,
     user: User,
   ): Promise<Event> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user.id, 'events');
 
     const event = await this.findOne(organizationId, eventId, user);
 
-    // Don't allow updating active or completed events (except settings)
-    if (event.status === EventStatus.ACTIVE || event.status === EventStatus.COMPLETED) {
+    // Don't allow updating scheduled, active or completed events (except settings)
+    if (event.status === EventStatus.SCHEDULED || event.status === EventStatus.ACTIVE || event.status === EventStatus.COMPLETED) {
       if (updateDto.name || updateDto.description || updateDto.startDate || updateDto.endDate) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
-          message: 'Aktive oder abgeschlossene Events können nicht mehr geändert werden',
+          message: 'Geplante, aktive oder abgeschlossene Events können nicht mehr geändert werden',
         });
       }
     }
@@ -173,14 +179,14 @@ export class EventsService {
     eventId: string,
     user: User,
   ): Promise<void> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkAdmin(organizationId, user.id);
 
     const event = await this.findOne(organizationId, eventId, user);
 
-    if (event.status === EventStatus.ACTIVE) {
+    if (event.status === EventStatus.SCHEDULED || event.status === EventStatus.ACTIVE) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Aktive Events können nicht gelöscht werden',
+        message: 'Geplante oder aktive Events können nicht gelöscht werden',
       });
     }
 
@@ -196,7 +202,7 @@ export class EventsService {
     eventId: string,
     user: User,
   ): Promise<Event> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user.id, 'events');
 
     const event = await this.findOne(organizationId, eventId, user);
 
@@ -226,22 +232,46 @@ export class EventsService {
     organization.eventCredits -= creditsNeeded;
     await this.organizationRepository.save(organization);
 
-    // Create event license
-    const eventLicense = this.eventLicenseRepository.create({
-      eventId: event.id,
-      organizationId,
-      licenseDate: new Date(),
-      creditsUsed: creditsNeeded,
-      activatedAt: new Date(),
-      activatedByUserId: user.id,
+    // Create or update event license (handles re-activation on same day after cancel)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const existingLicense = await this.eventLicenseRepository.findOne({
+      where: { eventId: event.id, licenseDate: today },
     });
-    await this.eventLicenseRepository.save(eventLicense);
 
-    // Activate event
-    event.status = EventStatus.ACTIVE;
-    await this.eventRepository.save(event);
+    if (existingLicense) {
+      existingLicense.creditsUsed = creditsNeeded;
+      existingLicense.activatedAt = new Date();
+      existingLicense.activatedByUserId = user.id;
+      await this.eventLicenseRepository.save(existingLicense);
+    } else {
+      const eventLicense = this.eventLicenseRepository.create({
+        eventId: event.id,
+        organizationId,
+        licenseDate: new Date(),
+        creditsUsed: creditsNeeded,
+        activatedAt: new Date(),
+        activatedByUserId: user.id,
+      });
+      await this.eventLicenseRepository.save(eventLicense);
+    }
 
-    this.logger.log(`Event activated: ${event.name} (${event.id}), Credits used: ${creditsNeeded}`);
+    // Determine status: if startDate is already reached, go directly to ACTIVE
+    const now = new Date();
+    if (event.startDate <= now) {
+      // Delete test orders created during draft mode
+      await this.deleteTestOrders(event.id);
+
+      event.status = EventStatus.ACTIVE;
+      await this.eventRepository.save(event);
+
+      this.logger.log(`Event activated (directly): ${event.name} (${event.id}), Credits used: ${creditsNeeded}`);
+    } else {
+      event.status = EventStatus.SCHEDULED;
+      await this.eventRepository.save(event);
+
+      this.logger.log(`Event scheduled: ${event.name} (${event.id}), Credits used: ${creditsNeeded}, starts at ${event.startDate.toISOString()}`);
+    }
 
     return event;
   }
@@ -251,14 +281,14 @@ export class EventsService {
     eventId: string,
     user: User,
   ): Promise<Event> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user.id, 'events');
 
     const event = await this.findOne(organizationId, eventId, user);
 
-    if (event.status !== EventStatus.ACTIVE) {
+    if (event.status !== EventStatus.ACTIVE && event.status !== EventStatus.SCHEDULED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Nur aktive Events können abgeschlossen werden',
+        message: 'Nur geplante oder aktive Events können abgeschlossen werden',
       });
     }
 
@@ -275,7 +305,7 @@ export class EventsService {
     eventId: string,
     user: User,
   ): Promise<Event> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkAdmin(organizationId, user.id);
 
     const event = await this.findOne(organizationId, eventId, user);
 
@@ -286,8 +316,8 @@ export class EventsService {
       });
     }
 
-    // If event was active, refund credits partially (mock implementation)
-    if (event.status === EventStatus.ACTIVE) {
+    // If event was active or scheduled, refund credits partially (mock implementation)
+    if (event.status === EventStatus.ACTIVE || event.status === EventStatus.SCHEDULED) {
       const eventLicense = await this.eventLicenseRepository.findOne({
         where: { eventId: event.id },
       });
@@ -359,7 +389,7 @@ export class EventsService {
     user: User,
   ): Promise<{ categoriesCopied: number; productsCopied: number }> {
     // Check permissions on target event
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user.id, 'events');
 
     // Verify target event exists and belongs to the organization
     const targetEvent = await this.findOne(organizationId, targetEventId, user);
@@ -491,6 +521,26 @@ export class EventsService {
     };
   }
 
+  // Helper: delete test orders for an event (used during SCHEDULED→ACTIVE transition)
+  async deleteTestOrders(eventId: string): Promise<number> {
+    const testOrders = await this.orderRepository.find({
+      where: { eventId },
+      relations: ['items'],
+    });
+
+    if (testOrders.length > 0) {
+      for (const order of testOrders) {
+        if (order.items?.length > 0) {
+          await this.orderItemRepository.remove(order.items);
+        }
+      }
+      await this.orderRepository.remove(testOrders);
+      this.logger.log(`Deleted ${testOrders.length} test orders for event ${eventId}`);
+    }
+
+    return testOrders.length;
+  }
+
   // Helper methods
   private calculateCreditsNeeded(event: Event): number {
     const days = Math.ceil(
@@ -514,22 +564,34 @@ export class EventsService {
     return membership;
   }
 
-  private async checkRole(
+  private async checkPermission(
     organizationId: string,
     userId: string,
-    requiredRole: OrganizationRole,
+    permission: 'products' | 'events' | 'devices' | 'members' | 'shiftPlans',
   ): Promise<UserOrganization> {
     const membership = await this.checkMembership(organizationId, userId);
 
-    const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
-    };
+    if (membership.role === OrganizationRole.ADMIN) {
+      return membership;
+    }
 
-    if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
+    if (!membership.permissions?.[permission]) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Keine ausreichenden Berechtigungen',
+      });
+    }
+
+    return membership;
+  }
+
+  private async checkAdmin(
+    organizationId: string,
+    userId: string,
+  ): Promise<UserOrganization> {
+    const membership = await this.checkMembership(organizationId, userId);
+
+    if (membership.role !== OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

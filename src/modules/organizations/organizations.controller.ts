@@ -141,6 +141,16 @@ export class OrganizationsController {
     return { data: invitation };
   }
 
+  @Post(':id/invitations/:invitationId/resend')
+  async resendInvitation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('invitationId', ParseUUIDPipe) invitationId: string,
+    @CurrentUser() user: User,
+  ) {
+    await this.organizationsService.resendInvitation(id, invitationId, user);
+    return { message: 'Einladung erneut gesendet' };
+  }
+
   @Delete(':id/invitations/:invitationId')
   @HttpCode(HttpStatus.NO_CONTENT)
   async cancelInvitation(

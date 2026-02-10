@@ -48,7 +48,7 @@ export class PaymentsService {
     createDto: CreatePaymentDto,
     user: User,
   ): Promise<Payment> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.CASHIER);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.orderRepository.findOne({
       where: { id: createDto.orderId, organizationId },
@@ -115,7 +115,7 @@ export class PaymentsService {
     splitDto: SplitPaymentDto,
     user: User,
   ): Promise<Payment> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.CASHIER);
+    await this.checkMembership(organizationId, user.id);
 
     const order = await this.orderRepository.findOne({
       where: { id: splitDto.orderId, organizationId },
@@ -279,7 +279,7 @@ export class PaymentsService {
     paymentId: string,
     user: User,
   ): Promise<Payment> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkMembership(organizationId, user.id);
 
     const payment = await this.findOne(organizationId, paymentId, user);
 
@@ -397,38 +397,6 @@ export class PaymentsService {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Kein Zugriff auf diese Organisation',
-      });
-    }
-  }
-
-  private async checkRole(
-    organizationId: string,
-    userId: string,
-    requiredRole: OrganizationRole,
-  ): Promise<void> {
-    const membership = await this.userOrganizationRepository.findOne({
-      where: { organizationId, userId },
-    });
-
-    if (!membership) {
-      throw new ForbiddenException({
-        code: ErrorCodes.FORBIDDEN,
-        message: 'Kein Zugriff auf diese Organisation',
-      });
-    }
-
-    const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
-    };
-
-    if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
-      throw new ForbiddenException({
-        code: ErrorCodes.FORBIDDEN,
-        message: 'Keine ausreichenden Berechtigungen',
       });
     }
   }

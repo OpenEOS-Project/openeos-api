@@ -3,6 +3,7 @@ import { BaseEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { User } from './user.entity';
 import { OrganizationRole } from './user-organization.entity';
+import type { OrganizationPermissions } from './user-organization.entity';
 
 @Entity('invitations')
 @Index(['token'], { unique: true })
@@ -16,10 +17,13 @@ export class Invitation extends BaseEntity {
 
   @Column({
     type: 'enum',
-    enum: ['admin', 'manager', 'cashier', 'kitchen', 'delivery'],
+    enum: ['admin', 'member'],
     enumName: 'organization_role',
   })
   role: OrganizationRole;
+
+  @Column({ type: 'jsonb', default: '{}' })
+  permissions!: OrganizationPermissions;
 
   @Column({ type: 'varchar', length: 255, unique: true })
   token: string;

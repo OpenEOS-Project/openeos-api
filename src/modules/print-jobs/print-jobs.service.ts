@@ -4,15 +4,18 @@ import {
   ForbiddenException,
   BadRequestException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PrintJob, Printer, User, UserOrganization } from '../../database/entities';
+import { PrintJob, Printer, PrintTemplate, User, UserOrganization } from '../../database/entities';
 import { PrintJobStatus } from '../../database/entities/print-job.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
 import { CreatePrintJobDto, QueryPrintJobsDto } from './dto';
+import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
 export class PrintJobsService {
@@ -24,8 +27,12 @@ export class PrintJobsService {
     private readonly printJobRepository: Repository<PrintJob>,
     @InjectRepository(Printer)
     private readonly printerRepository: Repository<Printer>,
+    @InjectRepository(PrintTemplate)
+    private readonly printTemplateRepository: Repository<PrintTemplate>,
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
+    @Inject(forwardRef(() => GatewayService))
+    private readonly gatewayService: GatewayService,
   ) {}
 
   async create(
@@ -33,7 +40,7 @@ export class PrintJobsService {
     createDto: CreatePrintJobDto,
     user: User,
   ): Promise<PrintJob> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.CASHIER);
+    await this.checkMembership(organizationId, user.id);
 
     // Verify printer exists and belongs to organization
     const printer = await this.printerRepository.findOne({
@@ -67,6 +74,26 @@ export class PrintJobsService {
 
     await this.printJobRepository.save(printJob);
     this.logger.log(`Print job created: ${printJob.id} for printer ${printer.name}`);
+
+    // Resolve template name for the agent
+    let templateName = 'receipt';
+    if (createDto.templateId) {
+      const template = await this.printTemplateRepository.findOne({
+        where: { id: createDto.templateId, organizationId },
+      });
+      if (template) {
+        templateName = template.type;
+      }
+    }
+
+    // Send full print data to agent via WebSocket
+    this.gatewayService.sendPrintJobToAgent(organizationId, {
+      jobId: printJob.id,
+      printerId: createDto.printerId,
+      templateName,
+      copies: createDto.payload?.copies as number || 1,
+      payload: createDto.payload?.data as Record<string, unknown> || createDto.payload,
+    });
 
     return printJob;
   }
@@ -128,7 +155,7 @@ export class PrintJobsService {
   }
 
   async retry(organizationId: string, jobId: string, user: User): Promise<PrintJob> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.CASHIER);
+    await this.checkMembership(organizationId, user.id);
 
     const job = await this.findOne(organizationId, jobId, user);
 
@@ -153,11 +180,31 @@ export class PrintJobsService {
 
     this.logger.log(`Print job retry: ${job.id} (attempt ${job.attempts})`);
 
+    // Resolve template name for the agent
+    let templateName = 'receipt';
+    if (job.templateId) {
+      const template = await this.printTemplateRepository.findOne({
+        where: { id: job.templateId, organizationId },
+      });
+      if (template) {
+        templateName = template.type;
+      }
+    }
+
+    // Resend to agent
+    this.gatewayService.sendPrintJobToAgent(organizationId, {
+      jobId: job.id,
+      printerId: job.printerId,
+      templateName,
+      copies: job.payload?.copies as number || 1,
+      payload: job.payload?.data as Record<string, unknown> || job.payload,
+    });
+
     return job;
   }
 
   async cancel(organizationId: string, jobId: string, user: User): Promise<PrintJob> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user.id, 'devices');
 
     const job = await this.findOne(organizationId, jobId, user);
 
@@ -223,10 +270,10 @@ export class PrintJobsService {
     }
   }
 
-  private async checkRole(
+  private async checkPermission(
     organizationId: string,
     userId: string,
-    requiredRole: OrganizationRole,
+    permission: 'products' | 'events' | 'devices' | 'members' | 'shiftPlans',
   ): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
@@ -239,15 +286,7 @@ export class PrintJobsService {
       });
     }
 
-    const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
-    };
-
-    if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
+    if (membership.role !== OrganizationRole.ADMIN && !membership.permissions?.[permission]) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

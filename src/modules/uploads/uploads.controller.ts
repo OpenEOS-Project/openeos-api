@@ -33,7 +33,7 @@ export class UploadsController {
   constructor(private readonly uploadsService: UploadsService) {}
 
   @Post('image')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.MEMBER)
   @UseInterceptors(FileInterceptor('file'))
   async uploadImage(
     @CurrentOrganization() organization: Organization,
@@ -49,7 +49,7 @@ export class UploadsController {
   }
 
   @Delete(':filename')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.MEMBER)
   async deleteImage(
     @CurrentOrganization() organization: Organization,
     @Param('filename') filename: string,
@@ -60,7 +60,7 @@ export class UploadsController {
   }
 
   @Get(':category/:filename')
-  @Roles(Role.ADMIN, Role.MANAGER, Role.CASHIER, Role.KITCHEN, Role.DELIVERY)
+  @Roles(Role.MEMBER)
   async getImage(
     @CurrentOrganization() organization: Organization,
     @Param('category') category: string,

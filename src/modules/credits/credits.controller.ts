@@ -26,7 +26,7 @@ export class CreditsController {
   constructor(private readonly creditsService: CreditsService) {}
 
   @Get()
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getBalance(@CurrentOrganization() organization: Organization) {
     const balance = await this.creditsService.getBalance(organization.id);
     return {
@@ -35,7 +35,7 @@ export class CreditsController {
   }
 
   @Get('packages')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getPackages() {
     const packages = await this.creditsService.getPackages();
     return {
@@ -44,7 +44,7 @@ export class CreditsController {
   }
 
   @Get('packages/:slug')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getPackage(@Param('slug') slug: string) {
     const pkg = await this.creditsService.getPackageBySlug(slug);
     return {
@@ -70,7 +70,7 @@ export class CreditsController {
   }
 
   @Get('history')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getHistory(
     @CurrentOrganization() organization: Organization,
     @Query() queryDto: QueryCreditHistoryDto,
@@ -88,7 +88,7 @@ export class CreditsController {
   }
 
   @Get('licenses')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getLicenseUsage(
     @CurrentOrganization() organization: Organization,
     @Query() queryDto: QueryEventLicensesDto,

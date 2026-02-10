@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, IsNull } from 'typeorm';
 import * as crypto from 'crypto';
 import {
   Organization,
@@ -15,7 +15,7 @@ import {
   UserOrganization,
   Invitation,
 } from '../../database/entities';
-import { OrganizationRole } from '../../database/entities/user-organization.entity';
+import { OrganizationRole, OrganizationPermissions } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
 import {
@@ -25,6 +25,8 @@ import {
   UpdateMemberDto,
   CreateInvitationDto,
 } from './dto';
+import { EmailService } from '../email/email.service';
+import { ConfigService } from '@nestjs/config';
 
 const INVITATION_EXPIRY_DAYS = 7;
 
@@ -42,6 +44,8 @@ export class OrganizationsService {
     @InjectRepository(Invitation)
     private readonly invitationRepository: Repository<Invitation>,
     private readonly dataSource: DataSource,
+    private readonly emailService: EmailService,
+    private readonly configService: ConfigService,
   ) {}
 
   async create(
@@ -123,9 +127,9 @@ export class OrganizationsService {
     }
 
     // Check if user is a member
-    await this.checkMembership(organization.id, user.id);
+    await this.checkMembership(organization.id, user);
 
-    return organization;
+    return this.sanitizeOrganization(organization);
   }
 
   async update(
@@ -136,21 +140,43 @@ export class OrganizationsService {
     const organization = await this.findOne(id, user);
 
     // Check if user is admin
-    await this.checkRole(organization.id, user.id, OrganizationRole.ADMIN);
+    await this.checkRole(organization.id, user, OrganizationRole.ADMIN);
+
+    // Handle masked SumUp keys: if a key starts with ****, keep the old one from DB.
+    // Note: organization was loaded via findOne() which sanitizes keys,
+    // so we must read raw keys directly from DB.
+    const sumupSettings = (updateDto.settings as Record<string, unknown>)?.sumup as
+      | { apiKey?: string; merchantCode?: string; affiliateKey?: string; appId?: string }
+      | undefined;
+    if (sumupSettings?.apiKey?.startsWith('****') || sumupSettings?.affiliateKey?.startsWith('****')) {
+      const rawOrg = await this.organizationRepository.findOne({ where: { id } });
+      if (sumupSettings.apiKey?.startsWith('****')) {
+        const existingKey = rawOrg?.settings?.sumup?.apiKey;
+        if (existingKey) {
+          sumupSettings.apiKey = existingKey;
+        }
+      }
+      if (sumupSettings.affiliateKey?.startsWith('****')) {
+        const existingKey = rawOrg?.settings?.sumup?.affiliateKey;
+        if (existingKey) {
+          sumupSettings.affiliateKey = existingKey;
+        }
+      }
+    }
 
     Object.assign(organization, updateDto);
     await this.organizationRepository.save(organization);
 
     this.logger.log(`Organization updated: ${organization.name} (${organization.id})`);
 
-    return organization;
+    return this.sanitizeOrganization(organization);
   }
 
   async remove(id: string, user: User): Promise<void> {
     const organization = await this.findOne(id, user);
 
     // Check if user is admin
-    await this.checkRole(organization.id, user.id, OrganizationRole.ADMIN);
+    await this.checkRole(organization.id, user, OrganizationRole.ADMIN);
 
     // Soft delete
     await this.organizationRepository.softRemove(organization);
@@ -164,7 +190,7 @@ export class OrganizationsService {
     user: User,
     pagination: PaginationDto,
   ): Promise<PaginatedResult<UserOrganization>> {
-    await this.checkMembership(organizationId, user.id);
+    await this.checkMembership(organizationId, user);
 
     const { page = 1, limit = 20 } = pagination;
     const skip = (page - 1) * limit;
@@ -185,8 +211,8 @@ export class OrganizationsService {
     addMemberDto: AddMemberDto,
     currentUser: User,
   ): Promise<UserOrganization> {
-    // Check if current user is admin/manager
-    await this.checkRole(organizationId, currentUser.id, OrganizationRole.MANAGER);
+    // Check if current user is admin or has members permission
+    await this.checkPermission(organizationId, currentUser, 'members');
 
     // Find user by email
     const user = await this.userRepository.findOne({
@@ -216,7 +242,7 @@ export class OrganizationsService {
       organizationId,
       userId: user.id,
       role: addMemberDto.role,
-      permissions: addMemberDto.permissions || {},
+      permissions: addMemberDto.role === OrganizationRole.ADMIN ? {} : (addMemberDto.permissions || {}),
     });
 
     await this.userOrganizationRepository.save(userOrganization);
@@ -235,8 +261,8 @@ export class OrganizationsService {
     updateDto: UpdateMemberDto,
     currentUser: User,
   ): Promise<UserOrganization> {
-    // Check if current user is admin/manager
-    await this.checkRole(organizationId, currentUser.id, OrganizationRole.MANAGER);
+    // Check if current user is admin or has members permission
+    await this.checkPermission(organizationId, currentUser, 'members');
 
     const member = await this.userOrganizationRepository.findOne({
       where: { id: memberId, organizationId },
@@ -264,7 +290,14 @@ export class OrganizationsService {
       }
     }
 
-    Object.assign(member, updateDto);
+    if (updateDto.role !== undefined) {
+      member.role = updateDto.role;
+    }
+    if (updateDto.permissions !== undefined) {
+      // Admins don't need permissions
+      member.permissions = member.role === OrganizationRole.ADMIN ? {} : updateDto.permissions;
+    }
+
     await this.userOrganizationRepository.save(member);
 
     this.logger.log(`Member updated in organization ${organizationId}: ${member.user.email}`);
@@ -277,8 +310,8 @@ export class OrganizationsService {
     memberId: string,
     currentUser: User,
   ): Promise<void> {
-    // Check if current user is admin/manager
-    await this.checkRole(organizationId, currentUser.id, OrganizationRole.MANAGER);
+    // Check if current user is admin or has members permission
+    await this.checkPermission(organizationId, currentUser, 'members');
 
     const member = await this.userOrganizationRepository.findOne({
       where: { id: memberId, organizationId },
@@ -317,8 +350,8 @@ export class OrganizationsService {
     createDto: CreateInvitationDto,
     currentUser: User,
   ): Promise<Invitation> {
-    // Check if current user is admin/manager
-    await this.checkRole(organizationId, currentUser.id, OrganizationRole.MANAGER);
+    // Check if current user is admin or has members permission
+    await this.checkPermission(organizationId, currentUser, 'members');
 
     const organization = await this.organizationRepository.findOneOrFail({
       where: { id: organizationId },
@@ -367,6 +400,7 @@ export class OrganizationsService {
       organizationId,
       email: createDto.email.toLowerCase(),
       role: createDto.role,
+      permissions: createDto.role === OrganizationRole.ADMIN ? {} : (createDto.permissions || {}),
       token,
       expiresAt,
       invitedByUser: currentUser,
@@ -375,9 +409,20 @@ export class OrganizationsService {
 
     await this.invitationRepository.save(invitation);
 
-    // TODO: Send invitation email
+    // Send invitation email
+    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    const acceptUrl = `${appUrl}/de/invitations/${token}`;
+    const inviterName = `${currentUser.firstName} ${currentUser.lastName}`.trim() || currentUser.email;
+
+    await this.emailService.sendInvitationEmail(
+      createDto.email,
+      organization.name,
+      inviterName,
+      acceptUrl,
+      createDto.role,
+    );
+
     this.logger.log(`Invitation created for ${createDto.email} to organization ${organizationId}`);
-    this.logger.log(`Invitation link: /invitations/${token}/accept`);
 
     return invitation;
   }
@@ -386,10 +431,10 @@ export class OrganizationsService {
     organizationId: string,
     user: User,
   ): Promise<Invitation[]> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user, 'members');
 
     return this.invitationRepository.find({
-      where: { organizationId },
+      where: { organizationId, acceptedAt: IsNull() },
       relations: ['invitedByUser'],
       order: { createdAt: 'DESC' },
     });
@@ -400,7 +445,7 @@ export class OrganizationsService {
     invitationId: string,
     user: User,
   ): Promise<void> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkPermission(organizationId, user, 'members');
 
     const invitation = await this.invitationRepository.findOne({
       where: { id: invitationId, organizationId },
@@ -416,6 +461,54 @@ export class OrganizationsService {
     await this.invitationRepository.remove(invitation);
 
     this.logger.log(`Invitation cancelled: ${invitationId}`);
+  }
+
+  async resendInvitation(
+    organizationId: string,
+    invitationId: string,
+    currentUser: User,
+  ): Promise<void> {
+    await this.checkPermission(organizationId, currentUser, 'members');
+
+    const invitation = await this.invitationRepository.findOne({
+      where: { id: invitationId, organizationId },
+      relations: ['organization'],
+    });
+
+    if (!invitation) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Einladung nicht gefunden',
+      });
+    }
+
+    if (invitation.isExpired()) {
+      throw new BadRequestException({
+        code: ErrorCodes.INVITATION_EXPIRED,
+        message: 'Einladung ist abgelaufen',
+      });
+    }
+
+    if (invitation.isAccepted()) {
+      throw new BadRequestException({
+        code: ErrorCodes.CONFLICT,
+        message: 'Einladung wurde bereits angenommen',
+      });
+    }
+
+    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    const acceptUrl = `${appUrl}/de/invitations/${invitation.token}`;
+    const inviterName = `${currentUser.firstName} ${currentUser.lastName}`.trim() || currentUser.email;
+
+    await this.emailService.sendInvitationEmail(
+      invitation.email,
+      invitation.organization.name,
+      inviterName,
+      acceptUrl,
+      invitation.role,
+    );
+
+    this.logger.log(`Invitation resent: ${invitationId} to ${invitation.email}`);
   }
 
   async getInvitationByToken(token: string): Promise<Invitation> {
@@ -476,12 +569,12 @@ export class OrganizationsService {
     await queryRunner.startTransaction();
 
     try {
-      // Create membership
+      // Create membership with permissions from invitation
       const userOrganization = this.userOrganizationRepository.create({
         organizationId: invitation.organizationId,
         userId: user.id,
         role: invitation.role,
-        permissions: {},
+        permissions: invitation.permissions || {},
       });
       await queryRunner.manager.save(userOrganization);
 
@@ -523,9 +616,13 @@ export class OrganizationsService {
   }
 
   // Helper methods
-  private async checkMembership(organizationId: string, userId: string): Promise<UserOrganization> {
+  async checkMembership(organizationId: string, user: User): Promise<UserOrganization> {
+    if (user.isSuperAdmin) {
+      return { role: OrganizationRole.ADMIN } as UserOrganization;
+    }
+
     const membership = await this.userOrganizationRepository.findOne({
-      where: { organizationId, userId },
+      where: { organizationId, userId: user.id },
     });
 
     if (!membership) {
@@ -538,22 +635,46 @@ export class OrganizationsService {
     return membership;
   }
 
-  private async checkRole(
+  async checkRole(
     organizationId: string,
-    userId: string,
+    user: User,
     requiredRole: OrganizationRole,
   ): Promise<UserOrganization> {
-    const membership = await this.checkMembership(organizationId, userId);
+    const membership = await this.checkMembership(organizationId, user);
 
     const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
+      [OrganizationRole.ADMIN]: 80,
+      [OrganizationRole.MEMBER]: 20,
     };
 
     if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Keine ausreichenden Berechtigungen',
+      });
+    }
+
+    return membership;
+  }
+
+  /**
+   * Check if user is admin or has a specific module permission.
+   * Admins always pass. Members need the specific permission to be true.
+   */
+  async checkPermission(
+    organizationId: string,
+    user: User,
+    permission: keyof OrganizationPermissions,
+  ): Promise<UserOrganization> {
+    const membership = await this.checkMembership(organizationId, user);
+
+    // Admins have all permissions
+    if (membership.role === OrganizationRole.ADMIN) {
+      return membership;
+    }
+
+    // Members need the specific permission
+    if (!membership.permissions?.[permission]) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',
@@ -573,7 +694,7 @@ export class OrganizationsService {
       return { role: OrganizationRole.ADMIN } as UserOrganization;
     }
 
-    const membership = await this.checkMembership(organizationId, user.id);
+    const membership = await this.checkMembership(organizationId, user);
 
     if (!allowedRoles.includes(membership.role)) {
       throw new ForbiddenException({
@@ -583,6 +704,23 @@ export class OrganizationsService {
     }
 
     return membership;
+  }
+
+  private sanitizeOrganization(organization: Organization): Organization {
+    if (organization.settings?.sumup) {
+      const sumup = { ...organization.settings.sumup };
+      if (sumup.apiKey) {
+        sumup.apiKey = `****${sumup.apiKey.slice(-4)}`;
+      }
+      if (sumup.affiliateKey) {
+        sumup.affiliateKey = `****${sumup.affiliateKey.slice(-4)}`;
+      }
+      organization.settings = {
+        ...organization.settings,
+        sumup,
+      };
+    }
+    return organization;
   }
 
   private async generateSlug(name: string): Promise<string> {

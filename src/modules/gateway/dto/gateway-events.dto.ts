@@ -79,6 +79,28 @@ export interface PrinterHeartbeatEvent {
   isOnline: boolean;
 }
 
+// Printer Agent Events (Server -> Agent)
+export interface PrinterJobEvent {
+  jobId: string;
+  printerId: string;
+  templateName: string;
+  copies: number;
+  payload: Record<string, unknown>;
+}
+
+// Printer Agent Events (Agent -> Server)
+export interface PrinterJobCompleteEvent {
+  jobId: string;
+  agentId: string;
+}
+
+export interface PrinterJobFailedEvent {
+  jobId: string;
+  agentId: string;
+  errorCode: string;
+  errorMessage: string;
+}
+
 export interface BroadcastMessageEvent {
   id: string;
   message: string;
@@ -215,6 +237,8 @@ export const GatewayEvents = {
   LEAVE_ROOM: 'leaveRoom',
   DEVICE_HEARTBEAT: 'deviceHeartbeat',
   PRINTER_HEARTBEAT: 'printerHeartbeat',
+  PRINTER_JOB_COMPLETE: 'printerJobComplete',
+  PRINTER_JOB_FAILED: 'printerJobFailed',
 
   // Server to Client
   ORDER_CREATED: 'orderCreated',
@@ -223,6 +247,7 @@ export const GatewayEvents = {
   PAYMENT_RECEIVED: 'paymentReceived',
   PRINT_JOB_CREATED: 'printJobCreated',
   PRINT_JOB_STATUS_CHANGED: 'printJobStatusChanged',
+  PRINTER_JOB: 'printerJob',
   BROADCAST_MESSAGE: 'broadcastMessage',
 
   // Menu Display Events

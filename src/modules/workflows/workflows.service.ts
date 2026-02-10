@@ -55,7 +55,7 @@ export class WorkflowsService {
     createDto: CreateWorkflowDto,
     user: User,
   ): Promise<Workflow> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkAdmin(organizationId, user.id);
 
     const workflow = this.workflowRepository.create({
       organizationId,
@@ -118,7 +118,7 @@ export class WorkflowsService {
     updateDto: UpdateWorkflowDto,
     user: User,
   ): Promise<Workflow> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkAdmin(organizationId, user.id);
 
     const workflow = await this.findOne(organizationId, workflowId, user);
 
@@ -138,7 +138,7 @@ export class WorkflowsService {
   }
 
   async remove(organizationId: string, workflowId: string, user: User): Promise<void> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkAdmin(organizationId, user.id);
 
     const workflow = await this.findOne(organizationId, workflowId, user);
 
@@ -158,7 +158,7 @@ export class WorkflowsService {
     workflowId: string,
     user: User,
   ): Promise<Workflow> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkAdmin(organizationId, user.id);
 
     const workflow = await this.findOne(organizationId, workflowId, user);
 
@@ -183,7 +183,7 @@ export class WorkflowsService {
     workflowId: string,
     user: User,
   ): Promise<Workflow> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.ADMIN);
+    await this.checkAdmin(organizationId, user.id);
 
     const workflow = await this.findOne(organizationId, workflowId, user);
     workflow.isActive = false;
@@ -200,7 +200,7 @@ export class WorkflowsService {
     testDto: TestWorkflowDto,
     user: User,
   ): Promise<WorkflowRun> {
-    await this.checkRole(organizationId, user.id, OrganizationRole.MANAGER);
+    await this.checkAdmin(organizationId, user.id);
 
     const workflow = await this.findOne(organizationId, workflowId, user);
 
@@ -388,11 +388,7 @@ export class WorkflowsService {
     }
   }
 
-  private async checkRole(
-    organizationId: string,
-    userId: string,
-    requiredRole: OrganizationRole,
-  ): Promise<void> {
+  private async checkAdmin(organizationId: string, userId: string): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });
@@ -404,15 +400,7 @@ export class WorkflowsService {
       });
     }
 
-    const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
-    };
-
-    if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
+    if (membership.role !== OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

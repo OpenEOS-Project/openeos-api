@@ -34,7 +34,7 @@ export class CategoriesService {
     createDto: CreateCategoryDto,
     user: User,
   ): Promise<Category> {
-    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
+    const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
 
     const category = this.categoryRepository.create({
       eventId: event.id,
@@ -89,7 +89,7 @@ export class CategoriesService {
     updateDto: UpdateCategoryDto,
     user: User,
   ): Promise<Category> {
-    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
+    const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
 
     const category = await this.findOne(eventId, categoryId, user);
     Object.assign(category, updateDto);
@@ -109,7 +109,7 @@ export class CategoriesService {
   }
 
   async remove(eventId: string, categoryId: string, user: User): Promise<void> {
-    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.ADMIN);
+    const event = await this.getEventAndCheckAdmin(eventId, user.id);
 
     const category = await this.findOne(eventId, categoryId, user);
     await this.categoryRepository.remove(category);
@@ -125,7 +125,7 @@ export class CategoriesService {
     reorderDto: ReorderCategoriesDto,
     user: User,
   ): Promise<void> {
-    const event = await this.getEventAndCheckRole(eventId, user.id, OrganizationRole.MANAGER);
+    const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
 
     for (let i = 0; i < reorderDto.categoryIds.length; i++) {
       await this.categoryRepository.update(
@@ -172,10 +172,10 @@ export class CategoriesService {
     return event;
   }
 
-  private async getEventAndCheckRole(
+  private async getEventAndCheckPermission(
     eventId: string,
     userId: string,
-    requiredRole: OrganizationRole,
+    permission: 'products' | 'events' | 'devices' | 'members' | 'shiftPlans',
   ): Promise<Event> {
     const event = await this.getEvent(eventId);
 
@@ -190,15 +190,34 @@ export class CategoriesService {
       });
     }
 
-    const roleHierarchy: Record<OrganizationRole, number> = {
-      [OrganizationRole.ADMIN]: 100,
-      [OrganizationRole.MANAGER]: 80,
-      [OrganizationRole.CASHIER]: 40,
-      [OrganizationRole.KITCHEN]: 20,
-      [OrganizationRole.DELIVERY]: 20,
-    };
+    if (membership.role !== OrganizationRole.ADMIN && !membership.permissions?.[permission]) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Keine ausreichenden Berechtigungen',
+      });
+    }
 
-    if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
+    return event;
+  }
+
+  private async getEventAndCheckAdmin(
+    eventId: string,
+    userId: string,
+  ): Promise<Event> {
+    const event = await this.getEvent(eventId);
+
+    const membership = await this.userOrganizationRepository.findOne({
+      where: { organizationId: event.organizationId, userId },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Kein Zugriff auf dieses Event',
+      });
+    }
+
+    if (membership.role !== OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

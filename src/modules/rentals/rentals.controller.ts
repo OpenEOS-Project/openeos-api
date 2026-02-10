@@ -24,7 +24,7 @@ export class RentalsController {
   constructor(private readonly rentalsService: RentalsService) {}
 
   @Get()
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async findAll(
     @CurrentOrganization() organization: Organization,
     @Query() queryDto: QueryRentalsDto,
@@ -42,7 +42,7 @@ export class RentalsController {
   }
 
   @Get('active')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getActiveRentals(@CurrentOrganization() organization: Organization) {
     const rentals = await this.rentalsService.getActiveRentals(organization.id);
     return {
@@ -51,7 +51,7 @@ export class RentalsController {
   }
 
   @Get('upcoming')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async getUpcomingRentals(@CurrentOrganization() organization: Organization) {
     const rentals = await this.rentalsService.getUpcomingRentals(organization.id);
     return {
@@ -60,7 +60,7 @@ export class RentalsController {
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.MANAGER)
+  @Roles(Role.ADMIN)
   async findOne(
     @CurrentOrganization() organization: Organization,
     @Param('id') id: string,

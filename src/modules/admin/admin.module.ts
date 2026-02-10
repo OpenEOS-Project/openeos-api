@@ -14,7 +14,9 @@ import {
   Order,
 } from '../../database/entities';
 import { AdminController } from './admin.controller';
+import { PricingPublicController } from './pricing-public.controller';
 import { AdminService } from './admin.service';
+import { StripeModule } from '../stripe/stripe.module';
 
 @Module({
   imports: [
@@ -31,8 +33,9 @@ import { AdminService } from './admin.service';
       Event,
       Order,
     ]),
+    StripeModule,
   ],
-  controllers: [AdminController],
+  controllers: [AdminController, PricingPublicController],
   providers: [AdminService],
   exports: [AdminService],
 })

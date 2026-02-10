@@ -575,6 +575,66 @@ export class StripeService {
   }
 
   /**
+   * Sync subscription config to Stripe
+   */
+  async syncSubscriptionToStripe(): Promise<void> {
+    const stripe = this.ensureStripeConfigured();
+
+    const config = await this.subscriptionConfigRepository.findOne({
+      where: { isActive: true },
+    });
+
+    if (!config) return;
+
+    if (config.stripeProductId) {
+      // Update existing product
+      await stripe.products.update(config.stripeProductId, {
+        name: config.name,
+        description: config.description || undefined,
+        active: config.isActive,
+      });
+
+      if (config.stripePriceId) {
+        const currentPrice = await stripe.prices.retrieve(config.stripePriceId);
+        const currentAmount = currentPrice.unit_amount || 0;
+
+        if (currentAmount !== Math.round(Number(config.priceMonthly) * 100)) {
+          await stripe.prices.update(config.stripePriceId, { active: false });
+
+          const newPrice = await stripe.prices.create({
+            product: config.stripeProductId,
+            unit_amount: Math.round(Number(config.priceMonthly) * 100),
+            currency: 'eur',
+            recurring: { interval: 'month' },
+          });
+
+          config.stripePriceId = newPrice.id;
+          await this.subscriptionConfigRepository.save(config);
+        }
+      }
+    } else {
+      const product = await stripe.products.create({
+        name: config.name,
+        description: config.description || undefined,
+        metadata: { subscriptionConfigId: config.id },
+      });
+
+      const price = await stripe.prices.create({
+        product: product.id,
+        unit_amount: Math.round(Number(config.priceMonthly) * 100),
+        currency: 'eur',
+        recurring: { interval: 'month' },
+      });
+
+      config.stripeProductId = product.id;
+      config.stripePriceId = price.id;
+      await this.subscriptionConfigRepository.save(config);
+    }
+
+    this.logger.log('Synced subscription config to Stripe');
+  }
+
+  /**
    * Verify webhook signature
    */
   verifyWebhookSignature(
