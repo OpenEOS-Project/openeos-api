@@ -20,13 +20,15 @@ export class CreateEventDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ example: '2024-07-15T10:00:00.000Z', description: 'Startdatum und -zeit des Events' })
+  @ApiPropertyOptional({ example: '2024-07-15T10:00:00.000Z', description: 'Startdatum und -zeit des Events (optional, nur zur Information)' })
+  @IsOptional()
   @IsDateString({}, { message: 'Ungültiges Startdatum' })
-  startDate: string;
+  startDate?: string;
 
-  @ApiProperty({ example: '2024-07-15T22:00:00.000Z', description: 'Enddatum und -zeit des Events' })
+  @ApiPropertyOptional({ example: '2024-07-15T22:00:00.000Z', description: 'Enddatum und -zeit des Events (optional, nur zur Information)' })
+  @IsOptional()
   @IsDateString({}, { message: 'Ungültiges Enddatum' })
-  endDate: string;
+  endDate?: string;
 
   @ApiPropertyOptional({ example: { allowOnlineOrders: true, requireTableNumber: false }, description: 'Event-Einstellungen' })
   @IsOptional()

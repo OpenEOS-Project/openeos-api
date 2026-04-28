@@ -37,6 +37,9 @@ export class UserOrganization extends BaseEntity {
   @Column({ type: 'jsonb', default: {} })
   permissions: OrganizationPermissions;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  pin: string | null;
+
   // Relations
   @ManyToOne(() => User, (user) => user.userOrganizations, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })

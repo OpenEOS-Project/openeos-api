@@ -17,8 +17,9 @@ import {
   UserOrganization,
   StockMovement,
   Event,
+  ProductionStation,
 } from '../../database/entities';
-import { OrderStatus, PaymentStatus, OrderSource } from '../../database/entities/order.entity';
+import { OrderStatus, PaymentStatus, OrderSource, OrderFulfillmentType } from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import { EventStatus } from '../../database/entities/event.entity';
@@ -33,7 +34,8 @@ import {
   QueryOrdersDto,
   CancelOrderDto,
 } from './dto';
-import { WorkflowsService, WorkflowTriggerTypes } from '../workflows/workflows.service';
+import { OrderPrintService } from '../print-jobs/order-print.service';
+import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
@@ -53,7 +55,10 @@ export class OrdersService {
     private readonly stockMovementRepository: Repository<StockMovement>,
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
-    private readonly workflowsService: WorkflowsService,
+    @InjectRepository(ProductionStation)
+    private readonly productionStationRepository: Repository<ProductionStation>,
+    private readonly orderPrintService: OrderPrintService,
+    private readonly printJobsService: PrintJobsService,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
   ) {}
@@ -78,7 +83,7 @@ export class OrdersService {
         });
       }
 
-      if (event.status !== EventStatus.ACTIVE && event.status !== EventStatus.DRAFT && event.status !== EventStatus.SCHEDULED) {
+      if (event.status !== EventStatus.ACTIVE && event.status !== EventStatus.TEST) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
           message: 'Event ist nicht aktiv',
@@ -101,6 +106,7 @@ export class OrdersService {
       notes: createDto.notes || null,
       priority: createDto.priority || undefined,
       source: createDto.source || OrderSource.POS,
+      fulfillmentType: createDto.fulfillmentType || OrderFulfillmentType.COUNTER_PICKUP,
       createdByUserId: user.id,
       status: OrderStatus.OPEN,
       paymentStatus: PaymentStatus.UNPAID,
@@ -120,9 +126,9 @@ export class OrdersService {
 
     this.logger.log(`Order created: ${order.orderNumber} (${order.id})`);
 
-    // Trigger workflows asynchronously
+    // Trigger auto-printing asynchronously
     const createdOrder = await this.findOne(organizationId, order.id, user);
-    this.workflowsService.triggerWorkflows(organizationId, WorkflowTriggerTypes.ORDER_CREATED, {
+    this.orderPrintService.handleOrderCreated(organizationId, {
       order: createdOrder,
       orderId: createdOrder.id,
       orderNumber: createdOrder.orderNumber,
@@ -130,33 +136,26 @@ export class OrdersService {
       total: createdOrder.total,
       source: createdOrder.source,
     }).catch((error) => {
-      this.logger.error(`Failed to trigger workflows for order ${order.id}: ${error.message}`);
+      this.logger.error(`Failed to trigger auto-printing for order ${order.id}: ${error.message}`);
     });
 
-    // Notify kitchen displays if there are items
+    // Print station tickets for new order items
     if (createdOrder.items && createdOrder.items.length > 0) {
-      this.gatewayService.notifyKitchenNewOrder(
-        organizationId,
-        {
-          id: createdOrder.id,
-          orderNumber: createdOrder.orderNumber,
-          dailyNumber: createdOrder.dailyNumber,
-          tableNumber: createdOrder.tableNumber || undefined,
-          customerName: createdOrder.customerName || undefined,
-          priority: createdOrder.priority,
-          createdAt: createdOrder.createdAt.toISOString(),
-        },
-        createdOrder.items.map((item) => ({
-          id: item.id,
-          productName: item.productName,
-          categoryName: item.categoryName,
-          quantity: item.quantity,
-          status: item.status,
-          notes: item.notes || undefined,
-          kitchenNotes: item.kitchenNotes || undefined,
-          options: item.options,
-        })),
-      );
+      const itemsByStation = new Map<string | null, typeof createdOrder.items>();
+      for (const item of createdOrder.items) {
+        const key = item.productionStationId || null;
+        if (!itemsByStation.has(key)) itemsByStation.set(key, []);
+        itemsByStation.get(key)!.push(item);
+      }
+
+      for (const [stationId, items] of itemsByStation) {
+        if (stationId) {
+          const station = await this.productionStationRepository.findOne({ where: { id: stationId } });
+          if (station && station.printerId) {
+            this.printToStation(organizationId, station, createdOrder, items);
+          }
+        }
+      }
     }
 
     return createdOrder;
@@ -190,6 +189,10 @@ export class OrdersService {
 
     if (query.source) {
       queryBuilder.andWhere('ord.source = :source', { source: query.source });
+    }
+
+    if (query.fulfillmentType) {
+      queryBuilder.andWhere('ord.fulfillmentType = :fulfillmentType', { fulfillmentType: query.fulfillmentType });
     }
 
     if (query.dateFrom) {
@@ -378,6 +381,21 @@ export class OrdersService {
             'Bestellungsänderung',
             user.id,
           );
+
+          // Notify POS terminals about stock change
+          const event = await this.eventRepository.findOne({ where: { id: order.eventId! } });
+          if (event) {
+            this.gatewayService.notifyProductUpdated(event.organizationId, event.id, {
+              id: product.id,
+              name: product.name,
+              categoryId: product.categoryId,
+              price: Number(product.price),
+              isAvailable: product.isAvailable,
+              isActive: product.isActive,
+              stockQuantity: product.stockQuantity,
+              trackInventory: product.trackInventory,
+            });
+          }
         }
       }
 
@@ -472,49 +490,49 @@ export class OrdersService {
       });
     }
 
-    const previousStatus = item.status;
-    item.status = OrderItemStatus.READY;
-    item.readyAt = new Date();
-    await this.orderItemRepository.save(item);
-    await this.updateOrderStatus(order.id);
+    return this.processItemReady(organizationId, order, item);
+  }
 
-    this.logger.log(`Item marked ready: ${item.id} in order ${order.orderNumber}`);
-
-    // Notify kitchen displays about item status change
-    this.gatewayService.notifyKitchenItemStatus(organizationId, {
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      itemId: item.id,
-      productName: item.productName,
-      status: item.status,
-      previousStatus,
+  async markItemReadyFromDevice(organizationId: string, itemId: string): Promise<Order> {
+    const item = await this.orderItemRepository.findOne({
+      where: { id: itemId },
+      relations: ['order'],
     });
 
-    // Check if all items are ready
-    const updatedOrder = await this.findOne(organizationId, orderId, user);
-    const activeItems = updatedOrder.items.filter(i => i.status !== OrderItemStatus.CANCELLED);
-    const allReady = activeItems.length > 0 && activeItems.every(i => i.status === OrderItemStatus.READY || i.status === OrderItemStatus.DELIVERED);
-
-    if (allReady) {
-      // Notify pickup display (personal)
-      this.gatewayService.notifyPickupOrderReady(organizationId, {
-        orderId: updatedOrder.id,
-        orderNumber: updatedOrder.orderNumber,
-        dailyNumber: updatedOrder.dailyNumber,
-        customerName: updatedOrder.customerName || undefined,
-        tableNumber: updatedOrder.tableNumber || undefined,
-        itemCount: activeItems.length,
+    if (!item) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Bestellposition nicht gefunden',
       });
-
-      // Notify customer display (public)
-      this.gatewayService.notifyCustomerOrderReady(
-        organizationId,
-        updatedOrder.orderNumber,
-        updatedOrder.dailyNumber,
-      );
     }
 
-    return updatedOrder;
+    if (!item.order || item.order.organizationId !== organizationId) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Kein Zugriff auf diese Bestellung',
+      });
+    }
+
+    if (item.status === OrderItemStatus.CANCELLED) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Stornierte Position kann nicht als fertig markiert werden',
+      });
+    }
+
+    const order = await this.orderRepository.findOne({
+      where: { id: item.order.id, organizationId },
+      relations: ['items', 'items.product', 'event'],
+    });
+
+    if (!order) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Bestellung nicht gefunden',
+      });
+    }
+
+    return this.processItemReady(organizationId, order, item);
   }
 
   async markItemDelivered(
@@ -548,18 +566,12 @@ export class OrdersService {
     const allDelivered = activeItems.length > 0 && activeItems.every(i => i.status === OrderItemStatus.DELIVERED);
 
     if (allDelivered) {
-      // Notify pickup display that order is collected
-      this.gatewayService.notifyPickupOrderCollected(
-        organizationId,
-        updatedOrder.id,
-        updatedOrder.orderNumber,
-      );
-
-      // Notify customer display to remove order
-      this.gatewayService.notifyCustomerOrderCollected(
-        organizationId,
-        updatedOrder.orderNumber,
-      );
+      // Auto-complete if all delivered and fully paid
+      if (updatedOrder.paymentStatus === PaymentStatus.PAID) {
+        updatedOrder.status = OrderStatus.COMPLETED;
+        updatedOrder.completedAt = new Date();
+        await this.orderRepository.save(updatedOrder);
+      }
     }
 
     return updatedOrder;
@@ -573,13 +585,6 @@ export class OrdersService {
     await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
-
-    // Notify customer display to highlight/blink this order
-    this.gatewayService.notifyCustomerOrderCalled(
-      organizationId,
-      order.orderNumber,
-      order.dailyNumber,
-    );
 
     this.logger.log(`Order called: ${order.orderNumber}`);
 
@@ -622,7 +627,9 @@ export class OrdersService {
 
     this.logger.log(`Order completed: ${order.orderNumber}`);
 
-    return this.findOne(organizationId, orderId, user);
+    const completedOrder = await this.findOne(organizationId, orderId, user);
+
+    return completedOrder;
   }
 
   async cancelOrder(
@@ -662,19 +669,6 @@ export class OrdersService {
     await this.orderRepository.save(order);
 
     this.logger.log(`Order cancelled: ${order.orderNumber}`);
-
-    // Notify kitchen displays
-    this.gatewayService.notifyKitchenOrderCancelled(
-      organizationId,
-      order.id,
-      order.orderNumber,
-    );
-
-    // Notify customer display to remove order (if it was showing)
-    this.gatewayService.notifyCustomerOrderCollected(
-      organizationId,
-      order.orderNumber,
-    );
 
     return this.findOne(organizationId, orderId, user);
   }
@@ -728,6 +722,9 @@ export class OrdersService {
       where: { orderId: order.id },
     });
 
+    // Resolve production station: product overrides category
+    const productionStationId = product.productionStationId || product.category?.productionStationId || null;
+
     const item = this.orderItemRepository.create({
       orderId: order.id,
       productId: product.id,
@@ -744,6 +741,7 @@ export class OrdersService {
       kitchenNotes: itemDto.kitchenNotes || null,
       status: OrderItemStatus.PENDING,
       sortOrder: existingItems,
+      productionStationId,
     });
 
     await this.orderItemRepository.save(item);
@@ -766,6 +764,21 @@ export class OrdersService {
         'Bestellung',
         user.id,
       );
+
+      // Notify POS terminals about stock change
+      const event = await this.eventRepository.findOne({ where: { id: order.eventId! } });
+      if (event) {
+        this.gatewayService.notifyProductUpdated(event.organizationId, event.id, {
+          id: product.id,
+          name: product.name,
+          categoryId: product.categoryId,
+          price: Number(product.price),
+          isAvailable: product.isAvailable,
+          isActive: product.isActive,
+          stockQuantity: product.stockQuantity,
+          trackInventory: product.trackInventory,
+        });
+      }
     }
 
     return item;
@@ -798,6 +811,21 @@ export class OrdersService {
           'Stornierung',
           userId,
         );
+
+        // Notify POS terminals about stock restoration
+        const event = await this.eventRepository.findOne({ where: { id: order.eventId! } });
+        if (event) {
+          this.gatewayService.notifyProductUpdated(event.organizationId, event.id, {
+            id: product.id,
+            name: product.name,
+            categoryId: product.categoryId,
+            price: Number(product.price),
+            isAvailable: product.isAvailable,
+            isActive: product.isActive,
+            stockQuantity: product.stockQuantity,
+            trackInventory: product.trackInventory,
+          });
+        }
       }
     }
   }
@@ -827,6 +855,71 @@ export class OrdersService {
       createdByUserId: userId,
     });
     await this.stockMovementRepository.save(movement);
+  }
+
+  private async processItemReady(organizationId: string, order: Order, item: OrderItem): Promise<Order> {
+    const previousStatus = item.status;
+    item.status = OrderItemStatus.READY;
+    item.readyAt = new Date();
+    await this.orderItemRepository.save(item);
+
+    this.logger.log(`Item marked ready: ${item.id} in order ${order.orderNumber}`);
+
+    await this.updateOrderStatus(order.id);
+
+    return this.reloadOrder(organizationId, order.id);
+  }
+
+  private async reloadOrder(organizationId: string, orderId: string): Promise<Order> {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId, organizationId },
+      relations: ['items', 'items.product', 'createdByUser', 'event'],
+    });
+
+    if (!order) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Bestellung nicht gefunden',
+      });
+    }
+
+    return order;
+  }
+
+  private async printToStation(
+    organizationId: string,
+    station: ProductionStation,
+    order: Order,
+    items: OrderItem[],
+  ): Promise<void> {
+    if (!station.printerId) return;
+
+    try {
+      await this.printJobsService.createFromWorkflow(
+        organizationId,
+        station.printerId,
+        null,
+        order.id,
+        1,
+        {
+          order,
+          orderNumber: order.orderNumber,
+          dailyNumber: order.dailyNumber,
+          tableNumber: order.tableNumber,
+          stationName: station.name,
+          items: items.map((i) => ({
+            productName: i.productName,
+            categoryName: i.categoryName,
+            quantity: i.quantity,
+            notes: i.notes,
+            kitchenNotes: i.kitchenNotes,
+            options: i.options,
+          })),
+        },
+      );
+    } catch (err) {
+      this.logger.error(`Station printing failed for ${station.name}: ${err.message}`);
+    }
   }
 
   private async recalculateOrderTotals(orderId: string): Promise<void> {

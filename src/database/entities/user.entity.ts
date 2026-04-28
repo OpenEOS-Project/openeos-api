@@ -7,8 +7,6 @@ import { Order } from './order.entity';
 import { Payment } from './payment.entity';
 import { StockMovement } from './stock-movement.entity';
 import { InventoryCount } from './inventory-count.entity';
-import { CreditPurchase } from './credit-purchase.entity';
-import { EventLicense } from './event-license.entity';
 import { AdminAuditLog } from './admin-audit-log.entity';
 import { TrustedDevice } from './trusted-device.entity';
 import { EmailOtp } from './email-otp.entity';
@@ -120,12 +118,6 @@ export class User extends SoftDeleteEntity {
 
   @OneToMany(() => InventoryCount, (count) => count.completedByUser)
   completedInventoryCounts: InventoryCount[];
-
-  @OneToMany(() => CreditPurchase, (purchase) => purchase.purchasedByUser)
-  creditPurchases: CreditPurchase[];
-
-  @OneToMany(() => EventLicense, (license) => license.activatedByUser)
-  activatedEventLicenses: EventLicense[];
 
   @OneToMany(() => AdminAuditLog, (log) => log.adminUser)
   adminAuditLogs: AdminAuditLog[];

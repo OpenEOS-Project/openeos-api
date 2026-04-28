@@ -1,5 +1,6 @@
-import { Entity, Column, OneToMany, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
+import { Device } from './device.entity';
 import { RentalAssignment } from './rental-assignment.entity';
 
 export enum RentalHardwareType {
@@ -18,8 +19,8 @@ export interface RentalHardwareConfig {
   connectionType?: string;
   ipAddress?: string;
   port?: number;
-  paperWidth?: string;
-  agentId?: string;
+  paperWidth?: number;
+  printerType?: string;
   resolution?: string;
   size?: string;
   includesMount?: boolean;
@@ -57,7 +58,14 @@ export class RentalHardware extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
+  @Column({ name: 'device_id', type: 'uuid', nullable: true })
+  deviceId: string | null;
+
   // Relations
+  @ManyToOne(() => Device, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'device_id' })
+  device: Device | null;
+
   @OneToMany(() => RentalAssignment, (assignment) => assignment.rentalHardware)
   assignments: RentalAssignment[];
 }

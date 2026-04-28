@@ -3,17 +3,13 @@ import { BaseEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { Order } from './order.entity';
 import { Payment } from './payment.entity';
+import { Printer } from './printer.entity';
 import { User } from './user.entity';
 
 export enum DeviceType {
   POS = 'pos',
-  DISPLAY_KITCHEN = 'display_kitchen',
-  DISPLAY_DELIVERY = 'display_delivery',
-  DISPLAY_MENU = 'display_menu',
-  DISPLAY_PICKUP = 'display_pickup',
-  DISPLAY_SALES = 'display_sales',
-  DISPLAY_CUSTOMER = 'display_customer',
   ADMIN = 'admin',
+  PRINTER_AGENT = 'printer_agent',
 }
 
 export enum DeviceStatus {
@@ -22,11 +18,17 @@ export enum DeviceStatus {
   BLOCKED = 'blocked',
 }
 
+export type ServiceMode = 'table' | 'counter';
+export type PrinterMode = 'device' | 'category' | 'product';
+
 export interface DeviceSettings {
   defaultPrinterId?: string;
   soundEnabled?: boolean;
   autoLogout?: number;
   sumupReaderId?: string;
+  serviceMode?: ServiceMode;
+  printerMode?: PrinterMode;
+  requirePin?: boolean;
   [key: string]: unknown;
 }
 
@@ -86,6 +88,9 @@ export class Device extends BaseEntity {
 
   @OneToMany(() => Payment, (payment) => payment.processedByDevice)
   processedPayments: Payment[];
+
+  @OneToMany(() => Printer, (printer) => printer.device)
+  printers: Printer[];
 
   // Helper methods
   isOnline(): boolean {

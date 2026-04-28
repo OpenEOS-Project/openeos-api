@@ -92,30 +92,28 @@ export class AppGateway
 
       if (deviceToken) {
         const device = await this.devicesService.findByToken(deviceToken as string);
-        if (device && device.organizationId) {
+        if (device) {
+          // Printer agents can connect without an organization (waiting for assignment)
+          const hasOrg = !!device.organizationId;
+
           client.device = {
             id: device.id,
-            organizationId: device.organizationId,
+            organizationId: device.organizationId || '',
             type: device.type,
           };
 
-          // Auto-join organization room
-          client.join(`org:${device.organizationId}`);
+          if (hasOrg) {
+            // Auto-join organization room
+            client.join(`org:${device.organizationId}`);
 
-          // Join display-type-specific room if device is a display
-          if (device.type.startsWith('display_')) {
-            const displayType = device.type.replace('display_', '');
-            client.join(`org:${device.organizationId}:display:${displayType}`);
-            this.logger.debug(`Device ${device.id} joined display room: org:${device.organizationId}:display:${displayType}`);
+            // Join device-specific room for targeted settings/config updates
+            client.join(`org:${device.organizationId}:device:${device.id}`);
           }
-
-          // Join device-specific room for targeted settings updates
-          client.join(`org:${device.organizationId}:device:${device.id}`);
 
           // Track connected device
           this.connectedDevices.set(device.id, {
             socketId: client.id,
-            organizationId: device.organizationId,
+            organizationId: device.organizationId || '',
             type: device.type,
           });
 
@@ -123,7 +121,7 @@ export class AppGateway
           await this.devicesService.updateLastSeen(deviceToken as string);
 
           this.logger.log(`Device connected: ${device.name} (${client.id}) - ${this.connectedDevices.size} devices online`);
-          client.emit(GatewayEvents.CONNECTED, { deviceId: device.id });
+          client.emit(GatewayEvents.CONNECTED, { deviceId: device.id, hasOrganization: hasOrg });
           return;
         }
       }
@@ -201,6 +199,9 @@ export class AppGateway
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() payload: PrinterHeartbeatEvent,
   ) {
+    if (!client.device) {
+      return { error: 'Not a device connection' };
+    }
     await this.printersService.updateOnlineStatus(payload.printerId, payload.isOnline);
     return { success: true };
   }
@@ -274,12 +275,6 @@ export class AppGateway
 
   emitToAll(event: string, data: unknown) {
     this.server.emit(event, data);
-  }
-
-  emitToDisplayType(organizationId: string, displayType: string, event: string, data: unknown) {
-    const roomName = `org:${organizationId}:display:${displayType}`;
-    this.server.to(roomName).emit(event, data);
-    this.logger.debug(`Emitted ${event} to room ${roomName}`);
   }
 
   emitToDevice(organizationId: string, deviceId: string, event: string, data: unknown) {

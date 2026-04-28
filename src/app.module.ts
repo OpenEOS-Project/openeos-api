@@ -18,7 +18,6 @@ import {
 import { JwtAuthGuard } from './common/guards';
 import { AuthModule } from './modules/auth';
 import { UsersModule } from './modules/users';
-import { StripeModule } from './modules/stripe';
 import { OrganizationsModule } from './modules/organizations';
 import { EventsModule } from './modules/events';
 import { CategoriesModule } from './modules/categories';
@@ -30,10 +29,8 @@ import { PrintersModule } from './modules/printers';
 import { PrintTemplatesModule } from './modules/print-templates';
 import { PrintJobsModule } from './modules/print-jobs';
 import { GatewayModule } from './modules/gateway';
-import { WorkflowsModule } from './modules/workflows';
 import { QrCodesModule } from './modules/qr-codes';
 import { OnlineOrdersModule } from './modules/online-orders';
-import { CreditsModule } from './modules/credits';
 import { InvoicesModule } from './modules/invoices';
 import { RentalsModule } from './modules/rentals';
 import { AdminModule } from './modules/admin';
@@ -45,6 +42,7 @@ import { SetupModule } from './modules/setup';
 import { EmailModule } from './modules/email';
 import { ShiftsModule } from './modules/shifts';
 import { SumUpModule } from './modules/sumup';
+import { ProductionStationsModule } from './modules/production-stations/production-stations.module';
 
 @Module({
   imports: [
@@ -115,7 +113,6 @@ import { SumUpModule } from './modules/sumup';
     // Feature Modules
     AuthModule,
     UsersModule,
-    StripeModule,
     OrganizationsModule,
     EventsModule,
     CategoriesModule,
@@ -127,10 +124,8 @@ import { SumUpModule } from './modules/sumup';
     PrintTemplatesModule,
     PrintJobsModule,
     GatewayModule,
-    WorkflowsModule,
     QrCodesModule,
     OnlineOrdersModule,
-    CreditsModule,
     InvoicesModule,
     RentalsModule,
     AdminModule,
@@ -142,6 +137,7 @@ import { SumUpModule } from './modules/sumup';
     EmailModule,
     ShiftsModule,
     SumUpModule,
+    ProductionStationsModule,
   ],
   controllers: [],
   providers: [

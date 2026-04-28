@@ -4,14 +4,13 @@ import {
   User,
   Organization,
   UserOrganization,
-  CreditPackage,
 } from '../../database/entities';
 import { SetupController } from './setup.controller';
 import { SetupService } from './setup.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Organization, UserOrganization, CreditPackage]),
+    TypeOrmModule.forFeature([User, Organization, UserOrganization]),
   ],
   controllers: [SetupController],
   providers: [SetupService],

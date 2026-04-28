@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Param,
+  Query,
   UseGuards,
   ParseUUIDPipe,
   BadRequestException,
@@ -16,6 +17,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, MoreThanOrEqual, In } from 'typeorm';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
 import { CurrentDevice } from '../../common/decorators';
+import { DevicesService } from './devices.service';
+import { VerifyPinDto } from './dto';
 import {
   Device,
   Event,
@@ -25,10 +28,15 @@ import {
   OrderItem,
   Payment,
   Organization,
+  Printer,
+  PrintTemplate,
+  StockMovement,
+  ProductionStation,
 } from '../../database/entities';
 import { EventStatus } from '../../database/entities/event.entity';
-import { OrderStatus, PaymentStatus, OrderSource } from '../../database/entities/order.entity';
+import { OrderStatus, PaymentStatus, OrderSource, OrderFulfillmentType } from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
+import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import {
   PaymentMethod,
   PaymentProvider,
@@ -36,8 +44,15 @@ import {
 } from '../../database/entities/payment.entity';
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { DeviceSettings } from '../../database/entities/device.entity';
 import { CreateOrderDto } from '../orders/dto';
 import { CreatePaymentDto } from '../payments/dto';
+import { SumUpApiService } from '../sumup/sumup-api.service';
+import { PrintersService } from '../printers/printers.service';
+import { GatewayService } from '../gateway/gateway.service';
+import { OrderPrintService } from '../print-jobs/order-print.service';
+import { PrintJobsService } from '../print-jobs/print-jobs.service';
+import { OrdersService } from '../orders/orders.service';
 
 /**
  * Helper to ensure device has an organization.
@@ -80,6 +95,21 @@ export class DeviceApiController {
     private readonly orderItemRepository: Repository<OrderItem>,
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
+    @InjectRepository(PrintTemplate)
+    private readonly printTemplateRepository: Repository<PrintTemplate>,
+    @InjectRepository(Printer)
+    private readonly printerRepository: Repository<Printer>,
+    @InjectRepository(StockMovement)
+    private readonly stockMovementRepository: Repository<StockMovement>,
+    @InjectRepository(ProductionStation)
+    private readonly productionStationRepository: Repository<ProductionStation>,
+    private readonly sumupApiService: SumUpApiService,
+    private readonly devicesService: DevicesService,
+    private readonly printersService: PrintersService,
+    private readonly gatewayService: GatewayService,
+    private readonly orderPrintService: OrderPrintService,
+    private readonly printJobsService: PrintJobsService,
+    private readonly ordersService: OrdersService,
   ) {}
 
   @Get('organization')
@@ -107,6 +137,59 @@ export class DeviceApiController {
     };
   }
 
+  @Get('printers')
+  @ApiOperation({ summary: 'Get printer configurations assigned to this device' })
+  async getPrinters(@CurrentDevice() device: Device) {
+    const printers = await this.printersService.findByDeviceId(device.id);
+
+    return {
+      data: {
+        printers: printers.map((p) => ({
+          id: p.id,
+          name: p.name,
+          type: p.type,
+          connectionType: p.connectionType,
+          connectionConfig: p.connectionConfig,
+          paperWidth: p.paperWidth,
+          hasCashDrawer: p.hasCashDrawer,
+          isActive: p.isActive,
+        })),
+      },
+    };
+  }
+
+  @Get('templates')
+  @ApiOperation({ summary: 'Get print templates for this device' })
+  async getTemplates(@CurrentDevice() device: Device) {
+    const organizationId = requireOrganization(device);
+
+    const templates = await this.printTemplateRepository.find({
+      where: { organizationId },
+    });
+
+    const templateMap: Record<string, unknown> = {};
+    for (const t of templates) {
+      templateMap[t.type] = t.template;
+    }
+
+    return {
+      data: {
+        templates: templateMap,
+      },
+    };
+  }
+
+  @Post('verify-pin')
+  @ApiOperation({ summary: 'Verify a member PIN from device' })
+  async verifyPin(
+    @CurrentDevice() device: Device,
+    @Body() verifyPinDto: VerifyPinDto,
+  ) {
+    const organizationId = requireOrganization(device);
+    const result = await this.devicesService.verifyPin(organizationId, verifyPinDto.pin);
+    return { data: result };
+  }
+
   @Get('events')
   @ApiOperation({ summary: 'Get active events for device organization' })
   async getEvents(@CurrentDevice() device: Device) {
@@ -114,7 +197,7 @@ export class DeviceApiController {
     const events = await this.eventRepository.find({
       where: {
         organizationId,
-        status: In([EventStatus.ACTIVE, EventStatus.DRAFT, EventStatus.SCHEDULED]),
+        status: In([EventStatus.ACTIVE, EventStatus.INACTIVE, EventStatus.TEST]),
       },
       order: { startDate: 'ASC' },
     });
@@ -231,7 +314,7 @@ export class DeviceApiController {
         });
       }
 
-      if (event.status !== EventStatus.ACTIVE && event.status !== EventStatus.DRAFT && event.status !== EventStatus.SCHEDULED) {
+      if (event.status !== EventStatus.ACTIVE && event.status !== EventStatus.TEST) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
           message: 'Event ist nicht aktiv',
@@ -254,6 +337,9 @@ export class DeviceApiController {
       notes: createDto.notes || null,
       priority: createDto.priority || undefined,
       source: createDto.source || OrderSource.POS,
+      fulfillmentType: device.settings?.serviceMode === 'table'
+        ? OrderFulfillmentType.TABLE_SERVICE
+        : OrderFulfillmentType.COUNTER_PICKUP,
       createdByDeviceId: device.id,
       status: OrderStatus.OPEN,
       paymentStatus: PaymentStatus.UNPAID,
@@ -278,6 +364,46 @@ export class DeviceApiController {
       where: { id: order.id },
       relations: ['items'],
     });
+
+    // Print station tickets and notify admin order list
+    if (completeOrder && completeOrder.items && completeOrder.items.length > 0) {
+      // Group items by production station for printing
+      const itemsByStation = new Map<string | null, OrderItem[]>();
+      for (const item of completeOrder.items) {
+        const key = item.productionStationId || null;
+        if (!itemsByStation.has(key)) itemsByStation.set(key, []);
+        itemsByStation.get(key)!.push(item);
+      }
+
+      for (const [stationId, items] of itemsByStation) {
+        if (stationId) {
+          const station = await this.productionStationRepository.findOne({ where: { id: stationId } });
+          if (station && station.printerId) {
+            this.printToStation(organizationId, station, completeOrder, items);
+          }
+        }
+      }
+
+      // Notify admin order list
+      this.gatewayService.notifyOrderCreated(organizationId, completeOrder.eventId, {
+        id: completeOrder.id,
+        orderNumber: completeOrder.orderNumber,
+        dailyNumber: completeOrder.dailyNumber,
+        tableNumber: completeOrder.tableNumber || undefined,
+        customerName: completeOrder.customerName || undefined,
+        status: completeOrder.status,
+        fulfillmentType: completeOrder.fulfillmentType,
+        source: completeOrder.source,
+        items: completeOrder.items.map((item) => ({
+          id: item.id,
+          productName: item.productName,
+          quantity: item.quantity,
+          status: item.status,
+          notes: item.notes || undefined,
+          kitchenNotes: item.kitchenNotes || undefined,
+        })),
+      });
+    }
 
     return { data: completeOrder };
   }
@@ -344,13 +470,32 @@ export class DeviceApiController {
         await this.orderItemRepository.save(item);
       }
 
-      // Auto-complete the order
-      order.status = OrderStatus.COMPLETED;
-      order.completedAt = new Date();
-      await this.orderRepository.save(order);
+      // Only auto-complete if no active station workflow is running
+      const activeItems = order.items.filter(i => i.status !== OrderItemStatus.CANCELLED);
+      const allWorkflowDone = activeItems.every(i =>
+        !i.productionStationId || i.status === OrderItemStatus.DELIVERED,
+      );
+
+      if (allWorkflowDone) {
+        order.status = OrderStatus.COMPLETED;
+        order.completedAt = new Date();
+        await this.orderRepository.save(order);
+      }
     }
 
     this.logger.log(`Device payment created: ${payment.id} for order ${order.orderNumber}`);
+
+    // Auto-open cash drawer on cash payment
+    if (createDto.paymentMethod === PaymentMethod.CASH) {
+      try {
+        const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as string | undefined;
+        if (cashDrawerPrinterId) {
+          this.gatewayService.sendOpenCashDrawer(organizationId, cashDrawerPrinterId);
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to open cash drawer: ${e}`);
+      }
+    }
 
     return { data: payment };
   }
@@ -451,14 +596,488 @@ export class DeviceApiController {
     // Check if fully paid
     const isFullyPaid = Number(order.paidAmount) >= Number(order.total);
     if (isFullyPaid) {
-      order.status = OrderStatus.COMPLETED;
-      order.completedAt = new Date();
-      await this.orderRepository.save(order);
+      // Only auto-complete if no active station workflow is running
+      const activeItems = order.items.filter(i => i.status !== OrderItemStatus.CANCELLED);
+      const allWorkflowDone = activeItems.every(i =>
+        !i.productionStationId || i.status === OrderItemStatus.DELIVERED,
+      );
+
+      if (allWorkflowDone) {
+        order.status = OrderStatus.COMPLETED;
+        order.completedAt = new Date();
+        await this.orderRepository.save(order);
+      }
     }
 
     this.logger.log(`Device split payment created: ${payment.id} for order ${order.orderNumber}`);
 
+    // Auto-open cash drawer on cash payment
+    if (createDto.paymentMethod === PaymentMethod.CASH) {
+      try {
+        const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as string | undefined;
+        if (cashDrawerPrinterId) {
+          this.gatewayService.sendOpenCashDrawer(organizationId, cashDrawerPrinterId);
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to open cash drawer: ${e}`);
+      }
+    }
+
     return { data: payment };
+  }
+
+  // Cash Drawer
+
+  @Post('cash-drawer/open')
+  @ApiOperation({ summary: 'Open the cash drawer via configured printer' })
+  async openCashDrawer(@CurrentDevice() device: Device) {
+    const organizationId = requireOrganization(device);
+    const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as string | undefined;
+
+    if (!cashDrawerPrinterId) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Keine Kassenschublade konfiguriert',
+      });
+    }
+
+    const printer = await this.printerRepository.findOne({
+      where: { id: cashDrawerPrinterId, organizationId },
+    });
+
+    if (!printer) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Drucker nicht gefunden',
+      });
+    }
+
+    if (!printer.hasCashDrawer) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Drucker hat keine Kassenschublade',
+      });
+    }
+
+    if (!printer.isActive) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Drucker ist nicht aktiv',
+      });
+    }
+
+    this.gatewayService.sendOpenCashDrawer(organizationId, cashDrawerPrinterId);
+
+    return { data: { success: true } };
+  }
+
+  // SumUp endpoints
+
+  @Post('sumup/checkout')
+  @ApiOperation({ summary: 'Initiate SumUp checkout on linked card reader' })
+  async initiateSumupCheckout(
+    @CurrentDevice() device: Device,
+    @Body() body: { amount: number; currency?: string },
+  ) {
+    const organizationId = requireOrganization(device);
+    const readerId = device.settings?.sumupReaderId;
+    if (!readerId) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Kein Kartenleser mit diesem Gerät verknüpft',
+      });
+    }
+
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
+    if (!organization) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Organisation nicht gefunden',
+      });
+    }
+
+    const sumupSettings = (organization.settings as any)?.sumup;
+    if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'SumUp ist nicht für diese Organisation konfiguriert',
+      });
+    }
+
+    const result = await this.sumupApiService.initiateCheckout(
+      sumupSettings.apiKey,
+      sumupSettings.merchantCode,
+      readerId,
+      { amount: body.amount, currency: body.currency || 'EUR' },
+    );
+
+    return { data: result };
+  }
+
+  @Get('sumup/status')
+  @ApiOperation({ summary: 'Get SumUp reader/checkout status' })
+  async getSumupStatus(@CurrentDevice() device: Device) {
+    const organizationId = requireOrganization(device);
+    const readerId = device.settings?.sumupReaderId;
+    if (!readerId) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Kein Kartenleser mit diesem Gerät verknüpft',
+      });
+    }
+
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
+    if (!organization) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Organisation nicht gefunden',
+      });
+    }
+
+    const sumupSettings = (organization.settings as any)?.sumup;
+    if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'SumUp ist nicht für diese Organisation konfiguriert',
+      });
+    }
+
+    const result = await this.sumupApiService.getReaderStatus(
+      sumupSettings.apiKey,
+      sumupSettings.merchantCode,
+      readerId,
+    );
+
+    return { data: result };
+  }
+
+  @Post('sumup/terminate')
+  @ApiOperation({ summary: 'Terminate running SumUp checkout' })
+  async terminateSumupCheckout(@CurrentDevice() device: Device) {
+    const organizationId = requireOrganization(device);
+    const readerId = device.settings?.sumupReaderId;
+    if (!readerId) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Kein Kartenleser mit diesem Gerät verknüpft',
+      });
+    }
+
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
+    if (!organization) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Organisation nicht gefunden',
+      });
+    }
+
+    const sumupSettings = (organization.settings as any)?.sumup;
+    if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'SumUp ist nicht für diese Organisation konfiguriert',
+      });
+    }
+
+    await this.sumupApiService.terminateCheckout(
+      sumupSettings.apiKey,
+      sumupSettings.merchantCode,
+      readerId,
+    );
+
+    return { data: { success: true } };
+  }
+
+  // Order History & Management
+
+  @Get('orders')
+  @ApiOperation({ summary: 'Get all orders for device organization (paginated)' })
+  async getAllOrders(
+    @CurrentDevice() device: Device,
+    @Query('status') status?: string,
+    @Query('eventId') eventId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const organizationId = requireOrganization(device);
+
+    const pageNum = Math.max(1, parseInt(page || '1', 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit || '50', 10) || 50));
+    const skip = (pageNum - 1) * limitNum;
+
+    const where: any = { organizationId };
+
+    if (status) {
+      const validStatuses = Object.values(OrderStatus);
+      if (validStatuses.includes(status as OrderStatus)) {
+        where.status = status;
+      }
+    }
+
+    if (eventId) {
+      where.eventId = eventId;
+    }
+
+    const [orders, total] = await this.orderRepository.findAndCount({
+      where,
+      relations: ['items'],
+      order: { createdAt: 'DESC' },
+      skip,
+      take: limitNum,
+    });
+
+    return {
+      data: orders,
+      meta: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    };
+  }
+
+  @Post('orders/:orderId/cancel')
+  @ApiOperation({ summary: 'Cancel an order and restore stock' })
+  async cancelOrder(
+    @CurrentDevice() device: Device,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() body: { reason?: string },
+  ) {
+    const organizationId = requireOrganization(device);
+
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId, organizationId },
+      relations: ['items'],
+    });
+
+    if (!order) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Bestellung nicht gefunden',
+      });
+    }
+
+    if (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.CANCELLED) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Bestellung kann nicht storniert werden (bereits abgeschlossen oder storniert)',
+      });
+    }
+
+    // Restore stock for items with trackInventory
+    for (const item of order.items) {
+      if (item.status === OrderItemStatus.CANCELLED) continue;
+
+      const product = await this.productRepository.findOne({
+        where: { id: item.productId },
+      });
+
+      if (product && product.trackInventory) {
+        const quantityBefore = product.stockQuantity;
+        product.stockQuantity += item.quantity;
+        await this.productRepository.save(product);
+
+        // Create stock movement entry
+        const movement = this.stockMovementRepository.create({
+          eventId: order.eventId!,
+          productId: product.id,
+          type: StockMovementType.SALE_CANCELLED,
+          quantity: item.quantity,
+          quantityBefore,
+          quantityAfter: product.stockQuantity,
+          referenceType: 'order',
+          referenceId: order.id,
+          reason: body.reason || 'Order cancelled',
+          createdByUserId: null,
+        });
+        await this.stockMovementRepository.save(movement);
+
+        // Notify POS terminals about stock change
+        if (order.eventId) {
+          this.gatewayService.notifyProductUpdated(organizationId, order.eventId, {
+            id: product.id,
+            name: product.name,
+            categoryId: product.categoryId,
+            price: Number(product.price),
+            isAvailable: product.isAvailable,
+            isActive: product.isActive,
+            stockQuantity: product.stockQuantity,
+            trackInventory: product.trackInventory,
+          });
+        }
+      }
+
+      // Cancel the item
+      item.status = OrderItemStatus.CANCELLED;
+      await this.orderItemRepository.save(item);
+    }
+
+    // Update order status
+    order.status = OrderStatus.CANCELLED;
+    order.cancelledAt = new Date();
+    order.cancellationReason = body.reason || null;
+    await this.orderRepository.save(order);
+
+    // Gateway notifications
+    this.gatewayService.notifyOrderUpdated(organizationId, order.eventId, order.id, {
+      status: OrderStatus.CANCELLED,
+      cancelledAt: order.cancelledAt,
+    });
+
+    if (order.eventId) {
+      this.gatewayService.notifyKitchenOrderCancelled(
+        organizationId,
+        order.id,
+        order.orderNumber,
+      );
+    }
+
+    this.logger.log(`Order ${order.orderNumber} cancelled by device ${device.name}`);
+
+    return { data: order };
+  }
+
+  @Post('orders/:orderId/reprint')
+  @ApiOperation({ summary: 'Reprint tickets or receipt for an order' })
+  async reprintOrder(
+    @CurrentDevice() device: Device,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() body: { type?: 'tickets' | 'receipt' },
+  ) {
+    const organizationId = requireOrganization(device);
+
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId, organizationId },
+      relations: ['items'],
+    });
+
+    if (!order) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Bestellung nicht gefunden',
+      });
+    }
+
+    const printType = body.type || 'tickets';
+
+    if (printType === 'tickets') {
+      await this.orderPrintService.handleOrderCreated(organizationId, {
+        order,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        tableNumber: order.tableNumber,
+        total: Number(order.total),
+        source: order.source,
+      });
+    } else {
+      // Receipt: find the last payment for this order
+      const lastPayment = await this.paymentRepository.findOne({
+        where: { orderId: order.id },
+        order: { createdAt: 'DESC' },
+      });
+
+      if (!lastPayment) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          message: 'Keine Zahlung für diese Bestellung gefunden',
+        });
+      }
+
+      await this.orderPrintService.handlePaymentReceived(organizationId, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        paymentId: lastPayment.id,
+        amount: Number(lastPayment.amount),
+        paymentMethod: lastPayment.paymentMethod,
+        isFullyPaid: order.paymentStatus === PaymentStatus.PAID,
+        order,
+      });
+    }
+
+    this.logger.log(`Reprint (${printType}) for order ${order.orderNumber} by device ${device.name}`);
+
+    return { data: { success: true } };
+  }
+
+  // Station display endpoints
+
+  @Get('station/items')
+  @ApiOperation({ summary: 'Get open items for this device\'s station' })
+  async getStationItems(@CurrentDevice() device: Device) {
+    const organizationId = requireOrganization(device);
+    const stationId = device.settings?.stationId as string | undefined;
+
+    if (!stationId) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Keine Station konfiguriert',
+      });
+    }
+
+    // Query open items for this station
+    const items = await this.orderItemRepository
+      .createQueryBuilder('item')
+      .leftJoinAndSelect('item.order', 'ord')
+      .where('item.productionStationId = :stationId', { stationId })
+      .andWhere('item.status NOT IN (:...excludedStatuses)', { excludedStatuses: [OrderItemStatus.CANCELLED, OrderItemStatus.DELIVERED, OrderItemStatus.READY] })
+      .andWhere('ord.status NOT IN (:...excludedOrderStatuses)', { excludedOrderStatuses: [OrderStatus.CANCELLED, OrderStatus.COMPLETED] })
+      .andWhere('ord.organizationId = :organizationId', { organizationId })
+      .orderBy('ord.priority', 'DESC')
+      .addOrderBy('ord.createdAt', 'ASC')
+      .getMany();
+
+    // Group by order
+    const orderMap = new Map<string, { order: any; items: any[] }>();
+    for (const item of items) {
+      const orderId = item.order.id;
+      if (!orderMap.has(orderId)) {
+        orderMap.set(orderId, {
+          order: {
+            id: item.order.id,
+            orderNumber: item.order.orderNumber,
+            dailyNumber: item.order.dailyNumber,
+            tableNumber: item.order.tableNumber,
+            customerName: item.order.customerName,
+            priority: item.order.priority,
+            createdAt: item.order.createdAt,
+            fulfillmentType: item.order.fulfillmentType,
+            source: item.order.source,
+          },
+          items: [],
+        });
+      }
+      orderMap.get(orderId)!.items.push({
+        id: item.id,
+        productName: item.productName,
+        categoryName: item.categoryName,
+        quantity: item.quantity,
+        status: item.status,
+        notes: item.notes,
+        kitchenNotes: item.kitchenNotes,
+        options: item.options,
+        createdAt: item.createdAt,
+      });
+    }
+
+    return { data: Array.from(orderMap.values()) };
+  }
+
+  @Post('station/items/:itemId/ready')
+  @ApiOperation({ summary: 'Mark a station item as ready' })
+  async markStationItemReady(
+    @CurrentDevice() device: Device,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+  ) {
+    const organizationId = requireOrganization(device);
+    const order = await this.ordersService.markItemReadyFromDevice(organizationId, itemId);
+    return { data: order };
   }
 
   // Private helper methods
@@ -509,6 +1128,9 @@ export class DeviceApiController {
       where: { orderId: order.id },
     });
 
+    // Resolve production station: product overrides category
+    const productionStationId = product.productionStationId || product.category?.productionStationId || null;
+
     const item = this.orderItemRepository.create({
       orderId: order.id,
       productId: product.id,
@@ -525,6 +1147,7 @@ export class DeviceApiController {
       kitchenNotes: itemDto.kitchenNotes || null,
       status: OrderItemStatus.PENDING,
       sortOrder: existingItems,
+      productionStationId,
     });
 
     await this.orderItemRepository.save(item);
@@ -533,9 +1156,60 @@ export class DeviceApiController {
     if (product.trackInventory) {
       product.stockQuantity -= itemDto.quantity;
       await this.productRepository.save(product);
+
+      // Notify POS terminals about stock change
+      const event = await this.eventRepository.findOne({ where: { id: order.eventId! } });
+      if (event) {
+        this.gatewayService.notifyProductUpdated(event.organizationId, event.id, {
+          id: product.id,
+          name: product.name,
+          categoryId: product.categoryId,
+          price: Number(product.price),
+          isAvailable: product.isAvailable,
+          isActive: product.isActive,
+          stockQuantity: product.stockQuantity,
+          trackInventory: product.trackInventory,
+        });
+      }
     }
 
     return item;
+  }
+
+  private async printToStation(
+    organizationId: string,
+    station: ProductionStation,
+    order: Order,
+    items: OrderItem[],
+  ): Promise<void> {
+    if (!station.printerId) return;
+
+    try {
+      await this.printJobsService.createFromWorkflow(
+        organizationId,
+        station.printerId,
+        null,
+        order.id,
+        1,
+        {
+          order,
+          orderNumber: order.orderNumber,
+          dailyNumber: order.dailyNumber,
+          tableNumber: order.tableNumber,
+          stationName: station.name,
+          items: items.map((i) => ({
+            productName: i.productName,
+            categoryName: i.categoryName,
+            quantity: i.quantity,
+            notes: i.notes,
+            kitchenNotes: i.kitchenNotes,
+            options: i.options,
+          })),
+        },
+      );
+    } catch (err) {
+      this.logger.error(`Station printing failed for ${station.name}: ${err.message}`);
+    }
   }
 
   private async recalculateOrderTotals(orderId: string): Promise<void> {
@@ -619,6 +1293,9 @@ export class DeviceApiController {
         return PaymentProvider.CASH;
       case PaymentMethod.CARD:
         return PaymentProvider.CARD;
+      case PaymentMethod.SUMUP_TERMINAL:
+      case PaymentMethod.SUMUP_ONLINE:
+        return PaymentProvider.SUMUP;
       default:
         return PaymentProvider.CASH;
     }

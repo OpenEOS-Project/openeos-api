@@ -55,4 +55,9 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsObject()
   printSettings?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID des Produktionsstandorts' })
+  @IsOptional()
+  @IsUUID('4', { message: 'Ungültige Produktionsstandort-ID' })
+  productionStationId?: string;
 }

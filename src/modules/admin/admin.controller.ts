@@ -16,13 +16,10 @@ import { AdminService } from './admin.service';
 import {
   QueryOrganizationsDto,
   QueryUsersDto,
-  QueryPurchasesDto,
   QueryInvoicesAdminDto,
   QueryAuditLogsDto,
   QueryRentalHardwareDto,
   QueryRentalAssignmentsAdminDto,
-  QueryCreditPackagesDto,
-  AdjustCreditsDto,
   SetDiscountDto,
   AccessOrganizationDto,
   CreateRentalHardwareDto,
@@ -32,13 +29,9 @@ import {
   UpdateOrganizationAdminDto,
   CreateSubscriptionConfigDto,
   UpdateSubscriptionConfigDto,
-  CreateCreditPackageDto,
-  UpdateCreditPackageDto,
-  UpdatePackagePricesDto,
 } from './dto';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { StripeService } from '../stripe/stripe.service';
 import type { User } from '../../database/entities';
 
 @ApiTags('Admin')
@@ -48,7 +41,6 @@ import type { User } from '../../database/entities';
 export class AdminController {
   constructor(
     private readonly adminService: AdminService,
-    private readonly stripeService: StripeService,
   ) {}
 
   private getClientInfo(req: Request): { ip: string; userAgent?: string } {
@@ -88,18 +80,6 @@ export class AdminController {
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
     const org = await this.adminService.updateOrganization(id, updateDto, user.id, ip, userAgent);
-    return { data: org };
-  }
-
-  @Patch('organizations/:id/credits')
-  async adjustCredits(
-    @Param('id') id: string,
-    @Body() adjustDto: AdjustCreditsDto,
-    @CurrentUser() user: User,
-    @Req() req: unknown,
-  ) {
-    const { ip, userAgent } = this.getClientInfo(req as Request);
-    const org = await this.adminService.adjustCredits(id, adjustDto, user.id, ip, userAgent);
     return { data: org };
   }
 
@@ -182,33 +162,6 @@ export class AdminController {
     return { data: unlocked };
   }
 
-  // === Purchases ===
-
-  @Get('purchases')
-  async findAllPurchases(@Query() queryDto: QueryPurchasesDto) {
-    const result = await this.adminService.findAllPurchases(queryDto);
-    return {
-      data: result.data,
-      meta: {
-        total: result.total,
-        page: result.page,
-        limit: result.limit,
-        pages: Math.ceil(result.total / result.limit),
-      },
-    };
-  }
-
-  @Post('purchases/:id/complete')
-  async completePurchase(
-    @Param('id') id: string,
-    @CurrentUser() user: User,
-    @Req() req: unknown,
-  ) {
-    const { ip, userAgent } = this.getClientInfo(req as Request);
-    const purchase = await this.adminService.completePurchase(id, user.id, ip, userAgent);
-    return { data: purchase };
-  }
-
   // === Invoices ===
 
   @Get('invoices')
@@ -234,6 +187,17 @@ export class AdminController {
     const { ip, userAgent } = this.getClientInfo(req as Request);
     const invoice = await this.adminService.markInvoicePaid(id, user.id, ip, userAgent);
     return { data: invoice };
+  }
+
+  // === Devices (Admin) ===
+
+  @Get('devices')
+  async findAllDevices(
+    @Query('type') type?: string,
+    @Query('unassigned') unassigned?: string,
+  ) {
+    const devices = await this.adminService.findAllDevices({ type, unassigned: unassigned === 'true' });
+    return { data: devices };
   }
 
   // === Rental Hardware ===
@@ -302,6 +266,17 @@ export class AdminController {
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
     const assignment = await this.adminService.createRentalAssignment(createDto, user.id, ip, userAgent);
+    return { data: assignment };
+  }
+
+  @Post('rental-assignments/:id/activate')
+  async activateRental(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Req() req: unknown,
+  ) {
+    const { ip, userAgent } = this.getClientInfo(req as Request);
+    const assignment = await this.adminService.activateRental(id, user.id, ip, userAgent);
     return { data: assignment };
   }
 
@@ -390,87 +365,4 @@ export class AdminController {
     return { data: { success: true } };
   }
 
-  // === Credit Packages ===
-
-  @Get('credit-packages')
-  async findAllCreditPackages(@Query() queryDto: QueryCreditPackagesDto) {
-    const result = await this.adminService.findAllCreditPackages(queryDto);
-    return {
-      data: result.data,
-      meta: {
-        total: result.total,
-        page: result.page,
-        limit: result.limit,
-        pages: Math.ceil(result.total / result.limit),
-      },
-    };
-  }
-
-  @Get('credit-packages/:id')
-  async getCreditPackage(@Param('id') id: string) {
-    const pkg = await this.adminService.getCreditPackage(id);
-    return { data: pkg };
-  }
-
-  @Post('credit-packages')
-  async createCreditPackage(@Body() createDto: CreateCreditPackageDto) {
-    const pkg = await this.adminService.createCreditPackage(createDto);
-    return { data: pkg };
-  }
-
-  @Patch('credit-packages/:id')
-  async updateCreditPackage(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateCreditPackageDto,
-  ) {
-    const pkg = await this.adminService.updateCreditPackage(id, updateDto);
-    return { data: pkg };
-  }
-
-  @Delete('credit-packages/:id')
-  async deleteCreditPackage(@Param('id') id: string) {
-    await this.adminService.deleteCreditPackage(id);
-    return { data: { success: true } };
-  }
-
-  // === Pricing (Bulk Package Updates) ===
-
-  @Post('pricing/ensure-packages')
-  async ensureDefaultPackages() {
-    const packages = await this.adminService.ensureDefaultPackages();
-    return { data: packages };
-  }
-
-  @Patch('pricing/packages')
-  async updatePackagePrices(@Body() dto: UpdatePackagePricesDto) {
-    const packages = await this.adminService.updatePackagePrices(dto.packages);
-    return { data: packages };
-  }
-
-  // === Stripe Sync ===
-
-  @Post('stripe/sync')
-  async syncStripe() {
-    const packages = await this.adminService.findAllCreditPackages({ isActive: true, page: 1, limit: 100 });
-    let syncedPackages = 0;
-
-    for (const pkg of packages.data) {
-      try {
-        await this.stripeService.syncPackageToStripe(pkg.id);
-        syncedPackages++;
-      } catch {
-        // Skip packages that fail to sync (e.g. Stripe not configured)
-      }
-    }
-
-    let syncedSubscription = false;
-    try {
-      await this.stripeService.syncSubscriptionToStripe();
-      syncedSubscription = true;
-    } catch {
-      // Skip if Stripe not configured
-    }
-
-    return { data: { syncedPackages, syncedSubscription } };
-  }
 }

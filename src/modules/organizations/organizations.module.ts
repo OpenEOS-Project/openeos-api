@@ -9,11 +9,13 @@ import {
   Invitation,
 } from '../../database/entities';
 import { GatewayModule } from '../gateway/gateway.module';
+import { DevicesModule } from '../devices/devices.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Organization, User, UserOrganization, Invitation]),
     GatewayModule,
+    DevicesModule,
   ],
   controllers: [OrganizationsController, InvitationsController],
   providers: [OrganizationsService],

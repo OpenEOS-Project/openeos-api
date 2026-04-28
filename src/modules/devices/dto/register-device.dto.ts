@@ -64,7 +64,7 @@ export class InitDeviceDto {
 
   @ApiPropertyOptional({
     description: 'Gewünschter Gerätetyp',
-    example: 'display_menu',
+    example: 'display',
     enum: DeviceType,
   })
   @IsEnum(DeviceType)
@@ -102,7 +102,7 @@ export class LinkDeviceDto {
 
   @ApiPropertyOptional({
     description: 'Gerätetyp',
-    example: 'display_kitchen',
+    example: 'display',
     enum: DeviceType,
   })
   @IsEnum(DeviceType)

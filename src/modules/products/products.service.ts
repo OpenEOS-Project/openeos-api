@@ -57,6 +57,7 @@ export class ProductsService {
       isAvailable: product.isAvailable,
       isActive: product.isActive,
       stockQuantity: product.trackInventory ? product.stockQuantity : undefined,
+      trackInventory: product.trackInventory,
     });
 
     return product;
@@ -124,6 +125,7 @@ export class ProductsService {
       isAvailable: product.isAvailable,
       isActive: product.isActive,
       stockQuantity: product.trackInventory ? product.stockQuantity : undefined,
+      trackInventory: product.trackInventory,
     });
 
     return product;
@@ -164,6 +166,7 @@ export class ProductsService {
       isAvailable: product.isAvailable,
       isActive: product.isActive,
       stockQuantity: product.trackInventory ? product.stockQuantity : undefined,
+      trackInventory: product.trackInventory,
     });
 
     return product;
@@ -206,6 +209,19 @@ export class ProductsService {
     await this.stockMovementRepository.save(stockMovement);
 
     this.logger.log(`Stock adjusted for product ${product.id}: ${adjustDto.quantity}`);
+
+    // Notify menu displays about stock change
+    const event = await this.getEvent(eventId);
+    this.gatewayService.notifyProductUpdated(event.organizationId, eventId, {
+      id: product.id,
+      name: product.name,
+      categoryId: product.categoryId,
+      price: Number(product.price),
+      isAvailable: product.isAvailable,
+      isActive: product.isActive,
+      stockQuantity: product.stockQuantity,
+      trackInventory: product.trackInventory,
+    });
 
     return product;
   }

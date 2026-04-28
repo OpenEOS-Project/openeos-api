@@ -203,7 +203,13 @@ export class OrganizationsService {
       order: { createdAt: 'DESC' },
     });
 
-    return createPaginatedResult(items, total, page, limit);
+    // Strip pin hash, add hasPin boolean
+    const mappedItems = items.map(({ pin, ...rest }) => ({
+      ...rest,
+      hasPin: !!pin,
+    })) as unknown as UserOrganization[];
+
+    return createPaginatedResult(mappedItems, total, page, limit);
   }
 
   async addMember(

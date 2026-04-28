@@ -18,7 +18,7 @@ export class UpdateDeviceDto {
 
   @ApiPropertyOptional({
     enum: DeviceType,
-    example: DeviceType.DISPLAY_KITCHEN,
+    example: DeviceType.POS,
     description: 'Gerätetyp/Rolle',
   })
   @IsOptional()

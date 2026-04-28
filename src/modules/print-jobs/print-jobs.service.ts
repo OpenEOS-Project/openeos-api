@@ -224,6 +224,69 @@ export class PrintJobsService {
     return job;
   }
 
+  // Called by OrderPrintService (no user auth needed)
+  async createFromWorkflow(
+    organizationId: string,
+    printerId: string,
+    templateId: string | null,
+    orderId: string | null,
+    copies: number = 1,
+    payload?: Record<string, unknown>,
+  ): Promise<PrintJob> {
+    const printer = await this.printerRepository.findOne({
+      where: { id: printerId, organizationId },
+    });
+
+    if (!printer) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Drucker nicht gefunden',
+      });
+    }
+
+    if (!printer.isActive) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Drucker ist deaktiviert',
+      });
+    }
+
+    const printJob = this.printJobRepository.create({
+      organizationId,
+      printerId,
+      templateId: templateId || null,
+      orderId: orderId || null,
+      payload: { copies, data: payload || {} },
+      status: PrintJobStatus.QUEUED,
+      attempts: 0,
+    });
+
+    await this.printJobRepository.save(printJob);
+    this.logger.log(`Print job created from auto-print: ${printJob.id} for printer ${printer.name}`);
+
+    // Resolve template name for the agent
+    let templateName = 'receipt';
+    if (templateId) {
+      const template = await this.printTemplateRepository.findOne({
+        where: { id: templateId, organizationId },
+      });
+      if (template) {
+        templateName = template.type;
+      }
+    }
+
+    // Send to agent via WebSocket
+    this.gatewayService.sendPrintJobToAgent(organizationId, {
+      jobId: printJob.id,
+      printerId,
+      templateName,
+      copies,
+      payload: payload || {},
+    });
+
+    return printJob;
+  }
+
   // Methods for printer agents
   async getQueuedJobsForPrinter(printerId: string): Promise<PrintJob[]> {
     return this.printJobRepository.find({

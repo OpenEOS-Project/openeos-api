@@ -9,6 +9,6 @@ import { Organization, UserOrganization } from '../../database/entities';
   imports: [TypeOrmModule.forFeature([Organization, UserOrganization])],
   controllers: [SumUpController],
   providers: [SumUpService, SumUpApiService],
-  exports: [SumUpService],
+  exports: [SumUpService, SumUpApiService],
 })
 export class SumUpModule {}

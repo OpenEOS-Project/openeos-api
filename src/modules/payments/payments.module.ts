@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { PayPalService } from './providers/paypal.service';
 import {
   Payment,
   Order,
@@ -9,6 +10,7 @@ import {
   OrderItemPayment,
   UserOrganization,
 } from '../../database/entities';
+import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 
 @Module({
   imports: [
@@ -19,9 +21,10 @@ import {
       OrderItemPayment,
       UserOrganization,
     ]),
+    PrintJobsModule,
   ],
   controllers: [PaymentsController],
-  providers: [PaymentsService],
-  exports: [PaymentsService],
+  providers: [PaymentsService, PayPalService],
+  exports: [PaymentsService, PayPalService],
 })
 export class PaymentsModule {}

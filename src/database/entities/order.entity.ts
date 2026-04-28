@@ -35,6 +35,11 @@ export enum OrderPriority {
   RUSH = 'rush',
 }
 
+export enum OrderFulfillmentType {
+  TABLE_SERVICE = 'table_service',
+  COUNTER_PICKUP = 'counter_pickup',
+}
+
 @Entity('orders')
 @Index(['organizationId', 'createdAt'])
 @Index(['orderNumber'])
@@ -97,6 +102,9 @@ export class Order extends BaseEntity {
 
   @Column({ type: 'enum', enum: OrderPriority, enumName: 'order_priority', default: OrderPriority.NORMAL })
   priority: OrderPriority;
+
+  @Column({ name: 'fulfillment_type', type: 'enum', enum: OrderFulfillmentType, enumName: 'order_fulfillment_type', default: OrderFulfillmentType.COUNTER_PICKUP })
+  fulfillmentType: OrderFulfillmentType;
 
   @Column({ name: 'estimated_ready_at', type: 'timestamp with time zone', nullable: true })
   estimatedReadyAt: Date | null;

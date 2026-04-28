@@ -11,13 +11,11 @@ import {
   User,
   Organization,
   UserOrganization,
-  CreditPackage,
 } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { SetupDto, SetupMode } from './dto';
 
 const BCRYPT_ROUNDS = 12;
-const UNLIMITED_CREDITS = 999999999;
 
 export interface SetupResult {
   mode: SetupMode;
@@ -46,8 +44,6 @@ export class SetupService {
     private readonly organizationRepository: Repository<Organization>,
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
-    @InjectRepository(CreditPackage)
-    private readonly creditPackageRepository: Repository<CreditPackage>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -119,7 +115,6 @@ export class SetupService {
         slug,
         supportPin,
         settings: {},
-        eventCredits: UNLIMITED_CREDITS,
       });
       await queryRunner.manager.save(organization);
 
@@ -166,10 +161,7 @@ export class SetupService {
     await queryRunner.startTransaction();
 
     try {
-      // 1. Create credit packages
-      await this.seedCreditPackages(queryRunner.manager);
-
-      // 2. Create super admin user
+      // 1. Create super admin user
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const user = this.userRepository.create({
         email: email.toLowerCase(),
@@ -202,69 +194,6 @@ export class SetupService {
     } finally {
       await queryRunner.release();
     }
-  }
-
-  private async seedCreditPackages(manager: any): Promise<void> {
-    const existingCount = await manager.count(CreditPackage);
-    if (existingCount > 0) {
-      this.logger.log('Credit packages already exist, skipping seed');
-      return;
-    }
-
-    const packages = [
-      {
-        name: '1 Tag',
-        slug: '1-tag',
-        credits: 1,
-        price: 25.0,
-        pricePerCredit: 25.0,
-        savingsPercent: 0,
-        description: 'Für einzelne Veranstaltungstage',
-        isActive: true,
-        sortOrder: 1,
-      },
-      {
-        name: '1 Wochenende',
-        slug: '1-wochenende',
-        credits: 2,
-        price: 50.0,
-        pricePerCredit: 25.0,
-        savingsPercent: 0,
-        description: 'Für Wochenendveranstaltungen (2 Tage)',
-        isActive: true,
-        isFeatured: true,
-        sortOrder: 2,
-      },
-      {
-        name: '1 Woche',
-        slug: '1-woche',
-        credits: 5,
-        price: 125.0,
-        pricePerCredit: 25.0,
-        savingsPercent: 0,
-        description: 'Für einwöchige Veranstaltungen (5 Tage)',
-        isActive: true,
-        sortOrder: 3,
-      },
-      {
-        name: 'Monats-Abo',
-        slug: 'monats-abo',
-        credits: 30,
-        price: 250.0,
-        pricePerCredit: 8.33,
-        savingsPercent: 67,
-        description: 'Für Dauerbetriebe - unbegrenzte Nutzung für 30 Tage',
-        isActive: true,
-        sortOrder: 4,
-      },
-    ];
-
-    for (const pkg of packages) {
-      const creditPackage = this.creditPackageRepository.create(pkg);
-      await manager.save(creditPackage);
-    }
-
-    this.logger.log(`Created ${packages.length} credit packages`);
   }
 
   private async generateOrganizationSlug(name: string, manager: any): Promise<string> {

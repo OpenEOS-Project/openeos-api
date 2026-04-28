@@ -2,7 +2,6 @@ import { IsOptional, IsDateString, IsEnum, IsInt, Min, Max, IsString, IsUUID } f
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { AdminAction } from '../../../database/entities/admin-audit-log.entity';
-import { CreditPaymentStatus } from '../../../database/entities/credit-purchase.entity';
 import { InvoiceStatus } from '../../../database/entities/invoice.entity';
 import { RentalAssignmentStatus } from '../../../database/entities/rental-assignment.entity';
 import { RentalHardwareStatus, RentalHardwareType } from '../../../database/entities/rental-hardware.entity';
@@ -62,10 +61,10 @@ export class QueryPurchasesDto {
   @IsUUID()
   organizationId?: string;
 
-  @ApiPropertyOptional({ example: 'completed', description: 'Filter nach Zahlungsstatus', enum: CreditPaymentStatus })
+  @ApiPropertyOptional({ example: 'completed', description: 'Filter nach Zahlungsstatus' })
   @IsOptional()
-  @IsEnum(CreditPaymentStatus)
-  status?: CreditPaymentStatus;
+  @IsString()
+  status?: string;
 
   @ApiPropertyOptional({ example: '2024-01-01T00:00:00.000Z', description: 'Startdatum für Filterung' })
   @IsOptional()
@@ -246,31 +245,3 @@ export class QueryRentalAssignmentsAdminDto {
   limit?: number = 20;
 }
 
-// === Credit Packages Query DTO ===
-
-export class QueryCreditPackagesDto {
-  @ApiPropertyOptional({ example: 'credits', description: 'Suchbegriff für Paketname oder Slug' })
-  @IsOptional()
-  @IsString()
-  search?: string;
-
-  @ApiPropertyOptional({ example: true, description: 'Filter nach aktiven Paketen' })
-  @IsOptional()
-  @Type(() => Boolean)
-  isActive?: boolean;
-
-  @ApiPropertyOptional({ example: 1, description: 'Seitennummer für Pagination', default: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number = 1;
-
-  @ApiPropertyOptional({ example: 20, description: 'Anzahl der Ergebnisse pro Seite', default: 20 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number = 20;
-}

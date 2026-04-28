@@ -4,6 +4,7 @@ import {
   IsUUID,
   IsEnum,
   IsArray,
+  IsBoolean,
   ValidateNested,
   MaxLength,
   IsNumber,
@@ -11,11 +12,31 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { OrderPriority, OrderSource } from '../../../database/entities/order.entity';
+import { OrderPriority, OrderSource, OrderFulfillmentType } from '../../../database/entities/order.entity';
+import { IsUUIDLoose } from '../../../common/validators/is-uuid-loose.validator';
+
+export class SelectedOptionDto {
+  @ApiProperty({ example: 'Größe', description: 'Name der Optionsgruppe' })
+  @IsString()
+  group: string;
+
+  @ApiProperty({ example: 'Groß', description: 'Name der gewählten Option' })
+  @IsString()
+  option: string;
+
+  @ApiProperty({ example: 1.50, description: 'Preismodifikator' })
+  @IsNumber()
+  priceModifier: number;
+
+  @ApiPropertyOptional({ example: true, description: 'Ob die Zutat ausgeschlossen ist' })
+  @IsOptional()
+  @IsBoolean()
+  excluded?: boolean;
+}
 
 export class CreateOrderItemDto {
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID des Produkts' })
-  @IsUUID()
+  @IsUUIDLoose()
   productId: string;
 
   @ApiProperty({ example: 2, description: 'Anzahl der bestellten Einheiten' })
@@ -35,10 +56,12 @@ export class CreateOrderItemDto {
   @MaxLength(500)
   kitchenNotes?: string;
 
-  @ApiPropertyOptional({ example: [{ group: 'Größe', option: 'Groß', priceModifier: 1.50 }], description: 'Ausgewählte Produktoptionen' })
+  @ApiPropertyOptional({ type: [SelectedOptionDto], description: 'Ausgewählte Produktoptionen' })
   @IsOptional()
   @IsArray()
-  selectedOptions?: { group: string; option: string; priceModifier: number }[];
+  @ValidateNested({ each: true })
+  @Type(() => SelectedOptionDto)
+  selectedOptions?: SelectedOptionDto[];
 }
 
 export class CreateOrderDto {
@@ -80,6 +103,11 @@ export class CreateOrderDto {
   @IsOptional()
   @IsEnum(OrderSource)
   source?: OrderSource;
+
+  @ApiPropertyOptional({ example: 'counter_pickup', description: 'Erfüllungstyp der Bestellung', enum: OrderFulfillmentType })
+  @IsOptional()
+  @IsEnum(OrderFulfillmentType)
+  fulfillmentType?: OrderFulfillmentType;
 
   @ApiPropertyOptional({ type: [CreateOrderItemDto], description: 'Liste der Bestellpositionen' })
   @IsOptional()

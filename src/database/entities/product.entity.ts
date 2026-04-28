@@ -5,15 +5,17 @@ import { Category } from './category.entity';
 import { OrderItem } from './order-item.entity';
 import { StockMovement } from './stock-movement.entity';
 import { InventoryCountItem } from './inventory-count-item.entity';
+import { ProductionStation } from './production-station.entity';
 
 export interface ProductOption {
   name: string;
   priceModifier: number;
+  default?: boolean;
 }
 
 export interface ProductOptionGroup {
   name: string;
-  type: 'single' | 'multiple';
+  type: 'single' | 'multiple' | 'ingredients';
   required: boolean;
   options: ProductOption[];
 }
@@ -76,6 +78,9 @@ export class Product extends SoftDeleteEntity {
   @Column({ name: 'sort_order', type: 'int', default: 0 })
   sortOrder: number;
 
+  @Column({ name: 'production_station_id', type: 'uuid', nullable: true })
+  productionStationId: string | null;
+
   // Relations
   @ManyToOne(() => Event, (event) => event.products, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'event_id' })
@@ -84,6 +89,10 @@ export class Product extends SoftDeleteEntity {
   @ManyToOne(() => Category, (category) => category.products, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'category_id' })
   category: Category;
+
+  @ManyToOne(() => ProductionStation, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'production_station_id' })
+  productionStation: ProductionStation | null;
 
   @OneToMany(() => OrderItem, (item) => item.product)
   orderItems: OrderItem[];

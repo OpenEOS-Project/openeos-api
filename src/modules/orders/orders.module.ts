@@ -9,8 +9,9 @@ import {
   UserOrganization,
   StockMovement,
   Event,
+  ProductionStation,
 } from '../../database/entities';
-import { WorkflowsModule } from '../workflows/workflows.module';
+import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
@@ -22,8 +23,9 @@ import { GatewayModule } from '../gateway/gateway.module';
       UserOrganization,
       StockMovement,
       Event,
+      ProductionStation,
     ]),
-    forwardRef(() => WorkflowsModule),
+    PrintJobsModule,
     forwardRef(() => GatewayModule),
   ],
   controllers: [OrdersController],

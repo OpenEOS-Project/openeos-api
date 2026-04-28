@@ -148,6 +148,35 @@ export class SumUpService {
     await this.sumUpApiService.terminateCheckout(credentials.apiKey, credentials.merchantCode, readerId);
   }
 
+  async createOnlineCheckout(
+    organizationId: string,
+    amount: number,
+    currency: string,
+    description: string,
+    returnUrl: string,
+  ): Promise<{ checkoutUrl: string; checkoutId: string }> {
+    const credentials = await this.getCredentials(organizationId);
+
+    this.logger.log(`Creating SumUp online checkout for ${amount} ${currency}`);
+
+    const response = await this.sumUpApiService.createOnlineCheckout(
+      credentials.apiKey,
+      credentials.merchantCode,
+      {
+        amount,
+        currency,
+        description,
+        checkoutReference: `openeos-${Date.now()}`,
+        returnUrl,
+      },
+    );
+
+    return {
+      checkoutUrl: response.checkoutUrl || `https://pay.sumup.com/b2c/checkout/${response.id}`,
+      checkoutId: response.id,
+    };
+  }
+
   private async checkMembership(organizationId: string, userId: string): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },

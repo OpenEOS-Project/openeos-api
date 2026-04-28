@@ -6,17 +6,15 @@ import { Product } from './product.entity';
 import { Order } from './order.entity';
 import { QrCode } from './qr-code.entity';
 import { OnlineOrderSession } from './online-order-session.entity';
-import { EventLicense } from './event-license.entity';
 import { RentalAssignment } from './rental-assignment.entity';
 import { StockMovement } from './stock-movement.entity';
 import { InventoryCount } from './inventory-count.entity';
+import { ProductionStation } from './production-station.entity';
 
 export enum EventStatus {
-  DRAFT = 'draft',
-  SCHEDULED = 'scheduled',
   ACTIVE = 'active',
-  COMPLETED = 'completed',
-  CANCELLED = 'cancelled',
+  INACTIVE = 'inactive',
+  TEST = 'test',
 }
 
 export interface EventSettings {
@@ -44,17 +42,26 @@ export class Event extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  @Column({ name: 'start_date', type: 'timestamp with time zone' })
-  startDate: Date;
+  @Column({ name: 'start_date', type: 'timestamp with time zone', nullable: true })
+  startDate: Date | null;
 
-  @Column({ name: 'end_date', type: 'timestamp with time zone' })
-  endDate: Date;
+  @Column({ name: 'end_date', type: 'timestamp with time zone', nullable: true })
+  endDate: Date | null;
 
-  @Column({ type: 'enum', enum: EventStatus, enumName: 'event_status', default: EventStatus.DRAFT })
+  @Column({ type: 'enum', enum: EventStatus, enumName: 'event_status', default: EventStatus.INACTIVE })
   status: EventStatus;
 
   @Column({ type: 'jsonb', default: {} })
   settings: EventSettings;
+
+  @Column({ name: 'invoiced_at', type: 'timestamp with time zone', nullable: true })
+  invoicedAt: Date | null;
+
+  @Column({ name: 'invoiced_by', type: 'uuid', nullable: true })
+  invoicedBy: string | null;
+
+  @Column({ name: 'invoice_note', type: 'text', nullable: true })
+  invoiceNote: string | null;
 
   // Relations
   @ManyToOne(() => Organization, (org) => org.events, { onDelete: 'CASCADE' })
@@ -80,9 +87,6 @@ export class Event extends BaseEntity {
   @OneToMany(() => OnlineOrderSession, (session) => session.event)
   onlineOrderSessions: OnlineOrderSession[];
 
-  @OneToMany(() => EventLicense, (license) => license.event)
-  eventLicenses: EventLicense[];
-
   @OneToMany(() => RentalAssignment, (rental) => rental.event)
   rentalAssignments: RentalAssignment[];
 
@@ -92,8 +96,12 @@ export class Event extends BaseEntity {
   @OneToMany(() => InventoryCount, (count) => count.event)
   inventoryCounts: InventoryCount[];
 
+  @OneToMany(() => ProductionStation, (station) => station.event)
+  productionStations: ProductionStation[];
+
   // Helper methods
-  get durationInDays(): number {
+  get durationInDays(): number | null {
+    if (!this.startDate || !this.endDate) return null;
     const diffTime = Math.abs(this.endDate.getTime() - this.startDate.getTime());
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   }

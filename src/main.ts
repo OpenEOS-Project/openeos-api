@@ -23,6 +23,7 @@ async function bootstrap() {
   app.use(cookieParser());
 
   // CORS
+  const isDev = process.env.NODE_ENV !== 'production';
   const corsOriginsConfig = configService.get<string | string[]>('cors.origins');
   let corsOrigins: string[];
   if (Array.isArray(corsOriginsConfig)) {
@@ -33,7 +34,8 @@ async function bootstrap() {
     corsOrigins = ['http://localhost:3001'];
   }
   app.enableCors({
-    origin: corsOrigins,
+    // In dev, reflect any request origin (skip allow-list).
+    origin: isDev ? true : corsOrigins,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: [
@@ -42,6 +44,7 @@ async function bootstrap() {
       'X-Organization-Id',
       'X-Device-Id',
       'X-Device-Token',
+      'X-Session-Token',
       'X-Request-Id',
       'Accept-Language',
     ],
@@ -120,7 +123,6 @@ async function bootstrap() {
       .addTag('Printers', 'Printer management')
       .addTag('Print Templates', 'Print template management')
       .addTag('Print Jobs', 'Print job management')
-      .addTag('Workflows', 'Workflow engine')
       .addTag('QR Codes', 'QR code generation and management')
       .addTag('Online Orders', 'Public online ordering endpoints')
       .addTag('Credits', 'Credit management')

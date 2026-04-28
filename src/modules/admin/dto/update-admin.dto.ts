@@ -6,30 +6,14 @@ import {
   IsDateString,
   IsUUID,
   IsBoolean,
-  IsArray,
   Min,
   Max,
   MaxLength,
   IsObject,
-  ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RentalHardwareType, RentalHardwareStatus } from '../../../database/entities/rental-hardware.entity';
 import type { RentalHardwareConfig } from '../../../database/entities/rental-hardware.entity';
-
-export class AdjustCreditsDto {
-  @ApiProperty({ example: 50, description: 'Betrag der Guthabenanpassung (positiv oder negativ)' })
-  @IsNumber()
-  @Min(-10000)
-  @Max(10000)
-  amount: number;
-
-  @ApiProperty({ example: 'Gutschrift für Support-Fall #1234', description: 'Grund für die Guthabenanpassung' })
-  @IsString()
-  @MaxLength(500)
-  reason: string;
-}
 
 export class SetDiscountDto {
   @ApiProperty({ example: 15, description: 'Rabattprozentsatz (0-100)' })
@@ -94,6 +78,11 @@ export class CreateRentalHardwareDto {
   @IsObject()
   hardwareConfig?: RentalHardwareConfig;
 
+  @ApiPropertyOptional({ description: 'ID des verknüpften Geräts (Printer Agent)' })
+  @IsOptional()
+  @IsUUID()
+  deviceId?: string | null;
+
   @ApiPropertyOptional({ example: 'Inkl. USB-Kabel und Netzteil', description: 'Zusätzliche Notizen' })
   @IsOptional()
   @IsString()
@@ -135,6 +124,11 @@ export class UpdateRentalHardwareDto {
   @IsOptional()
   @IsObject()
   hardwareConfig?: RentalHardwareConfig;
+
+  @ApiPropertyOptional({ description: 'ID des verknüpften Geräts (Printer Agent)' })
+  @IsOptional()
+  @IsUUID()
+  deviceId?: string | null;
 
   @ApiPropertyOptional({ example: 'Inkl. USB-Kabel und Netzteil', description: 'Zusätzliche Notizen' })
   @IsOptional()
@@ -201,12 +195,6 @@ export class UpdateOrganizationAdminDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
-
-  @ApiPropertyOptional({ example: 100, description: 'Anzahl der Event-Credits' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  eventCredits?: number;
 
   @ApiPropertyOptional({ example: { maxDevices: 5, maxUsers: 10 }, description: 'Zusätzliche Einstellungen' })
   @IsOptional()
@@ -285,143 +273,3 @@ export class UpdateSubscriptionConfigDto {
   features?: Record<string, unknown>;
 }
 
-// === Credit Package DTOs ===
-
-export class CreateCreditPackageDto {
-  @ApiProperty({ example: '50 Credits', description: 'Name des Pakets' })
-  @IsString()
-  @MaxLength(100)
-  name: string;
-
-  @ApiProperty({ example: '50-credits', description: 'URL-freundlicher Slug' })
-  @IsString()
-  @MaxLength(50)
-  slug: string;
-
-  @ApiPropertyOptional({ example: 'Ideal für kleine Veranstaltungen', description: 'Beschreibung des Pakets' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(1000)
-  description?: string;
-
-  @ApiProperty({ example: 50, description: 'Anzahl der Credits im Paket' })
-  @IsNumber()
-  @Min(1)
-  credits: number;
-
-  @ApiProperty({ example: 49.99, description: 'Preis des Pakets in Euro' })
-  @IsNumber()
-  @Min(0)
-  price: number;
-
-  @ApiPropertyOptional({ example: 0.99, description: 'Preis pro Credit' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  pricePerCredit?: number;
-
-  @ApiPropertyOptional({ example: 10, description: 'Ersparnis in Prozent' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  savingsPercent?: number;
-
-  @ApiPropertyOptional({ example: true, description: 'Ob das Paket aktiv ist' })
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-
-  @ApiPropertyOptional({ example: true, description: 'Ob das Paket hervorgehoben wird' })
-  @IsOptional()
-  @IsBoolean()
-  isFeatured?: boolean;
-
-  @ApiPropertyOptional({ example: 1, description: 'Sortierreihenfolge' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  sortOrder?: number;
-}
-
-export class UpdateCreditPackageDto {
-  @ApiPropertyOptional({ example: '50 Credits', description: 'Name des Pakets' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  name?: string;
-
-  @ApiPropertyOptional({ example: '50-credits', description: 'URL-freundlicher Slug' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(50)
-  slug?: string;
-
-  @ApiPropertyOptional({ example: 'Ideal für kleine Veranstaltungen', description: 'Beschreibung des Pakets' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(1000)
-  description?: string;
-
-  @ApiPropertyOptional({ example: 50, description: 'Anzahl der Credits im Paket' })
-  @IsOptional()
-  @IsNumber()
-  @Min(1)
-  credits?: number;
-
-  @ApiPropertyOptional({ example: 49.99, description: 'Preis des Pakets in Euro' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  price?: number;
-
-  @ApiPropertyOptional({ example: 0.99, description: 'Preis pro Credit' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  pricePerCredit?: number;
-
-  @ApiPropertyOptional({ example: 10, description: 'Ersparnis in Prozent' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(100)
-  savingsPercent?: number;
-
-  @ApiPropertyOptional({ example: true, description: 'Ob das Paket aktiv ist' })
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-
-  @ApiPropertyOptional({ example: true, description: 'Ob das Paket hervorgehoben wird' })
-  @IsOptional()
-  @IsBoolean()
-  isFeatured?: boolean;
-
-  @ApiPropertyOptional({ example: 1, description: 'Sortierreihenfolge' })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  sortOrder?: number;
-}
-
-// === Bulk Package Price Update ===
-
-export class PackagePriceEntryDto {
-  @ApiProperty({ example: '1-day', description: 'Slug des Pakets' })
-  @IsString()
-  slug: string;
-
-  @ApiProperty({ example: 25, description: 'Neuer Preis in Euro' })
-  @IsNumber()
-  @Min(0)
-  price: number;
-}
-
-export class UpdatePackagePricesDto {
-  @ApiProperty({ type: [PackagePriceEntryDto], description: 'Array mit Slug und neuem Preis' })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => PackagePriceEntryDto)
-  packages: PackagePriceEntryDto[];
-}

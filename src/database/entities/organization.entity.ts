@@ -5,12 +5,9 @@ import { Event } from './event.entity';
 import { Device } from './device.entity';
 import { Printer } from './printer.entity';
 import { PrintTemplate } from './print-template.entity';
-import { Workflow } from './workflow.entity';
 import { Order } from './order.entity';
 import { QrCode } from './qr-code.entity';
 import { Invitation } from './invitation.entity';
-import { CreditPurchase } from './credit-purchase.entity';
-import { EventLicense } from './event-license.entity';
 import { Invoice } from './invoice.entity';
 import { RentalAssignment } from './rental-assignment.entity';
 
@@ -51,6 +48,31 @@ export interface OrganizationSettings {
     affiliateKey?: string;
     appId?: string;
   };
+  paypal?: {
+    clientId: string;
+    clientSecret: string;
+  };
+  orderFlow?: {
+    receiptPrinting?: {
+      enabled: boolean;
+      trigger: 'payment_received' | 'order_completed' | 'manual';
+      printerId: string | null;
+      templateId: string | null;
+    };
+    kitchenTicketPrinting?: {
+      enabled: boolean;
+      printerId: string | null;
+      templateId: string | null;
+    };
+    orderTicketPrinting?: {
+      enabled: boolean;
+      printerId: string | null;
+      templateId: string | null;
+    };
+    kitchenDisplay?: { enabled: boolean };
+    customerDisplay?: { enabled: boolean };
+    autoComplete?: { enabled: boolean };
+  };
 }
 
 export interface BillingAddress {
@@ -90,9 +112,6 @@ export class Organization extends SoftDeleteEntity {
   @Column({ type: 'jsonb', default: {} })
   settings: OrganizationSettings;
 
-  @Column({ name: 'event_credits', type: 'int', default: 0 })
-  eventCredits: number;
-
   @Column({ name: 'billing_email', type: 'varchar', length: 255, nullable: true })
   billingEmail: string | null;
 
@@ -127,9 +146,6 @@ export class Organization extends SoftDeleteEntity {
   @Column({ name: 'subscription_current_period_end', type: 'timestamp with time zone', nullable: true })
   subscriptionCurrentPeriodEnd: Date | null;
 
-  @Column({ name: 'subscription_credits_granted_at', type: 'timestamp with time zone', nullable: true })
-  subscriptionCreditsGrantedAt: Date | null;
-
   // Relations
   @OneToMany(() => UserOrganization, (userOrg) => userOrg.organization)
   userOrganizations: UserOrganization[];
@@ -146,9 +162,6 @@ export class Organization extends SoftDeleteEntity {
   @OneToMany(() => PrintTemplate, (template) => template.organization)
   printTemplates: PrintTemplate[];
 
-  @OneToMany(() => Workflow, (workflow) => workflow.organization)
-  workflows: Workflow[];
-
   @OneToMany(() => Order, (order) => order.organization)
   orders: Order[];
 
@@ -157,12 +170,6 @@ export class Organization extends SoftDeleteEntity {
 
   @OneToMany(() => Invitation, (invitation) => invitation.organization)
   invitations: Invitation[];
-
-  @OneToMany(() => CreditPurchase, (purchase) => purchase.organization)
-  creditPurchases: CreditPurchase[];
-
-  @OneToMany(() => EventLicense, (license) => license.organization)
-  eventLicenses: EventLicense[];
 
   @OneToMany(() => Invoice, (invoice) => invoice.organization)
   invoices: Invoice[];

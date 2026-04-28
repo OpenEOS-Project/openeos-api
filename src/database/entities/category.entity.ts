@@ -2,6 +2,7 @@ import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm
 import { BaseEntity } from './base.entity';
 import { Event } from './event.entity';
 import { Product } from './product.entity';
+import { ProductionStation } from './production-station.entity';
 
 export interface CategoryPrintSettings {
   printerId?: string;
@@ -41,6 +42,9 @@ export class Category extends BaseEntity {
   @Column({ name: 'print_settings', type: 'jsonb', nullable: true })
   printSettings: CategoryPrintSettings | null;
 
+  @Column({ name: 'production_station_id', type: 'uuid', nullable: true })
+  productionStationId: string | null;
+
   // Relations
   @ManyToOne(() => Event, (event) => event.categories, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'event_id' })
@@ -52,6 +56,10 @@ export class Category extends BaseEntity {
 
   @OneToMany(() => Category, (category) => category.parent)
   children: Category[];
+
+  @ManyToOne(() => ProductionStation, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'production_station_id' })
+  productionStation: ProductionStation | null;
 
   @OneToMany(() => Product, (product) => product.category)
   products: Product[];

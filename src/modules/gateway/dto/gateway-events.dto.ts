@@ -18,6 +18,8 @@ export interface OrderCreatedEvent {
     tableNumber?: string;
     customerName?: string;
     status: string;
+    fulfillmentType: string;
+    source: string;
     items: {
       id: string;
       productName: string;
@@ -112,7 +114,7 @@ export interface BroadcastMessageEvent {
   timestamp: string;
 }
 
-// Menu Display Events
+// Menu Events
 export interface ProductUpdatedEvent {
   product: {
     id: string;
@@ -122,6 +124,7 @@ export interface ProductUpdatedEvent {
     isAvailable: boolean;
     isActive: boolean;
     stockQuantity?: number;
+    trackInventory: boolean;
   };
   eventId: string;
 }
@@ -151,70 +154,8 @@ export interface MenuRefreshEvent {
   reason: string;
 }
 
-// Kitchen Display Events
-export interface KitchenNewOrderEvent {
-  order: {
-    id: string;
-    orderNumber: string;
-    dailyNumber: number;
-    tableNumber?: string;
-    customerName?: string;
-    priority: string;
-    createdAt: string;
-  };
-  items: {
-    id: string;
-    productName: string;
-    categoryName: string;
-    quantity: number;
-    status: string;
-    notes?: string;
-    kitchenNotes?: string;
-    options?: unknown;
-  }[];
-}
-
-export interface KitchenItemStatusEvent {
-  orderId: string;
-  orderNumber: string;
-  itemId: string;
-  productName: string;
-  status: string;
-  previousStatus: string;
-}
-
 export interface KitchenOrderCancelledEvent {
   orderId: string;
-  orderNumber: string;
-}
-
-// Pickup Display Events (Personal)
-export interface PickupOrderReadyEvent {
-  orderId: string;
-  orderNumber: string;
-  dailyNumber: number;
-  customerName?: string;
-  tableNumber?: string;
-  itemCount: number;
-}
-
-export interface PickupOrderCollectedEvent {
-  orderId: string;
-  orderNumber: string;
-}
-
-// Customer Display Events (public)
-export interface CustomerOrderReadyEvent {
-  orderNumber: string;
-  dailyNumber: number;
-}
-
-export interface CustomerOrderCalledEvent {
-  orderNumber: string;
-  dailyNumber: number;
-}
-
-export interface CustomerOrderCollectedEvent {
   orderNumber: string;
 }
 
@@ -228,6 +169,16 @@ export interface DeviceConfigUpdatedEvent {
   deviceId: string;
   name?: string;
   type?: string;
+}
+
+// Cash Drawer Events
+export interface OpenCashDrawerEvent {
+  printerId: string;
+}
+
+// Printer Agent Events (Config)
+export interface PrinterConfigUpdateEvent {
+  deviceId: string;
 }
 
 // Event names as constants
@@ -250,30 +201,25 @@ export const GatewayEvents = {
   PRINTER_JOB: 'printerJob',
   BROADCAST_MESSAGE: 'broadcastMessage',
 
-  // Menu Display Events
+  // Menu Events
   PRODUCT_UPDATED: 'productUpdated',
   PRODUCT_DELETED: 'productDeleted',
   CATEGORY_UPDATED: 'categoryUpdated',
   CATEGORY_DELETED: 'categoryDeleted',
   MENU_REFRESH: 'menuRefresh',
 
-  // Kitchen Display Events
-  KITCHEN_NEW_ORDER: 'kitchenNewOrder',
-  KITCHEN_ITEM_STATUS: 'kitchenItemStatus',
+  // Kitchen (fallback for items without station)
   KITCHEN_ORDER_CANCELLED: 'kitchenOrderCancelled',
-
-  // Pickup Display Events (Personal)
-  PICKUP_ORDER_READY: 'pickupOrderReady',
-  PICKUP_ORDER_COLLECTED: 'pickupOrderCollected',
-
-  // Customer Display Events (public)
-  CUSTOMER_ORDER_READY: 'customerOrderReady',
-  CUSTOMER_ORDER_CALLED: 'customerOrderCalled',
-  CUSTOMER_ORDER_COLLECTED: 'customerOrderCollected',
 
   // Device Events
   DEVICE_SETTINGS_UPDATED: 'deviceSettingsUpdated',
   DEVICE_CONFIG_UPDATED: 'deviceConfigUpdated',
+
+  // Cash Drawer Events
+  OPEN_CASH_DRAWER: 'openCashDrawer',
+
+  // Printer Agent Config Events
+  PRINTER_CONFIG_UPDATE: 'printerConfigUpdate',
 
   // Connection events
   CONNECTED: 'connected',

@@ -5,7 +5,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 import {
   OnlineOrderSession,
@@ -14,12 +15,23 @@ import {
   Category,
   Order,
   OrderItem,
+  Organization,
+  Payment,
 } from '../../database/entities';
+import { Event } from '../../database/entities/event.entity';
 import { OnlineOrderSessionStatus } from '../../database/entities/online-order-session.entity';
-import { OrderStatus, PaymentStatus, OrderSource } from '../../database/entities/order.entity';
+import { QrCodeType } from '../../database/entities/qr-code.entity';
+import { OrderStatus, PaymentStatus, OrderSource, OrderFulfillmentType } from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
+import {
+  PaymentMethod,
+  PaymentProvider,
+  PaymentTransactionStatus,
+} from '../../database/entities/payment.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { StartSessionDto, AddCartItemDto, UpdateCartItemDto, SubmitOrderDto } from './dto';
+import { StartSessionDto, AddCartItemDto, UpdateCartItemDto, SubmitOrderDto, CreateOnlinePaymentDto, OnlinePaymentMethod } from './dto';
+import { PayPalService } from '../payments/providers/paypal.service';
+import { SumUpService } from '../sumup/sumup.service';
 
 @Injectable()
 export class OnlineOrdersService {
@@ -39,18 +51,68 @@ export class OnlineOrdersService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(OrderItem)
     private readonly orderItemRepository: Repository<OrderItem>,
+    @InjectRepository(Organization)
+    private readonly organizationRepository: Repository<Organization>,
+    @InjectRepository(Payment)
+    private readonly paymentRepository: Repository<Payment>,
+    private readonly paypalService: PayPalService,
+    private readonly sumUpService: SumUpService,
+    private readonly configService: ConfigService,
   ) {}
 
   async startSession(startDto: StartSessionDto): Promise<{ sessionToken: string; session: OnlineOrderSession }> {
-    const qrCode = await this.qrCodeRepository.findOne({
-      where: { code: startDto.code, isActive: true },
-      relations: ['organization', 'event'],
-    });
+    let organizationId: string;
+    let eventId: string | null = null;
+    let tableNumber: string | null = startDto.tableNumber || null;
+    let qrCodeId: string | null = null;
 
-    if (!qrCode) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        message: 'QR-Code nicht gefunden oder nicht aktiv',
+    if (startDto.code) {
+      // QR Code flow (existing)
+      const qrCode = await this.qrCodeRepository.findOne({
+        where: { code: startDto.code, isActive: true },
+        relations: ['organization', 'event'],
+      });
+
+      if (!qrCode) {
+        throw new NotFoundException({
+          code: ErrorCodes.NOT_FOUND,
+          message: 'QR-Code nicht gefunden oder nicht aktiv',
+        });
+      }
+
+      organizationId = qrCode.organizationId;
+      eventId = qrCode.eventId;
+      qrCodeId = qrCode.id;
+      if (qrCode.tableNumber) {
+        tableNumber = qrCode.tableNumber;
+      }
+
+      // Update scan count
+      qrCode.scanCount += 1;
+      qrCode.lastScannedAt = new Date();
+      await this.qrCodeRepository.save(qrCode);
+
+      this.logger.log(`Session started via QR: ${qrCode.code}`);
+    } else if (startDto.organizationId) {
+      // Direct flow - need organizationId at minimum
+      organizationId = startDto.organizationId;
+
+      if (startDto.eventId) {
+        eventId = startDto.eventId;
+      } else {
+        // Find the most relevant active event for this organization
+        const event = await this.orderRepository.manager.getRepository(Event).findOne({
+          where: { organizationId, status: In(['active', 'test']) },
+          order: { startDate: 'ASC' },
+        });
+        eventId = event?.id || null;
+      }
+
+      this.logger.log(`Session started directly for org ${organizationId}, event ${eventId}`);
+    } else {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Entweder code oder organizationId ist erforderlich',
       });
     }
 
@@ -60,11 +122,11 @@ export class OnlineOrdersService {
     expiresAt.setHours(expiresAt.getHours() + this.SESSION_TTL_HOURS);
 
     const session = this.sessionRepository.create({
-      organizationId: qrCode.organizationId,
-      eventId: qrCode.eventId,
-      qrCodeId: qrCode.id,
+      organizationId,
+      eventId,
+      qrCodeId,
       sessionToken,
-      tableNumber: qrCode.tableNumber,
+      tableNumber,
       status: OnlineOrderSessionStatus.ACTIVE,
       cart: { items: [], updatedAt: new Date().toISOString() },
       expiresAt,
@@ -72,14 +134,16 @@ export class OnlineOrdersService {
 
     await this.sessionRepository.save(session);
 
-    // Update QR code scan count
-    qrCode.scanCount += 1;
-    qrCode.lastScannedAt = new Date();
-    await this.qrCodeRepository.save(qrCode);
-
-    this.logger.log(`Session started: ${session.id} for QR ${qrCode.code}`);
-
     return { sessionToken, session };
+  }
+
+  async getPublicEvents(organizationId: string) {
+    const events = await this.orderRepository.manager.getRepository(Event).find({
+      where: { organizationId, status: In(['active', 'test']) },
+      order: { startDate: 'ASC' },
+      select: ['id', 'name', 'startDate', 'endDate', 'status'],
+    });
+    return { data: events };
   }
 
   async getSession(sessionToken: string): Promise<OnlineOrderSession> {
@@ -265,6 +329,9 @@ export class OnlineOrdersService {
       status: OrderStatus.OPEN,
       paymentStatus: PaymentStatus.UNPAID,
       source: OrderSource.QR_ORDER,
+      fulfillmentType: session.qrCode?.type === QrCodeType.TABLE
+        ? OrderFulfillmentType.TABLE_SERVICE
+        : OrderFulfillmentType.COUNTER_PICKUP,
       onlineSessionId: session.id,
     });
 
@@ -339,6 +406,199 @@ export class OnlineOrdersService {
     });
 
     return orders;
+  }
+
+  async initiatePayment(sessionToken: string, payDto: CreateOnlinePaymentDto): Promise<{ data: unknown }> {
+    const session = await this.getSession(sessionToken);
+
+    const order = await this.orderRepository.findOne({
+      where: {
+        onlineSessionId: session.id,
+        paymentStatus: PaymentStatus.UNPAID,
+      },
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!order) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Keine offene Bestellung gefunden',
+      });
+    }
+
+    const organization = await this.organizationRepository.findOne({
+      where: { id: session.organizationId },
+    });
+
+    if (!organization) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Organisation nicht gefunden',
+      });
+    }
+
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || '';
+    const returnUrl = payDto.returnUrl || `${frontendUrl}/status`;
+    const cancelUrl = `${frontendUrl}/checkout`;
+    const description = `OpenEOS Bestellung #${order.dailyNumber}`;
+
+    let paymentData: unknown;
+
+    switch (payDto.paymentMethod) {
+      case OnlinePaymentMethod.PAYPAL: {
+        const settings = organization.settings?.paypal;
+        if (!settings?.clientId || !settings?.clientSecret) {
+          throw new BadRequestException({
+            code: ErrorCodes.VALIDATION_ERROR,
+            message: 'PayPal ist für diese Organisation nicht konfiguriert',
+          });
+        }
+
+        const paypalOrder = await this.paypalService.createOrder(
+          Number(order.total),
+          'EUR',
+          description,
+          returnUrl,
+          cancelUrl,
+          settings.clientId,
+          settings.clientSecret,
+        );
+
+        const payment = this.paymentRepository.create({
+          orderId: order.id,
+          amount: order.total,
+          paymentMethod: PaymentMethod.PAYPAL,
+          paymentProvider: PaymentProvider.PAYPAL,
+          status: PaymentTransactionStatus.PENDING,
+          providerTransactionId: paypalOrder.id,
+          metadata: { paypalOrderId: paypalOrder.id },
+        });
+        await this.paymentRepository.save(payment);
+
+        const approveLink = paypalOrder.links.find((l) => l.rel === 'approve');
+        paymentData = {
+          provider: 'paypal',
+          paymentId: payment.id,
+          paypalOrderId: paypalOrder.id,
+          approveUrl: approveLink?.href,
+        };
+        break;
+      }
+
+      case OnlinePaymentMethod.SUMUP_ONLINE:
+      case OnlinePaymentMethod.GOOGLE_PAY:
+      case OnlinePaymentMethod.APPLE_PAY: {
+        const checkout = await this.sumUpService.createOnlineCheckout(
+          session.organizationId,
+          Number(order.total),
+          'EUR',
+          description,
+          returnUrl,
+        );
+
+        const paymentMethod =
+          payDto.paymentMethod === OnlinePaymentMethod.GOOGLE_PAY
+            ? PaymentMethod.GOOGLE_PAY
+            : payDto.paymentMethod === OnlinePaymentMethod.APPLE_PAY
+              ? PaymentMethod.APPLE_PAY
+              : PaymentMethod.SUMUP_ONLINE;
+
+        const payment = this.paymentRepository.create({
+          orderId: order.id,
+          amount: order.total,
+          paymentMethod,
+          paymentProvider: PaymentProvider.SUMUP,
+          status: PaymentTransactionStatus.PENDING,
+          providerTransactionId: checkout.checkoutId,
+          metadata: { checkoutId: checkout.checkoutId },
+        });
+        await this.paymentRepository.save(payment);
+
+        paymentData = {
+          provider: 'sumup',
+          paymentId: payment.id,
+          checkoutUrl: checkout.checkoutUrl,
+          checkoutId: checkout.checkoutId,
+        };
+        break;
+      }
+
+      default:
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          message: `Nicht unterstützte Zahlungsmethode: ${payDto.paymentMethod}`,
+        });
+    }
+
+    return { data: paymentData };
+  }
+
+  async confirmPayment(
+    sessionToken: string,
+    paymentId: string,
+    providerOrderId: string,
+  ): Promise<{ data: { status: string } }> {
+    const session = await this.getSession(sessionToken);
+
+    const payment = await this.paymentRepository.findOne({
+      where: { id: paymentId },
+      relations: ['order'],
+    });
+
+    if (!payment || payment.order.onlineSessionId !== session.id) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Zahlung nicht gefunden',
+      });
+    }
+
+    if (payment.status === PaymentTransactionStatus.CAPTURED) {
+      return { data: { status: 'already_captured' } };
+    }
+
+    if (payment.paymentProvider === PaymentProvider.PAYPAL) {
+      const organization = await this.organizationRepository.findOne({
+        where: { id: session.organizationId },
+      });
+
+      if (!organization) {
+        throw new NotFoundException({
+          code: ErrorCodes.NOT_FOUND,
+          message: 'Organisation nicht gefunden',
+        });
+      }
+
+      const settings = organization.settings?.paypal;
+      if (!settings?.clientId || !settings?.clientSecret) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          message: 'PayPal ist für diese Organisation nicht konfiguriert',
+        });
+      }
+
+      const capture = await this.paypalService.captureOrder(
+        providerOrderId,
+        settings.clientId,
+        settings.clientSecret,
+      );
+
+      if (capture.status === 'COMPLETED') {
+        payment.status = PaymentTransactionStatus.CAPTURED;
+        await this.paymentRepository.save(payment);
+
+        const order = payment.order;
+        order.paidAmount = Number(order.paidAmount) + Number(payment.amount);
+        order.paymentStatus =
+          order.paidAmount >= Number(order.total)
+            ? PaymentStatus.PAID
+            : PaymentStatus.PARTLY_PAID;
+        await this.orderRepository.save(order);
+      }
+    }
+
+    // SumUp webhooks handle confirmation separately
+
+    return { data: { status: payment.status } };
   }
 
   private generateSessionToken(): string {

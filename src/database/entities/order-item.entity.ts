@@ -5,6 +5,7 @@ import { Product } from './product.entity';
 import { Category } from './category.entity';
 import { OrderItemPayment } from './order-item-payment.entity';
 import { PrintJob } from './print-job.entity';
+import { ProductionStation } from './production-station.entity';
 
 export enum OrderItemStatus {
   PENDING = 'pending',
@@ -86,6 +87,9 @@ export class OrderItem extends BaseEntity {
   @Column({ name: 'sort_order', type: 'int', default: 0 })
   sortOrder: number;
 
+  @Column({ name: 'production_station_id', type: 'uuid', nullable: true })
+  productionStationId: string | null;
+
   // Relations
   @ManyToOne(() => Order, (order) => order.items, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'order_id' })
@@ -98,6 +102,10 @@ export class OrderItem extends BaseEntity {
   @ManyToOne(() => Category, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'category_id' })
   category: Category;
+
+  @ManyToOne(() => ProductionStation, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'production_station_id' })
+  productionStation: ProductionStation | null;
 
   @OneToMany(() => OrderItemPayment, (payment) => payment.orderItem)
   itemPayments: OrderItemPayment[];

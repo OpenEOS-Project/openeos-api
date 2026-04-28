@@ -11,10 +11,10 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto, UpdateEventDto, CopyProductsDto } from './dto';
-import { CurrentUser, CurrentOrganization } from '../../common/decorators';
+import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
@@ -76,6 +76,7 @@ export class EventsController {
 
   // Event Lifecycle
   @Post(':eventId/activate')
+  @ApiOperation({ summary: 'Aktiviert ein Event (deaktiviert das aktuell aktive Event der Organisation)' })
   async activate(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -85,35 +86,26 @@ export class EventsController {
     return { data: event };
   }
 
-  @Post(':eventId/complete')
-  async complete(
+  @Post(':eventId/deactivate')
+  @ApiOperation({ summary: 'Deaktiviert ein Event' })
+  async deactivate(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser() user: User,
   ) {
-    const event = await this.eventsService.complete(organizationId, eventId, user);
+    const event = await this.eventsService.deactivate(organizationId, eventId, user);
     return { data: event };
   }
 
-  @Post(':eventId/cancel')
-  async cancel(
+  @Post(':eventId/test')
+  @ApiOperation({ summary: 'Setzt ein Event in den Test-Modus (Bestellungen werden als Test markiert)' })
+  async setTestMode(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser() user: User,
   ) {
-    const event = await this.eventsService.cancel(organizationId, eventId, user);
+    const event = await this.eventsService.setTestMode(organizationId, eventId, user);
     return { data: event };
-  }
-
-  // Credit Check
-  @Get(':eventId/credits')
-  async checkCredits(
-    @Param('organizationId', ParseUUIDPipe) organizationId: string,
-    @Param('eventId', ParseUUIDPipe) eventId: string,
-    @CurrentUser() user: User,
-  ) {
-    const result = await this.eventsService.checkCredits(organizationId, eventId, user);
-    return { data: result };
   }
 
   // Copy products from another event

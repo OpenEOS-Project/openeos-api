@@ -25,6 +25,7 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
 import { CreatePaymentDto, SplitPaymentDto, QueryPaymentsDto } from './dto';
+import { OrderPrintService } from '../print-jobs/order-print.service';
 
 @Injectable()
 export class PaymentsService {
@@ -41,6 +42,7 @@ export class PaymentsService {
     private readonly orderItemPaymentRepository: Repository<OrderItemPayment>,
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
+    private readonly orderPrintService: OrderPrintService,
   ) {}
 
   async create(
@@ -106,6 +108,19 @@ export class PaymentsService {
     }
 
     this.logger.log(`Payment created: ${payment.id} for order ${order.orderNumber}`);
+
+    // Trigger auto-printing for payment
+    this.orderPrintService.handlePaymentReceived(organizationId, {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      paymentId: payment.id,
+      amount: Number(payment.amount),
+      paymentMethod: payment.paymentMethod,
+      isFullyPaid: isFullyPaid,
+      order,
+    }).catch((err) => {
+      this.logger.error(`Failed to trigger payment printing: ${err.message}`);
+    });
 
     return this.findOne(organizationId, payment.id, user);
   }
@@ -205,6 +220,20 @@ export class PaymentsService {
     await this.updateOrderPaymentStatus(order);
 
     this.logger.log(`Split payment created: ${payment.id} for order ${order.orderNumber}`);
+
+    // Trigger auto-printing for payment
+    const isFullyPaid = Number(order.paidAmount) >= Number(order.total);
+    this.orderPrintService.handlePaymentReceived(organizationId, {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      paymentId: payment.id,
+      amount: Number(payment.amount),
+      paymentMethod: payment.paymentMethod,
+      isFullyPaid,
+      order,
+    }).catch((err) => {
+      this.logger.error(`Failed to trigger payment printing: ${err.message}`);
+    });
 
     return this.findOne(organizationId, payment.id, user);
   }

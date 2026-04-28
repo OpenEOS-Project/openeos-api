@@ -1,6 +1,7 @@
 import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Organization } from './organization.entity';
+import { Device } from './device.entity';
 import { PrintJob } from './print-job.entity';
 
 export enum PrinterType {
@@ -26,6 +27,7 @@ export interface PrinterConnectionConfig {
 
 @Entity('printers')
 @Index(['organizationId'])
+@Index(['deviceId'])
 export class Printer extends BaseEntity {
   @Column({ name: 'organization_id', type: 'uuid' })
   organizationId: string;
@@ -42,8 +44,14 @@ export class Printer extends BaseEntity {
   @Column({ name: 'connection_config', type: 'jsonb', default: {} })
   connectionConfig: PrinterConnectionConfig;
 
-  @Column({ name: 'agent_id', type: 'varchar', length: 255, nullable: true })
-  agentId: string | null;
+  @Column({ name: 'device_id', type: 'uuid', nullable: true })
+  deviceId: string | null;
+
+  @Column({ name: 'paper_width', type: 'int', default: 80 })
+  paperWidth: number;
+
+  @Column({ name: 'has_cash_drawer', type: 'boolean', default: false })
+  hasCashDrawer: boolean;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
@@ -54,10 +62,17 @@ export class Printer extends BaseEntity {
   @Column({ name: 'last_seen_at', type: 'timestamp with time zone', nullable: true })
   lastSeenAt: Date | null;
 
+  @Column({ name: 'rental_assignment_id', type: 'uuid', nullable: true })
+  rentalAssignmentId: string | null;
+
   // Relations
   @ManyToOne(() => Organization, (org) => org.printers, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'organization_id' })
   organization: Organization;
+
+  @ManyToOne(() => Device, (device) => device.printers, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'device_id' })
+  device: Device | null;
 
   @OneToMany(() => PrintJob, (job) => job.printer)
   printJobs: PrintJob[];

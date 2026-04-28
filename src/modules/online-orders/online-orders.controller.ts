@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiSecurity } from '@nestjs/swagger';
 import { OnlineOrdersService } from './online-orders.service';
-import { StartSessionDto, AddCartItemDto, UpdateCartItemDto, SubmitOrderDto } from './dto';
+import { StartSessionDto, AddCartItemDto, UpdateCartItemDto, SubmitOrderDto, CreateOnlinePaymentDto } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes } from '../../common/constants/error-codes';
 
@@ -34,12 +34,19 @@ export class OnlineOrdersController {
     return token;
   }
 
+  @Get('events/:organizationId')
+  async getPublicEvents(@Param('organizationId') organizationId: string) {
+    return this.onlineOrdersService.getPublicEvents(organizationId);
+  }
+
   @Post('session')
   async startSession(@Body() startDto: StartSessionDto) {
     const result = await this.onlineOrdersService.startSession(startDto);
     return {
       data: {
         sessionToken: result.sessionToken,
+        eventName: (result.session as unknown as { event?: { name?: string } }).event?.name || null,
+        organizationName: (result.session as unknown as { organization?: { name?: string } }).organization?.name || null,
         session: {
           id: result.session.id,
           tableNumber: result.session.tableNumber,
@@ -141,6 +148,24 @@ export class OnlineOrdersController {
         })) || [],
       },
     };
+  }
+
+  @Post('pay')
+  async initiatePayment(
+    @Headers() headers: Record<string, string>,
+    @Body() payDto: CreateOnlinePaymentDto,
+  ) {
+    const sessionToken = this.getSessionToken(headers);
+    return this.onlineOrdersService.initiatePayment(sessionToken, payDto);
+  }
+
+  @Post('pay/confirm')
+  async confirmPayment(
+    @Headers() headers: Record<string, string>,
+    @Body() body: { paymentId: string; providerOrderId: string },
+  ) {
+    const sessionToken = this.getSessionToken(headers);
+    return this.onlineOrdersService.confirmPayment(sessionToken, body.paymentId, body.providerOrderId);
   }
 
   @Get('status')

@@ -14,7 +14,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProductDto {
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID der Kategorie' })
-  @IsUUID('4', { message: 'Ungültige Kategorie-ID' })
+  @IsString()
+  @MinLength(1, { message: 'Ungültige Kategorie-ID' })
   categoryId: string;
 
   @ApiProperty({ example: 'Wiener Schnitzel', description: 'Name des Produkts' })
@@ -81,4 +82,9 @@ export class CreateProductDto {
   @IsInt()
   @Min(0)
   sortOrder?: number;
+
+  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID des Produktionsstandorts (überschreibt Kategorie-Einstellung)' })
+  @IsOptional()
+  @IsUUID('4', { message: 'Ungültige Produktionsstandort-ID' })
+  productionStationId?: string;
 }

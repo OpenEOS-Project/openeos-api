@@ -1,10 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   Organization,
   User,
-  CreditPurchase,
-  CreditPackage,
   SubscriptionConfig,
   Invoice,
   RentalHardware,
@@ -12,19 +10,20 @@ import {
   AdminAuditLog,
   Event,
   Order,
+  Printer,
+  Device,
 } from '../../database/entities';
 import { AdminController } from './admin.controller';
-import { PricingPublicController } from './pricing-public.controller';
 import { AdminService } from './admin.service';
-import { StripeModule } from '../stripe/stripe.module';
+import { AdminEventsController } from './admin-events.controller';
+import { AdminEventsService } from './admin-events.service';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       Organization,
       User,
-      CreditPurchase,
-      CreditPackage,
       SubscriptionConfig,
       Invoice,
       RentalHardware,
@@ -32,11 +31,13 @@ import { StripeModule } from '../stripe/stripe.module';
       AdminAuditLog,
       Event,
       Order,
+      Printer,
+      Device,
     ]),
-    StripeModule,
+    forwardRef(() => GatewayModule),
   ],
-  controllers: [AdminController, PricingPublicController],
-  providers: [AdminService],
-  exports: [AdminService],
+  controllers: [AdminController, AdminEventsController],
+  providers: [AdminService, AdminEventsService],
+  exports: [AdminService, AdminEventsService],
 })
 export class AdminModule {}

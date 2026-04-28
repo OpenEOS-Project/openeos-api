@@ -448,13 +448,6 @@ docker-compose down
 docker-compose down -v
 ```
 
-## Planungsdokumentation
-
-- [API-Struktur](../PLAN/04-API.md)
-- [Datenbankschema](../PLAN/03-DATENBANK.md)
-- [Sicherheit](../PLAN/10-SICHERHEIT.md)
-- [Workflow Engine](../PLAN/06-WORKFLOW-ENGINE.md)
-
 ## License
 
 AGPLv3

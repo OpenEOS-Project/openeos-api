@@ -116,6 +116,15 @@ export class DevicesController {
     return this.devicesService.unblockDevice(organizationId, deviceId, user);
   }
 
+  @Get(':deviceId/stats')
+  getDeviceStats(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.devicesService.getDeviceStats(organizationId, deviceId, user);
+  }
+
   @Get('online/ids')
   getOnlineDeviceIds(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

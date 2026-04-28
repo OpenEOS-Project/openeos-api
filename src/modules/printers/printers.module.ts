@@ -1,11 +1,15 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PrintersController } from './printers.controller';
 import { PrintersService } from './printers.service';
-import { Printer, UserOrganization } from '../../database/entities';
+import { Printer, Device, UserOrganization } from '../../database/entities';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Printer, UserOrganization])],
+  imports: [
+    TypeOrmModule.forFeature([Printer, Device, UserOrganization]),
+    forwardRef(() => GatewayModule),
+  ],
   controllers: [PrintersController],
   providers: [PrintersService],
   exports: [PrintersService],

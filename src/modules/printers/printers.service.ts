@@ -2,15 +2,20 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Printer, User, UserOrganization } from '../../database/entities';
+import { Printer, Device, User, UserOrganization } from '../../database/entities';
+import { DeviceType } from '../../database/entities/device.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
 import { CreatePrinterDto, UpdatePrinterDto } from './dto';
+import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
 export class PrintersService {
@@ -21,6 +26,10 @@ export class PrintersService {
     private readonly printerRepository: Repository<Printer>,
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
+    @InjectRepository(Device)
+    private readonly deviceRepository: Repository<Device>,
+    @Inject(forwardRef(() => GatewayService))
+    private readonly gatewayService: GatewayService,
   ) {}
 
   async create(
@@ -30,19 +39,30 @@ export class PrintersService {
   ): Promise<Printer> {
     await this.checkPermission(organizationId, user.id, 'devices');
 
+    // Validate deviceId if provided
+    if (createDto.deviceId) {
+      await this.validateDeviceForOrg(createDto.deviceId, organizationId);
+    }
+
     const printer = this.printerRepository.create({
       organizationId,
       name: createDto.name,
       type: createDto.type,
       connectionType: createDto.connectionType,
       connectionConfig: createDto.connectionConfig || {},
-      agentId: createDto.agentId || null,
+      deviceId: createDto.deviceId || null,
+      paperWidth: createDto.paperWidth || 80,
       isActive: true,
       isOnline: false,
     });
 
     await this.printerRepository.save(printer);
     this.logger.log(`Printer created: ${printer.name} (${printer.id})`);
+
+    // Notify the device about config change
+    if (printer.deviceId) {
+      this.notifyDeviceConfigUpdate(organizationId, printer.deviceId);
+    }
 
     return printer;
   }
@@ -93,10 +113,27 @@ export class PrintersService {
     await this.checkPermission(organizationId, user.id, 'devices');
 
     const printer = await this.findOne(organizationId, printerId, user);
+    const previousDeviceId = printer.deviceId;
+
+    // Validate new deviceId if provided
+    if (updateDto.deviceId !== undefined && updateDto.deviceId !== previousDeviceId) {
+      if (updateDto.deviceId) {
+        await this.validateDeviceForOrg(updateDto.deviceId, organizationId);
+      }
+    }
+
     Object.assign(printer, updateDto);
     await this.printerRepository.save(printer);
 
     this.logger.log(`Printer updated: ${printer.name} (${printer.id})`);
+
+    // Notify affected devices about config change
+    if (previousDeviceId && previousDeviceId !== printer.deviceId) {
+      this.notifyDeviceConfigUpdate(organizationId, previousDeviceId);
+    }
+    if (printer.deviceId) {
+      this.notifyDeviceConfigUpdate(organizationId, printer.deviceId);
+    }
 
     return printer;
   }
@@ -105,9 +142,23 @@ export class PrintersService {
     await this.checkPermission(organizationId, user.id, 'devices');
 
     const printer = await this.findOne(organizationId, printerId, user);
+    const deviceId = printer.deviceId;
+
     await this.printerRepository.remove(printer);
 
     this.logger.log(`Printer deleted: ${printer.name} (${printer.id})`);
+
+    // Notify the device about config change
+    if (deviceId) {
+      this.notifyDeviceConfigUpdate(organizationId, deviceId);
+    }
+  }
+
+  async findByDeviceId(deviceId: string): Promise<Printer[]> {
+    return this.printerRepository.find({
+      where: { deviceId, isActive: true },
+      order: { name: 'ASC' },
+    });
   }
 
   async updateOnlineStatus(printerId: string, isOnline: boolean): Promise<void> {
@@ -134,11 +185,44 @@ export class PrintersService {
       return { success: false, message: 'Drucker ist offline' };
     }
 
-    // In production, this would send a test print job to the printer agent
-    // For now, we just simulate success
     this.logger.log(`Test print requested for printer: ${printer.name}`);
 
     return { success: true, message: 'Testdruck wurde gesendet' };
+  }
+
+  private async validateDeviceForOrg(deviceId: string, organizationId: string): Promise<void> {
+    const device = await this.deviceRepository.findOne({
+      where: { id: deviceId },
+    });
+
+    if (!device) {
+      throw new BadRequestException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Gerät nicht gefunden',
+      });
+    }
+
+    if (device.type !== DeviceType.PRINTER_AGENT) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Gerät ist kein Printer Agent',
+      });
+    }
+
+    if (device.organizationId !== organizationId) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Gerät gehört nicht zu dieser Organisation',
+      });
+    }
+  }
+
+  private notifyDeviceConfigUpdate(organizationId: string, deviceId: string): void {
+    try {
+      this.gatewayService.notifyPrinterConfigUpdate(organizationId, deviceId);
+    } catch (error) {
+      this.logger.warn(`Failed to notify device ${deviceId} about config update: ${error}`);
+    }
   }
 
   private async checkMembership(organizationId: string, userId: string): Promise<void> {

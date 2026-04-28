@@ -4,14 +4,14 @@ import {
   BadRequestException,
   ForbiddenException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, In, MoreThanOrEqual } from 'typeorm';
+import { Repository, In, MoreThanOrEqual } from 'typeorm';
 import {
   Organization,
   User,
-  CreditPurchase,
-  CreditPackage,
   SubscriptionConfig,
   Invoice,
   RentalHardware,
@@ -19,24 +19,25 @@ import {
   AdminAuditLog,
   Event,
   Order,
+  Printer,
+  Device,
 } from '../../database/entities';
 import { AdminAction } from '../../database/entities/admin-audit-log.entity';
-import { CreditPaymentStatus } from '../../database/entities/credit-purchase.entity';
 import { InvoiceStatus } from '../../database/entities/invoice.entity';
-import { RentalHardwareStatus } from '../../database/entities/rental-hardware.entity';
+import { RentalHardwareStatus, RentalHardwareType } from '../../database/entities/rental-hardware.entity';
+import { DeviceType } from '../../database/entities/device.entity';
 import { RentalAssignmentStatus } from '../../database/entities/rental-assignment.entity';
+import { PrinterType, PrinterConnectionType } from '../../database/entities/printer.entity';
 import { EventStatus } from '../../database/entities/event.entity';
+import { GatewayService } from '../gateway/gateway.service';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import {
   QueryOrganizationsDto,
   QueryUsersDto,
-  QueryPurchasesDto,
   QueryInvoicesAdminDto,
   QueryAuditLogsDto,
   QueryRentalHardwareDto,
   QueryRentalAssignmentsAdminDto,
-  QueryCreditPackagesDto,
-  AdjustCreditsDto,
   SetDiscountDto,
   AccessOrganizationDto,
   CreateRentalHardwareDto,
@@ -46,8 +47,6 @@ import {
   UpdateOrganizationAdminDto,
   CreateSubscriptionConfigDto,
   UpdateSubscriptionConfigDto,
-  CreateCreditPackageDto,
-  UpdateCreditPackageDto,
 } from './dto';
 
 @Injectable()
@@ -59,10 +58,6 @@ export class AdminService {
     private readonly organizationRepository: Repository<Organization>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @InjectRepository(CreditPurchase)
-    private readonly creditPurchaseRepository: Repository<CreditPurchase>,
-    @InjectRepository(CreditPackage)
-    private readonly creditPackageRepository: Repository<CreditPackage>,
     @InjectRepository(SubscriptionConfig)
     private readonly subscriptionConfigRepository: Repository<SubscriptionConfig>,
     @InjectRepository(Invoice)
@@ -77,6 +72,12 @@ export class AdminService {
     private readonly eventRepository: Repository<Event>,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
+    @InjectRepository(Printer)
+    private readonly printerRepository: Repository<Printer>,
+    @InjectRepository(Device)
+    private readonly deviceRepository: Repository<Device>,
+    @Inject(forwardRef(() => GatewayService))
+    private readonly gatewayService: GatewayService,
   ) {}
 
   // === Organizations ===
@@ -143,44 +144,6 @@ export class AdminService {
       { before, after: org },
       ipAddress,
       userAgent,
-    );
-
-    return org;
-  }
-
-  async adjustCredits(
-    orgId: string,
-    adjustDto: AdjustCreditsDto,
-    adminUserId: string,
-    ipAddress: string,
-    userAgent?: string,
-  ): Promise<Organization> {
-    const org = await this.getOrganization(orgId);
-    const before = { eventCredits: org.eventCredits };
-
-    org.eventCredits += adjustDto.amount;
-    if (org.eventCredits < 0) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Credits können nicht negativ werden',
-      });
-    }
-
-    await this.organizationRepository.save(org);
-
-    await this.createAuditLog(
-      adminUserId,
-      orgId,
-      AdminAction.CREDIT_ADJUSTMENT,
-      'organization',
-      orgId,
-      { before, after: { eventCredits: org.eventCredits }, adjustment: adjustDto.amount, reason: adjustDto.reason },
-      ipAddress,
-      userAgent,
-    );
-
-    this.logger.log(
-      `Credits adjusted for org ${orgId}: ${adjustDto.amount} (reason: ${adjustDto.reason})`,
     );
 
     return org;
@@ -384,96 +347,6 @@ export class AdminService {
     return user;
   }
 
-  // === Purchases ===
-
-  async findAllPurchases(
-    queryDto: QueryPurchasesDto,
-  ): Promise<{ data: CreditPurchase[]; total: number; page: number; limit: number }> {
-    const { organizationId, status, startDate, endDate, page = 1, limit = 20 } = queryDto;
-
-    const queryBuilder = this.creditPurchaseRepository
-      .createQueryBuilder('purchase')
-      .leftJoinAndSelect('purchase.organization', 'org')
-      .leftJoinAndSelect('purchase.package', 'pkg');
-
-    if (organizationId) {
-      queryBuilder.andWhere('purchase.organizationId = :organizationId', { organizationId });
-    }
-
-    if (status) {
-      queryBuilder.andWhere('purchase.paymentStatus = :status', { status });
-    }
-
-    if (startDate && endDate) {
-      queryBuilder.andWhere('purchase.createdAt BETWEEN :startDate AND :endDate', {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-      });
-    }
-
-    const total = await queryBuilder.getCount();
-
-    const data = await queryBuilder
-      .orderBy('purchase.createdAt', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit)
-      .getMany();
-
-    return { data, total, page, limit };
-  }
-
-  async completePurchase(
-    purchaseId: string,
-    adminUserId: string,
-    ipAddress: string,
-    userAgent?: string,
-  ): Promise<CreditPurchase> {
-    const purchase = await this.creditPurchaseRepository.findOne({
-      where: { id: purchaseId },
-      relations: ['organization'],
-    });
-
-    if (!purchase) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        message: 'Kauf nicht gefunden',
-      });
-    }
-
-    if (purchase.paymentStatus !== CreditPaymentStatus.PENDING) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Kauf wurde bereits abgeschlossen',
-      });
-    }
-
-    purchase.paymentStatus = CreditPaymentStatus.COMPLETED;
-    purchase.completedAt = new Date();
-    await this.creditPurchaseRepository.save(purchase);
-
-    // Add credits to organization
-    await this.organizationRepository.increment(
-      { id: purchase.organizationId },
-      'eventCredits',
-      purchase.credits,
-    );
-
-    await this.createAuditLog(
-      adminUserId,
-      purchase.organizationId,
-      AdminAction.COMPLETE_PURCHASE,
-      'credit_purchase',
-      purchaseId,
-      { credits: purchase.credits, amount: purchase.amount },
-      ipAddress,
-      userAgent,
-    );
-
-    this.logger.log(`Purchase completed by admin: ${purchaseId}`);
-
-    return purchase;
-  }
-
   // === Invoices ===
 
   async findAllInvoices(
@@ -548,6 +421,24 @@ export class AdminService {
     return invoice;
   }
 
+  // === Devices (Admin) ===
+
+  async findAllDevices(params?: { type?: string; unassigned?: boolean }): Promise<Device[]> {
+    const qb = this.deviceRepository.createQueryBuilder('device');
+
+    if (params?.type) {
+      qb.andWhere('device.type = :type', { type: params.type });
+    }
+
+    if (params?.unassigned) {
+      qb.andWhere('device.organizationId IS NULL');
+    }
+
+    qb.orderBy('device.name', 'ASC');
+
+    return qb.getMany();
+  }
+
   // === Rental Hardware ===
 
   async findAllRentalHardware(
@@ -575,6 +466,7 @@ export class AdminService {
     const total = await queryBuilder.getCount();
 
     const data = await queryBuilder
+      .leftJoinAndSelect('hw.device', 'device')
       .orderBy('hw.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
@@ -775,6 +667,95 @@ export class AdminService {
     }) as Promise<RentalAssignment>;
   }
 
+  async activateRental(
+    assignmentId: string,
+    adminUserId: string,
+    ipAddress: string,
+    userAgent?: string,
+  ): Promise<RentalAssignment> {
+    const assignment = await this.rentalAssignmentRepository.findOne({
+      where: { id: assignmentId },
+      relations: ['rentalHardware', 'organization'],
+    });
+
+    if (!assignment) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Zuweisung nicht gefunden',
+      });
+    }
+
+    if (assignment.status !== RentalAssignmentStatus.CONFIRMED) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Zuweisung muss den Status "confirmed" haben',
+      });
+    }
+
+    const hardware = assignment.rentalHardware;
+
+    // If hardware is a printer with a linked device, reassign device to the org
+    if (hardware.type === RentalHardwareType.PRINTER && hardware.deviceId) {
+      const device = await this.deviceRepository.findOne({
+        where: { id: hardware.deviceId },
+      });
+
+      if (device) {
+        // Reassign device to the rental organization
+        device.organizationId = assignment.organizationId;
+        await this.deviceRepository.save(device);
+
+        // Auto-create printer entry based on hardware config
+        const config = hardware.hardwareConfig;
+        const printer = this.printerRepository.create({
+          organizationId: assignment.organizationId,
+          name: hardware.name,
+          type: (config.printerType as PrinterType) || PrinterType.RECEIPT,
+          connectionType: (config.connectionType as PrinterConnectionType) || PrinterConnectionType.USB,
+          connectionConfig: {
+            ipAddress: config.ipAddress,
+            port: config.port,
+            usbVendorId: config.usbVendorId as string | undefined,
+            usbProductId: config.usbProductId as string | undefined,
+          },
+          paperWidth: config.paperWidth || 80,
+          deviceId: hardware.deviceId,
+          rentalAssignmentId: assignment.id,
+          isActive: true,
+          isOnline: false,
+        });
+
+        await this.printerRepository.save(printer);
+        this.logger.log(`Auto-created printer ${printer.name} (${printer.id}) for rental activation`);
+
+        // Push config update to device via WebSocket
+        try {
+          this.gatewayService.notifyPrinterConfigUpdate(assignment.organizationId, hardware.deviceId);
+        } catch (error) {
+          this.logger.warn(`Failed to push config update to device ${hardware.deviceId}: ${error}`);
+        }
+      }
+    }
+
+    assignment.status = RentalAssignmentStatus.ACTIVE;
+    await this.rentalAssignmentRepository.save(assignment);
+
+    await this.createAuditLog(
+      adminUserId,
+      assignment.organizationId,
+      AdminAction.ASSIGN_RENTAL,
+      'rental_assignment',
+      assignmentId,
+      { hardwareId: hardware.id, action: 'activate' },
+      ipAddress,
+      userAgent,
+    );
+
+    this.logger.log(`Rental activated: ${assignmentId}`);
+
+    return assignment;
+  }
+
   async returnRental(
     assignmentId: string,
     adminUserId: string,
@@ -791,6 +772,38 @@ export class AdminService {
         code: ErrorCodes.NOT_FOUND,
         message: 'Zuweisung nicht gefunden',
       });
+    }
+
+    const hardware = assignment.rentalHardware;
+
+    // Delete auto-created printers for this rental assignment
+    const rentalPrinters = await this.printerRepository.find({
+      where: { rentalAssignmentId: assignmentId },
+    });
+
+    if (rentalPrinters.length > 0) {
+      const deviceIds = [...new Set(rentalPrinters.map((p) => p.deviceId).filter(Boolean))] as string[];
+      await this.printerRepository.remove(rentalPrinters);
+      this.logger.log(`Removed ${rentalPrinters.length} rental printers for assignment ${assignmentId}`);
+
+      // Notify affected devices about config change
+      for (const deviceId of deviceIds) {
+        try {
+          if (assignment.organizationId) {
+            this.gatewayService.notifyPrinterConfigUpdate(assignment.organizationId, deviceId);
+          }
+        } catch (error) {
+          this.logger.warn(`Failed to notify device ${deviceId}: ${error}`);
+        }
+      }
+    }
+
+    // Unassign device from organization if it was a printer rental with linked device
+    if (hardware.type === RentalHardwareType.PRINTER && hardware.deviceId) {
+      await this.deviceRepository.update(
+        { id: hardware.deviceId },
+        { organizationId: null },
+      );
     }
 
     assignment.status = RentalAssignmentStatus.RETURNED;
@@ -824,8 +837,6 @@ export class AdminService {
   async getOverviewStats(): Promise<{
     totalOrganizations: number;
     totalUsers: number;
-    totalCredits: number;
-    pendingPurchases: number;
     activeRentals: number;
     activeEvents: number;
     newUsersThisMonth: number;
@@ -836,8 +847,6 @@ export class AdminService {
     const [
       totalOrganizations,
       totalUsers,
-      totalCreditsResult,
-      pendingPurchases,
       activeRentals,
       activeEvents,
       newUsersThisMonth,
@@ -845,18 +854,11 @@ export class AdminService {
     ] = await Promise.all([
       this.organizationRepository.count(),
       this.userRepository.count(),
-      this.organizationRepository
-        .createQueryBuilder('org')
-        .select('SUM(org.eventCredits)', 'total')
-        .getRawOne(),
-      this.creditPurchaseRepository.count({
-        where: { paymentStatus: CreditPaymentStatus.PENDING },
-      }),
       this.rentalAssignmentRepository.count({
         where: { status: RentalAssignmentStatus.ACTIVE },
       }),
       this.eventRepository.count({
-        where: { status: In([EventStatus.ACTIVE, EventStatus.SCHEDULED]) },
+        where: { status: In([EventStatus.ACTIVE, EventStatus.TEST]) },
       }),
       this.userRepository.count({
         where: { createdAt: MoreThanOrEqual(startOfMonth) },
@@ -869,8 +871,6 @@ export class AdminService {
     return {
       totalOrganizations,
       totalUsers,
-      totalCredits: Number(totalCreditsResult?.total || 0),
-      pendingPurchases,
       activeRentals,
       activeEvents,
       newUsersThisMonth,
@@ -880,35 +880,24 @@ export class AdminService {
 
   async getRevenueStats(startDate?: string, endDate?: string): Promise<{
     totalRevenue: number;
-    creditRevenue: number;
     rentalRevenue: number;
   }> {
     const start = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), 0, 1);
     const end = endDate ? new Date(endDate) : new Date();
 
-    const [creditRevenue, rentalRevenue] = await Promise.all([
-      this.creditPurchaseRepository
-        .createQueryBuilder('purchase')
-        .select('SUM(purchase.amount)', 'total')
-        .where('purchase.paymentStatus = :status', { status: CreditPaymentStatus.COMPLETED })
-        .andWhere('purchase.completedAt BETWEEN :start AND :end', { start, end })
-        .getRawOne(),
-      this.rentalAssignmentRepository
-        .createQueryBuilder('assignment')
-        .select('SUM(assignment.totalAmount)', 'total')
-        .where('assignment.status IN (:...statuses)', {
-          statuses: [RentalAssignmentStatus.ACTIVE, RentalAssignmentStatus.RETURNED],
-        })
-        .andWhere('assignment.createdAt BETWEEN :start AND :end', { start, end })
-        .getRawOne(),
-    ]);
+    const rentalRevenue = await this.rentalAssignmentRepository
+      .createQueryBuilder('assignment')
+      .select('SUM(assignment.totalAmount)', 'total')
+      .where('assignment.status IN (:...statuses)', {
+        statuses: [RentalAssignmentStatus.ACTIVE, RentalAssignmentStatus.RETURNED],
+      })
+      .andWhere('assignment.createdAt BETWEEN :start AND :end', { start, end })
+      .getRawOne();
 
-    const creditTotal = Number(creditRevenue?.total || 0);
     const rentalTotal = Number(rentalRevenue?.total || 0);
 
     return {
-      totalRevenue: creditTotal + rentalTotal,
-      creditRevenue: creditTotal,
+      totalRevenue: rentalTotal,
       rentalRevenue: rentalTotal,
     };
   }
@@ -1049,216 +1038,6 @@ export class AdminService {
     await this.subscriptionConfigRepository.remove(config);
 
     this.logger.log(`Subscription config deleted: ${config.name}`);
-  }
-
-  // === Credit Packages ===
-
-  async findAllCreditPackages(
-    queryDto: QueryCreditPackagesDto,
-  ): Promise<{ data: CreditPackage[]; total: number; page: number; limit: number }> {
-    const { search, isActive, page = 1, limit = 20 } = queryDto;
-
-    const queryBuilder = this.creditPackageRepository.createQueryBuilder('pkg');
-
-    if (search) {
-      queryBuilder.where(
-        '(pkg.name ILIKE :search OR pkg.slug ILIKE :search)',
-        { search: `%${search}%` },
-      );
-    }
-
-    if (isActive !== undefined) {
-      queryBuilder.andWhere('pkg.isActive = :isActive', { isActive });
-    }
-
-    const total = await queryBuilder.getCount();
-
-    const data = await queryBuilder
-      .orderBy('pkg.sortOrder', 'ASC')
-      .addOrderBy('pkg.createdAt', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit)
-      .getMany();
-
-    return { data, total, page, limit };
-  }
-
-  async getCreditPackage(id: string): Promise<CreditPackage> {
-    const pkg = await this.creditPackageRepository.findOne({
-      where: { id },
-    });
-
-    if (!pkg) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        message: 'Credit-Paket nicht gefunden',
-      });
-    }
-
-    return pkg;
-  }
-
-  async createCreditPackage(
-    createDto: CreateCreditPackageDto,
-  ): Promise<CreditPackage> {
-    // Check if slug already exists
-    const existing = await this.creditPackageRepository.findOne({
-      where: { slug: createDto.slug },
-    });
-
-    if (existing) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Ein Paket mit diesem Slug existiert bereits',
-      });
-    }
-
-    // Calculate pricePerCredit if not provided
-    const pricePerCredit = createDto.pricePerCredit ?? createDto.price / createDto.credits;
-
-    const pkg = this.creditPackageRepository.create({
-      ...createDto,
-      pricePerCredit,
-      isActive: createDto.isActive ?? true,
-      isFeatured: createDto.isFeatured ?? false,
-      sortOrder: createDto.sortOrder ?? 0,
-      savingsPercent: createDto.savingsPercent ?? 0,
-    });
-
-    await this.creditPackageRepository.save(pkg);
-
-    this.logger.log(`Credit package created: ${pkg.name} (${pkg.slug})`);
-
-    return pkg;
-  }
-
-  async updateCreditPackage(
-    id: string,
-    updateDto: UpdateCreditPackageDto,
-  ): Promise<CreditPackage> {
-    const pkg = await this.getCreditPackage(id);
-
-    // Check if slug is being changed and already exists
-    if (updateDto.slug && updateDto.slug !== pkg.slug) {
-      const existing = await this.creditPackageRepository.findOne({
-        where: { slug: updateDto.slug },
-      });
-
-      if (existing) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          message: 'Ein Paket mit diesem Slug existiert bereits',
-        });
-      }
-    }
-
-    // Recalculate pricePerCredit if price or credits changed
-    if ((updateDto.price !== undefined || updateDto.credits !== undefined) && !updateDto.pricePerCredit) {
-      const newPrice = updateDto.price ?? Number(pkg.price);
-      const newCredits = updateDto.credits ?? pkg.credits;
-      updateDto.pricePerCredit = newPrice / newCredits;
-    }
-
-    Object.assign(pkg, updateDto);
-    await this.creditPackageRepository.save(pkg);
-
-    this.logger.log(`Credit package updated: ${pkg.name} (${pkg.slug})`);
-
-    return pkg;
-  }
-
-  async deleteCreditPackage(id: string): Promise<void> {
-    const pkg = await this.getCreditPackage(id);
-
-    // Check if package has purchases
-    const purchaseCount = await this.creditPurchaseRepository.count({
-      where: { packageId: id },
-    });
-
-    if (purchaseCount > 0) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Paket kann nicht gelöscht werden, da bereits Käufe existieren. Deaktivieren Sie das Paket stattdessen.',
-      });
-    }
-
-    await this.creditPackageRepository.remove(pkg);
-
-    this.logger.log(`Credit package deleted: ${pkg.name} (${pkg.slug})`);
-  }
-
-  // === Default Packages ===
-
-  async ensureDefaultPackages(): Promise<CreditPackage[]> {
-    const defaults = [
-      { slug: '1-day', name: '1 Tag', credits: 1, price: 25, sortOrder: 1, savingsPercent: 0 },
-      { slug: 'weekend', name: 'Wochenende', credits: 3, price: 65, sortOrder: 2, savingsPercent: 14 },
-      { slug: '1-week', name: '1 Woche', credits: 7, price: 140, sortOrder: 3, savingsPercent: 20 },
-    ];
-
-    for (const def of defaults) {
-      const existing = await this.creditPackageRepository.findOne({
-        where: { slug: def.slug },
-      });
-
-      if (!existing) {
-        const pkg = this.creditPackageRepository.create({
-          ...def,
-          pricePerCredit: def.price / def.credits,
-          isActive: true,
-          isFeatured: def.slug === 'weekend',
-        });
-        await this.creditPackageRepository.save(pkg);
-        this.logger.log(`Created default package: ${def.name} (${def.slug})`);
-      }
-    }
-
-    return this.creditPackageRepository.find({
-      where: { slug: In(['1-day', 'weekend', '1-week']) },
-      order: { sortOrder: 'ASC' },
-    });
-  }
-
-  async updatePackagePrices(
-    prices: { slug: string; price: number }[],
-  ): Promise<CreditPackage[]> {
-    // Ensure default packages exist
-    await this.ensureDefaultPackages();
-
-    // Find the 1-day price for savings calculation
-    const oneDayEntry = prices.find((p) => p.slug === '1-day');
-    const oneDayPrice = oneDayEntry?.price ?? 25;
-
-    for (const entry of prices) {
-      const pkg = await this.creditPackageRepository.findOne({
-        where: { slug: entry.slug },
-      });
-
-      if (!pkg) {
-        throw new NotFoundException({
-          code: ErrorCodes.NOT_FOUND,
-          message: `Paket mit Slug "${entry.slug}" nicht gefunden`,
-        });
-      }
-
-      pkg.price = entry.price;
-      pkg.pricePerCredit = entry.price / pkg.credits;
-
-      // Calculate savings relative to 1-day package
-      const fullPrice = oneDayPrice * pkg.credits;
-      pkg.savingsPercent = fullPrice > 0
-        ? Math.round((1 - entry.price / fullPrice) * 100)
-        : 0;
-
-      await this.creditPackageRepository.save(pkg);
-    }
-
-    this.logger.log('Package prices updated');
-
-    return this.creditPackageRepository.find({
-      where: { slug: In(['1-day', 'weekend', '1-week']) },
-      order: { sortOrder: 'ASC' },
-    });
   }
 
   // === Private Helper ===

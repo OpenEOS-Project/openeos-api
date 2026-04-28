@@ -1,17 +1,20 @@
 import {
   IsString,
   IsOptional,
-  IsUUID,
   IsArray,
+  ValidateNested,
   MaxLength,
   IsNumber,
   Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SelectedOptionDto } from './create-order.dto';
+import { IsUUIDLoose } from '../../../common/validators/is-uuid-loose.validator';
 
 export class AddOrderItemDto {
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID des Produkts' })
-  @IsUUID()
+  @IsUUIDLoose()
   productId: string;
 
   @ApiProperty({ example: 2, description: 'Anzahl der bestellten Einheiten' })
@@ -31,8 +34,10 @@ export class AddOrderItemDto {
   @MaxLength(500)
   kitchenNotes?: string;
 
-  @ApiPropertyOptional({ example: [{ group: 'Größe', option: 'Groß', priceModifier: 1.50 }], description: 'Ausgewählte Produktoptionen' })
+  @ApiPropertyOptional({ type: [SelectedOptionDto], description: 'Ausgewählte Produktoptionen' })
   @IsOptional()
   @IsArray()
-  selectedOptions?: { group: string; option: string; priceModifier: number }[];
+  @ValidateNested({ each: true })
+  @Type(() => SelectedOptionDto)
+  selectedOptions?: SelectedOptionDto[];
 }

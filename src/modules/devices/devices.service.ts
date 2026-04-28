@@ -11,8 +11,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
-import { Device, User, UserOrganization, Organization } from '../../database/entities';
+import * as bcrypt from 'bcrypt';
+import { Device, User, UserOrganization, Organization, Order, Payment } from '../../database/entities';
 import { DeviceStatus, DeviceType } from '../../database/entities/device.entity';
+import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
@@ -30,6 +32,10 @@ export class DevicesService {
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     @InjectRepository(Organization)
     private readonly organizationRepository: Repository<Organization>,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
+    @InjectRepository(Payment)
+    private readonly paymentRepository: Repository<Payment>,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
   ) {}
@@ -222,7 +228,7 @@ export class DevicesService {
       organizationId: null,
       name: initDto.suggestedName || 'Unbenanntes Gerät',
       suggestedName: initDto.suggestedName || null,
-      type: initDto.deviceType || DeviceType.DISPLAY_MENU,
+      type: initDto.deviceType || DeviceType.POS,
       deviceToken,
       verificationCode,
       userAgent: initDto.userAgent || null,
@@ -359,6 +365,7 @@ export class DevicesService {
     organizationId?: string;
     organizationName?: string;
     deviceClass?: string;
+    settings?: Record<string, unknown>;
   }> {
     const device = await this.deviceRepository.findOne({
       where: { deviceToken },
@@ -378,6 +385,7 @@ export class DevicesService {
       organizationId: device.status === DeviceStatus.VERIFIED && device.organizationId ? device.organizationId : undefined,
       organizationName: device.status === DeviceStatus.VERIFIED ? device.organization?.name : undefined,
       deviceClass: device.status === DeviceStatus.VERIFIED ? device.type : undefined,
+      settings: device.status === DeviceStatus.VERIFIED ? device.settings : undefined,
     };
   }
 
@@ -388,6 +396,7 @@ export class DevicesService {
     organizationName: string;
     deviceClass: string;
     status: DeviceStatus;
+    settings: Record<string, unknown>;
   }> {
     const device = await this.deviceRepository.findOne({
       where: { deviceToken, isActive: true },
@@ -422,6 +431,7 @@ export class DevicesService {
       organizationName: device.organization?.name || '',
       deviceClass: device.type,
       status: device.status,
+      settings: device.settings,
     };
   }
 
@@ -520,6 +530,146 @@ export class DevicesService {
     this.logger.log(`Device unblocked: ${device.name} (${device.id}) by user ${user.email}`);
 
     return device;
+  }
+
+  async getDeviceStats(
+    organizationId: string,
+    deviceId: string,
+    user: User,
+  ): Promise<{
+    ordersCount: number;
+    paymentsCount: number;
+    revenueTotal: number;
+    isOnline: boolean;
+    lastSeenAt: Date | null;
+    createdAt: Date;
+    verifiedAt: Date | null;
+  }> {
+    await this.checkMembership(organizationId, user.id);
+
+    const device = await this.findOne(organizationId, deviceId, user);
+
+    const ordersCount = await this.orderRepository.count({
+      where: { createdByDeviceId: deviceId },
+    });
+
+    const paymentsCount = await this.paymentRepository.count({
+      where: { processedByDeviceId: deviceId },
+    });
+
+    const revenueResult = await this.paymentRepository
+      .createQueryBuilder('payment')
+      .select('COALESCE(SUM(payment.amount), 0)', 'total')
+      .where('payment.processed_by_device_id = :deviceId', { deviceId })
+      .andWhere('payment.status = :status', { status: PaymentTransactionStatus.CAPTURED })
+      .getRawOne();
+
+    const revenueTotal = parseFloat(revenueResult?.total || '0');
+
+    const isOnline = this.gatewayService.isDeviceOnline(deviceId);
+
+    return {
+      ordersCount,
+      paymentsCount,
+      revenueTotal,
+      isOnline,
+      lastSeenAt: device.lastSeenAt,
+      createdAt: device.createdAt,
+      verifiedAt: device.verifiedAt,
+    };
+  }
+
+  async setMemberPin(
+    organizationId: string,
+    userId: string,
+    pin: string,
+    currentUser: User,
+  ): Promise<void> {
+    await this.checkPermission(organizationId, currentUser.id, 'members');
+
+    // Check PIN uniqueness within organization
+    const members = await this.userOrganizationRepository.find({
+      where: { organizationId },
+    });
+
+    for (const member of members) {
+      if (member.userId === userId) continue;
+      if (member.pin && await bcrypt.compare(pin, member.pin)) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          message: 'Diese PIN wird bereits von einem anderen Mitglied verwendet',
+        });
+      }
+    }
+
+    const membership = await this.userOrganizationRepository.findOne({
+      where: { organizationId, userId },
+    });
+
+    if (!membership) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Mitglied nicht gefunden',
+      });
+    }
+
+    const hashedPin = await bcrypt.hash(pin, 10);
+    membership.pin = hashedPin;
+    await this.userOrganizationRepository.save(membership);
+
+    this.logger.log(`PIN set for user ${userId} in organization ${organizationId}`);
+  }
+
+  async removeMemberPin(
+    organizationId: string,
+    userId: string,
+    currentUser: User,
+  ): Promise<void> {
+    await this.checkPermission(organizationId, currentUser.id, 'members');
+
+    const membership = await this.userOrganizationRepository.findOne({
+      where: { organizationId, userId },
+    });
+
+    if (!membership) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Mitglied nicht gefunden',
+      });
+    }
+
+    membership.pin = null;
+    await this.userOrganizationRepository.save(membership);
+
+    this.logger.log(`PIN removed for user ${userId} in organization ${organizationId}`);
+  }
+
+  async verifyPin(
+    organizationId: string,
+    pin: string,
+  ): Promise<{ userId: string; firstName: string; lastName: string; role: string }> {
+    const members = await this.userOrganizationRepository.find({
+      where: { organizationId },
+      relations: ['user'],
+    });
+
+    for (const member of members) {
+      if (!member.pin) continue;
+      const isMatch = await bcrypt.compare(pin, member.pin);
+      if (isMatch) {
+        return {
+          userId: member.userId,
+          firstName: member.user.firstName,
+          lastName: member.user.lastName,
+          role: member.role,
+        };
+      }
+    }
+
+    throw new BadRequestException({
+      code: ErrorCodes.VALIDATION_ERROR,
+      message: 'Ungültige PIN',
+    });
   }
 
   private async checkMembership(organizationId: string, userId: string): Promise<void> {

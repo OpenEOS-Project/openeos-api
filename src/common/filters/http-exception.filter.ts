@@ -100,6 +100,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
       });
     } else {
       this.logger.warn(`[${requestId}] ${request.method} ${request.url} - ${status} - ${message}`);
+      if (details && details.length > 0) {
+        this.logger.warn(`[${requestId}] Validation details: ${JSON.stringify(details)}`);
+      }
     }
 
     const errorResponse: ErrorResponse = {

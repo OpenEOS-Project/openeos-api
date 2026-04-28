@@ -6,7 +6,7 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { OrderStatus, PaymentStatus, OrderSource } from '../../../database/entities/order.entity';
+import { OrderStatus, PaymentStatus, OrderSource, OrderFulfillmentType } from '../../../database/entities/order.entity';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export class QueryOrdersDto extends PaginationDto {
@@ -29,6 +29,11 @@ export class QueryOrdersDto extends PaginationDto {
   @IsOptional()
   @IsEnum(OrderSource)
   source?: OrderSource;
+
+  @ApiPropertyOptional({ example: 'counter_pickup', description: 'Filter nach Erfüllungstyp', enum: OrderFulfillmentType })
+  @IsOptional()
+  @IsEnum(OrderFulfillmentType)
+  fulfillmentType?: OrderFulfillmentType;
 
   @ApiPropertyOptional({ example: '2024-01-01T00:00:00.000Z', description: 'Startdatum für Filterung' })
   @IsOptional()

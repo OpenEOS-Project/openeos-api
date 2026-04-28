@@ -10,12 +10,16 @@ export enum PaymentMethod {
   CARD = 'card',
   SUMUP_TERMINAL = 'sumup_terminal',
   SUMUP_ONLINE = 'sumup_online',
+  PAYPAL = 'paypal',
+  GOOGLE_PAY = 'google_pay',
+  APPLE_PAY = 'apple_pay',
 }
 
 export enum PaymentProvider {
   CASH = 'CASH',
   CARD = 'CARD',
   SUMUP = 'SUMUP',
+  PAYPAL = 'PAYPAL',
 }
 
 export enum PaymentTransactionStatus {

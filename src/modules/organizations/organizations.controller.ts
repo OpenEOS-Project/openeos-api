@@ -14,6 +14,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { OrganizationsService } from './organizations.service';
 import { GatewayService } from '../gateway/gateway.service';
+import { DevicesService } from '../devices/devices.service';
 import {
   CreateOrganizationDto,
   UpdateOrganizationDto,
@@ -22,6 +23,7 @@ import {
   CreateInvitationDto,
   BroadcastMessageDto,
 } from './dto';
+import { SetPinDto } from '../devices/dto';
 import { CurrentUser, Public } from '../../common/decorators';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
@@ -33,6 +35,7 @@ export class OrganizationsController {
   constructor(
     private readonly organizationsService: OrganizationsService,
     private readonly gatewayService: GatewayService,
+    private readonly devicesService: DevicesService,
   ) {}
 
   @Post()
@@ -119,6 +122,29 @@ export class OrganizationsController {
     @CurrentUser() user: User,
   ) {
     await this.organizationsService.removeMember(id, memberId, user);
+  }
+
+  // PIN Management
+  @Post(':id/members/:userId/pin')
+  @HttpCode(HttpStatus.OK)
+  async setMemberPin(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() setPinDto: SetPinDto,
+    @CurrentUser() user: User,
+  ) {
+    await this.devicesService.setMemberPin(id, userId, setPinDto.pin, user);
+    return { message: 'PIN gesetzt' };
+  }
+
+  @Delete(':id/members/:userId/pin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeMemberPin(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @CurrentUser() user: User,
+  ) {
+    await this.devicesService.removeMemberPin(id, userId, user);
   }
 
   // Invitation Management
