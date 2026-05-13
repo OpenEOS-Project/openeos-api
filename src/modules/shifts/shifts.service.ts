@@ -180,7 +180,16 @@ export class ShiftsService {
     if (dto.description !== undefined) job.description = dto.description;
     if (dto.color !== undefined) job.color = dto.color;
     if (dto.sortOrder !== undefined) job.sortOrder = dto.sortOrder;
-    if (dto.requiredWorkers !== undefined) job.requiredWorkers = dto.requiredWorkers;
+
+    // Required workers lives on the job; cascade to all of its shifts so the
+    // public-side `confirmedCount / requiredWorkers` reading stays in sync.
+    if (dto.requiredWorkers !== undefined && dto.requiredWorkers !== job.requiredWorkers) {
+      job.requiredWorkers = dto.requiredWorkers;
+      await this.shiftRepository.update(
+        { shiftJobId: job.id },
+        { requiredWorkers: dto.requiredWorkers },
+      );
+    }
 
     return this.shiftJobRepository.save(job);
   }
@@ -215,9 +224,9 @@ export class ShiftsService {
       date: new Date(dto.date),
       startTime: dto.startTime,
       endTime: dto.endTime,
-      // Fall back to the job-level default when the caller doesn't specify
-      // a per-shift override.
-      requiredWorkers: dto.requiredWorkers ?? job.requiredWorkers ?? 1,
+      // Required workers lives exclusively on the job; per-shift override has
+      // been removed by product decision (admins manage it at job level only).
+      requiredWorkers: job.requiredWorkers ?? 1,
       notes: dto.notes,
     });
 
@@ -254,7 +263,7 @@ export class ShiftsService {
     if (dto.date !== undefined) shift.date = new Date(dto.date);
     if (dto.startTime !== undefined) shift.startTime = dto.startTime;
     if (dto.endTime !== undefined) shift.endTime = dto.endTime;
-    if (dto.requiredWorkers !== undefined) shift.requiredWorkers = dto.requiredWorkers;
+    // dto.requiredWorkers is intentionally ignored — workers are job-level only.
     if (dto.notes !== undefined) shift.notes = dto.notes;
 
     return this.shiftRepository.save(shift);
@@ -295,7 +304,8 @@ export class ShiftsService {
         date: new Date(dto.date),
         startTime: dto.startTime,
         endTime: dto.endTime,
-        requiredWorkers: dto.requiredWorkers ?? job.requiredWorkers ?? 1,
+        // Required workers is job-level only.
+        requiredWorkers: job.requiredWorkers ?? 1,
         notes: dto.notes,
       });
       createdShifts.push(await this.shiftRepository.save(shift));
