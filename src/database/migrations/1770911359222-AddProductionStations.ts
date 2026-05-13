@@ -59,16 +59,58 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
         await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_registrations_shift_status"`);
         await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shifts_job_date"`);
         await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shifts_date"`);
-        await queryRunner.query(`CREATE TABLE "production_stations" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "event_id" uuid NOT NULL, "name" character varying(255) NOT NULL, "description" text, "color" character varying(7), "sort_order" integer NOT NULL DEFAULT '0', "is_active" boolean NOT NULL DEFAULT true, "handoff_station_id" uuid, CONSTRAINT "PK_ae758725ecacb01e9c05ea3e28f" PRIMARY KEY ("id"))`);
-        await queryRunner.query(`CREATE INDEX "IDX_e48ed479b9aa559003056ce915" ON "production_stations" ("event_id", "sort_order") `);
-        await queryRunner.query(`ALTER TABLE "order_items" ADD "production_station_id" uuid`);
-        await queryRunner.query(`ALTER TABLE "products" ADD "production_station_id" uuid`);
-        await queryRunner.query(`ALTER TABLE "categories" ADD "production_station_id" uuid`);
-        await queryRunner.query(`ALTER TYPE "public"."organization_role" RENAME TO "organization_role_old"`);
-        await queryRunner.query(`CREATE TYPE "public"."organization_role" AS ENUM('admin', 'member')`);
-        await queryRunner.query(`ALTER TABLE "invitations" ALTER COLUMN "role" TYPE "public"."organization_role" USING "role"::"text"::"public"."organization_role"`);
-        await queryRunner.query(`ALTER TABLE "user_organizations" ALTER COLUMN "role" TYPE "public"."organization_role" USING "role"::"text"::"public"."organization_role"`);
-        await queryRunner.query(`DROP TYPE "public"."organization_role_old"`);
+        await queryRunner.query(`CREATE TABLE IF NOT EXISTS "production_stations" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "event_id" uuid NOT NULL, "name" character varying(255) NOT NULL, "description" text, "color" character varying(7), "sort_order" integer NOT NULL DEFAULT '0', "is_active" boolean NOT NULL DEFAULT true, "handoff_station_id" uuid, CONSTRAINT "PK_ae758725ecacb01e9c05ea3e28f" PRIMARY KEY ("id"))`);
+        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_e48ed479b9aa559003056ce915" ON "production_stations" ("event_id", "sort_order") `);
+        await queryRunner.query(`ALTER TABLE "order_items" ADD COLUMN IF NOT EXISTS "production_station_id" uuid`);
+        await queryRunner.query(`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "production_station_id" uuid`);
+        await queryRunner.query(`ALTER TABLE "categories" ADD COLUMN IF NOT EXISTS "production_station_id" uuid`);
+
+        // Map legacy organization_role values (manager/cashier/kitchen/delivery)
+        // to admin/member BEFORE the enum is narrowed, otherwise the USING-text
+        // cast below fails on those values.
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid WHERE t.typname = 'organization_role' AND e.enumlabel = 'manager') THEN
+                    UPDATE "user_organizations" SET "role" = 'admin'::organization_role WHERE "role"::text = 'manager';
+                    UPDATE "invitations" SET "role" = 'admin'::organization_role WHERE "role"::text = 'manager';
+                END IF;
+                IF EXISTS (SELECT 1 FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid WHERE t.typname = 'organization_role' AND e.enumlabel = 'cashier') THEN
+                    UPDATE "user_organizations" SET "role" = 'member'::organization_role WHERE "role"::text IN ('cashier', 'kitchen', 'delivery');
+                    UPDATE "invitations" SET "role" = 'member'::organization_role WHERE "role"::text IN ('cashier', 'kitchen', 'delivery');
+                END IF;
+            END $$
+        `);
+        // Enum rename — idempotent: skip if already done by a prior partial run.
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organization_role')
+                   AND NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organization_role_old')
+                   AND EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'organization_role' AND e.enumlabel IN ('manager', 'cashier', 'kitchen', 'delivery'))
+                THEN
+                    ALTER TYPE "public"."organization_role" RENAME TO "organization_role_old";
+                END IF;
+            END $$
+        `);
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organization_role') THEN
+                    CREATE TYPE "public"."organization_role" AS ENUM('admin', 'member');
+                END IF;
+            END $$
+        `);
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organization_role_old') THEN
+                    ALTER TABLE "invitations" ALTER COLUMN "role" TYPE "public"."organization_role" USING "role"::"text"::"public"."organization_role";
+                    ALTER TABLE "user_organizations" ALTER COLUMN "role" TYPE "public"."organization_role" USING "role"::"text"::"public"."organization_role";
+                    DROP TYPE "public"."organization_role_old";
+                END IF;
+            END $$
+        `);
         // invitations.permissions might still have NULLs from very-old rows;
         // backfill them with the empty-object default so the NOT NULL stick.
         await queryRunner.query(`UPDATE "invitations" SET "permissions" = '{}'::jsonb WHERE "permissions" IS NULL`);
@@ -77,31 +119,57 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
         await queryRunner.query(`SELECT __omc_drop_fk('devices', 'organization_id')`);
         await queryRunner.query(`ALTER TABLE "devices" ALTER COLUMN "organization_id" DROP NOT NULL`);
         await queryRunner.query(`ALTER TABLE "devices" ALTER COLUMN "status" SET DEFAULT 'pending'`);
-        await queryRunner.query(`ALTER TABLE "user_organizations" ALTER COLUMN "pin" DROP DEFAULT`);
-        await queryRunner.query(`CREATE INDEX "IDX_387be382a8b6eccb1b2157bb84" ON "printers" ("device_id") `);
-        await queryRunner.query(`CREATE INDEX "IDX_11280db1d1cfac8c769bd5efb1" ON "shift_plans" ("status") `);
-        await queryRunner.query(`CREATE UNIQUE INDEX "IDX_715ccd209537860dbd54076e45" ON "shift_plans" ("public_slug") `);
-        await queryRunner.query(`CREATE INDEX "IDX_7cfde20f68b54e84900f2366bf" ON "shift_plans" ("organization_id", "created_at") `);
-        await queryRunner.query(`CREATE INDEX "IDX_152965489cf057486306e5385b" ON "shift_jobs" ("shift_plan_id", "sort_order") `);
-        await queryRunner.query(`CREATE INDEX "IDX_7cd665289b4003eee910330236" ON "shift_registrations" ("registration_group_id") `);
-        await queryRunner.query(`CREATE UNIQUE INDEX "IDX_2322549eaf2319b5f0943dc9d2" ON "shift_registrations" ("verification_token") `);
-        await queryRunner.query(`CREATE INDEX "IDX_57f3f55d490079b74353332b84" ON "shift_registrations" ("email") `);
-        await queryRunner.query(`CREATE INDEX "IDX_42ce32dfce5077b51f03ad7cd3" ON "shift_registrations" ("shift_id", "status") `);
-        await queryRunner.query(`CREATE INDEX "IDX_01a43905fce3aabc2d113840bc" ON "shifts" ("date") `);
-        await queryRunner.query(`CREATE INDEX "IDX_42f803aef0212347632115eb4b" ON "shifts" ("shift_job_id", "date") `);
+        // `pin` is added by a later migration (AddUserOrganizationPin1772000000000),
+        // but this migration was authored on a dev DB where pin already existed,
+        // so the schema diff included it. Skip if the column isn't there yet.
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_organizations' AND column_name = 'pin') THEN
+                    ALTER TABLE "user_organizations" ALTER COLUMN "pin" DROP DEFAULT;
+                END IF;
+            END $$
+        `);
+        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_387be382a8b6eccb1b2157bb84" ON "printers" ("device_id") `);
+        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_11280db1d1cfac8c769bd5efb1" ON "shift_plans" ("status") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS "IDX_715ccd209537860dbd54076e45" ON "shift_plans" ("public_slug") `);
+        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_7cfde20f68b54e84900f2366bf" ON "shift_plans" ("organization_id", "created_at") `);
+        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_152965489cf057486306e5385b" ON "shift_jobs" ("shift_plan_id", "sort_order") `);
+        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_7cd665289b4003eee910330236" ON "shift_registrations" ("registration_group_id") `);
+        await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS "IDX_2322549eaf2319b5f0943dc9d2" ON "shift_registrations" ("verification_token") `);
+        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_57f3f55d490079b74353332b84" ON "shift_registrations" ("email") `);
+        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_42ce32dfce5077b51f03ad7cd3" ON "shift_registrations" ("shift_id", "status") `);
+        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_01a43905fce3aabc2d113840bc" ON "shifts" ("date") `);
+        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_42f803aef0212347632115eb4b" ON "shifts" ("shift_job_id", "date") `);
+        // ADD CONSTRAINT FKs — drop any pre-existing FK on the same column first
+        // (idempotent against partial-run state or legacy hash names).
+        await queryRunner.query(`SELECT __omc_drop_fk('printers', 'device_id')`);
         await queryRunner.query(`ALTER TABLE "printers" ADD CONSTRAINT "FK_387be382a8b6eccb1b2157bb849" FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('devices', 'organization_id')`);
         await queryRunner.query(`ALTER TABLE "devices" ADD CONSTRAINT "FK_3f8418d0a8ce1e08098d37c9b67" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('devices', 'verified_by_id')`);
         await queryRunner.query(`ALTER TABLE "devices" ADD CONSTRAINT "FK_d747b46aa60a919ada56253a820" FOREIGN KEY ("verified_by_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('production_stations', 'event_id')`);
         await queryRunner.query(`ALTER TABLE "production_stations" ADD CONSTRAINT "FK_afa939e30ab4a6d744b7bf8da81" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('production_stations', 'handoff_station_id')`);
         await queryRunner.query(`ALTER TABLE "production_stations" ADD CONSTRAINT "FK_a157e65aa86c9489e6b34b8ecfd" FOREIGN KEY ("handoff_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('order_items', 'production_station_id')`);
         await queryRunner.query(`ALTER TABLE "order_items" ADD CONSTRAINT "FK_c938c2ae5a8835fedc1c40b0690" FOREIGN KEY ("production_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('products', 'production_station_id')`);
         await queryRunner.query(`ALTER TABLE "products" ADD CONSTRAINT "FK_b856095b06c363b7a3f4b33430c" FOREIGN KEY ("production_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('categories', 'production_station_id')`);
         await queryRunner.query(`ALTER TABLE "categories" ADD CONSTRAINT "FK_98ac0c21134c027a744c980a421" FOREIGN KEY ("production_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('rental_hardware', 'device_id')`);
         await queryRunner.query(`ALTER TABLE "rental_hardware" ADD CONSTRAINT "FK_eb38782e6bb558ce73c84173b2b" FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'organization_id')`);
         await queryRunner.query(`ALTER TABLE "shift_plans" ADD CONSTRAINT "FK_25ad411b8990077d18799d28384" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'event_id')`);
         await queryRunner.query(`ALTER TABLE "shift_plans" ADD CONSTRAINT "FK_cee7acc9cf2e7f5bad60ebb6a9e" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('shift_jobs', 'shift_plan_id')`);
         await queryRunner.query(`ALTER TABLE "shift_jobs" ADD CONSTRAINT "FK_0551bb15772312807d7f7fd6123" FOREIGN KEY ("shift_plan_id") REFERENCES "shift_plans"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('shift_registrations', 'shift_id')`);
         await queryRunner.query(`ALTER TABLE "shift_registrations" ADD CONSTRAINT "FK_b539608be5ddac34913edce8385" FOREIGN KEY ("shift_id") REFERENCES "shifts"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`SELECT __omc_drop_fk('shifts', 'shift_job_id')`);
         await queryRunner.query(`ALTER TABLE "shifts" ADD CONSTRAINT "FK_6773714b65a84efabf657480e8f" FOREIGN KEY ("shift_job_id") REFERENCES "shift_jobs"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
         await queryRunner.query(`DROP FUNCTION IF EXISTS __omc_drop_fk(text, text)`);
     }
