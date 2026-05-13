@@ -130,7 +130,18 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
                 END IF;
             END $$
         `);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_387be382a8b6eccb1b2157bb84" ON "printers" ("device_id") `);
+        // device_id columns on printers/rental_hardware are added later by
+        // 1773000000000-PrinterDeviceRelations; skip these index/FK setups
+        // if the columns don't exist yet — that migration will create them
+        // with their own FK and we don't need to backport here.
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'printers' AND column_name = 'device_id') THEN
+                    CREATE INDEX IF NOT EXISTS "IDX_387be382a8b6eccb1b2157bb84" ON "printers" ("device_id");
+                END IF;
+            END $$
+        `);
         await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_11280db1d1cfac8c769bd5efb1" ON "shift_plans" ("status") `);
         await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS "IDX_715ccd209537860dbd54076e45" ON "shift_plans" ("public_slug") `);
         await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_7cfde20f68b54e84900f2366bf" ON "shift_plans" ("organization_id", "created_at") `);
@@ -144,7 +155,14 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
         // ADD CONSTRAINT FKs — drop any pre-existing FK on the same column first
         // (idempotent against partial-run state or legacy hash names).
         await queryRunner.query(`SELECT __omc_drop_fk('printers', 'device_id')`);
-        await queryRunner.query(`ALTER TABLE "printers" ADD CONSTRAINT "FK_387be382a8b6eccb1b2157bb849" FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'printers' AND column_name = 'device_id') THEN
+                    ALTER TABLE "printers" ADD CONSTRAINT "FK_387be382a8b6eccb1b2157bb849" FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
+                END IF;
+            END $$
+        `);
         await queryRunner.query(`SELECT __omc_drop_fk('devices', 'organization_id')`);
         await queryRunner.query(`ALTER TABLE "devices" ADD CONSTRAINT "FK_3f8418d0a8ce1e08098d37c9b67" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
         await queryRunner.query(`SELECT __omc_drop_fk('devices', 'verified_by_id')`);
@@ -160,7 +178,14 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
         await queryRunner.query(`SELECT __omc_drop_fk('categories', 'production_station_id')`);
         await queryRunner.query(`ALTER TABLE "categories" ADD CONSTRAINT "FK_98ac0c21134c027a744c980a421" FOREIGN KEY ("production_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
         await queryRunner.query(`SELECT __omc_drop_fk('rental_hardware', 'device_id')`);
-        await queryRunner.query(`ALTER TABLE "rental_hardware" ADD CONSTRAINT "FK_eb38782e6bb558ce73c84173b2b" FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'rental_hardware' AND column_name = 'device_id') THEN
+                    ALTER TABLE "rental_hardware" ADD CONSTRAINT "FK_eb38782e6bb558ce73c84173b2b" FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL ON UPDATE NO ACTION;
+                END IF;
+            END $$
+        `);
         await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'organization_id')`);
         await queryRunner.query(`ALTER TABLE "shift_plans" ADD CONSTRAINT "FK_25ad411b8990077d18799d28384" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
         await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'event_id')`);

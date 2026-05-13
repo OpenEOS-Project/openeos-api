@@ -5,13 +5,13 @@ export class AddUserOrganizationPin1772000000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE user_organizations ADD COLUMN "pin" varchar(255) DEFAULT NULL`,
+      `ALTER TABLE user_organizations ADD COLUMN IF NOT EXISTS "pin" varchar(255) DEFAULT NULL`,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE user_organizations DROP COLUMN "pin"`,
+      `ALTER TABLE user_organizations DROP COLUMN IF EXISTS "pin"`,
     );
   }
 }

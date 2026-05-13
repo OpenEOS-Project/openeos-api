@@ -14,20 +14,20 @@ export class PrinterDeviceRelations1773000000000 implements MigrationInterface {
 
     // Step 2: Printer entity - add device_id FK (replaces agent_id)
     await queryRunner.query(`
-      ALTER TABLE printers ADD COLUMN "device_id" UUID REFERENCES devices(id) ON DELETE SET NULL;
+      ALTER TABLE printers ADD COLUMN IF NOT EXISTS "device_id" UUID REFERENCES devices(id) ON DELETE SET NULL;
     `);
     await queryRunner.query(`
-      CREATE INDEX "idx_printers_device_id" ON printers("device_id");
+      CREATE INDEX IF NOT EXISTS "idx_printers_device_id" ON printers("device_id");
     `);
 
     // Step 3: Printer entity - add paper_width column
     await queryRunner.query(`
-      ALTER TABLE printers ADD COLUMN "paper_width" INT NOT NULL DEFAULT 80;
+      ALTER TABLE printers ADD COLUMN IF NOT EXISTS "paper_width" INT NOT NULL DEFAULT 80;
     `);
 
     // Step 4: Printer entity - add rental_assignment_id column
     await queryRunner.query(`
-      ALTER TABLE printers ADD COLUMN "rental_assignment_id" UUID;
+      ALTER TABLE printers ADD COLUMN IF NOT EXISTS "rental_assignment_id" UUID;
     `);
 
     // Step 5: Drop agent_id column from printers
@@ -37,10 +37,10 @@ export class PrinterDeviceRelations1773000000000 implements MigrationInterface {
 
     // Step 6: RentalHardware - add device_id FK
     await queryRunner.query(`
-      ALTER TABLE rental_hardware ADD COLUMN "device_id" UUID REFERENCES devices(id) ON DELETE SET NULL;
+      ALTER TABLE rental_hardware ADD COLUMN IF NOT EXISTS "device_id" UUID REFERENCES devices(id) ON DELETE SET NULL;
     `);
     await queryRunner.query(`
-      CREATE INDEX "idx_rental_hardware_device_id" ON rental_hardware("device_id");
+      CREATE INDEX IF NOT EXISTS "idx_rental_hardware_device_id" ON rental_hardware("device_id");
     `);
   }
 

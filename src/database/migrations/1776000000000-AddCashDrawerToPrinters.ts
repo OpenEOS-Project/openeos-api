@@ -5,7 +5,7 @@ export class AddCashDrawerToPrinters1776000000000 implements MigrationInterface 
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      ALTER TABLE "printers" ADD COLUMN "has_cash_drawer" boolean NOT NULL DEFAULT false
+      ALTER TABLE "printers" ADD COLUMN IF NOT EXISTS "has_cash_drawer" boolean NOT NULL DEFAULT false
     `);
   }
 
