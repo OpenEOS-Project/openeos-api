@@ -21,6 +21,11 @@ export class ShiftJob extends BaseEntity {
   @Column({ name: 'sort_order', type: 'int', default: 0 })
   sortOrder: number;
 
+  // Default number of helpers needed per shift for this job. New shifts
+  // inherit this value at create time; individual shifts can override.
+  @Column({ name: 'required_workers', type: 'int', default: 1 })
+  requiredWorkers: number;
+
   // Relations
   @ManyToOne(() => ShiftPlan, (plan) => plan.jobs, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'shift_plan_id' })

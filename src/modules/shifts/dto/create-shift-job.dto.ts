@@ -23,4 +23,10 @@ export class CreateShiftJobDto {
   @Min(0)
   @IsOptional()
   sortOrder?: number;
+
+  @ApiPropertyOptional({ description: 'Default number of helpers per shift', default: 1 })
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  requiredWorkers?: number;
 }

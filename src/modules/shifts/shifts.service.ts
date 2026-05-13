@@ -150,6 +150,7 @@ export class ShiftsService {
       description: dto.description,
       color: dto.color,
       sortOrder: dto.sortOrder ?? (maxOrder?.max ?? 0) + 1,
+      requiredWorkers: dto.requiredWorkers ?? 1,
     });
 
     return this.shiftJobRepository.save(job);
@@ -179,6 +180,7 @@ export class ShiftsService {
     if (dto.description !== undefined) job.description = dto.description;
     if (dto.color !== undefined) job.color = dto.color;
     if (dto.sortOrder !== undefined) job.sortOrder = dto.sortOrder;
+    if (dto.requiredWorkers !== undefined) job.requiredWorkers = dto.requiredWorkers;
 
     return this.shiftJobRepository.save(job);
   }
@@ -213,7 +215,9 @@ export class ShiftsService {
       date: new Date(dto.date),
       startTime: dto.startTime,
       endTime: dto.endTime,
-      requiredWorkers: dto.requiredWorkers ?? 1,
+      // Fall back to the job-level default when the caller doesn't specify
+      // a per-shift override.
+      requiredWorkers: dto.requiredWorkers ?? job.requiredWorkers ?? 1,
       notes: dto.notes,
     });
 
@@ -291,7 +295,7 @@ export class ShiftsService {
         date: new Date(dto.date),
         startTime: dto.startTime,
         endTime: dto.endTime,
-        requiredWorkers: dto.requiredWorkers ?? 1,
+        requiredWorkers: dto.requiredWorkers ?? job.requiredWorkers ?? 1,
         notes: dto.notes,
       });
       createdShifts.push(await this.shiftRepository.save(shift));
