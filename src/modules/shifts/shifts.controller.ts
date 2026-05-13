@@ -279,6 +279,15 @@ export class ShiftsController {
     await this.shiftsService.deleteRegistration(organizationId, registrationId);
   }
 
+  @Delete('registrations/:registrationId/one')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeSingleRegistration(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('registrationId', ParseUUIDPipe) registrationId: string,
+  ) {
+    await this.shiftsService.removeSingleRegistration(organizationId, registrationId);
+  }
+
   @Patch('registrations/:registrationId/notes')
   async updateRegistrationNotes(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

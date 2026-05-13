@@ -348,7 +348,9 @@ export class ShiftsService {
 
     const reg = this.registrationRepository.create({
       shiftId: shift.id,
-      registrationGroupId: uuidv4(),
+      // Append to an existing helper-group when the caller supplied one;
+      // otherwise start a new group (= a fresh standalone helper).
+      registrationGroupId: dto.registrationGroupId ?? uuidv4(),
       name: dto.name,
       email: dto.email,
       phone: dto.phone || null,
@@ -617,6 +619,14 @@ export class ShiftsService {
 
     // Delete all registrations in the same group
     await this.registrationRepository.delete({ registrationGroupId: reg.registrationGroupId });
+  }
+
+  /** Remove a single shift from a helper's group, leaving the helper's other
+   *  shifts intact. If the deleted row was the last in the group, the group
+   *  disappears too — but that's just a side-effect of removing the last row. */
+  async removeSingleRegistration(organizationId: string, registrationId: string): Promise<void> {
+    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+    await this.registrationRepository.delete({ id: reg.id });
   }
 
   async updateRegistrationNotes(

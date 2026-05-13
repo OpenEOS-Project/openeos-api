@@ -33,6 +33,15 @@ export class AdminCreateRegistrationDto {
   @IsBoolean()
   @IsOptional()
   notify?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Append the new registration to an existing helper-group. When omitted, ' +
+      'a fresh group ID is created (= a new standalone helper).',
+  })
+  @IsUUID()
+  @IsOptional()
+  registrationGroupId?: string;
 }
 
 export class AdminUpdateRegistrationDto {
