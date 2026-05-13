@@ -55,10 +55,29 @@ export class ShiftRegistration extends BaseEntity {
   @Column({ name: 'reminder_sent_at', type: 'timestamp with time zone', nullable: true })
   reminderSentAt: Date | null;
 
+  // Admin-initiated shift-move proposal. When set, the helper has been sent
+  // an email with token-based accept/decline links pointing at this row;
+  // accepting flips shiftId to proposedShiftId, declining clears the fields.
+  @Column({ name: 'proposed_shift_id', type: 'uuid', nullable: true })
+  proposedShiftId: string | null;
+
+  @Column({ name: 'proposed_at', type: 'timestamp with time zone', nullable: true })
+  proposedAt: Date | null;
+
+  @Column({ name: 'proposed_message', type: 'text', nullable: true })
+  proposedMessage: string | null;
+
+  @Column({ name: 'proposed_token', type: 'varchar', length: 64, nullable: true })
+  proposedToken: string | null;
+
   // Relations
   @ManyToOne(() => Shift, (shift) => shift.registrations, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'shift_id' })
   shift: Shift;
+
+  @ManyToOne(() => Shift, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'proposed_shift_id' })
+  proposedShift: Shift | null;
 
   // Helper methods
   isPending(): boolean {

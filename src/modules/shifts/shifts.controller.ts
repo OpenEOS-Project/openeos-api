@@ -11,6 +11,7 @@ import {
   HttpStatus,
   Res,
   StreamableFile,
+  Headers,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -316,6 +317,28 @@ export class ShiftsController {
       organizationId,
       registrationId,
       dto,
+    );
+    return { data: registration };
+  }
+
+  @Post('registrations/:registrationId/propose-move')
+  async proposeShiftMove(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('registrationId', ParseUUIDPipe) registrationId: string,
+    @Body() body: { shiftId: string; message?: string },
+    @Headers('origin') origin?: string,
+    @Headers('referer') referer?: string,
+  ) {
+    let baseUrl = origin;
+    if (!baseUrl && referer) {
+      try { baseUrl = new URL(referer).origin; } catch { /* noop */ }
+    }
+    const registration = await this.shiftsService.proposeShiftMove(
+      organizationId,
+      registrationId,
+      body.shiftId,
+      body.message,
+      baseUrl,
     );
     return { data: registration };
   }

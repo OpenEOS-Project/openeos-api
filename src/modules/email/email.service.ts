@@ -16,13 +16,16 @@ export class EmailService {
   private transporter: Transporter | null = null;
   private readonly isEnabled: boolean;
   private readonly fromAddress: string;
-  private readonly appUrl: string;
+  readonly appUrl: string;
 
   constructor(private readonly configService: ConfigService) {
     this.isEnabled = this.configService.get<boolean>('email.enabled') === true;
     const fromEmail = this.configService.get<string>('email.from') || 'noreply@openeos.de';
     this.fromAddress = `OpenEOS <${fromEmail}>`;
-    this.appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    // Public app URL — used for verify links, registration confirmations, etc.
+    // Fallback points at the hosted production frontend so a missing env var
+    // doesn't leave helpers staring at `http://localhost:3000` links.
+    this.appUrl = this.configService.get<string>('APP_URL') || 'https://app.openeos.de';
 
     if (this.isEnabled) {
       this.initializeTransporter();
@@ -225,6 +228,41 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  async sendShiftMoveProposalEmail(options: {
+    to: string;
+    name: string;
+    shiftPlanName: string;
+    oldShiftLine: string;
+    newShiftLine: string;
+    message?: string;
+    acceptUrl: string;
+    declineUrl: string;
+  }): Promise<boolean> {
+    const subject = `Schichtvorschlag: ${options.shiftPlanName}`;
+    const html = this.getBaseTemplate(`
+      <h1>Hallo ${options.name}!</h1>
+      <p>Die Organisation möchte deine Schicht im Plan <strong>${options.shiftPlanName}</strong> verschieben.</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr><td style="padding: 12px; background: #fee2e2; border-left: 4px solid #dc2626;">
+          <div style="font-size: 12px; color: #991b1b; text-transform: uppercase; letter-spacing: .04em;">Bisher</div>
+          <div style="margin-top: 4px;">${options.oldShiftLine}</div>
+        </td></tr>
+        <tr><td style="height: 8px;"></td></tr>
+        <tr><td style="padding: 12px; background: #d1fae5; border-left: 4px solid #10b981;">
+          <div style="font-size: 12px; color: #065f46; text-transform: uppercase; letter-spacing: .04em;">Vorgeschlagen</div>
+          <div style="margin-top: 4px;">${options.newShiftLine}</div>
+        </td></tr>
+      </table>
+      ${options.message ? `<p><strong>Nachricht:</strong></p><div style="background: #eff6ff; padding: 12px; border-radius: 6px; border-left: 4px solid #3b82f6; white-space: pre-wrap;">${options.message}</div>` : ''}
+      <div style="margin: 24px 0; text-align: center;">
+        <a href="${options.acceptUrl}" style="display: inline-block; padding: 12px 24px; background: #10b981; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; margin-right: 8px;">✓ Annehmen</a>
+        <a href="${options.declineUrl}" style="display: inline-block; padding: 12px 24px; background: #f3f4f6; color: #374151; text-decoration: none; border-radius: 8px; font-weight: 600;">✗ Ablehnen</a>
+      </div>
+      <p style="color: #666; font-size: 13px;">Klick einfach auf einen der Buttons. Bei Fragen melde dich bei den Organisatoren.</p>
+    `);
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   async sendShiftUpdatedEmail(
     email: string,
     name: string,
@@ -280,7 +318,10 @@ export class EmailService {
   }
 
   private getBaseTemplate(content: string): string {
-    const logoUrl = `${this.appUrl}/logo_dark.png`;
+    // Always serve the logo from the public marketing site so the asset is
+    // reachable from any email client, regardless of how/where this API is
+    // deployed (otherwise a localhost APP_URL leaves a broken image).
+    const logoUrl = 'https://openeos.de/logo_dark_trans.png';
 
     return `
 <!DOCTYPE html>

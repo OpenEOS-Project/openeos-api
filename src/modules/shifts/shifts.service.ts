@@ -439,6 +439,93 @@ export class ShiftsService {
     return saved;
   }
 
+  /** Admin proposes a shift move; the helper gets an email with accept/decline
+   *  links. The original shiftId stays put until the helper accepts. */
+  async proposeShiftMove(
+    organizationId: string,
+    registrationId: string,
+    targetShiftId: string,
+    message: string | undefined,
+    baseUrl?: string,
+  ): Promise<ShiftRegistration> {
+    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+
+    const targetShift = await this.shiftRepository.findOne({
+      where: { id: targetShiftId },
+      relations: ['job', 'job.shiftPlan'],
+    });
+    if (!targetShift || targetShift.job.shiftPlan.organizationId !== organizationId) {
+      throw new NotFoundException('Ziel-Schicht nicht gefunden');
+    }
+    if (targetShift.job.shiftPlanId !== reg.shift?.job?.shiftPlanId) {
+      throw new BadRequestException('Schicht muss zum selben Schichtplan gehören');
+    }
+    if (targetShiftId === reg.shiftId) {
+      throw new BadRequestException('Diese Schicht ist bereits zugewiesen');
+    }
+
+    reg.proposedShiftId = targetShift.id;
+    reg.proposedAt = new Date();
+    reg.proposedMessage = message ?? null;
+    reg.proposedToken = this.generateToken();
+    const saved = await this.registrationRepository.save(reg);
+
+    const planName = reg.shift?.job?.shiftPlan?.name || 'Schichtplan';
+    const oldShiftLine = reg.shift
+      ? `${reg.shift.job.name}: ${this.formatShiftDate(reg.shift.date)}, ${reg.shift.startTime}–${reg.shift.endTime}`
+      : '';
+    const newShiftLine = `${targetShift.job.name}: ${this.formatShiftDate(targetShift.date)}, ${targetShift.startTime}–${targetShift.endTime}`;
+    const proposalBase = baseUrl || this.emailService.appUrl;
+    const acceptUrl = `${proposalBase}/s/proposal/${reg.proposedToken}?action=accept`;
+    const declineUrl = `${proposalBase}/s/proposal/${reg.proposedToken}?action=decline`;
+
+    await this.emailService.sendShiftMoveProposalEmail({
+      to: reg.email,
+      name: reg.name,
+      shiftPlanName: planName,
+      oldShiftLine,
+      newShiftLine,
+      message,
+      acceptUrl,
+      declineUrl,
+    });
+
+    return saved;
+  }
+
+  /** Public: helper acts on a proposal by clicking the email link. */
+  async respondToShiftProposal(
+    token: string,
+    action: 'accept' | 'decline',
+  ): Promise<{ status: 'accepted' | 'declined'; planSlug: string | null }> {
+    const reg = await this.registrationRepository.findOne({
+      where: { proposedToken: token },
+      relations: ['shift', 'shift.job', 'shift.job.shiftPlan', 'proposedShift', 'proposedShift.job', 'proposedShift.job.shiftPlan'],
+    });
+    if (!reg || !reg.proposedShiftId) {
+      throw new NotFoundException('Vorschlag nicht gefunden oder bereits bearbeitet');
+    }
+
+    const planSlug = reg.shift?.job?.shiftPlan?.publicSlug || null;
+
+    if (action === 'accept') {
+      reg.shiftId = reg.proposedShiftId;
+    }
+    reg.proposedShiftId = null;
+    reg.proposedAt = null;
+    reg.proposedMessage = null;
+    reg.proposedToken = null;
+    await this.registrationRepository.save(reg);
+
+    return { status: action === 'accept' ? 'accepted' : 'declined', planSlug };
+  }
+
+  /** Small helper for the proposal email — formats a date as DD.MM.YYYY. */
+  private formatShiftDate(date: Date | string): string {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
   async approveRegistration(
     organizationId: string,
     registrationId: string,
@@ -457,7 +544,7 @@ export class ShiftsService {
     // Find all registrations in the same group and confirm them
     const groupRegistrations = await this.registrationRepository.find({
       where: { registrationGroupId: reg.registrationGroupId },
-      relations: ['shift', 'shift.job'],
+      relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
     });
 
     for (const r of groupRegistrations) {
@@ -637,7 +724,7 @@ export class ShiftsService {
     // Load full relations for email
     const fullRegistrations = await this.registrationRepository.find({
       where: { registrationGroupId },
-      relations: ['shift', 'shift.job'],
+      relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
     });
 
     // Send verification email
@@ -696,7 +783,7 @@ export class ShiftsService {
     if (!plan.settings.requireApproval) {
       const groupRegistrations = await this.registrationRepository.find({
         where: { registrationGroupId: registration.registrationGroupId },
-        relations: ['shift', 'shift.job'],
+        relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
       });
 
       const shiftsSummary = this.formatShiftsSummary(groupRegistrations);

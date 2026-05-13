@@ -116,6 +116,29 @@ export class ShiftsPublicController {
     };
   }
 
+  @Post('proposal/:token')
+  @ApiOperation({ summary: 'Helper responds to a shift-move proposal (accept | decline)' })
+  async respondToProposal(
+    @Param('token') token: string,
+    @Body() body: { action: 'accept' | 'decline' },
+  ) {
+    if (body?.action !== 'accept' && body?.action !== 'decline') {
+      return { data: { success: false, message: 'Ungültige Aktion' } };
+    }
+    const result = await this.shiftsService.respondToShiftProposal(token, body.action);
+    return {
+      data: {
+        success: true,
+        status: result.status,
+        planSlug: result.planSlug,
+        message:
+          result.status === 'accepted'
+            ? 'Vielen Dank — deine Schicht wurde verschoben.'
+            : 'Du hast den Vorschlag abgelehnt. Die Organisation wurde informiert.',
+      },
+    };
+  }
+
   @Get('verify/:token')
   @ApiOperation({ summary: 'Verify email address' })
   async verifyEmail(@Param('token') token: string) {
