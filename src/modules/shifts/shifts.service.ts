@@ -19,6 +19,8 @@ import {
   UpdateShiftJobDto,
   CreateShiftDto,
   UpdateShiftDto,
+  AdminCreateRegistrationDto,
+  AdminUpdateRegistrationDto,
 } from './dto';
 
 @Injectable()
@@ -312,6 +314,115 @@ export class ShiftsService {
       .leftJoinAndSelect('s.job', 'j')
       .orderBy('reg.createdAt', 'DESC')
       .getMany();
+  }
+
+  /** Admin adds a helper directly to a shift (no email verification step).
+   *  Resulting registration is immediately confirmed. */
+  async adminCreateRegistration(
+    organizationId: string,
+    shiftId: string,
+    dto: AdminCreateRegistrationDto,
+  ): Promise<ShiftRegistration> {
+    const shift = await this.shiftRepository.findOne({
+      where: { id: shiftId },
+      relations: ['job', 'job.shiftPlan', 'registrations'],
+    });
+
+    if (!shift || shift.job.shiftPlan.organizationId !== organizationId) {
+      throw new NotFoundException('Schicht nicht gefunden');
+    }
+
+    const reg = this.registrationRepository.create({
+      shiftId: shift.id,
+      registrationGroupId: uuidv4(),
+      name: dto.name,
+      email: dto.email,
+      phone: dto.phone || null,
+      notes: dto.notes || null,
+      adminNotes: dto.adminNotes || null,
+      status: ShiftRegistrationStatus.CONFIRMED,
+      verificationToken: this.generateToken(),
+    });
+
+    const saved = await this.registrationRepository.save(reg);
+
+    if (dto.notify) {
+      const full = await this.registrationRepository.findOne({
+        where: { id: saved.id },
+        relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
+      });
+      if (full) {
+        const summary = this.formatShiftsSummary([full]);
+        await this.emailService.sendShiftConfirmationEmail(
+          full.email,
+          full.name,
+          full.shift.job.shiftPlan.name,
+          summary,
+        );
+      }
+    }
+
+    return saved;
+  }
+
+  /** Admin edits a registration. Setting `shiftId` to a different value
+   *  moves the helper to that shift; by default the helper gets a
+   *  notification email summarising the change. */
+  async adminUpdateRegistration(
+    organizationId: string,
+    registrationId: string,
+    dto: AdminUpdateRegistrationDto,
+  ): Promise<ShiftRegistration> {
+    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+
+    // Capture the pre-change shift snapshot for the notification email.
+    const oldShiftLine = reg.shift
+      ? this.formatShiftsSummary([reg]).replace(/<\/?p[^>]*>/g, '').trim()
+      : '';
+
+    if (dto.name !== undefined) reg.name = dto.name;
+    if (dto.email !== undefined) reg.email = dto.email;
+    if (dto.phone !== undefined) reg.phone = dto.phone || null;
+    if (dto.notes !== undefined) reg.notes = dto.notes || null;
+    if (dto.adminNotes !== undefined) reg.adminNotes = dto.adminNotes || null;
+
+    let shiftMoved = false;
+    if (dto.shiftId && dto.shiftId !== reg.shiftId) {
+      const targetShift = await this.shiftRepository.findOne({
+        where: { id: dto.shiftId },
+        relations: ['job', 'job.shiftPlan'],
+      });
+      if (!targetShift || targetShift.job.shiftPlan.organizationId !== organizationId) {
+        throw new NotFoundException('Ziel-Schicht nicht gefunden');
+      }
+      if (targetShift.job.shiftPlanId !== reg.shift?.job?.shiftPlanId) {
+        throw new BadRequestException('Schicht muss zum selben Schichtplan gehören');
+      }
+      reg.shiftId = targetShift.id;
+      shiftMoved = true;
+    }
+
+    const saved = await this.registrationRepository.save(reg);
+
+    if (shiftMoved && (dto.notify ?? true)) {
+      const full = await this.registrationRepository.findOne({
+        where: { id: saved.id },
+        relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
+      });
+      if (full) {
+        const newShiftLine = this.formatShiftsSummary([full]).replace(/<\/?p[^>]*>/g, '').trim();
+        await this.emailService.sendShiftUpdatedEmail(
+          full.email,
+          full.name,
+          full.shift.job.shiftPlan.name,
+          oldShiftLine,
+          newShiftLine,
+          dto.notifyMessage,
+        );
+      }
+    }
+
+    return saved;
   }
 
   async approveRegistration(

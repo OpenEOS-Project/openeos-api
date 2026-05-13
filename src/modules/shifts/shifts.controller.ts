@@ -27,6 +27,8 @@ import {
   RejectRegistrationDto,
   SendMessageDto,
   UpdateRegistrationNotesDto,
+  AdminCreateRegistrationDto,
+  AdminUpdateRegistrationDto,
 } from './dto';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
@@ -286,6 +288,34 @@ export class ShiftsController {
       organizationId,
       registrationId,
       dto.adminNotes || '',
+    );
+    return { data: registration };
+  }
+
+  @Post('shifts/:shiftId/registrations')
+  async adminCreateRegistration(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('shiftId', ParseUUIDPipe) shiftId: string,
+    @Body() dto: AdminCreateRegistrationDto,
+  ) {
+    const registration = await this.shiftsService.adminCreateRegistration(
+      organizationId,
+      shiftId,
+      dto,
+    );
+    return { data: registration };
+  }
+
+  @Patch('registrations/:registrationId')
+  async adminUpdateRegistration(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('registrationId', ParseUUIDPipe) registrationId: string,
+    @Body() dto: AdminUpdateRegistrationDto,
+  ) {
+    const registration = await this.shiftsService.adminUpdateRegistration(
+      organizationId,
+      registrationId,
+      dto,
     );
     return { data: registration };
   }

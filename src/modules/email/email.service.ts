@@ -225,6 +225,40 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  async sendShiftUpdatedEmail(
+    email: string,
+    name: string,
+    shiftPlanName: string,
+    oldShiftLine: string,
+    newShiftLine: string,
+    note?: string,
+  ): Promise<boolean> {
+    const subject = `Schicht aktualisiert: ${shiftPlanName}`;
+    const html = this.getBaseTemplate(`
+      <h1>Hallo ${name}!</h1>
+      <p>Deine Einteilung im Schichtplan <strong>${shiftPlanName}</strong> wurde aktualisiert.</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr>
+          <td style="padding: 12px; background: #fee2e2; border-left: 4px solid #dc2626; border-radius: 6px 0 0 6px;">
+            <div style="font-size: 12px; color: #991b1b; text-transform: uppercase; letter-spacing: .04em;">Vorher</div>
+            <div style="margin-top: 4px;">${oldShiftLine}</div>
+          </td>
+        </tr>
+        <tr><td style="height: 8px;"></td></tr>
+        <tr>
+          <td style="padding: 12px; background: #d1fae5; border-left: 4px solid #10b981; border-radius: 6px 0 0 6px;">
+            <div style="font-size: 12px; color: #065f46; text-transform: uppercase; letter-spacing: .04em;">Jetzt</div>
+            <div style="margin-top: 4px;">${newShiftLine}</div>
+          </td>
+        </tr>
+      </table>
+      ${note ? `<p><strong>Hinweis:</strong></p><div style="background: #eff6ff; padding: 12px; border-radius: 6px; border-left: 4px solid #3b82f6; white-space: pre-wrap;">${note}</div>` : ''}
+      <p>Bei Fragen melde dich gerne bei den Organisatoren.</p>
+    `);
+
+    return this.sendEmail({ to: email, subject, html });
+  }
+
   async sendShiftMessageEmail(
     email: string,
     name: string,

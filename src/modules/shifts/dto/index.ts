@@ -6,3 +6,4 @@ export * from './create-shift.dto';
 export * from './update-shift.dto';
 export * from './registration-action.dto';
 export * from './public-register.dto';
+export * from './admin-registration.dto';
