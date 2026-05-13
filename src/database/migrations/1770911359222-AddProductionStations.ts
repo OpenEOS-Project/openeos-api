@@ -4,34 +4,61 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
     name = 'AddProductionStations1770911359222'
 
     public async up(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`ALTER TABLE "printers" DROP CONSTRAINT "printers_device_id_fkey"`);
-        await queryRunner.query(`ALTER TABLE "devices" DROP CONSTRAINT "FK_devices_verified_by"`);
-        await queryRunner.query(`ALTER TABLE "rental_hardware" DROP CONSTRAINT "rental_hardware_device_id_fkey"`);
-        await queryRunner.query(`ALTER TABLE "shift_plans" DROP CONSTRAINT "FK_shift_plans_event"`);
-        await queryRunner.query(`ALTER TABLE "shift_plans" DROP CONSTRAINT "FK_shift_plans_organization"`);
-        await queryRunner.query(`ALTER TABLE "shift_jobs" DROP CONSTRAINT "FK_shift_jobs_plan"`);
-        await queryRunner.query(`ALTER TABLE "shift_registrations" DROP CONSTRAINT "FK_shift_registrations_shift"`);
-        await queryRunner.query(`ALTER TABLE "shifts" DROP CONSTRAINT "FK_shifts_job"`);
-        await queryRunner.query(`DROP INDEX "public"."idx_printers_device_id"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_devices_organization_status"`);
-        await queryRunner.query(`DROP INDEX "public"."idx_rental_hardware_device_id"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_credit_purchases_stripe_checkout_session_id"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_trusted_devices_user_fingerprint"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_trusted_devices_expires_at"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_email_otps_user_purpose"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_email_otps_expires_at"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_organizations_stripe_customer_id"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_subscription_config_is_active"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_shift_plans_organization_created"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_shift_plans_public_slug"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_shift_plans_status"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_shift_jobs_plan_order"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_shift_registrations_email"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_shift_registrations_token"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_shift_registrations_group"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_shift_registrations_shift_status"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_shifts_job_date"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_shifts_date"`);
+        // This migration was generated against a dev DB whose FK constraint
+        // names happened to match what TypeORM expected. Other deployments
+        // (esp. ones bootstrapped with `synchronize: true` at any point) have
+        // hash-named FKs (`FK_xxxxxxxxxxxxxxxxxxxxxxxxx`) that don't match
+        // the literal names below. We use a PL/pgSQL helper to drop any FK
+        // by (table, column) regardless of its actual name, so the migration
+        // is reproducible across DB histories.
+        await queryRunner.query(`
+            CREATE OR REPLACE FUNCTION __omc_drop_fk(t text, c text) RETURNS void AS $$
+            DECLARE cname text;
+            BEGIN
+                FOR cname IN
+                    SELECT con.conname
+                    FROM pg_constraint con
+                    JOIN pg_class rel ON rel.oid = con.conrelid AND rel.relname = t
+                    WHERE con.contype = 'f'
+                      AND c = ANY(
+                        SELECT att.attname
+                        FROM pg_attribute att
+                        WHERE att.attrelid = con.conrelid AND att.attnum = ANY(con.conkey)
+                      )
+                LOOP
+                    EXECUTE 'ALTER TABLE ' || quote_ident(t) || ' DROP CONSTRAINT ' || quote_ident(cname);
+                END LOOP;
+            END;
+            $$ LANGUAGE plpgsql
+        `);
+        await queryRunner.query(`SELECT __omc_drop_fk('printers', 'device_id')`);
+        await queryRunner.query(`SELECT __omc_drop_fk('devices', 'verified_by_id')`);
+        await queryRunner.query(`SELECT __omc_drop_fk('rental_hardware', 'device_id')`);
+        await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'event_id')`);
+        await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'organization_id')`);
+        await queryRunner.query(`SELECT __omc_drop_fk('shift_jobs', 'shift_plan_id')`);
+        await queryRunner.query(`SELECT __omc_drop_fk('shift_registrations', 'shift_id')`);
+        await queryRunner.query(`SELECT __omc_drop_fk('shifts', 'shift_job_id')`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."idx_printers_device_id"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_devices_organization_status"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."idx_rental_hardware_device_id"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_credit_purchases_stripe_checkout_session_id"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_trusted_devices_user_fingerprint"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_trusted_devices_expires_at"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_email_otps_user_purpose"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_email_otps_expires_at"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_organizations_stripe_customer_id"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_subscription_config_is_active"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_plans_organization_created"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_plans_public_slug"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_plans_status"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_jobs_plan_order"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_registrations_email"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_registrations_token"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_registrations_group"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_registrations_shift_status"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shifts_job_date"`);
+        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shifts_date"`);
         await queryRunner.query(`CREATE TABLE "production_stations" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "event_id" uuid NOT NULL, "name" character varying(255) NOT NULL, "description" text, "color" character varying(7), "sort_order" integer NOT NULL DEFAULT '0', "is_active" boolean NOT NULL DEFAULT true, "handoff_station_id" uuid, CONSTRAINT "PK_ae758725ecacb01e9c05ea3e28f" PRIMARY KEY ("id"))`);
         await queryRunner.query(`CREATE INDEX "IDX_e48ed479b9aa559003056ce915" ON "production_stations" ("event_id", "sort_order") `);
         await queryRunner.query(`ALTER TABLE "order_items" ADD "production_station_id" uuid`);
@@ -42,8 +69,12 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
         await queryRunner.query(`ALTER TABLE "invitations" ALTER COLUMN "role" TYPE "public"."organization_role" USING "role"::"text"::"public"."organization_role"`);
         await queryRunner.query(`ALTER TABLE "user_organizations" ALTER COLUMN "role" TYPE "public"."organization_role" USING "role"::"text"::"public"."organization_role"`);
         await queryRunner.query(`DROP TYPE "public"."organization_role_old"`);
+        // invitations.permissions might still have NULLs from very-old rows;
+        // backfill them with the empty-object default so the NOT NULL stick.
+        await queryRunner.query(`UPDATE "invitations" SET "permissions" = '{}'::jsonb WHERE "permissions" IS NULL`);
         await queryRunner.query(`ALTER TABLE "invitations" ALTER COLUMN "permissions" SET NOT NULL`);
-        await queryRunner.query(`ALTER TABLE "devices" DROP CONSTRAINT "FK_3f8418d0a8ce1e08098d37c9b67"`);
+        // organization_id FK is name-agnostic — already dropped via __omc_drop_fk above.
+        await queryRunner.query(`SELECT __omc_drop_fk('devices', 'organization_id')`);
         await queryRunner.query(`ALTER TABLE "devices" ALTER COLUMN "organization_id" DROP NOT NULL`);
         await queryRunner.query(`ALTER TABLE "devices" ALTER COLUMN "status" SET DEFAULT 'pending'`);
         await queryRunner.query(`ALTER TABLE "user_organizations" ALTER COLUMN "pin" DROP DEFAULT`);
@@ -72,6 +103,7 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
         await queryRunner.query(`ALTER TABLE "shift_jobs" ADD CONSTRAINT "FK_0551bb15772312807d7f7fd6123" FOREIGN KEY ("shift_plan_id") REFERENCES "shift_plans"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
         await queryRunner.query(`ALTER TABLE "shift_registrations" ADD CONSTRAINT "FK_b539608be5ddac34913edce8385" FOREIGN KEY ("shift_id") REFERENCES "shifts"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
         await queryRunner.query(`ALTER TABLE "shifts" ADD CONSTRAINT "FK_6773714b65a84efabf657480e8f" FOREIGN KEY ("shift_job_id") REFERENCES "shift_jobs"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`DROP FUNCTION IF EXISTS __omc_drop_fk(text, text)`);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
