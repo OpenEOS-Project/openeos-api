@@ -63,6 +63,14 @@ export interface OrganizationSettings {
       enabled: boolean;
       printerId: string | null;
       templateId: string | null;
+      /**
+       * How kitchen tickets are split:
+       * - per_order   : one ticket containing the entire order (default, legacy)
+       * - per_item    : one ticket per OrderItem (with item-barcode for scan tracking)
+       * - per_station : one ticket per ProductionStation, routed to the station's
+       *                 printer if it has one, falling back to printerId above.
+       */
+      mode?: 'per_order' | 'per_item' | 'per_station';
     };
     orderTicketPrinting?: {
       enabled: boolean;

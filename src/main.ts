@@ -2,22 +2,35 @@
 import './instrument';
 
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters';
 import { TransformInterceptor, LoggingInterceptor, SentryContextInterceptor } from './common/interceptors';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
 
-  // Security Headers
-  app.use(helmet());
+  // Security Headers — disable cross-origin-resource-policy for /uploads so the
+  // Next.js frontend can embed images served from this API.
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
+
+  // Serve uploaded files (avatars, organization logos, product images, ...)
+  const uploadDir = configService.get<string>('UPLOAD_DIR') || './uploads';
+  app.useStaticAssets(join(process.cwd(), uploadDir.replace(/^\.\//, '')), {
+    prefix: '/uploads/',
+  });
 
   // Cookie Parser
   app.use(cookieParser());

@@ -25,9 +25,34 @@ import {
 import { AdminAction } from '../../database/entities/admin-audit-log.entity';
 import { InvoiceStatus } from '../../database/entities/invoice.entity';
 import { RentalHardwareStatus, RentalHardwareType } from '../../database/entities/rental-hardware.entity';
-import { DeviceType } from '../../database/entities/device.entity';
+import { DeviceType, DeviceStatus } from '../../database/entities/device.entity';
 import { RentalAssignmentStatus } from '../../database/entities/rental-assignment.entity';
-import { PrinterType, PrinterConnectionType } from '../../database/entities/printer.entity';
+import {
+  PrinterType,
+  PrinterConnectionType,
+  PrinterConnectionConfig,
+} from '../../database/entities/printer.entity';
+
+export interface PrinterPreviousConfig {
+  printerId: string;
+  name: string;
+  type: PrinterType;
+  connectionType: PrinterConnectionType;
+  connectionConfig: PrinterConnectionConfig;
+  paperWidth: number;
+  hasCashDrawer: boolean;
+}
+
+export interface UnassignedPrinterDeviceListItem {
+  id: string;
+  name: string;
+  suggestedName: string | null;
+  type: DeviceType;
+  status: DeviceStatus;
+  lastSeenAt: Date | null;
+  createdAt: Date;
+  previousConfig: PrinterPreviousConfig | null;
+}
 import { EventStatus } from '../../database/entities/event.entity';
 import { GatewayService } from '../gateway/gateway.service';
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -422,6 +447,18 @@ export class AdminService {
   }
 
   // === Devices (Admin) ===
+
+  async deleteDevice(deviceId: string): Promise<void> {
+    const device = await this.deviceRepository.findOne({ where: { id: deviceId } });
+    if (!device) {
+      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Gerät nicht gefunden' });
+    }
+    // Drop linked printer rows along with the device — they're useless without
+    // an agent and would otherwise show up as orphans in the admin UI.
+    await this.printerRepository.delete({ deviceId });
+    await this.deviceRepository.delete({ id: deviceId });
+    this.logger.log(`Admin deleted device ${deviceId}`);
+  }
 
   async findAllDevices(params?: { type?: string; unassigned?: boolean }): Promise<Device[]> {
     const qb = this.deviceRepository.createQueryBuilder('device');
@@ -830,6 +867,244 @@ export class AdminService {
     this.logger.log(`Rental returned: ${assignmentId}`);
 
     return assignment;
+  }
+
+  // === Printers (Admin) ===
+
+  async findAllPrinters(params?: { organizationId?: string }): Promise<{
+    assigned: Array<Printer & { organization: Organization | null }>;
+    unassigned: UnassignedPrinterDeviceListItem[];
+  }> {
+    const qb = this.printerRepository
+      .createQueryBuilder('printer')
+      .leftJoinAndSelect('printer.organization', 'organization')
+      .leftJoinAndSelect('printer.device', 'device')
+      .orderBy('organization.name', 'ASC')
+      .addOrderBy('printer.name', 'ASC');
+
+    if (params?.organizationId) {
+      qb.andWhere('printer.organizationId = :orgId', { orgId: params.organizationId });
+    } else {
+      qb.andWhere('printer.organizationId IS NOT NULL');
+    }
+
+    const assigned = await qb.getMany();
+
+    const unassignedDevices = await this.deviceRepository
+      .createQueryBuilder('device')
+      .where('device.type = :type', { type: DeviceType.PRINTER_AGENT })
+      .andWhere('device.organizationId IS NULL')
+      .orderBy('device.name', 'ASC')
+      .getMany();
+
+    // Pick up Printer rows for each unassigned device so we can preserve the
+    // previously configured name + USB IDs across re-assignments.
+    const deviceIds = unassignedDevices.map((d) => d.id);
+    const previousPrinters = deviceIds.length
+      ? await this.printerRepository
+          .createQueryBuilder('printer')
+          .where('printer.organizationId IS NULL')
+          .andWhere('printer.deviceId IN (:...deviceIds)', { deviceIds })
+          .getMany()
+      : [];
+    const previousByDeviceId = new Map(previousPrinters.map((p) => [p.deviceId, p]));
+
+    const unassigned: UnassignedPrinterDeviceListItem[] = unassignedDevices.map((d) => {
+      const prev = d.id ? previousByDeviceId.get(d.id) : undefined;
+      return {
+        id: d.id,
+        name: d.name,
+        suggestedName: d.suggestedName ?? null,
+        type: d.type,
+        status: d.status,
+        lastSeenAt: d.lastSeenAt,
+        createdAt: d.createdAt,
+        previousConfig: prev
+          ? {
+              printerId: prev.id,
+              name: prev.name,
+              type: prev.type,
+              connectionType: prev.connectionType,
+              connectionConfig: prev.connectionConfig,
+              paperWidth: prev.paperWidth,
+              hasCashDrawer: prev.hasCashDrawer,
+            }
+          : null,
+      };
+    });
+
+    return {
+      assigned: assigned as Array<Printer & { organization: Organization | null }>,
+      unassigned,
+    };
+  }
+
+  async assignPrinterDevice(
+    payload: {
+      deviceId: string;
+      organizationId: string;
+      name: string;
+      type: PrinterType;
+      connectionType: PrinterConnectionType;
+      connectionConfig?: Record<string, unknown>;
+      paperWidth?: number;
+      hasCashDrawer?: boolean;
+    },
+    actor: User,
+    ipAddress: string,
+    userAgent?: string,
+  ): Promise<Printer> {
+    const device = await this.deviceRepository.findOne({ where: { id: payload.deviceId } });
+    if (!device) {
+      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Gerät nicht gefunden' });
+    }
+    if (device.type !== DeviceType.PRINTER_AGENT) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Nur Drucker-Agents können als Drucker zugewiesen werden',
+      });
+    }
+    if (device.organizationId) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Gerät ist bereits einer Organisation zugewiesen',
+      });
+    }
+    const organization = await this.organizationRepository.findOne({ where: { id: payload.organizationId } });
+    if (!organization) {
+      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Organisation nicht gefunden' });
+    }
+
+    // Re-use an existing Printer row for this device if it was previously assigned and
+    // unassigned — that keeps name + USB IDs + paperWidth + cash-drawer setting.
+    const existing = await this.printerRepository.findOne({ where: { deviceId: device.id } });
+    let saved: Printer;
+    if (existing) {
+      existing.organizationId = payload.organizationId;
+      existing.name = payload.name;
+      existing.type = payload.type;
+      existing.connectionType = payload.connectionType;
+      // Don't clobber a previously detected connectionConfig with an empty object.
+      if (payload.connectionConfig && Object.keys(payload.connectionConfig).length > 0) {
+        existing.connectionConfig = payload.connectionConfig as Printer['connectionConfig'];
+      }
+      if (payload.paperWidth !== undefined) existing.paperWidth = payload.paperWidth;
+      if (payload.hasCashDrawer !== undefined) existing.hasCashDrawer = payload.hasCashDrawer;
+      existing.isActive = true;
+      saved = await this.printerRepository.save(existing);
+    } else {
+      const printer = this.printerRepository.create({
+        organizationId: payload.organizationId,
+        name: payload.name,
+        type: payload.type,
+        connectionType: payload.connectionType,
+        connectionConfig: (payload.connectionConfig ?? {}) as Printer['connectionConfig'],
+        deviceId: device.id,
+        paperWidth: payload.paperWidth ?? 80,
+        hasCashDrawer: payload.hasCashDrawer ?? false,
+        isActive: true,
+      });
+      saved = await this.printerRepository.save(printer);
+    }
+
+    device.organizationId = payload.organizationId;
+    device.status = DeviceStatus.VERIFIED;
+    device.verifiedAt = new Date();
+    device.verifiedById = actor.id;
+    await this.deviceRepository.save(device);
+
+    // If the agent is already connected via WebSocket, move its socket to the
+    // new organization room so the assignment takes effect without a restart.
+    this.gatewayService.reassignDeviceRoom(device.id, payload.organizationId);
+
+    await this.createAuditLog(
+      actor.id,
+      payload.organizationId,
+      AdminAction.EDIT_ORGANIZATION,
+      'printer',
+      saved.id,
+      {
+        operation: 'assign_printer_device',
+        deviceId: device.id,
+        organizationId: payload.organizationId,
+        organizationName: organization.name,
+      },
+      ipAddress,
+      userAgent,
+    );
+
+    this.logger.log(`Admin ${actor.id} assigned device ${device.id} as printer ${saved.id} to org ${payload.organizationId}`);
+
+    return saved;
+  }
+
+  async updatePrinterAdmin(
+    printerId: string,
+    update: { hasCashDrawer?: boolean },
+  ): Promise<Printer> {
+    const printer = await this.printerRepository.findOne({ where: { id: printerId } });
+    if (!printer) {
+      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Drucker nicht gefunden' });
+    }
+    if (update.hasCashDrawer !== undefined) {
+      printer.hasCashDrawer = update.hasCashDrawer;
+    }
+    return this.printerRepository.save(printer);
+  }
+
+  async unassignPrinter(
+    printerId: string,
+    actor: User,
+    ipAddress: string,
+    userAgent?: string,
+  ): Promise<void> {
+    const printer = await this.printerRepository.findOne({
+      where: { id: printerId },
+      relations: ['device', 'organization'],
+    });
+    if (!printer) {
+      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Drucker nicht gefunden' });
+    }
+
+    const deviceId = printer.deviceId;
+    const organizationId = printer.organizationId;
+
+    // Keep the Printer row (with name, connection config, USB IDs, …) so the
+    // operator can re-assign the same physical device later without losing
+    // setup work. Only the org link gets cleared.
+    // Note: using `update` instead of `save` so the loaded `organization` relation
+    // doesn't override our null assignment when TypeORM resolves the FK.
+    await this.printerRepository.update({ id: printer.id }, { organizationId: null });
+
+    if (deviceId) {
+      const device = await this.deviceRepository.findOne({ where: { id: deviceId } });
+      if (device) {
+        // Only drop the org link — keep status=verified so the agent stays
+        // connected via WebSocket and can be reassigned without re-pairing.
+        device.organizationId = null;
+        await this.deviceRepository.save(device);
+      }
+      // Move the agent's socket out of the old org room so it doesn't keep
+      // receiving jobs from that org while it's idle.
+      this.gatewayService.reassignDeviceRoom(deviceId, null);
+    }
+
+    await this.createAuditLog(
+      actor.id,
+      organizationId,
+      AdminAction.EDIT_ORGANIZATION,
+      'printer',
+      printerId,
+      {
+        operation: 'unassign_printer',
+        deviceId,
+        organizationId,
+      },
+      ipAddress,
+      userAgent,
+    );
+
+    this.logger.log(`Admin ${actor.id} unassigned printer ${printerId}`);
   }
 
   // === Statistics ===

@@ -34,6 +34,7 @@ import {
   ProductionStation,
 } from '../../database/entities';
 import { EventStatus } from '../../database/entities/event.entity';
+import { PrinterType, PrinterConnectionType } from '../../database/entities/printer.entity';
 import { OrderStatus, PaymentStatus, OrderSource, OrderFulfillmentType } from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
@@ -158,6 +159,42 @@ export class DeviceApiController {
     };
   }
 
+  @Post('printers/sync')
+  @ApiOperation({
+    summary: 'Sync agent-side printer configuration to the backend',
+    description:
+      'Agent posts its local config.yaml printer block; the backend upserts the matching Printer rows and returns canonical IDs.',
+  })
+  async syncPrinters(
+    @CurrentDevice() device: Device,
+    @Body()
+    body: {
+      printers: Array<{
+        localId: string;
+        name: string;
+        type: 'receipt' | 'kitchen' | 'label';
+        connectionType: 'usb' | 'network' | 'bluetooth';
+        connectionConfig?: Record<string, unknown>;
+        paperWidth?: number;
+      }>;
+    },
+  ) {
+    const items = (body?.printers ?? []).map((p) => ({
+      localId: p.localId,
+      name: p.name,
+      type: p.type as PrinterType,
+      connectionType: p.connectionType as PrinterConnectionType,
+      connectionConfig: p.connectionConfig,
+      paperWidth: p.paperWidth,
+    }));
+    const result = await this.printersService.syncFromAgent(
+      device.id,
+      device.organizationId ?? null,
+      items,
+    );
+    return { data: { printers: result } };
+  }
+
   @Get('templates')
   @ApiOperation({ summary: 'Get print templates for this device' })
   async getTemplates(@CurrentDevice() device: Device) {
@@ -167,9 +204,19 @@ export class DeviceApiController {
       where: { organizationId },
     });
 
-    const templateMap: Record<string, unknown> = {};
+    // The printer agent expects the *rendered* Jinja2 source string, not the
+    // designer's design-object. We persisted both: `t.template` is the design
+    // shape `{ paperWidth, elements, generatedTemplate }`. Extract the source
+    // and fall back to skipping if not yet generated.
+    const templateMap: Record<string, string> = {};
     for (const t of templates) {
-      templateMap[t.type] = t.template;
+      const tpl = t.template as { generatedTemplate?: string } | string | null;
+      if (typeof tpl === 'string') {
+        templateMap[t.type] = tpl;
+      } else if (tpl && typeof tpl.generatedTemplate === 'string') {
+        templateMap[t.type] = tpl.generatedTemplate;
+      }
+      // else: skip — agent falls back to its built-in template for this type.
     }
 
     return {
@@ -191,15 +238,15 @@ export class DeviceApiController {
   }
 
   @Get('events')
-  @ApiOperation({ summary: 'Get active events for device organization' })
+  @ApiOperation({ summary: 'Get active or test event for device organization (at most one)' })
   async getEvents(@CurrentDevice() device: Device) {
     const organizationId = requireOrganization(device);
     const events = await this.eventRepository.find({
       where: {
         organizationId,
-        status: In([EventStatus.ACTIVE, EventStatus.INACTIVE, EventStatus.TEST]),
+        status: In([EventStatus.ACTIVE, EventStatus.TEST]),
       },
-      order: { startDate: 'ASC' },
+      order: { status: 'ASC' },
     });
 
     return { data: events };
@@ -403,6 +450,23 @@ export class DeviceApiController {
           kitchenNotes: item.kitchenNotes || undefined,
         })),
       });
+
+      // Auto-print kitchen / order tickets according to org orderFlow,
+      // with fallback to the device's defaultPrinterId.
+      this.orderPrintService
+        .handleOrderCreated(organizationId, {
+          order: completeOrder,
+          orderId: completeOrder.id,
+          orderNumber: completeOrder.orderNumber,
+          tableNumber: completeOrder.tableNumber,
+          total: Number(completeOrder.total),
+          source: completeOrder.source,
+        })
+        .catch((err) =>
+          this.logger.error(
+            `Auto-print on device order ${completeOrder.id} failed: ${(err as Error).message}`,
+          ),
+        );
     }
 
     return { data: completeOrder };
@@ -496,6 +560,23 @@ export class DeviceApiController {
         this.logger.warn(`Failed to open cash drawer: ${e}`);
       }
     }
+
+    // Auto-print receipt on payment_received trigger (with device fallback).
+    this.orderPrintService
+      .handlePaymentReceived(organizationId, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        paymentId: payment.id,
+        amount: Number(payment.amount),
+        paymentMethod: payment.paymentMethod,
+        isFullyPaid,
+        order,
+      })
+      .catch((err) =>
+        this.logger.error(
+          `Auto-receipt on payment ${payment.id} failed: ${(err as Error).message}`,
+        ),
+      );
 
     return { data: payment };
   }
@@ -955,7 +1036,7 @@ export class DeviceApiController {
 
     const order = await this.orderRepository.findOne({
       where: { id: orderId, organizationId },
-      relations: ['items'],
+      relations: ['items', 'items.product', 'items.product.category'],
     });
 
     if (!order) {

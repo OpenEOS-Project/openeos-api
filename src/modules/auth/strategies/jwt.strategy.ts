@@ -32,7 +32,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: JwtPayload): Promise<User> {
+  async validate(payload: JwtPayload): Promise<User & { organizations: { id: string; role: string }[]; isSuperadmin: boolean }> {
     const user = await this.userRepository.findOne({
       where: { id: payload.sub },
       relations: ['userOrganizations', 'userOrganizations.organization'],
@@ -50,6 +50,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Konto ist vorübergehend gesperrt');
     }
 
-    return user;
+    // Hydrate the shape the OrganizationGuard / RolesGuard expect.
+    const organizations = (user.userOrganizations ?? []).map((uo) => ({
+      id: uo.organizationId,
+      role: uo.role,
+    }));
+    return Object.assign(user, {
+      organizations,
+      // Guards check `isSuperadmin` (lowercase a); the entity column is `isSuperAdmin`.
+      isSuperadmin: user.isSuperAdmin,
+    });
   }
 }

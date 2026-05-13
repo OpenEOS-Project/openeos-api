@@ -4,6 +4,8 @@ import {
   BadRequestException,
   ForbiddenException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
@@ -22,6 +24,7 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
 import { CreateEventDto, UpdateEventDto, CopyProductsDto } from './dto';
+import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
 export class EventsService {
@@ -42,7 +45,18 @@ export class EventsService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(OrderItem)
     private readonly orderItemRepository: Repository<OrderItem>,
+    @Inject(forwardRef(() => GatewayService))
+    private readonly gatewayService: GatewayService,
   ) {}
+
+  private emitStatusChanged(event: Event): void {
+    this.gatewayService.notifyEventStatusChanged(event.organizationId, {
+      eventId: event.id,
+      organizationId: event.organizationId,
+      status: event.status,
+      name: event.name,
+    });
+  }
 
   async create(
     organizationId: string,
@@ -195,16 +209,17 @@ export class EventsService {
       });
     }
 
-    // Deactivate any currently active event for this org
-    await this.eventRepository.update(
-      { organizationId, status: EventStatus.ACTIVE },
-      { status: EventStatus.INACTIVE },
-    );
+    const deactivatedSiblings = await this.deactivateActiveOrTestSiblings(organizationId, event.id);
 
     event.status = EventStatus.ACTIVE;
     await this.eventRepository.save(event);
 
     this.logger.log(`Event activated: ${event.name} (${event.id})`);
+
+    this.emitStatusChanged(event);
+    for (const sibling of deactivatedSiblings) {
+      this.emitStatusChanged(sibling);
+    }
 
     return event;
   }
@@ -216,10 +231,16 @@ export class EventsService {
   ): Promise<Event> {
     const event = await this.getEventAndCheckPermission(organizationId, eventId, user.id, 'events');
 
+    if (event.status === EventStatus.INACTIVE) {
+      return event;
+    }
+
     event.status = EventStatus.INACTIVE;
     await this.eventRepository.save(event);
 
     this.logger.log(`Event deactivated: ${event.name} (${event.id})`);
+
+    this.emitStatusChanged(event);
 
     return event;
   }
@@ -231,20 +252,76 @@ export class EventsService {
   ): Promise<Event> {
     const event = await this.getEventAndCheckPermission(organizationId, eventId, user.id, 'events');
 
-    // Deactivate any currently active event
-    if (event.status !== EventStatus.TEST) {
-      await this.eventRepository.update(
-        { organizationId, status: EventStatus.ACTIVE },
-        { status: EventStatus.INACTIVE },
-      );
+    if (event.status === EventStatus.TEST) {
+      return event;
     }
+
+    const deactivatedSiblings = await this.deactivateActiveOrTestSiblings(organizationId, event.id);
 
     event.status = EventStatus.TEST;
     await this.eventRepository.save(event);
 
     this.logger.log(`Event set to test mode: ${event.name} (${event.id})`);
 
+    this.emitStatusChanged(event);
+    for (const sibling of deactivatedSiblings) {
+      this.emitStatusChanged(sibling);
+    }
+
     return event;
+  }
+
+  async getActiveOrTestForUser(
+    organizationId: string,
+    user: User,
+  ): Promise<Event | null> {
+    await this.checkMembership(organizationId, user.id);
+    return this.getActiveOrTest(organizationId);
+  }
+
+  async getActiveOrTest(organizationId: string): Promise<Event | null> {
+    const candidates = await this.eventRepository.find({
+      where: {
+        organizationId,
+        status: In([EventStatus.ACTIVE, EventStatus.TEST]),
+      },
+    });
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    candidates.sort((a, b) => {
+      if (a.status === b.status) return 0;
+      return a.status === EventStatus.ACTIVE ? -1 : 1;
+    });
+
+    return candidates[0];
+  }
+
+  // Returns the events that were deactivated (with their new INACTIVE status).
+  private async deactivateActiveOrTestSiblings(
+    organizationId: string,
+    excludeEventId: string,
+  ): Promise<Event[]> {
+    const siblings = await this.eventRepository.find({
+      where: {
+        organizationId,
+        status: In([EventStatus.ACTIVE, EventStatus.TEST]),
+      },
+    });
+
+    const toDeactivate = siblings.filter((e) => e.id !== excludeEventId);
+
+    for (const sibling of toDeactivate) {
+      sibling.status = EventStatus.INACTIVE;
+    }
+
+    if (toDeactivate.length > 0) {
+      await this.eventRepository.save(toDeactivate);
+    }
+
+    return toDeactivate;
   }
 
   // Copy categories and products from another event

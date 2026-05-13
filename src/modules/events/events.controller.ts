@@ -43,6 +43,16 @@ export class EventsController {
     return this.eventsService.findAll(organizationId, user, pagination);
   }
 
+  @Get('active')
+  @ApiOperation({ summary: 'Liefert das aktuell aktive oder im Test-Modus befindliche Event der Organisation (oder null)' })
+  async findActive(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @CurrentUser() user: User,
+  ) {
+    const event = await this.eventsService.getActiveOrTestForUser(organizationId, user);
+    return { data: event };
+  }
+
   @Get(':eventId')
   async findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

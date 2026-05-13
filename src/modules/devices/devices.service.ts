@@ -379,6 +379,13 @@ export class DevicesService {
       });
     }
 
+    // Treat each status poll as a heartbeat so unassigned printer-agents show a fresh
+    // "last seen" timestamp (otherwise they look offline forever in the admin UI).
+    await this.deviceRepository.update(
+      { id: device.id },
+      { lastSeenAt: new Date() },
+    );
+
     return {
       status: device.status,
       deviceId: device.id,
@@ -512,6 +519,8 @@ export class DevicesService {
     await this.deviceRepository.save(device);
     this.logger.log(`Device blocked: ${device.name} (${device.id}) by user ${user.email}`);
 
+    this.gatewayService.notifyDeviceStatusChanged(organizationId, deviceId, 'blocked');
+
     return device;
   }
 
@@ -528,6 +537,8 @@ export class DevicesService {
 
     await this.deviceRepository.save(device);
     this.logger.log(`Device unblocked: ${device.name} (${device.id}) by user ${user.email}`);
+
+    this.gatewayService.notifyDeviceStatusChanged(organizationId, deviceId, 'verified');
 
     return device;
   }

@@ -15,8 +15,10 @@ import {
   CategoryUpdatedEvent,
   CategoryDeletedEvent,
   MenuRefreshEvent,
+  EventStatusChangedEvent,
   DeviceSettingsUpdatedEvent,
   DeviceConfigUpdatedEvent,
+  DeviceStatusChangedEvent,
   PrinterConfigUpdateEvent,
   OpenCashDrawerEvent,
 } from './dto';
@@ -101,11 +103,38 @@ export class GatewayService {
     this.appGateway.emitToOrganization(organizationId, GatewayEvents.PRINT_JOB_STATUS_CHANGED, payload);
   }
 
+  /**
+   * Push the org's full set of print templates to all printer agents in the
+   * organization. Called whenever a template is created/updated/deleted so
+   * agents pick up the change without restarting.
+   *
+   * `templates` is a map from template type (`receipt`, `kitchen_ticket`,
+   * `order_ticket`) to the rendered Jinja2 source string.
+   */
+  pushTemplatesToAgents(organizationId: string, templates: Record<string, string>) {
+    this.logger.debug(
+      `Pushing ${Object.keys(templates).length} template(s) to agents in org ${organizationId}`,
+    );
+    this.appGateway.emitToOrganization(organizationId, GatewayEvents.TEMPLATE_UPDATE, {
+      templates,
+    });
+  }
+
   sendPrintJobToAgent(organizationId: string, data: PrinterJobEvent) {
     this.logger.debug(`Sending print job ${data.jobId} to agent via organization ${organizationId}`);
 
     // Send to all devices in the organization (the agent will filter by printerId)
     this.appGateway.emitToOrganization(organizationId, GatewayEvents.PRINTER_JOB, data);
+  }
+
+  /**
+   * Move a currently-connected device's socket to a different organization room
+   * (or out of any room when the assignment is removed). Used when a super-admin
+   * (re)assigns a printer-agent device while it's already online — without this
+   * the agent would still be in its old org's room and miss new print jobs.
+   */
+  reassignDeviceRoom(deviceId: string, newOrganizationId: string | null): void {
+    this.appGateway.reassignDeviceRoom(deviceId, newOrganizationId);
   }
 
   // Broadcast Messages
@@ -166,6 +195,15 @@ export class GatewayService {
     this.appGateway.emitToOrganization(organizationId, GatewayEvents.MENU_REFRESH, payload);
   }
 
+  notifyEventStatusChanged(
+    organizationId: string,
+    payload: EventStatusChangedEvent,
+  ) {
+    this.logger.debug(`Emitting eventStatusChanged for event ${payload.eventId}: ${payload.status}`);
+
+    this.appGateway.emitToOrganization(organizationId, GatewayEvents.EVENT_STATUS_CHANGED, payload);
+  }
+
   // Kitchen notifications (fallback for items without station)
 
   notifyKitchenOrderCancelled(organizationId: string, orderId: string, orderNumber: string) {
@@ -191,6 +229,18 @@ export class GatewayService {
 
     // Send only to the specific device
     this.appGateway.emitToDevice(organizationId, deviceId, GatewayEvents.DEVICE_CONFIG_UPDATED, payload);
+  }
+
+  notifyDeviceStatusChanged(
+    organizationId: string,
+    deviceId: string,
+    status: 'pending' | 'verified' | 'blocked',
+  ) {
+    const payload: DeviceStatusChangedEvent = { deviceId, status };
+
+    this.logger.debug(`Emitting deviceStatusChanged for device ${deviceId}: ${status}`);
+
+    this.appGateway.emitToDevice(organizationId, deviceId, GatewayEvents.DEVICE_STATUS_CHANGED, payload);
   }
 
   // Printer Agent Config Events

@@ -23,7 +23,6 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { OrganizationGuard } from '../../common/guards/organization.guard';
 import { Role } from '../../common/constants/roles.enum';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import type { Organization } from '../../database/entities';
 
 @ApiTags('Uploads')
 @ApiBearerAuth('JWT-auth')
@@ -36,13 +35,13 @@ export class UploadsController {
   @Roles(Role.MEMBER)
   @UseInterceptors(FileInterceptor('file'))
   async uploadImage(
-    @CurrentOrganization() organization: Organization,
+    @CurrentOrganization() organizationId: string,
     @UploadedFile() file: MulterFile,
     @Query('category') category?: UploadCategory,
   ) {
     const result = await this.uploadsService.uploadImage(
       file,
-      organization.id,
+      organizationId,
       category,
     );
     return { data: result };
@@ -51,24 +50,24 @@ export class UploadsController {
   @Delete(':filename')
   @Roles(Role.MEMBER)
   async deleteImage(
-    @CurrentOrganization() organization: Organization,
+    @CurrentOrganization() organizationId: string,
     @Param('filename') filename: string,
     @Query('category') category?: UploadCategory,
   ) {
-    await this.uploadsService.deleteImage(organization.id, filename, category);
+    await this.uploadsService.deleteImage(organizationId, filename, category);
     return { data: { success: true } };
   }
 
   @Get(':category/:filename')
   @Roles(Role.MEMBER)
   async getImage(
-    @CurrentOrganization() organization: Organization,
+    @CurrentOrganization() organizationId: string,
     @Param('category') category: string,
     @Param('filename') filename: string,
     @Res() res: unknown,
   ) {
     const filePath = await this.uploadsService.getImagePath(
-      organization.id,
+      organizationId,
       filename,
       category,
     );

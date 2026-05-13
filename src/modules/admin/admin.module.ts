@@ -18,6 +18,7 @@ import { AdminService } from './admin.service';
 import { AdminEventsController } from './admin-events.controller';
 import { AdminEventsService } from './admin-events.service';
 import { GatewayModule } from '../gateway/gateway.module';
+import { PrintersModule } from '../printers/printers.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { GatewayModule } from '../gateway/gateway.module';
       Device,
     ]),
     forwardRef(() => GatewayModule),
+    PrintersModule,
   ],
   controllers: [AdminController, AdminEventsController],
   providers: [AdminService, AdminEventsService],

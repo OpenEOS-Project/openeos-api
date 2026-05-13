@@ -223,10 +223,13 @@ export class UsersService {
    * Get active sessions (refresh tokens)
    */
   async getSessions(userId: string): Promise<RefreshToken[]> {
-    return this.refreshTokenRepository.find({
-      where: { userId, revokedAt: null as unknown as undefined },
-      order: { createdAt: 'DESC' },
-    });
+    return this.refreshTokenRepository
+      .createQueryBuilder('rt')
+      .where('rt.user_id = :userId', { userId })
+      .andWhere('rt.revoked_at IS NULL')
+      .andWhere('rt.expires_at > NOW()')
+      .orderBy('rt.created_at', 'DESC')
+      .getMany();
   }
 
   /**

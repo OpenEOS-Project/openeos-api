@@ -67,9 +67,9 @@ export class UploadsService {
     const filePath = path.join(uploadPath, filename);
     await fs.writeFile(filePath, file.buffer);
 
-    // Generate URL
-    const baseUrl = this.configService.get<string>('APP_URL') || '';
-    const url = `${baseUrl}/uploads/${organizationId}/${categoryDir}/${filename}`;
+    // Generate URL — keep this relative so the frontend can prepend the API base
+    // (NEXT_PUBLIC_API_URL) at render time. APP_URL is the frontend URL in our setup.
+    const url = `/uploads/${organizationId}/${categoryDir}/${filename}`;
 
     this.logger.log(`File uploaded: ${filename} for org ${organizationId}`);
 

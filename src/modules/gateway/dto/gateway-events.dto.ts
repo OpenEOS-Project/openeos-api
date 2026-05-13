@@ -154,6 +154,14 @@ export interface MenuRefreshEvent {
   reason: string;
 }
 
+// Event lifecycle
+export interface EventStatusChangedEvent {
+  eventId: string;
+  organizationId: string;
+  status: 'active' | 'inactive' | 'test';
+  name: string;
+}
+
 export interface KitchenOrderCancelledEvent {
   orderId: string;
   orderNumber: string;
@@ -169,6 +177,11 @@ export interface DeviceConfigUpdatedEvent {
   deviceId: string;
   name?: string;
   type?: string;
+}
+
+export interface DeviceStatusChangedEvent {
+  deviceId: string;
+  status: 'pending' | 'verified' | 'blocked';
 }
 
 // Cash Drawer Events
@@ -207,13 +220,18 @@ export const GatewayEvents = {
   CATEGORY_UPDATED: 'categoryUpdated',
   CATEGORY_DELETED: 'categoryDeleted',
   MENU_REFRESH: 'menuRefresh',
+  EVENT_STATUS_CHANGED: 'eventStatusChanged',
 
   // Kitchen (fallback for items without station)
   KITCHEN_ORDER_CANCELLED: 'kitchenOrderCancelled',
 
+  // Print template push (agent listener: 'templateUpdate')
+  TEMPLATE_UPDATE: 'templateUpdate',
+
   // Device Events
   DEVICE_SETTINGS_UPDATED: 'deviceSettingsUpdated',
   DEVICE_CONFIG_UPDATED: 'deviceConfigUpdated',
+  DEVICE_STATUS_CHANGED: 'deviceStatusChanged',
 
   // Cash Drawer Events
   OPEN_CASH_DRAWER: 'openCashDrawer',

@@ -299,6 +299,42 @@ export class AppGateway
     return Array.from(this.connectedDevices.keys());
   }
 
+  /**
+   * Move a connected device's socket between organization rooms when its
+   * assignment changes. `newOrganizationId = null` removes the device from the
+   * old org-room without joining a new one (e.g. on unassign).
+   */
+  reassignDeviceRoom(deviceId: string, newOrganizationId: string | null): void {
+    const info = this.connectedDevices.get(deviceId);
+    if (!info) return;
+    const sockets = this.server?.sockets?.sockets;
+    if (!sockets) return;
+    const socket = sockets.get(info.socketId);
+    if (!socket) return;
+
+    if (info.organizationId) {
+      socket.leave(`org:${info.organizationId}`);
+      socket.leave(`org:${info.organizationId}:device:${deviceId}`);
+    }
+    if (newOrganizationId) {
+      socket.join(`org:${newOrganizationId}`);
+      socket.join(`org:${newOrganizationId}:device:${deviceId}`);
+    }
+
+    this.connectedDevices.set(deviceId, {
+      ...info,
+      organizationId: newOrganizationId ?? '',
+    });
+    const authedSocket = socket as AuthenticatedSocket;
+    if (authedSocket.device) {
+      authedSocket.device.organizationId = newOrganizationId ?? '';
+    }
+
+    this.logger.log(
+      `Reassigned device ${deviceId} room: ${info.organizationId || '(none)'} -> ${newOrganizationId || '(none)'}`,
+    );
+  }
+
   // Check if a specific device is online
   isDeviceOnline(deviceId: string): boolean {
     return this.connectedDevices.has(deviceId);

@@ -13,6 +13,7 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { AdminService } from './admin.service';
+import { PrintersService } from '../printers/printers.service';
 import {
   QueryOrganizationsDto,
   QueryUsersDto,
@@ -29,6 +30,7 @@ import {
   UpdateOrganizationAdminDto,
   CreateSubscriptionConfigDto,
   UpdateSubscriptionConfigDto,
+  AssignPrinterDeviceDto,
 } from './dto';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -41,6 +43,7 @@ import type { User } from '../../database/entities';
 export class AdminController {
   constructor(
     private readonly adminService: AdminService,
+    private readonly printersService: PrintersService,
   ) {}
 
   private getClientInfo(req: Request): { ip: string; userAgent?: string } {
@@ -198,6 +201,57 @@ export class AdminController {
   ) {
     const devices = await this.adminService.findAllDevices({ type, unassigned: unassigned === 'true' });
     return { data: devices };
+  }
+
+  @Delete('devices/:id')
+  async deleteDevice(@Param('id') id: string) {
+    await this.adminService.deleteDevice(id);
+    return { data: { success: true } };
+  }
+
+  // === Printers (Admin) ===
+
+  @Get('printers')
+  async findAllPrinters(@Query('organizationId') organizationId?: string) {
+    const result = await this.adminService.findAllPrinters({ organizationId });
+    return { data: result };
+  }
+
+  @Post('printers/assign-device')
+  async assignPrinterDevice(
+    @Body() dto: AssignPrinterDeviceDto,
+    @CurrentUser() user: User,
+    @Req() req: unknown,
+  ) {
+    const { ip, userAgent } = this.getClientInfo(req as Request);
+    const printer = await this.adminService.assignPrinterDevice(dto, user, ip, userAgent);
+    return { data: printer };
+  }
+
+  @Delete('printers/:id')
+  async unassignPrinter(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Req() req: unknown,
+  ) {
+    const { ip, userAgent } = this.getClientInfo(req as Request);
+    await this.adminService.unassignPrinter(id, user, ip, userAgent);
+    return { data: { success: true } };
+  }
+
+  @Post('printers/:id/test')
+  async testPrintAdmin(@Param('id') id: string) {
+    const result = await this.printersService.testPrintAsAdmin(id);
+    return { data: result };
+  }
+
+  @Patch('printers/:id')
+  async updatePrinterAdmin(
+    @Param('id') id: string,
+    @Body() body: { hasCashDrawer?: boolean },
+  ) {
+    const printer = await this.adminService.updatePrinterAdmin(id, body);
+    return { data: printer };
   }
 
   // === Rental Hardware ===

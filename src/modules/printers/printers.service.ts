@@ -8,8 +8,9 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { Printer, Device, User, UserOrganization } from '../../database/entities';
+import { PrinterType, PrinterConnectionType } from '../../database/entities/printer.entity';
 import { DeviceType } from '../../database/entities/device.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -161,10 +162,74 @@ export class PrintersService {
     });
   }
 
+  /**
+   * Upsert the printers a device's agent reports from its local config.yaml.
+   * The agent's config is the source of truth for hardware-fixed fields
+   * (name, type, connection, USB IDs, paperWidth) — `hasCashDrawer` and the
+   * organization assignment stay under admin control and are NOT touched here.
+   */
+  async syncFromAgent(
+    deviceId: string,
+    organizationId: string | null,
+    items: Array<{
+      localId: string;
+      name: string;
+      type: PrinterType;
+      connectionType: PrinterConnectionType;
+      connectionConfig?: Record<string, unknown>;
+      paperWidth?: number;
+    }>,
+  ): Promise<Array<{ id: string; localId: string }>> {
+    const result: Array<{ id: string; localId: string }> = [];
+
+    for (const item of items) {
+      let printer = await this.printerRepository.findOne({
+        where: { deviceId, agentLocalId: item.localId },
+      });
+
+      if (!printer) {
+        // Fallback: maybe the printer existed before this column was added —
+        // pick the first one for this device that has no localId.
+        printer = await this.printerRepository.findOne({
+          where: { deviceId, agentLocalId: IsNull() },
+        });
+      }
+
+      const fields: Partial<Printer> = {
+        agentLocalId: item.localId,
+        name: item.name,
+        type: item.type,
+        connectionType: item.connectionType,
+        connectionConfig: (item.connectionConfig ?? {}) as Printer['connectionConfig'],
+        paperWidth: item.paperWidth ?? 80,
+        isActive: true,
+      };
+
+      if (printer) {
+        Object.assign(printer, fields);
+        const saved = await this.printerRepository.save(printer);
+        result.push({ id: saved.id, localId: item.localId });
+      } else {
+        const created = this.printerRepository.create({
+          ...fields,
+          deviceId,
+          organizationId,
+          hasCashDrawer: false,
+        });
+        const saved = await this.printerRepository.save(created);
+        result.push({ id: saved.id, localId: item.localId });
+      }
+    }
+
+    return result;
+  }
+
   async updateOnlineStatus(printerId: string, isOnline: boolean): Promise<void> {
+    // Always refresh last_seen_at so the admin UI knows the agent is reachable,
+    // even if the underlying USB printer reports offline (e.g. cable unplugged).
     await this.printerRepository.update(
       { id: printerId },
-      { isOnline, lastSeenAt: isOnline ? new Date() : undefined },
+      { isOnline, lastSeenAt: new Date() },
     );
   }
 
@@ -174,20 +239,70 @@ export class PrintersService {
     user: User,
   ): Promise<{ success: boolean; message: string }> {
     await this.checkPermission(organizationId, user.id, 'devices');
-
     const printer = await this.findOne(organizationId, printerId, user);
+    return this.dispatchTestPrint(printer);
+  }
 
+  /** Super-admin variant: bypasses org-membership check. */
+  async testPrintAsAdmin(printerId: string): Promise<{ success: boolean; message: string }> {
+    const printer = await this.printerRepository.findOne({ where: { id: printerId } });
+    if (!printer) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Drucker nicht gefunden',
+      });
+    }
+    // Admin test prints check agent reachability via last_seen_at instead of the
+    // strict isOnline flag, so we can also send test jobs when the underlying
+    // USB device isn't fully connected — the agent will report the failure back.
+    return this.dispatchTestPrint(printer, { requireOnline: false });
+  }
+
+  private async dispatchTestPrint(
+    printer: Printer,
+    options: { requireOnline?: boolean } = { requireOnline: true },
+  ): Promise<{ success: boolean; message: string }> {
     if (!printer.isActive) {
       return { success: false, message: 'Drucker ist deaktiviert' };
     }
-
-    if (!printer.isOnline) {
+    if (options.requireOnline && !printer.isOnline) {
       return { success: false, message: 'Drucker ist offline' };
     }
+    if (!options.requireOnline) {
+      const lastSeen = printer.lastSeenAt ? new Date(printer.lastSeenAt).getTime() : 0;
+      if (!lastSeen || Date.now() - lastSeen > 60_000) {
+        return { success: false, message: 'Drucker-Agent ist nicht erreichbar' };
+      }
+    }
+    if (!printer.organizationId) {
+      return { success: false, message: 'Drucker ist keiner Organisation zugeordnet' };
+    }
 
-    this.logger.log(`Test print requested for printer: ${printer.name}`);
+    // Emit a real PRINTER_JOB event so the agent renders + prints the bundled
+    // "receipt" template with a small test payload.
+    const jobId =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `test-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-    return { success: true, message: 'Testdruck wurde gesendet' };
+    this.gatewayService.sendPrintJobToAgent(printer.organizationId, {
+      jobId,
+      printerId: printer.id,
+      templateName: '_admin_test',
+      copies: 1,
+      payload: {
+        printerName: printer.name,
+        jobId,
+        timestamp: new Date().toLocaleString('de-DE', {
+          dateStyle: 'short',
+          timeStyle: 'short',
+        }),
+        body: 'Test-Druck aus dem Super-Admin-Interface.',
+      },
+    });
+
+    this.logger.log(`Test print dispatched for printer ${printer.name} (${printer.id}) job=${jobId}`);
+    return { success: true, message: 'Testdruck wurde an den Drucker gesendet' };
   }
 
   private async validateDeviceForOrg(deviceId: string, organizationId: string): Promise<void> {

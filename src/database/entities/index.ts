@@ -32,6 +32,9 @@ export * from './print-job.entity';
 export * from './qr-code.entity';
 export * from './online-order-session.entity';
 
+// Online Shop
+export * from './shop-checkout.entity';
+
 // SaaS & Billing
 export * from './invoice.entity';
 export * from './admin-audit-log.entity';

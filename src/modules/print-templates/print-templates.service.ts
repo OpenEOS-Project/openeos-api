@@ -3,6 +3,8 @@ import {
   NotFoundException,
   ForbiddenException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -12,6 +14,7 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
 import { CreatePrintTemplateDto, UpdatePrintTemplateDto } from './dto';
+import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
 export class PrintTemplatesService {
@@ -22,7 +25,33 @@ export class PrintTemplatesService {
     private readonly printTemplateRepository: Repository<PrintTemplate>,
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
+    @Inject(forwardRef(() => GatewayService))
+    private readonly gatewayService: GatewayService,
   ) {}
+
+  /** Build the {type → Jinja2 source} dict and push to all agents in the org
+   *  so they update their server-template cache without a restart. */
+  private async pushTemplatesToAgents(organizationId: string): Promise<void> {
+    try {
+      const all = await this.printTemplateRepository.find({
+        where: { organizationId },
+      });
+      const templates: Record<string, string> = {};
+      for (const t of all) {
+        const tpl = t.template as { generatedTemplate?: string } | string | null;
+        if (typeof tpl === 'string') {
+          templates[t.type] = tpl;
+        } else if (tpl && typeof tpl.generatedTemplate === 'string') {
+          templates[t.type] = tpl.generatedTemplate;
+        }
+      }
+      this.gatewayService.pushTemplatesToAgents(organizationId, templates);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to push templates to agents for org ${organizationId}: ${(err as Error).message}`,
+      );
+    }
+  }
 
   async create(
     organizationId: string,
@@ -46,6 +75,8 @@ export class PrintTemplatesService {
 
     await this.printTemplateRepository.save(template);
     this.logger.log(`Print template created: ${template.name} (${template.id})`);
+
+    await this.pushTemplatesToAgents(organizationId);
 
     return template;
   }
@@ -116,6 +147,8 @@ export class PrintTemplatesService {
 
     this.logger.log(`Print template updated: ${template.name} (${template.id})`);
 
+    await this.pushTemplatesToAgents(organizationId);
+
     return template;
   }
 
@@ -126,6 +159,8 @@ export class PrintTemplatesService {
     await this.printTemplateRepository.remove(template);
 
     this.logger.log(`Print template deleted: ${template.name} (${template.id})`);
+
+    await this.pushTemplatesToAgents(organizationId);
   }
 
   async preview(

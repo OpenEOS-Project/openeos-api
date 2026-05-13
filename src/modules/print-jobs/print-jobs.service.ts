@@ -232,6 +232,12 @@ export class PrintJobsService {
     orderId: string | null,
     copies: number = 1,
     payload?: Record<string, unknown>,
+    orderItemId?: string | null,
+    /** Workflow-specific default template name when no `templateId` is given.
+     *  Must match a built-in template file shipped with the printer agent
+     *  (`kitchen_ticket`, `order_ticket`, `receipt`). Defaults to `receipt`
+     *  for backwards compatibility. */
+    defaultTemplateName: string = 'receipt',
   ): Promise<PrintJob> {
     const printer = await this.printerRepository.findOne({
       where: { id: printerId, organizationId },
@@ -256,6 +262,7 @@ export class PrintJobsService {
       printerId,
       templateId: templateId || null,
       orderId: orderId || null,
+      orderItemId: orderItemId || null,
       payload: { copies, data: payload || {} },
       status: PrintJobStatus.QUEUED,
       attempts: 0,
@@ -264,8 +271,10 @@ export class PrintJobsService {
     await this.printJobRepository.save(printJob);
     this.logger.log(`Print job created from auto-print: ${printJob.id} for printer ${printer.name}`);
 
-    // Resolve template name for the agent
-    let templateName = 'receipt';
+    // Resolve template name for the agent. Falls back to the workflow-specific
+    // default (kitchen_ticket / order_ticket / receipt) when no custom
+    // templateId is provided — those names match the agent's built-in files.
+    let templateName = defaultTemplateName;
     if (templateId) {
       const template = await this.printTemplateRepository.findOne({
         where: { id: templateId, organizationId },

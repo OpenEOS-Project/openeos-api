@@ -19,7 +19,7 @@ export enum DeviceStatus {
 }
 
 export type ServiceMode = 'table' | 'counter';
-export type PrinterMode = 'device' | 'category' | 'product';
+export type PrinterMode = 'fixed' | 'dynamic' | 'device' | 'category' | 'product';
 
 export interface DeviceSettings {
   defaultPrinterId?: string;

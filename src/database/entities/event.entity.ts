@@ -17,12 +17,27 @@ export enum EventStatus {
   TEST = 'test',
 }
 
+export type ShopWeekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+export interface ShopTimeWindow {
+  start: string; // 'HH:mm'
+  end: string; // 'HH:mm'
+}
+
+export type ShopOpeningHours = Partial<Record<ShopWeekday, ShopTimeWindow | null>>;
+
 export interface EventSettings {
   orderNumberPrefix?: string;
   enableOnlineOrdering?: boolean;
   enableTableService?: boolean;
   enableTakeaway?: boolean;
   maxOrdersPerHour?: number;
+  shop?: {
+    enabled?: boolean;
+    openingHours?: ShopOpeningHours;
+    /** Flat service fee added to every online order (in the event's currency). */
+    serviceFee?: number;
+  };
   [key: string]: unknown;
 }
 

@@ -32,11 +32,16 @@ import {
 } from './dto';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
+import { UploadsService } from '../uploads/uploads.service';
+import { UploadCategory } from '../uploads/dto';
 
 @ApiTags('Users')
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly uploadsService: UploadsService,
+  ) {}
 
   @Patch('me')
   @ApiBearerAuth('JWT-auth')
@@ -53,7 +58,7 @@ export class UsersController {
 
   @Post('me/avatar')
   @ApiBearerAuth('JWT-auth')
-  @UseInterceptors(FileInterceptor('avatar'))
+  @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload avatar', description: 'Upload a new avatar image' })
   @ApiBody({
@@ -82,10 +87,20 @@ export class UsersController {
     )
     file: Express.Multer.File,
   ) {
-    // TODO: Implement file upload to storage service
-    // For now, just return a placeholder
-    const avatarUrl = `/uploads/avatars/${user.id}/${file.originalname}`;
-    const updatedUser = await this.usersService.updateAvatar(user.id, avatarUrl);
+    // Persist via UploadsService — files are saved under
+    // <UPLOAD_DIR>/<userId>/user/<uuid>.<ext> and served at /uploads/...
+    if (user.avatarUrl) {
+      const previousFilename = user.avatarUrl.split('/').pop();
+      if (previousFilename) {
+        await this.uploadsService.deleteImage(user.id, previousFilename, UploadCategory.USER);
+      }
+    }
+    const uploaded = await this.uploadsService.uploadImage(
+      file,
+      user.id,
+      UploadCategory.USER,
+    );
+    const updatedUser = await this.usersService.updateAvatar(user.id, uploaded.url);
     return { data: this.sanitizeUser(updatedUser) };
   }
 
@@ -96,6 +111,12 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'Avatar deleted successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async deleteAvatar(@CurrentUser() user: User) {
+    if (user.avatarUrl) {
+      const filename = user.avatarUrl.split('/').pop();
+      if (filename) {
+        await this.uploadsService.deleteImage(user.id, filename, UploadCategory.USER);
+      }
+    }
     const updatedUser = await this.usersService.deleteAvatar(user.id);
     return { data: this.sanitizeUser(updatedUser) };
   }
@@ -162,9 +183,15 @@ export class UsersController {
     return {
       data: sessions.map((s) => ({
         id: s.id,
+        deviceInfo: s.deviceInfo ?? null,
+        ipAddress: s.ipAddress ?? null,
         createdAt: s.createdAt,
+        // We don't track per-request session activity yet; surface createdAt
+        // as the best-known "last active" timestamp so the UI doesn't display
+        // "Invalid Date".
+        lastActiveAt: s.createdAt,
         expiresAt: s.expiresAt,
-        // TODO: Add device info when implemented
+        isCurrent: false,
       })),
     };
   }
