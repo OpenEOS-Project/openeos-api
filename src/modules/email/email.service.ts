@@ -228,6 +228,52 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  /** Multi-op proposal email: lists removed + added shifts with accept/decline
+   *  buttons that link to the public response page. */
+  async sendShiftChangeProposalEmail(options: {
+    to: string;
+    name: string;
+    shiftPlanName: string;
+    removedShifts: string[];
+    addedShifts: string[];
+    message?: string;
+    acceptUrl: string;
+    declineUrl: string;
+  }): Promise<boolean> {
+    const subject = `Schichtvorschlag: ${options.shiftPlanName}`;
+    const removedBlock = options.removedShifts.length
+      ? `<table style="width: 100%; border-collapse: collapse; margin: 12px 0;">
+          <tr><td style="padding: 12px; background: #fee2e2; border-left: 4px solid #dc2626;">
+            <div style="font-size: 12px; color: #991b1b; text-transform: uppercase; letter-spacing: .04em;">Wird entfernt</div>
+            <ul style="margin: 6px 0 0; padding-left: 18px;">${options.removedShifts.map((l) => `<li>${l}</li>`).join('')}</ul>
+          </td></tr>
+        </table>`
+      : '';
+    const addedBlock = options.addedShifts.length
+      ? `<table style="width: 100%; border-collapse: collapse; margin: 12px 0;">
+          <tr><td style="padding: 12px; background: #d1fae5; border-left: 4px solid #10b981;">
+            <div style="font-size: 12px; color: #065f46; text-transform: uppercase; letter-spacing: .04em;">Wird hinzugefügt</div>
+            <ul style="margin: 6px 0 0; padding-left: 18px;">${options.addedShifts.map((l) => `<li>${l}</li>`).join('')}</ul>
+          </td></tr>
+        </table>`
+      : '';
+    const html = this.getBaseTemplate(`
+      <h1>Hallo ${options.name}!</h1>
+      <p>Die Organisation möchte deine Schichten im Plan <strong>${options.shiftPlanName}</strong> ändern.</p>
+      ${removedBlock}
+      ${addedBlock}
+      ${options.message ? `<p><strong>Nachricht:</strong></p><div style="background: #eff6ff; padding: 12px; border-radius: 6px; border-left: 4px solid #3b82f6; white-space: pre-wrap;">${options.message}</div>` : ''}
+      <div style="margin: 24px 0; text-align: center;">
+        <a href="${options.acceptUrl}" style="display: inline-block; padding: 12px 24px; background: #10b981; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; margin-right: 8px;">✓ Annehmen</a>
+        <a href="${options.declineUrl}" style="display: inline-block; padding: 12px 24px; background: #f3f4f6; color: #374151; text-decoration: none; border-radius: 8px; font-weight: 600;">✗ Ablehnen</a>
+      </div>
+      <p style="color: #666; font-size: 13px;">Klick einfach auf einen der Buttons. Bei Fragen melde dich bei den Organisatoren.</p>
+    `);
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /** @deprecated Single-shift propose — kept only so old call sites don't
+   *  break during refactor. New code should use sendShiftChangeProposalEmail. */
   async sendShiftMoveProposalEmail(options: {
     to: string;
     name: string;

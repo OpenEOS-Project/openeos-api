@@ -330,11 +330,17 @@ export class ShiftsController {
     return { data: registration };
   }
 
-  @Post('registrations/:registrationId/propose-move')
-  async proposeShiftMove(
+  /** Multi-op proposal: admin stages add/remove operations against a helper's
+   *  group, the helper accepts or declines via the email link. */
+  @Post('registration-groups/:registrationGroupId/propose')
+  async proposeRegistrationChanges(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
-    @Param('registrationId', ParseUUIDPipe) registrationId: string,
-    @Body() body: { shiftId: string; message?: string },
+    @Param('registrationGroupId', ParseUUIDPipe) registrationGroupId: string,
+    @Body()
+    body: {
+      ops: Array<{ type: 'add'; shiftId: string } | { type: 'remove'; registrationId: string }>;
+      message?: string;
+    },
     @Headers('origin') origin?: string,
     @Headers('referer') referer?: string,
   ) {
@@ -342,13 +348,13 @@ export class ShiftsController {
     if (!baseUrl && referer) {
       try { baseUrl = new URL(referer).origin; } catch { /* noop */ }
     }
-    const registration = await this.shiftsService.proposeShiftMove(
+    const proposal = await this.shiftsService.proposeRegistrationChanges(
       organizationId,
-      registrationId,
-      body.shiftId,
+      registrationGroupId,
+      body.ops,
       body.message,
       baseUrl,
     );
-    return { data: registration };
+    return { data: proposal };
   }
 }

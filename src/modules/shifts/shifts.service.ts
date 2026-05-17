@@ -9,8 +9,11 @@ import {
   Shift,
   ShiftRegistration,
   ShiftRegistrationStatus,
+  ShiftChangeProposal,
+  ShiftChangeProposalStatus,
   User,
 } from '../../database/entities';
+import type { ShiftChangeOp } from '../../database/entities/shift-change-proposal.entity';
 import { EmailService } from '../email/email.service';
 import {
   CreateShiftPlanDto,
@@ -34,6 +37,8 @@ export class ShiftsService {
     private readonly shiftRepository: Repository<Shift>,
     @InjectRepository(ShiftRegistration)
     private readonly registrationRepository: Repository<ShiftRegistration>,
+    @InjectRepository(ShiftChangeProposal)
+    private readonly proposalRepository: Repository<ShiftChangeProposal>,
     private readonly emailService: EmailService,
   ) {}
 
@@ -441,52 +446,80 @@ export class ShiftsService {
     return saved;
   }
 
-  /** Admin proposes a shift move; the helper gets an email with accept/decline
-   *  links. The original shiftId stays put until the helper accepts. */
-  async proposeShiftMove(
+  /** Admin proposes a set of add/remove operations against a helper's group.
+   *  The helper gets a single email with the diff and accept/decline links. */
+  async proposeRegistrationChanges(
     organizationId: string,
-    registrationId: string,
-    targetShiftId: string,
+    registrationGroupId: string,
+    ops: ShiftChangeOp[],
     message: string | undefined,
     baseUrl?: string,
-  ): Promise<ShiftRegistration> {
-    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+  ): Promise<ShiftChangeProposal> {
+    if (!ops.length) {
+      throw new BadRequestException('Mindestens eine Änderung erforderlich');
+    }
 
-    const targetShift = await this.shiftRepository.findOne({
-      where: { id: targetShiftId },
-      relations: ['job', 'job.shiftPlan'],
+    // Anchor: any current registration in the group, used to validate the
+    // org+plan scope and to read the helper's contact details for the email.
+    const anchor = await this.registrationRepository.findOne({
+      where: { registrationGroupId },
+      relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
     });
-    if (!targetShift || targetShift.job.shiftPlan.organizationId !== organizationId) {
-      throw new NotFoundException('Ziel-Schicht nicht gefunden');
+    if (!anchor || anchor.shift?.job?.shiftPlan?.organizationId !== organizationId) {
+      throw new NotFoundException('Anmeldung nicht gefunden');
     }
-    if (targetShift.job.shiftPlanId !== reg.shift?.job?.shiftPlanId) {
-      throw new BadRequestException('Schicht muss zum selben Schichtplan gehören');
-    }
-    if (targetShiftId === reg.shiftId) {
-      throw new BadRequestException('Diese Schicht ist bereits zugewiesen');
+    const planId = anchor.shift.job.shiftPlanId;
+    const planName = anchor.shift.job.shiftPlan.name;
+
+    // Validate each op + collect human-readable diff lines for the email.
+    const removeLines: string[] = [];
+    const addLines: string[] = [];
+
+    for (const op of ops) {
+      if (op.type === 'remove') {
+        const reg = await this.registrationRepository.findOne({
+          where: { id: op.registrationId },
+          relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
+        });
+        if (!reg || reg.registrationGroupId !== registrationGroupId) {
+          throw new BadRequestException('Zu entfernende Anmeldung gehört nicht zur Gruppe');
+        }
+        removeLines.push(this.formatShiftLine(reg.shift));
+      } else if (op.type === 'add') {
+        const sh = await this.shiftRepository.findOne({
+          where: { id: op.shiftId },
+          relations: ['job', 'job.shiftPlan'],
+        });
+        if (!sh || sh.job.shiftPlanId !== planId) {
+          throw new BadRequestException('Hinzuzufügende Schicht gehört nicht zum Plan');
+        }
+        addLines.push(this.formatShiftLine(sh));
+      } else {
+        throw new BadRequestException('Unbekannter Vorschlag-Op-Typ');
+      }
     }
 
-    reg.proposedShiftId = targetShift.id;
-    reg.proposedAt = new Date();
-    reg.proposedMessage = message ?? null;
-    reg.proposedToken = this.generateToken();
-    const saved = await this.registrationRepository.save(reg);
+    const proposal = this.proposalRepository.create({
+      organizationId,
+      shiftPlanId: planId,
+      registrationGroupId,
+      token: this.generateToken(),
+      ops,
+      message: message ?? null,
+      status: ShiftChangeProposalStatus.PENDING,
+    });
+    const saved = await this.proposalRepository.save(proposal);
 
-    const planName = reg.shift?.job?.shiftPlan?.name || 'Schichtplan';
-    const oldShiftLine = reg.shift
-      ? `${reg.shift.job.name}: ${this.formatShiftDate(reg.shift.date)}, ${reg.shift.startTime}–${reg.shift.endTime}`
-      : '';
-    const newShiftLine = `${targetShift.job.name}: ${this.formatShiftDate(targetShift.date)}, ${targetShift.startTime}–${targetShift.endTime}`;
     const proposalBase = baseUrl || this.emailService.appUrl;
-    const acceptUrl = `${proposalBase}/s/proposal/${reg.proposedToken}?action=accept`;
-    const declineUrl = `${proposalBase}/s/proposal/${reg.proposedToken}?action=decline`;
+    const acceptUrl = `${proposalBase}/s/proposal/${saved.token}?action=accept`;
+    const declineUrl = `${proposalBase}/s/proposal/${saved.token}?action=decline`;
 
-    await this.emailService.sendShiftMoveProposalEmail({
-      to: reg.email,
-      name: reg.name,
+    await this.emailService.sendShiftChangeProposalEmail({
+      to: anchor.email,
+      name: anchor.name,
       shiftPlanName: planName,
-      oldShiftLine,
-      newShiftLine,
+      removedShifts: removeLines,
+      addedShifts: addLines,
       message,
       acceptUrl,
       declineUrl,
@@ -495,31 +528,72 @@ export class ShiftsService {
     return saved;
   }
 
-  /** Public: helper acts on a proposal by clicking the email link. */
+  /** Public: helper acts on a proposal by clicking the email link. Accept
+   *  applies all ops atomically; decline just marks declined. */
   async respondToShiftProposal(
     token: string,
     action: 'accept' | 'decline',
   ): Promise<{ status: 'accepted' | 'declined'; planSlug: string | null }> {
-    const reg = await this.registrationRepository.findOne({
-      where: { proposedToken: token },
-      relations: ['shift', 'shift.job', 'shift.job.shiftPlan', 'proposedShift', 'proposedShift.job', 'proposedShift.job.shiftPlan'],
+    const proposal = await this.proposalRepository.findOne({
+      where: { token },
+      relations: ['shiftPlan'],
     });
-    if (!reg || !reg.proposedShiftId) {
-      throw new NotFoundException('Vorschlag nicht gefunden oder bereits bearbeitet');
+    if (!proposal) {
+      throw new NotFoundException('Vorschlag nicht gefunden');
+    }
+    if (proposal.status !== ShiftChangeProposalStatus.PENDING) {
+      throw new BadRequestException('Vorschlag wurde bereits bearbeitet');
     }
 
-    const planSlug = reg.shift?.job?.shiftPlan?.publicSlug || null;
+    const planSlug = proposal.shiftPlan?.publicSlug || null;
 
-    if (action === 'accept') {
-      reg.shiftId = reg.proposedShiftId;
+    if (action === 'decline') {
+      proposal.status = ShiftChangeProposalStatus.DECLINED;
+      proposal.respondedAt = new Date();
+      await this.proposalRepository.save(proposal);
+      return { status: 'declined', planSlug };
     }
-    reg.proposedShiftId = null;
-    reg.proposedAt = null;
-    reg.proposedMessage = null;
-    reg.proposedToken = null;
-    await this.registrationRepository.save(reg);
 
-    return { status: action === 'accept' ? 'accepted' : 'declined', planSlug };
+    // Accept — apply every op. We rely on the original helper's contact
+    // details from any surviving registration in the group; if none exist
+    // (rare edge case), bail.
+    const surviving = await this.registrationRepository.findOne({
+      where: { registrationGroupId: proposal.registrationGroupId },
+    });
+
+    for (const op of proposal.ops) {
+      if (op.type === 'remove') {
+        await this.registrationRepository.delete({ id: op.registrationId });
+      } else if (op.type === 'add') {
+        if (!surviving) continue;
+        const reg = this.registrationRepository.create({
+          shiftId: op.shiftId,
+          registrationGroupId: proposal.registrationGroupId,
+          name: surviving.name,
+          email: surviving.email,
+          phone: surviving.phone,
+          notes: surviving.notes,
+          adminNotes: surviving.adminNotes,
+          status: ShiftRegistrationStatus.CONFIRMED,
+          verificationToken: this.generateToken(),
+        });
+        await this.registrationRepository.save(reg);
+      }
+    }
+
+    proposal.status = ShiftChangeProposalStatus.ACCEPTED;
+    proposal.respondedAt = new Date();
+    await this.proposalRepository.save(proposal);
+
+    return { status: 'accepted', planSlug };
+  }
+
+  /** Tiny helper: 'Bar: 30.05.2026, 18:00–01:00' for the proposal email. */
+  private formatShiftLine(shift: Shift | null | undefined): string {
+    if (!shift) return '—';
+    const job = shift.job?.name ?? 'Schicht';
+    const date = this.formatShiftDate(shift.date);
+    return `${job}: ${date}, ${shift.startTime}–${shift.endTime}`;
   }
 
   /** Small helper for the proposal email — formats a date as DD.MM.YYYY. */
