@@ -182,8 +182,10 @@ export class ShiftPdfService {
     const bottomMargin = doc.page.height - doc.page.margins.bottom - 30;
 
     for (const job of jobs ?? []) {
-      // Compute each cell's height first so the row matches the tallest.
-      const cellTexts: string[] = [];
+      // Compute each cell's content first so the row matches the tallest,
+      // and so we know which cells to highlight (full = light green).
+      type Cell = { text: string; isFull: boolean; hasShift: boolean };
+      const cells: Cell[] = [];
       for (const slot of slots) {
         const shift = (job.shifts ?? []).find(
           (s) =>
@@ -192,24 +194,23 @@ export class ShiftPdfService {
             s.endTime === slot.endTime,
         );
         if (!shift) {
-          cellTexts.push('—');
+          cells.push({ text: '—', isFull: false, hasShift: false });
           continue;
         }
         const confirmed = (shift.registrations ?? []).filter(
           (r) => r.status === ShiftRegistrationStatus.CONFIRMED,
         );
-        if (confirmed.length === 0) {
-          cellTexts.push(`(0/${shift.requiredWorkers})`);
-        } else {
-          const names = confirmed.map((r) => r.name).join('\n');
-          cellTexts.push(`(${confirmed.length}/${shift.requiredWorkers})\n${names}`);
-        }
+        const isFull = confirmed.length >= shift.requiredWorkers;
+        const text = confirmed.length === 0
+          ? `(0/${shift.requiredWorkers})`
+          : `(${confirmed.length}/${shift.requiredWorkers})\n${confirmed.map((r) => r.name).join('\n')}`;
+        cells.push({ text, isFull, hasShift: true });
       }
 
       doc.fontSize(8).font('Helvetica');
       let rowHeight = rowMinHeight;
       for (let i = 0; i < slots.length; i++) {
-        const h = doc.heightOfString(cellTexts[i], { width: slotColWidth - 8 });
+        const h = doc.heightOfString(cells[i].text, { width: slotColWidth - 8 });
         if (h + 10 > rowHeight) rowHeight = h + 10;
       }
       // Job column height
@@ -238,12 +239,18 @@ export class ShiftPdfService {
       // Cells
       for (let i = 0; i < slots.length; i++) {
         const x = left + jobColWidth + i * slotColWidth;
+        const cell = cells[i];
+        // Light-green wash for fully-booked shifts so the admin can see at
+        // a glance which slots are already covered.
+        if (cell.isFull) {
+          doc.save().rect(x + 0.5, y + 0.5, slotColWidth - 1, rowHeight - 1)
+            .fill('#d1fae5').restore();
+        }
         doc.save().moveTo(x, y).lineTo(x, y + rowHeight)
           .strokeColor('#eef0f3').lineWidth(0.5).stroke().restore();
-        const text = cellTexts[i];
-        doc.fillColor(text === '—' ? '#aaa' : '#111')
+        doc.fillColor(!cell.hasShift ? '#aaa' : cell.isFull ? '#065f46' : '#111')
           .fontSize(8).font('Helvetica')
-          .text(text, x + 4, y + 5, { width: slotColWidth - 8 });
+          .text(cell.text, x + 4, y + 5, { width: slotColWidth - 8 });
       }
 
       y += rowHeight;
