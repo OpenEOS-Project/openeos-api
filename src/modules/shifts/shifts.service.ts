@@ -852,31 +852,82 @@ export class ShiftsService {
     const plan = registration.shift.job.shiftPlan;
     const now = new Date();
 
-    // Email-verified == confirmed. The previous PENDING_APPROVAL intermediate
-    // step has been removed — admins don't want to re-confirm every helper
-    // and the email round-trip is sufficient anti-spam.
+    // Respect the plan's requireApproval setting: when true, the helper
+    // lands in PENDING_APPROVAL waiting for the admin; when false, they're
+    // confirmed straight away with a confirmation email.
     await this.registrationRepository.update(
       { registrationGroupId: registration.registrationGroupId },
-      { emailVerifiedAt: now, status: ShiftRegistrationStatus.CONFIRMED },
+      {
+        emailVerifiedAt: now,
+        status: plan.settings.requireApproval
+          ? ShiftRegistrationStatus.PENDING_APPROVAL
+          : ShiftRegistrationStatus.CONFIRMED,
+      },
     );
 
-    const groupRegistrations = await this.registrationRepository.find({
-      where: { registrationGroupId: registration.registrationGroupId },
-      relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
-    });
+    if (!plan.settings.requireApproval) {
+      const groupRegistrations = await this.registrationRepository.find({
+        where: { registrationGroupId: registration.registrationGroupId },
+        relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
+      });
 
-    const shiftsSummary = this.formatShiftsSummary(groupRegistrations);
-    await this.emailService.sendShiftConfirmationEmail(
-      registration.email,
-      registration.name,
-      plan.name,
-      shiftsSummary,
-    );
+      const shiftsSummary = this.formatShiftsSummary(groupRegistrations);
+      await this.emailService.sendShiftConfirmationEmail(
+        registration.email,
+        registration.name,
+        plan.name,
+        shiftsSummary,
+      );
+    }
 
     return {
-      status: ShiftRegistrationStatus.CONFIRMED,
+      status: plan.settings.requireApproval
+        ? ShiftRegistrationStatus.PENDING_APPROVAL
+        : ShiftRegistrationStatus.CONFIRMED,
       planSlug: plan.publicSlug,
     };
+  }
+
+  /** Admin manually marks a pending_email helper as verified, skipping the
+   *  email round-trip. The post-verification status still follows the plan's
+   *  requireApproval setting just like the regular verify flow. */
+  async markRegistrationVerified(
+    organizationId: string,
+    registrationId: string,
+  ): Promise<ShiftRegistration> {
+    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+    if (reg.emailVerifiedAt) {
+      return reg;
+    }
+    const plan = reg.shift.job.shiftPlan;
+    const now = new Date();
+    await this.registrationRepository.update(
+      { registrationGroupId: reg.registrationGroupId },
+      {
+        emailVerifiedAt: now,
+        status: plan.settings.requireApproval
+          ? ShiftRegistrationStatus.PENDING_APPROVAL
+          : ShiftRegistrationStatus.CONFIRMED,
+      },
+    );
+    if (!plan.settings.requireApproval) {
+      const groupRegistrations = await this.registrationRepository.find({
+        where: { registrationGroupId: reg.registrationGroupId },
+        relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
+      });
+      const shiftsSummary = this.formatShiftsSummary(groupRegistrations);
+      await this.emailService.sendShiftConfirmationEmail(
+        reg.email,
+        reg.name,
+        plan.name,
+        shiftsSummary,
+      );
+    }
+    // Re-read so the caller gets the updated status.
+    return (await this.registrationRepository.findOne({
+      where: { id: reg.id },
+      relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
+    }))!;
   }
 
   // ============ Helpers ============

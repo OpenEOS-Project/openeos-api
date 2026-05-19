@@ -288,6 +288,18 @@ export class ShiftsController {
     await this.shiftsService.removeSingleRegistration(organizationId, registrationId);
   }
 
+  @Post('registrations/:registrationId/mark-verified')
+  async markRegistrationVerified(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('registrationId', ParseUUIDPipe) registrationId: string,
+  ) {
+    const registration = await this.shiftsService.markRegistrationVerified(
+      organizationId,
+      registrationId,
+    );
+    return { data: registration };
+  }
+
   @Patch('registrations/:registrationId/notes')
   async updateRegistrationNotes(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
