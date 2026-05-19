@@ -1,9 +1,29 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import * as fs from 'fs';
+import * as path from 'path';
 import { ShiftPlan, ShiftRegistrationStatus } from '../../database/entities';
 
 @Injectable()
 export class ShiftPdfService {
+  private readonly logger = new Logger(ShiftPdfService.name);
+  /** Resolved absolute path to the brand logo bundled with the API. The
+   *  Docker image copies `/app/assets/logo_dark.png`; in dev, working dir
+   *  is the repo root so the same relative resolution lands on it. */
+  private readonly logoPath = this.resolveLogoPath();
+
+  private resolveLogoPath(): string | null {
+    const candidates = [
+      path.resolve(process.cwd(), 'assets/logo_dark.png'),
+      path.resolve(__dirname, '../../../assets/logo_dark.png'),
+      path.resolve(__dirname, '../../../../assets/logo_dark.png'),
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  }
+
   /**
    * Renders a shift plan as a landscape A4 PDF in calendar / matrix form:
    * - Rows = jobs (down the short vertical edge)
@@ -47,35 +67,55 @@ export class ShiftPdfService {
     });
   }
 
-  /** Brand header at the top of every page: 'OpenEOS' wordmark, plan name,
-   *  and the generation timestamp on the right. */
+  /** Brand header at the top of every page: OpenEOS logo on the left, plan
+   *  name beside it, generation timestamp right-aligned. Falls back to a
+   *  text wordmark when the logo asset can't be located. */
   private drawPageHeader(doc: PDFKit.PDFDocument, plan: ShiftPlan): void {
     const left = doc.page.margins.left;
     const top = 16;
     const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const logoHeight = 18;
+    let textStartX = left;
 
-    // Wordmark
-    doc.font('Helvetica-Bold').fontSize(13).fillColor('#10b981')
-      .text('OpenEOS', left, top, { lineBreak: false });
-    // Plan name next to the wordmark
-    const wordmarkWidth = doc.widthOfString('OpenEOS');
+    if (this.logoPath) {
+      try {
+        doc.image(this.logoPath, left, top, { height: logoHeight });
+        // Image width — pdfkit doesn't expose it directly post-draw; trust
+        // the aspect to land somewhere around 80pt for our wordmark logo.
+        textStartX = left + 86;
+      } catch (err) {
+        this.logger.warn(`Logo couldn't be embedded into PDF: ${(err as Error).message}`);
+        doc.font('Helvetica-Bold').fontSize(13).fillColor('#10b981')
+          .text('OpenEOS', left, top + 2, { lineBreak: false });
+        textStartX = left + doc.widthOfString('OpenEOS');
+      }
+    } else {
+      doc.font('Helvetica-Bold').fontSize(13).fillColor('#10b981')
+        .text('OpenEOS', left, top + 2, { lineBreak: false });
+      textStartX = left + doc.widthOfString('OpenEOS');
+    }
+
+    // Plan name next to the logo
     doc.font('Helvetica').fontSize(11).fillColor('#444')
-      .text(`  ·  ${plan.name}`, left + wordmarkWidth, top, { lineBreak: false });
+      .text(`  ·  ${plan.name}`, textStartX, top + 4, { lineBreak: false });
 
-    // Timestamp right-aligned on the same baseline
+    // Timestamp right-aligned on the same baseline. Pin Europe/Berlin so
+    // the print reflects the user's local time even when the container
+    // TZ env isn't set (defensive — the Dockerfile already sets it).
     const stamp = new Date().toLocaleString('de-DE', {
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
+      timeZone: 'Europe/Berlin',
     });
     doc.font('Helvetica').fontSize(9).fillColor('#999')
-      .text(stamp, left, top + 2, { width, align: 'right' });
+      .text(stamp, left, top + 4, { width, align: 'right' });
 
     // Thin separator under the header
-    doc.save().moveTo(left, top + 22).lineTo(left + width, top + 22)
+    doc.save().moveTo(left, top + 26).lineTo(left + width, top + 26)
       .lineWidth(0.5).strokeColor('#d4d4d8').stroke().restore();
 
     // Move the content cursor below the header.
-    doc.y = top + 32;
+    doc.y = top + 36;
     doc.fillColor('#000');
   }
 

@@ -50,8 +50,12 @@ RUN pnpm install --frozen-lockfile --prod
 # ============================================
 FROM node:20-alpine AS runner
 
-# Install dumb-init for proper signal handling
-RUN apk add --no-cache dumb-init
+# Install dumb-init for proper signal handling + tzdata so we can pin TZ
+RUN apk add --no-cache dumb-init tzdata
+
+# Default container timezone — all toLocaleString / Date.now formatting on
+# the server will read 'Europe/Berlin' unless an env override is supplied.
+ENV TZ=Europe/Berlin
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && \
@@ -65,6 +69,8 @@ COPY --from=prod-deps --chown=nestjs:nodejs /app/node_modules ./node_modules
 # Copy built application
 COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nestjs:nodejs /app/package.json ./
+# Static assets (e.g. brand logo embedded into generated PDFs)
+COPY --from=builder --chown=nestjs:nodejs /app/assets ./assets
 
 # Create uploads directory
 RUN mkdir -p /app/uploads && chown nestjs:nodejs /app/uploads
