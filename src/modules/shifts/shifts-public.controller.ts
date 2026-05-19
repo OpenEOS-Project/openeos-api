@@ -69,6 +69,9 @@ export class ShiftsPublicController {
                 confirmedCount,
                 availableSpots: Math.max(0, shift.requiredWorkers - confirmedCount),
                 isFull: confirmedCount >= shift.requiredWorkers,
+                // Public-facing notes the admin can attach to a shift, e.g.
+                // 'bitte schwarze Hose tragen'. Only sent when set.
+                notes: shift.notes || null,
               };
             }),
         })),
