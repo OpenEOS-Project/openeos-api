@@ -31,7 +31,12 @@ export class ShiftPdfService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
+      // Draw the page header (logo + plan name + timestamp) at the top of
+      // every NEW page. Fires for pages 2+; page 1 gets it explicitly below.
+      doc.on('pageAdded', () => this.drawPageHeader(doc, plan));
+
       try {
+        this.drawPageHeader(doc, plan);
         this.renderPlan(doc, plan);
       } catch (err) {
         reject(err as Error);
@@ -42,29 +47,45 @@ export class ShiftPdfService {
     });
   }
 
+  /** Brand header at the top of every page: 'OpenEOS' wordmark, plan name,
+   *  and the generation timestamp on the right. */
+  private drawPageHeader(doc: PDFKit.PDFDocument, plan: ShiftPlan): void {
+    const left = doc.page.margins.left;
+    const top = 16;
+    const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
+    // Wordmark
+    doc.font('Helvetica-Bold').fontSize(13).fillColor('#10b981')
+      .text('OpenEOS', left, top, { lineBreak: false });
+    // Plan name next to the wordmark
+    const wordmarkWidth = doc.widthOfString('OpenEOS');
+    doc.font('Helvetica').fontSize(11).fillColor('#444')
+      .text(`  ·  ${plan.name}`, left + wordmarkWidth, top, { lineBreak: false });
+
+    // Timestamp right-aligned on the same baseline
+    const stamp = new Date().toLocaleString('de-DE', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+    doc.font('Helvetica').fontSize(9).fillColor('#999')
+      .text(stamp, left, top + 2, { width, align: 'right' });
+
+    // Thin separator under the header
+    doc.save().moveTo(left, top + 22).lineTo(left + width, top + 22)
+      .lineWidth(0.5).strokeColor('#d4d4d8').stroke().restore();
+
+    // Move the content cursor below the header.
+    doc.y = top + 32;
+    doc.fillColor('#000');
+  }
+
   // -----------------------------------------------------------------------
   //  Layout
   // -----------------------------------------------------------------------
 
   private renderPlan(doc: PDFKit.PDFDocument, plan: ShiftPlan): void {
-    // Title block
-    doc
-      .fontSize(16)
-      .font('Helvetica-Bold')
-      .fillColor('#111')
-      .text(plan.name, { align: 'left' });
-    doc
-      .moveDown(0.2)
-      .fontSize(9)
-      .font('Helvetica')
-      .fillColor('#666')
-      .text(
-        `Stand: ${new Date().toLocaleString('de-DE', {
-          day: '2-digit', month: '2-digit', year: 'numeric',
-          hour: '2-digit', minute: '2-digit',
-        })}`,
-      );
-    doc.moveDown(0.6).fillColor('#000');
+    // The page header (drawPageHeader) already shows the plan name and
+    // stamp, so the body starts directly with the table.
 
     // Collect every unique shift slot (date + startTime + endTime), sort
     // chronologically. These become the table columns.
@@ -110,12 +131,6 @@ export class ShiftPdfService {
       const slotColWidth = (pageWidth - jobColWidth) / pageSlots.length;
       this.renderTable(doc, plan, jobs, pageSlots, jobColWidth, slotColWidth);
     }
-
-    // Footer on the last page.
-    doc.fontSize(8).font('Helvetica').fillColor('#999')
-      .text(`OpenEOS · ${plan.name}`, doc.page.margins.left, doc.page.height - 24, {
-        width: pageWidth, align: 'center',
-      });
   }
 
   private renderTable(
@@ -217,10 +232,13 @@ export class ShiftPdfService {
       const jobHeight = doc.heightOfString(job.name, { width: jobColWidth - 12 }) + 10;
       if (jobHeight > rowHeight) rowHeight = jobHeight;
 
-      // Page-break if this row wouldn't fit.
+      // Page-break if this row wouldn't fit. addPage() triggers the
+      // pageAdded listener which already draws the brand header and sets
+      // doc.y to just below it, so we read from doc.y instead of resetting
+      // to margins.top (that would put the row under the brand header).
       if (y + rowHeight > bottomMargin) {
         doc.addPage();
-        y = doc.page.margins.top;
+        y = doc.y;
         this.repeatHeader(doc, slots, jobColWidth, slotColWidth, y);
         y += headerHeight;
       }
