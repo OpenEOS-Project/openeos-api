@@ -852,37 +852,29 @@ export class ShiftsService {
     const plan = registration.shift.job.shiftPlan;
     const now = new Date();
 
-    // Update all registrations in the group
+    // Email-verified == confirmed. The previous PENDING_APPROVAL intermediate
+    // step has been removed — admins don't want to re-confirm every helper
+    // and the email round-trip is sufficient anti-spam.
     await this.registrationRepository.update(
       { registrationGroupId: registration.registrationGroupId },
-      {
-        emailVerifiedAt: now,
-        status: plan.settings.requireApproval
-          ? ShiftRegistrationStatus.PENDING_APPROVAL
-          : ShiftRegistrationStatus.CONFIRMED,
-      },
+      { emailVerifiedAt: now, status: ShiftRegistrationStatus.CONFIRMED },
     );
 
-    // If no approval required, send confirmation email
-    if (!plan.settings.requireApproval) {
-      const groupRegistrations = await this.registrationRepository.find({
-        where: { registrationGroupId: registration.registrationGroupId },
-        relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
-      });
+    const groupRegistrations = await this.registrationRepository.find({
+      where: { registrationGroupId: registration.registrationGroupId },
+      relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
+    });
 
-      const shiftsSummary = this.formatShiftsSummary(groupRegistrations);
-      await this.emailService.sendShiftConfirmationEmail(
-        registration.email,
-        registration.name,
-        plan.name,
-        shiftsSummary,
-      );
-    }
+    const shiftsSummary = this.formatShiftsSummary(groupRegistrations);
+    await this.emailService.sendShiftConfirmationEmail(
+      registration.email,
+      registration.name,
+      plan.name,
+      shiftsSummary,
+    );
 
     return {
-      status: plan.settings.requireApproval
-        ? ShiftRegistrationStatus.PENDING_APPROVAL
-        : ShiftRegistrationStatus.CONFIRMED,
+      status: ShiftRegistrationStatus.CONFIRMED,
       planSlug: plan.publicSlug,
     };
   }
