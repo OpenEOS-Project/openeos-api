@@ -230,6 +230,26 @@ export class EmailService {
 
   /** Multi-op proposal email: lists removed + added shifts with accept/decline
    *  buttons that link to the public response page. */
+  /** Magic-link email that lets a helper open a token-based session and
+   *  manage their own shifts in a plan without an account. */
+  async sendHelperMagicLinkEmail(
+    email: string,
+    name: string,
+    planName: string,
+    manageUrl: string,
+  ): Promise<boolean> {
+    const subject = `Schichten verwalten: ${planName}`;
+    const html = this.getBaseTemplate(`
+      <h1>Hallo${name ? ` ${name}` : ''}!</h1>
+      <p>Du hast einen Link zum Verwalten deiner Schichten im Plan <strong>${planName}</strong> angefordert.</p>
+      <div style="margin: 24px 0; text-align: center;">
+        <a href="${manageUrl}" style="display: inline-block; padding: 12px 24px; background: #10b981; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">Meine Schichten öffnen</a>
+      </div>
+      <p style="color: #666; font-size: 13px;">Der Link ist 24 Stunden gültig. Falls du den Link nicht angefordert hast, kannst du diese Mail ignorieren.</p>
+    `);
+    return this.sendEmail({ to: email, subject, html });
+  }
+
   async sendShiftChangeProposalEmail(options: {
     to: string;
     name: string;

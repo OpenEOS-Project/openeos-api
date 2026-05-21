@@ -59,3 +59,4 @@ export * from './shift-job.entity';
 export * from './shift.entity';
 export * from './shift-registration.entity';
 export * from './shift-change-proposal.entity';
+export * from './helper-magic-link.entity';

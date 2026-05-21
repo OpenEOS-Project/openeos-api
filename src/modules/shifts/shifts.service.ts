@@ -11,6 +11,7 @@ import {
   ShiftRegistrationStatus,
   ShiftChangeProposal,
   ShiftChangeProposalStatus,
+  HelperMagicLink,
   User,
 } from '../../database/entities';
 import type { ShiftChangeOp } from '../../database/entities/shift-change-proposal.entity';
@@ -39,6 +40,8 @@ export class ShiftsService {
     private readonly registrationRepository: Repository<ShiftRegistration>,
     @InjectRepository(ShiftChangeProposal)
     private readonly proposalRepository: Repository<ShiftChangeProposal>,
+    @InjectRepository(HelperMagicLink)
+    private readonly magicLinkRepository: Repository<HelperMagicLink>,
     private readonly emailService: EmailService,
   ) {}
 
@@ -967,6 +970,166 @@ export class ShiftsService {
     // Add random suffix for uniqueness
     const suffix = Math.random().toString(36).substring(2, 6);
     return `${baseSlug}-${suffix}`;
+  }
+
+  // ============ Helper magic-link (public self-service) ============
+
+  /** Issue a 24h token for the given email + plan and email a link. Always
+   *  resolves successfully so callers can't enumerate registered emails. */
+  async requestHelperMagicLink(slug: string, email: string, baseUrl?: string): Promise<void> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    const plan = await this.shiftPlanRepository.findOne({ where: { publicSlug: slug } });
+    if (!plan) return;
+
+    // Only issue + mail when this email actually has registrations in this
+    // plan (otherwise silently drop — no information disclosure).
+    const reg = await this.registrationRepository
+      .createQueryBuilder('reg')
+      .innerJoin('reg.shift', 'shift')
+      .innerJoin('shift.job', 'job')
+      .where('job.shiftPlanId = :planId', { planId: plan.id })
+      .andWhere('LOWER(reg.email) = :email', { email: cleanEmail })
+      .andWhere('reg.status != :rejected', { rejected: ShiftRegistrationStatus.REJECTED })
+      .getOne();
+    if (!reg) return;
+
+    const token = this.generateToken();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await this.magicLinkRepository.save(
+      this.magicLinkRepository.create({
+        token, shiftPlanId: plan.id, email: cleanEmail, expiresAt, usedAt: null,
+      }),
+    );
+
+    const base = baseUrl || this.emailService.appUrl;
+    const url = `${base}/s/manage/${token}`;
+    await this.emailService.sendHelperMagicLinkEmail(reg.email, reg.name, plan.name, url);
+  }
+
+  /** Load the helper's data for the manage screen. Throws on
+   *  invalid / expired tokens. */
+  async getHelperManageData(token: string): Promise<{
+    helper: { name: string; email: string; phone: string | null };
+    plan: ShiftPlan;
+    registrations: ShiftRegistration[];
+  }> {
+    const link = await this.findValidMagicLink(token);
+    const plan = await this.shiftPlanRepository.findOne({
+      where: { id: link.shiftPlanId },
+      relations: ['organization', 'event', 'jobs', 'jobs.shifts', 'jobs.shifts.registrations'],
+    });
+    if (!plan) throw new NotFoundException('Schichtplan nicht gefunden');
+
+    const registrations = await this.registrationRepository
+      .createQueryBuilder('reg')
+      .leftJoinAndSelect('reg.shift', 'shift')
+      .leftJoinAndSelect('shift.job', 'job')
+      .where('job.shiftPlanId = :planId', { planId: plan.id })
+      .andWhere('LOWER(reg.email) = :email', { email: link.email })
+      .andWhere('reg.status != :rejected', { rejected: ShiftRegistrationStatus.REJECTED })
+      .orderBy('shift.date', 'ASC')
+      .addOrderBy('shift.startTime', 'ASC')
+      .getMany();
+
+    const first = registrations[0];
+    return {
+      helper: {
+        name: first?.name ?? '',
+        email: first?.email ?? link.email,
+        phone: first?.phone ?? null,
+      },
+      plan,
+      registrations,
+    };
+  }
+
+  /** Helper-side single-shift removal via magic link. */
+  async removeShiftViaMagicLink(token: string, registrationId: string): Promise<void> {
+    const link = await this.findValidMagicLink(token);
+    const reg = await this.registrationRepository.findOne({
+      where: { id: registrationId },
+      relations: ['shift', 'shift.job'],
+    });
+    if (!reg || reg.email.trim().toLowerCase() !== link.email) {
+      throw new NotFoundException('Anmeldung nicht gefunden');
+    }
+    if (reg.shift?.job?.shiftPlanId !== link.shiftPlanId) {
+      throw new BadRequestException('Schicht gehört nicht zu diesem Plan');
+    }
+    await this.registrationRepository.delete({ id: reg.id });
+  }
+
+  /** Helper-side add: attach a new shift to one of the helper's existing
+   *  registration groups (preserving the helper's contact details). */
+  async addShiftViaMagicLink(token: string, shiftId: string): Promise<ShiftRegistration> {
+    const link = await this.findValidMagicLink(token);
+
+    const shift = await this.shiftRepository.findOne({
+      where: { id: shiftId },
+      relations: ['job', 'job.shiftPlan', 'registrations'],
+    });
+    if (!shift || shift.job.shiftPlan.id !== link.shiftPlanId) {
+      throw new BadRequestException('Schicht gehört nicht zu diesem Plan');
+    }
+
+    const confirmedCount = (shift.registrations ?? []).filter(
+      (r) => r.status === ShiftRegistrationStatus.CONFIRMED,
+    ).length;
+    if (confirmedCount >= shift.requiredWorkers) {
+      throw new BadRequestException(`Schicht "${shift.job.name}" ist bereits voll belegt`);
+    }
+
+    // Anchor on any existing registration of this helper so contact details
+    // and group id are reused — otherwise the new shift would appear as a
+    // standalone helper-without-context entry.
+    const anchor = await this.registrationRepository
+      .createQueryBuilder('reg')
+      .innerJoin('reg.shift', 'shift')
+      .innerJoin('shift.job', 'job')
+      .where('job.shiftPlanId = :planId', { planId: link.shiftPlanId })
+      .andWhere('LOWER(reg.email) = :email', { email: link.email })
+      .orderBy('reg.createdAt', 'DESC')
+      .getOne();
+    if (!anchor) throw new NotFoundException('Keine bestehende Anmeldung gefunden');
+
+    // Prevent duplicates: same shift already booked by this helper.
+    const already = await this.registrationRepository.findOne({
+      where: { shiftId: shift.id, registrationGroupId: anchor.registrationGroupId },
+    });
+    if (already) return already;
+
+    const reg = this.registrationRepository.create({
+      shiftId: shift.id,
+      registrationGroupId: anchor.registrationGroupId,
+      name: anchor.name,
+      email: anchor.email,
+      phone: anchor.phone,
+      notes: anchor.notes,
+      adminNotes: anchor.adminNotes,
+      // Inherit the helper's verified state from the anchor row — they've
+      // already proven the email is theirs, so no second round trip needed.
+      status: anchor.emailVerifiedAt
+        ? ShiftRegistrationStatus.CONFIRMED
+        : ShiftRegistrationStatus.PENDING_EMAIL,
+      verificationToken: this.generateToken(),
+      emailVerifiedAt: anchor.emailVerifiedAt,
+    });
+    return this.registrationRepository.save(reg);
+  }
+
+  private async findValidMagicLink(token: string): Promise<HelperMagicLink> {
+    const link = await this.magicLinkRepository.findOne({ where: { token } });
+    if (!link) throw new NotFoundException('Link ungültig oder bereits abgelaufen');
+    if (link.expiresAt.getTime() < Date.now()) {
+      throw new NotFoundException('Link abgelaufen');
+    }
+    if (!link.usedAt) {
+      link.usedAt = new Date();
+      await this.magicLinkRepository.save(link);
+    }
+    return link;
   }
 
   private formatShiftsSummary(registrations: ShiftRegistration[]): string {
