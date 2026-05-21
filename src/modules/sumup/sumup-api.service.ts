@@ -202,7 +202,7 @@ export class SumUpApiService {
         description: data.description,
         checkout_reference: data.checkoutReference,
         return_url: data.returnUrl,
-        pay_to_email: merchantCode,
+        merchant_code: merchantCode,
       }),
     });
 
