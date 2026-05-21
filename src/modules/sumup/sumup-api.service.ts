@@ -203,7 +203,7 @@ export class SumUpApiService {
         checkout_reference: data.checkoutReference,
         return_url: data.returnUrl,
         merchant_code: merchantCode,
-        hosted_checkout: {},
+        hosted_checkout: { enabled: true },
       }),
     });
 
