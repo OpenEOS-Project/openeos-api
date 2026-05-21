@@ -203,6 +203,7 @@ export class SumUpApiService {
         checkout_reference: data.checkoutReference,
         return_url: data.returnUrl,
         merchant_code: merchantCode,
+        hosted_checkout: true,
       }),
     });
 
@@ -215,10 +216,21 @@ export class SumUpApiService {
       });
     }
 
-    const result = await response.json() as { id: string; checkout_url?: string };
-    return {
-      id: result.id,
-      checkoutUrl: result.checkout_url || `https://pay.sumup.com/b2c/checkout/${result.id}`,
+    const result = (await response.json()) as {
+      id: string;
+      hosted_checkout_url?: string;
+      checkout_url?: string;
     };
+    const checkoutUrl = result.hosted_checkout_url ?? result.checkout_url;
+    if (!checkoutUrl) {
+      this.logger.error(
+        `SumUp checkout ${result.id} created without hosted URL (response missing hosted_checkout_url)`,
+      );
+      throw new BadRequestException({
+        code: ErrorCodes.SUMUP_API_ERROR,
+        message: 'SumUp did not return a hosted checkout URL',
+      });
+    }
+    return { id: result.id, checkoutUrl };
   }
 }
