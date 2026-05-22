@@ -232,6 +232,29 @@ export class EmailService {
    *  buttons that link to the public response page. */
   /** Magic-link email that lets a helper open a token-based session and
    *  manage their own shifts in a plan without an account. */
+  /** Sent on a schedule to helpers who haven't clicked their verification
+   *  link yet — gentle nudge with the link re-attached. */
+  async sendVerificationReminderEmail(
+    email: string,
+    name: string,
+    shiftPlanName: string,
+    verifyUrl: string,
+    attempt: number,
+    maxAttempts: number,
+  ): Promise<boolean> {
+    const subject = `Erinnerung: Bestätige deine Schichten — ${shiftPlanName}`;
+    const html = this.getBaseTemplate(`
+      <h1>Hallo ${name}!</h1>
+      <p>Du hast dich für Schichten im Plan <strong>${shiftPlanName}</strong> angemeldet, aber deine E-Mail-Adresse noch nicht bestätigt.</p>
+      <p>Damit deine Anmeldung gültig wird, klick bitte einmal auf den Bestätigungs-Link unten:</p>
+      <div style="margin: 24px 0; text-align: center;">
+        <a href="${verifyUrl}" style="display: inline-block; padding: 12px 24px; background: #10b981; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">E-Mail bestätigen</a>
+      </div>
+      <p style="color: #666; font-size: 13px;">Erinnerung ${attempt} von ${maxAttempts}. Wenn du dich doch nicht eintragen möchtest, ignorier diese Mail einfach.</p>
+    `);
+    return this.sendEmail({ to: email, subject, html });
+  }
+
   async sendHelperMagicLinkEmail(
     email: string,
     name: string,

@@ -55,6 +55,14 @@ export class ShiftRegistration extends BaseEntity {
   @Column({ name: 'reminder_sent_at', type: 'timestamp with time zone', nullable: true })
   reminderSentAt: Date | null;
 
+  // How many verification reminders has this row received? The cron stops
+  // sending once it hits the plan's max-count setting.
+  @Column({ name: 'verification_reminder_count', type: 'int', default: 0 })
+  verificationReminderCount: number;
+
+  @Column({ name: 'last_verification_reminder_at', type: 'timestamp with time zone', nullable: true })
+  lastVerificationReminderAt: Date | null;
+
   // Relations
   @ManyToOne(() => Shift, (shift) => shift.registrations, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'shift_id' })

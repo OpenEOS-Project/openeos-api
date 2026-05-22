@@ -45,4 +45,23 @@ export class CreateShiftPlanDto {
   @Min(0)
   @IsOptional()
   maxShiftsPerPerson?: number;
+
+  @ApiPropertyOptional({ description: 'Whether the cron sends verification reminders for pending_email helpers', default: true })
+  @IsBoolean()
+  @IsOptional()
+  verificationReminderEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Hours between two verification reminders', default: 24 })
+  @IsInt()
+  @Min(1)
+  @Max(168)
+  @IsOptional()
+  verificationReminderIntervalHours?: number;
+
+  @ApiPropertyOptional({ description: 'Max number of verification reminders per helper-group', default: 5 })
+  @IsInt()
+  @Min(0)
+  @Max(20)
+  @IsOptional()
+  verificationReminderMaxCount?: number;
 }

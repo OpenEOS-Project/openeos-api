@@ -124,4 +124,83 @@ export class ShiftReminderService {
       this.logger.error(`Failed to send reminder to ${registration.email}:`, error);
     }
   }
+
+  // ============ Verification reminders for unconfirmed helpers ============
+
+  /**
+   * Runs hourly and nudges helpers who registered but didn't click the
+   * verification link. Per-plan settings: enabled flag, interval (h),
+   * and a max-count so we don't spam someone forever.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleVerificationReminders() {
+    this.logger.log('Starting verification-reminder job...');
+    try {
+      const plans = await this.shiftPlanRepository.find({
+        where: { status: ShiftPlanStatus.PUBLISHED },
+      });
+      const baseUrl = this.emailService.appUrl;
+
+      for (const plan of plans) {
+        const enabled = plan.settings?.verificationReminderEnabled ?? true;
+        if (!enabled) continue;
+        const intervalH = Math.max(1, plan.settings?.verificationReminderIntervalHours ?? 24);
+        const maxCount = Math.max(0, plan.settings?.verificationReminderMaxCount ?? 5);
+        if (maxCount === 0) continue;
+
+        const cutoff = new Date(Date.now() - intervalH * 60 * 60 * 1000);
+
+        // Pull pending_email rows for this plan that haven't hit the cap and
+        // are due for the next nudge (lastVerificationReminderAt < cutoff,
+        // or never sent).
+        const candidates = await this.registrationRepository
+          .createQueryBuilder('reg')
+          .innerJoin('reg.shift', 'shift')
+          .innerJoin('shift.job', 'job')
+          .where('job.shiftPlanId = :planId', { planId: plan.id })
+          .andWhere('reg.status = :status', { status: ShiftRegistrationStatus.PENDING_EMAIL })
+          .andWhere('reg.verificationReminderCount < :max', { max: maxCount })
+          .andWhere('(reg.lastVerificationReminderAt IS NULL OR reg.lastVerificationReminderAt < :cutoff)', { cutoff })
+          .getMany();
+
+        // Dedupe by registrationGroupId so a multi-shift signup gets ONE
+        // mail per cycle, not one per shift.
+        const byGroup = new Map<string, ShiftRegistration>();
+        for (const c of candidates) {
+          if (!byGroup.has(c.registrationGroupId)) byGroup.set(c.registrationGroupId, c);
+        }
+
+        for (const reg of byGroup.values()) {
+          try {
+            const verifyUrl = `${baseUrl}/s/verify/${reg.verificationToken}`;
+            await this.emailService.sendVerificationReminderEmail(
+              reg.email, reg.name, plan.name, verifyUrl,
+              reg.verificationReminderCount + 1, maxCount,
+            );
+            // Bump the counter on every row of the helper's group so the
+            // dedupe stays sane next cycle.
+            const now = new Date();
+            await this.registrationRepository
+              .createQueryBuilder()
+              .update(ShiftRegistration)
+              .set({
+                verificationReminderCount: () => '"verification_reminder_count" + 1',
+                lastVerificationReminderAt: now,
+              })
+              .where('registration_group_id = :gid', { gid: reg.registrationGroupId })
+              .execute();
+            this.logger.log(
+              `Verification reminder ${reg.verificationReminderCount + 1}/${maxCount} sent to ${reg.email}`,
+            );
+          } catch (err) {
+            this.logger.error(`Failed verification reminder for ${reg.email}: ${(err as Error).message}`);
+          }
+        }
+      }
+
+      this.logger.log('Verification-reminder job completed');
+    } catch (err) {
+      this.logger.error(`Verification-reminder job failed: ${(err as Error).message}`);
+    }
+  }
 }

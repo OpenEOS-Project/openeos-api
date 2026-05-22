@@ -15,6 +15,11 @@ export interface ShiftPlanSettings {
   allowMultipleShifts: boolean;
   reminderDaysBefore: number;
   maxShiftsPerPerson?: number;
+  // Cron-based reminder mails for helpers that signed up but didn't click
+  // the verification link. Defaults: enabled, every 24h, max 5 reminders.
+  verificationReminderEnabled?: boolean;
+  verificationReminderIntervalHours?: number;
+  verificationReminderMaxCount?: number;
 }
 
 @Entity('shift_plans')

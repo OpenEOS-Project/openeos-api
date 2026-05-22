@@ -67,6 +67,9 @@ export class ShiftsService {
         allowMultipleShifts: dto.allowMultipleShifts ?? true,
         reminderDaysBefore: dto.reminderDaysBefore ?? 1,
         maxShiftsPerPerson: dto.maxShiftsPerPerson,
+        verificationReminderEnabled: dto.verificationReminderEnabled ?? true,
+        verificationReminderIntervalHours: dto.verificationReminderIntervalHours ?? 24,
+        verificationReminderMaxCount: dto.verificationReminderMaxCount ?? 5,
       },
     });
 
@@ -114,6 +117,9 @@ export class ShiftsService {
     if (dto.allowMultipleShifts !== undefined) plan.settings.allowMultipleShifts = dto.allowMultipleShifts;
     if (dto.reminderDaysBefore !== undefined) plan.settings.reminderDaysBefore = dto.reminderDaysBefore;
     if (dto.maxShiftsPerPerson !== undefined) plan.settings.maxShiftsPerPerson = dto.maxShiftsPerPerson;
+    if (dto.verificationReminderEnabled !== undefined) plan.settings.verificationReminderEnabled = dto.verificationReminderEnabled;
+    if (dto.verificationReminderIntervalHours !== undefined) plan.settings.verificationReminderIntervalHours = dto.verificationReminderIntervalHours;
+    if (dto.verificationReminderMaxCount !== undefined) plan.settings.verificationReminderMaxCount = dto.verificationReminderMaxCount;
 
     return this.shiftPlanRepository.save(plan);
   }
