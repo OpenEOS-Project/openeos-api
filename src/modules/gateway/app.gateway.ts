@@ -424,6 +424,29 @@ export class AppGateway
     this.logger.debug(`Emitted ${event} to device room ${roomName}`);
   }
 
+  /**
+   * Emit to a device room and wait for at least one acknowledgement.
+   * Resolves false when no socket acked within the timeout (device offline
+   * or unresponsive) — never rejects.
+   */
+  emitToDeviceWithAck(
+    organizationId: string,
+    deviceId: string,
+    event: string,
+    data: unknown,
+    timeoutMs = 10000,
+  ): Promise<boolean> {
+    const roomName = `org:${organizationId}:device:${deviceId}`;
+    return new Promise((resolve) => {
+      this.server
+        .to(roomName)
+        .timeout(timeoutMs)
+        .emit(event, data, (_err: Error | null, responses: unknown[]) => {
+          resolve(Array.isArray(responses) && responses.length > 0);
+        });
+    });
+  }
+
   // Presence is derived from connected sockets via fetchSockets(), which the
   // Redis adapter resolves across all replicas — no in-process state.
 
@@ -475,10 +498,17 @@ export class AppGateway
     try {
       const jobs = await this.printJobsService.getQueuedJobsForDevice(deviceId);
       for (const job of jobs) {
-        client.emit(
-          GatewayEvents.PRINTER_JOB,
-          this.printJobsService.buildAgentJobEvent(job),
-        );
+        client
+          .timeout(10000)
+          .emit(
+            GatewayEvents.PRINTER_JOB,
+            this.printJobsService.buildAgentJobEvent(job),
+            (err: Error | null) => {
+              if (!err) {
+                void this.printJobsService.markJobPrinting(job.id);
+              }
+            },
+          );
       }
       if (jobs.length > 0) {
         this.logger.log(

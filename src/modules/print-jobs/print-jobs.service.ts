@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { PrintJob, Printer, PrintTemplate, User, UserOrganization } from '../../database/entities';
 import { PrintJobStatus } from '../../database/entities/print-job.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
@@ -87,14 +87,31 @@ export class PrintJobsService {
     }
 
     // Send full print data to agent via WebSocket — targeted at the printer's
-    // agent device; jobs stay QUEUED and are replayed when the agent connects.
-    this.gatewayService.sendPrintJobToAgent(organizationId, printer.deviceId, {
-      jobId: printJob.id,
-      printerId: createDto.printerId,
-      templateName,
-      copies: createDto.payload?.copies as number || 1,
-      payload: createDto.payload?.data as Record<string, unknown> || createDto.payload,
-    });
+    // agent device. On ack the job moves to PRINTING; unacked jobs stay
+    // QUEUED and are replayed when the agent (re)connects.
+    void this.gatewayService
+      .sendPrintJobToAgent(organizationId, printer.deviceId, {
+        jobId: printJob.id,
+        printerId: createDto.printerId,
+        templateName,
+        copies: createDto.payload?.copies as number || 1,
+        payload: createDto.payload?.data as Record<string, unknown> || createDto.payload,
+      })
+      .then((acked) => {
+        if (acked) {
+          return this.markJobPrinting(printJob.id);
+        }
+        this.logger.warn(
+          `Print job ${printJob.id} not acked by agent — stays queued for replay`,
+        );
+      })
+      .catch((error) => {
+        this.logger.error(
+          `Print job ${printJob.id} delivery error: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      });
 
     return printJob;
   }
@@ -307,14 +324,38 @@ export class PrintJobsService {
     });
   }
 
-  /** Queued jobs for all printers handled by one agent device (replay on connect). */
+  /**
+   * Jobs to (re-)deliver to an agent device on connect: everything still
+   * QUEUED plus PRINTING jobs that went stale (acked but no outcome reported
+   * for 2+ minutes — e.g. the agent crashed mid-print). The agent dedupes by
+   * jobId against its persistent queue, so re-delivery is safe.
+   */
   async getQueuedJobsForDevice(deviceId: string): Promise<PrintJob[]> {
+    const staleBefore = new Date(Date.now() - 2 * 60 * 1000);
     return this.printJobRepository.find({
-      where: { status: PrintJobStatus.QUEUED, printer: { deviceId } },
+      where: [
+        { status: PrintJobStatus.QUEUED, printer: { deviceId } },
+        {
+          status: PrintJobStatus.PRINTING,
+          printer: { deviceId },
+          updatedAt: LessThan(staleBefore),
+        },
+      ],
       relations: ['template', 'printer'],
       order: { createdAt: 'ASC' },
       take: 50,
     });
+  }
+
+  /**
+   * Transition a job to PRINTING after the agent acked receipt. Guarded so a
+   * late ack can never regress a job that already completed or failed.
+   */
+  async markJobPrinting(jobId: string): Promise<void> {
+    await this.printJobRepository.update(
+      { id: jobId, status: PrintJobStatus.QUEUED },
+      { status: PrintJobStatus.PRINTING },
+    );
   }
 
   /** Build the websocket payload for an agent from a persisted job (same shape as create()). */

@@ -210,27 +210,31 @@ export class GatewayService {
     );
   }
 
-  sendPrintJobToAgent(
+  /**
+   * Deliver a print job to its agent. Resolves true when the agent
+   * acknowledged receipt (job can be marked PRINTING), false otherwise —
+   * unacked jobs stay QUEUED and are replayed when the agent connects.
+   */
+  async sendPrintJobToAgent(
     organizationId: string,
     agentDeviceId: string | null,
     data: PrinterJobEvent,
-  ) {
+  ): Promise<boolean> {
     if (agentDeviceId) {
       // Targeted delivery to the printer's agent device
       this.logger.debug(
         `Sending print job ${data.jobId} to agent device ${agentDeviceId}`,
       );
-      this.appGateway.emitToDevice(
+      return this.appGateway.emitToDeviceWithAck(
         organizationId,
         agentDeviceId,
         GatewayEvents.PRINTER_JOB,
         data,
       );
-      return;
     }
 
     // Fallback for printers without a device assignment: broadcast to the
-    // organization (agents filter by printerId)
+    // organization (agents filter by printerId) — no ack semantics here.
     this.logger.debug(
       `Sending print job ${data.jobId} to agents via organization ${organizationId}`,
     );
@@ -239,6 +243,7 @@ export class GatewayService {
       GatewayEvents.PRINTER_JOB,
       data,
     );
+    return false;
   }
 
   /**
