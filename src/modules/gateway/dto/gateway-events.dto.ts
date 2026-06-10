@@ -9,6 +9,41 @@ export interface LeaveRoomPayload {
   eventId?: string;
 }
 
+// Customer display: POS broadcasts its in-progress cart, displays subscribe to it
+export interface CustomerCartItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  options: string[];
+  pfandAmount: number;
+  isRefill: boolean;
+}
+
+export interface CartUpdatePayload {
+  status: 'active' | 'completed';
+  kind?: 'paid' | 'tab';
+  orderNumber?: string | null;
+  items: CustomerCartItem[];
+  totals: {
+    subtotal: number;
+    discount: number;
+    pfand: number;
+    payable: number;
+  };
+  vouchers: { name: string; amount: number }[];
+  updatedAt: number;
+}
+
+export interface WatchPosCartPayload {
+  posDeviceId: string;
+}
+
+export interface PosCartUpdatedEvent extends CartUpdatePayload {
+  posDeviceId: string;
+}
+
 // Server to Client Events
 export interface OrderCreatedEvent {
   order: {
@@ -201,6 +236,9 @@ export const GatewayEvents = {
   LEAVE_ROOM: 'leaveRoom',
   DEVICE_HEARTBEAT: 'deviceHeartbeat',
   PRINTER_HEARTBEAT: 'printerHeartbeat',
+  CART_UPDATE: 'cartUpdate',
+  WATCH_POS_CART: 'watchPosCart',
+  UNWATCH_POS_CART: 'unwatchPosCart',
   PRINTER_JOB_COMPLETE: 'printerJobComplete',
   PRINTER_JOB_FAILED: 'printerJobFailed',
 
@@ -209,6 +247,8 @@ export const GatewayEvents = {
   ORDER_UPDATED: 'orderUpdated',
   ORDER_ITEM_STATUS_CHANGED: 'orderItemStatusChanged',
   PAYMENT_RECEIVED: 'paymentReceived',
+  PFAND_RETURNED: 'pfandReturned',
+  POS_CART_UPDATED: 'posCartUpdated',
   PRINT_JOB_CREATED: 'printJobCreated',
   PRINT_JOB_STATUS_CHANGED: 'printJobStatusChanged',
   PRINTER_JOB: 'printerJob',

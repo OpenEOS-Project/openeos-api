@@ -20,6 +20,9 @@ import type {
   PrinterHeartbeatEvent,
   PrinterJobCompleteEvent,
   PrinterJobFailedEvent,
+  CartUpdatePayload,
+  WatchPosCartPayload,
+  PosCartUpdatedEvent,
 } from './dto';
 import { DevicesService } from '../devices/devices.service';
 import { PrintersService } from '../printers/printers.service';
@@ -179,6 +182,69 @@ export class AppGateway
     client.leave(roomName);
     this.logger.debug(`Client ${client.id} left room: ${roomName}`);
 
+    return { success: true };
+  }
+
+  // ── Customer display: live cart relay ──────────────────────────────────
+  // Rooms are scoped to the sender's/watcher's own organization, so a display
+  // can never subscribe to a POS device of another organization.
+
+  private posCartRoom(organizationId: string, posDeviceId: string): string {
+    return `org:${organizationId}:pos:${posDeviceId}:cart`;
+  }
+
+  @SubscribeMessage(GatewayEvents.CART_UPDATE)
+  handleCartUpdate(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() payload: CartUpdatePayload,
+  ) {
+    if (!client.device || !client.device.organizationId) {
+      return { error: 'Not a device connection' };
+    }
+
+    const event: PosCartUpdatedEvent = {
+      ...payload,
+      posDeviceId: client.device.id,
+    };
+    this.server
+      .to(this.posCartRoom(client.device.organizationId, client.device.id))
+      .emit(GatewayEvents.POS_CART_UPDATED, event);
+
+    return { success: true };
+  }
+
+  @SubscribeMessage(GatewayEvents.WATCH_POS_CART)
+  handleWatchPosCart(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() payload: WatchPosCartPayload,
+  ) {
+    if (!client.device || !client.device.organizationId) {
+      return { error: 'Not a device connection' };
+    }
+    if (!payload?.posDeviceId) {
+      return { error: 'posDeviceId required' };
+    }
+
+    const room = this.posCartRoom(client.device.organizationId, payload.posDeviceId);
+    client.join(room);
+    this.logger.debug(`Device ${client.device.id} watches POS cart: ${room}`);
+
+    return { success: true, room };
+  }
+
+  @SubscribeMessage(GatewayEvents.UNWATCH_POS_CART)
+  handleUnwatchPosCart(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() payload: WatchPosCartPayload,
+  ) {
+    if (!client.device || !client.device.organizationId) {
+      return { error: 'Not a device connection' };
+    }
+    if (!payload?.posDeviceId) {
+      return { error: 'posDeviceId required' };
+    }
+
+    client.leave(this.posCartRoom(client.device.organizationId, payload.posDeviceId));
     return { success: true };
   }
 

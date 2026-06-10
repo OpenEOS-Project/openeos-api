@@ -8,6 +8,7 @@ import { User } from './user.entity';
 
 export enum DeviceType {
   POS = 'pos',
+  DISPLAY = 'display',
   ADMIN = 'admin',
   PRINTER_AGENT = 'printer_agent',
 }
@@ -20,6 +21,7 @@ export enum DeviceStatus {
 
 export type ServiceMode = 'table' | 'counter';
 export type PrinterMode = 'fixed' | 'dynamic' | 'device' | 'category' | 'product';
+export type DisplayMode = 'customer' | 'station';
 
 export interface DeviceSettings {
   defaultPrinterId?: string;
@@ -29,6 +31,9 @@ export interface DeviceSettings {
   serviceMode?: ServiceMode;
   printerMode?: PrinterMode;
   requirePin?: boolean;
+  displayMode?: DisplayMode;
+  /** For customer displays: the POS device whose live cart is mirrored */
+  posDeviceId?: string;
   [key: string]: unknown;
 }
 
