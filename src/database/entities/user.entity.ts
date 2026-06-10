@@ -23,6 +23,10 @@ export interface UserPreferences {
     email: boolean;
     push: boolean;
   };
+  dashboard?: {
+    /** Ordered list of enabled dashboard widget ids */
+    widgets: string[];
+  };
 }
 
 @Entity('users')

@@ -1,6 +1,16 @@
-import { IsString, IsOptional, IsBoolean, IsObject, ValidateNested, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsObject, IsArray, ValidateNested, IsIn } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+
+export class DashboardPreferencesDto {
+  @ApiPropertyOptional({
+    example: ['ordersToday', 'revenueToday'],
+    description: 'Aktivierte Dashboard-Widgets in Anzeigereihenfolge',
+  })
+  @IsArray()
+  @IsString({ each: true })
+  widgets: string[];
+}
 
 export class NotificationPreferencesDto {
   @ApiPropertyOptional({ example: true, description: 'E-Mail-Benachrichtigungen' })
@@ -44,4 +54,14 @@ export class UpdatePreferencesDto {
   @ValidateNested()
   @Type(() => NotificationPreferencesDto)
   notifications?: NotificationPreferencesDto;
+
+  @ApiPropertyOptional({
+    example: { widgets: ['ordersToday', 'revenueToday'] },
+    description: 'Dashboard-Konfiguration (aktivierte Widgets in Reihenfolge)',
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => DashboardPreferencesDto)
+  dashboard?: DashboardPreferencesDto;
 }

@@ -210,6 +210,9 @@ export class UsersService {
         ...dto.notifications,
       };
     }
+    if (dto.dashboard !== undefined) {
+      currentPreferences.dashboard = { widgets: dto.dashboard.widgets };
+    }
 
     user.preferences = currentPreferences;
     await this.userRepository.save(user);

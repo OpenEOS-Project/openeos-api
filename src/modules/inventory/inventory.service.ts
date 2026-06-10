@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -11,7 +12,12 @@ import {
   InventoryCountItem,
   StockMovement,
   Product,
+  Event,
+  UserOrganization,
 } from '../../database/entities';
+import {
+  OrganizationRole,
+} from '../../database/entities/user-organization.entity';
 import { InventoryCountStatus } from '../../database/entities/inventory-count.entity';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -38,6 +44,10 @@ export class InventoryService {
     private readonly stockMovementRepository: Repository<StockMovement>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    @InjectRepository(Event)
+    private readonly eventRepository: Repository<Event>,
+    @InjectRepository(UserOrganization)
+    private readonly userOrganizationRepository: Repository<UserOrganization>,
   ) {}
 
   // === Inventory Counts ===
@@ -45,7 +55,9 @@ export class InventoryService {
   async findAllCounts(
     eventId: string,
     queryDto: QueryInventoryCountsDto,
+    userId: string,
   ): Promise<{ data: InventoryCount[]; total: number; page: number; limit: number }> {
+    await this.getEventAndCheckPermission(eventId, userId);
     const { status, page = 1, limit = 20 } = queryDto;
 
     const queryBuilder = this.inventoryCountRepository
@@ -68,7 +80,8 @@ export class InventoryService {
     return { data, total, page, limit };
   }
 
-  async findOneCount(eventId: string, countId: string): Promise<InventoryCount> {
+  async findOneCount(eventId: string, countId: string, userId: string): Promise<InventoryCount> {
+    await this.getEventAndCheckPermission(eventId, userId);
     const count = await this.inventoryCountRepository.findOne({
       where: { id: countId, eventId },
       relations: ['items', 'items.product', 'createdByUser', 'completedByUser'],
@@ -89,6 +102,7 @@ export class InventoryService {
     userId: string,
     createDto: CreateInventoryCountDto,
   ): Promise<InventoryCount> {
+    await this.getEventAndCheckPermission(eventId, userId);
     // Check if there's an in-progress count
     const inProgress = await this.inventoryCountRepository.findOne({
       where: {
@@ -122,8 +136,10 @@ export class InventoryService {
     eventId: string,
     countId: string,
     updateDto: UpdateInventoryCountDto,
+    userId: string,
   ): Promise<InventoryCount> {
-    const count = await this.findOneCount(eventId, countId);
+    await this.getEventAndCheckPermission(eventId, userId);
+    const count = await this.findOneCountInternal(eventId, countId);
 
     if (count.status === InventoryCountStatus.COMPLETED) {
       throw new BadRequestException({
@@ -138,8 +154,9 @@ export class InventoryService {
     return count;
   }
 
-  async deleteCount(eventId: string, countId: string): Promise<void> {
-    const count = await this.findOneCount(eventId, countId);
+  async deleteCount(eventId: string, countId: string, userId: string): Promise<void> {
+    await this.getEventAndCheckPermission(eventId, userId);
+    const count = await this.findOneCountInternal(eventId, countId);
 
     if (count.status === InventoryCountStatus.COMPLETED) {
       throw new BadRequestException({
@@ -151,8 +168,9 @@ export class InventoryService {
     await this.inventoryCountRepository.remove(count);
   }
 
-  async startCount(eventId: string, countId: string): Promise<InventoryCount> {
-    const count = await this.findOneCount(eventId, countId);
+  async startCount(eventId: string, countId: string, userId: string): Promise<InventoryCount> {
+    await this.getEventAndCheckPermission(eventId, userId);
+    const count = await this.findOneCountInternal(eventId, countId);
 
     if (count.status !== InventoryCountStatus.DRAFT) {
       throw new BadRequestException({
@@ -182,7 +200,8 @@ export class InventoryService {
     countId: string,
     userId: string,
   ): Promise<InventoryCount> {
-    const count = await this.findOneCount(eventId, countId);
+    await this.getEventAndCheckPermission(eventId, userId);
+    const count = await this.findOneCountInternal(eventId, countId);
 
     if (count.status !== InventoryCountStatus.IN_PROGRESS) {
       throw new BadRequestException({
@@ -220,11 +239,12 @@ export class InventoryService {
 
     this.logger.log(`Inventory count completed: ${count.id}`);
 
-    return this.findOneCount(eventId, countId);
+    return this.findOneCountInternal(eventId, countId);
   }
 
-  async cancelCount(eventId: string, countId: string): Promise<InventoryCount> {
-    const count = await this.findOneCount(eventId, countId);
+  async cancelCount(eventId: string, countId: string, userId: string): Promise<InventoryCount> {
+    await this.getEventAndCheckPermission(eventId, userId);
+    const count = await this.findOneCountInternal(eventId, countId);
 
     if (count.status === InventoryCountStatus.COMPLETED) {
       throw new BadRequestException({
@@ -247,8 +267,10 @@ export class InventoryService {
     eventId: string,
     countId: string,
     addDto: AddInventoryItemDto,
+    userId: string,
   ): Promise<InventoryCountItem> {
-    const count = await this.findOneCount(eventId, countId);
+    await this.getEventAndCheckPermission(eventId, userId);
+    const count = await this.findOneCountInternal(eventId, countId);
 
     if (count.status !== InventoryCountStatus.DRAFT) {
       throw new BadRequestException({
@@ -295,8 +317,10 @@ export class InventoryService {
     eventId: string,
     countId: string,
     bulkDto: BulkAddInventoryItemsDto,
+    userId: string,
   ): Promise<InventoryCountItem[]> {
-    const count = await this.findOneCount(eventId, countId);
+    await this.getEventAndCheckPermission(eventId, userId);
+    const count = await this.findOneCountInternal(eventId, countId);
 
     if (count.status !== InventoryCountStatus.DRAFT) {
       throw new BadRequestException({
@@ -350,7 +374,8 @@ export class InventoryService {
     userId: string,
     updateDto: UpdateInventoryItemDto,
   ): Promise<InventoryCountItem> {
-    const count = await this.findOneCount(eventId, countId);
+    await this.getEventAndCheckPermission(eventId, userId);
+    const count = await this.findOneCountInternal(eventId, countId);
 
     if (count.status !== InventoryCountStatus.IN_PROGRESS) {
       throw new BadRequestException({
@@ -386,7 +411,9 @@ export class InventoryService {
   async findAllMovements(
     eventId: string,
     queryDto: QueryStockMovementsDto,
+    userId: string,
   ): Promise<{ data: StockMovement[]; total: number; page: number; limit: number }> {
+    await this.getEventAndCheckPermission(eventId, userId);
     const { productId, type, startDate, endDate, page = 1, limit = 20 } = queryDto;
 
     const queryBuilder = this.stockMovementRepository
@@ -421,7 +448,8 @@ export class InventoryService {
     return { data, total, page, limit };
   }
 
-  async findOneMovement(eventId: string, movementId: string): Promise<StockMovement> {
+  async findOneMovement(eventId: string, movementId: string, userId: string): Promise<StockMovement> {
+    await this.getEventAndCheckPermission(eventId, userId);
     const movement = await this.stockMovementRepository.findOne({
       where: { id: movementId, eventId },
       relations: ['product', 'createdByUser'],
@@ -438,6 +466,61 @@ export class InventoryService {
   }
 
   // === Private Helpers ===
+
+  private async getEventAndCheckPermission(
+    eventId: string,
+    userId: string,
+  ): Promise<Event> {
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+    });
+
+    if (!event) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Event nicht gefunden',
+      });
+    }
+
+    const membership = await this.userOrganizationRepository.findOne({
+      where: { organizationId: event.organizationId, userId },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Sie sind kein Mitglied dieser Organisation',
+      });
+    }
+
+    if (
+      membership.role !== OrganizationRole.ADMIN &&
+      !membership.permissions?.inventory
+    ) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Keine ausreichenden Berechtigungen',
+      });
+    }
+
+    return event;
+  }
+
+  private async findOneCountInternal(eventId: string, countId: string): Promise<InventoryCount> {
+    const count = await this.inventoryCountRepository.findOne({
+      where: { id: countId, eventId },
+      relations: ['items', 'items.product', 'createdByUser', 'completedByUser'],
+    });
+
+    if (!count) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Inventur nicht gefunden',
+      });
+    }
+
+    return count;
+  }
 
   private async applyStockAdjustment(
     eventId: string,

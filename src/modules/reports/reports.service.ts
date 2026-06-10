@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
 import {
@@ -9,9 +9,15 @@ import {
   Category,
   StockMovement,
   PfandReturn,
+  UserOrganization,
+  User,
 } from '../../database/entities';
+import {
+  OrganizationRole,
+} from '../../database/entities/user-organization.entity';
 import { OrderStatus } from '../../database/entities/order.entity';
 import { QueryReportsDto, ReportGroupBy, ReportExportFormat } from './dto';
+import { ErrorCodes } from '../../common/constants/error-codes';
 
 export interface SalesReport {
   totalRevenue: number;
@@ -76,12 +82,16 @@ export class ReportsService {
     private readonly stockMovementRepository: Repository<StockMovement>,
     @InjectRepository(PfandReturn)
     private readonly pfandReturnRepository: Repository<PfandReturn>,
+    @InjectRepository(UserOrganization)
+    private readonly userOrganizationRepository: Repository<UserOrganization>,
   ) {}
 
   async getSalesReport(
     organizationId: string,
     queryDto: QueryReportsDto,
+    user: User,
   ): Promise<SalesReport> {
+    await this.checkPermission(organizationId, user.id);
     const { eventId, startDate, endDate } = queryDto;
 
     const queryBuilder = this.orderRepository
@@ -195,7 +205,9 @@ export class ReportsService {
   async getProductsReport(
     organizationId: string,
     queryDto: QueryReportsDto,
+    user: User,
   ): Promise<ProductReport[]> {
+    await this.checkPermission(organizationId, user.id);
     const { eventId, startDate, endDate } = queryDto;
 
     const queryBuilder = this.orderItemRepository
@@ -245,7 +257,9 @@ export class ReportsService {
   async getPaymentsReport(
     organizationId: string,
     queryDto: QueryReportsDto,
+    user: User,
   ): Promise<PaymentReport[]> {
+    await this.checkPermission(organizationId, user.id);
     const { eventId, startDate, endDate } = queryDto;
 
     const queryBuilder = this.paymentRepository
@@ -293,7 +307,9 @@ export class ReportsService {
   async getHourlyReport(
     organizationId: string,
     queryDto: QueryReportsDto,
+    user: User,
   ): Promise<HourlyReport[]> {
+    await this.checkPermission(organizationId, user.id);
     const { eventId, startDate, endDate } = queryDto;
 
     const queryBuilder = this.orderRepository
@@ -338,7 +354,10 @@ export class ReportsService {
     return hourlyData;
   }
 
-  async getInventoryReport(eventId: string): Promise<
+  async getInventoryReport(
+    eventId: string,
+    user: User,
+  ): Promise<
     {
       productId: string;
       productName: string;
@@ -346,6 +365,7 @@ export class ReportsService {
       lowStock: boolean;
     }[]
   > {
+    await this.checkPermission(eventId, user.id);
     const products = await this.productRepository.find({
       where: { eventId, trackInventory: true },
       order: { name: 'ASC' },
@@ -362,7 +382,9 @@ export class ReportsService {
   async getStockMovementsReport(
     eventId: string,
     queryDto: QueryReportsDto,
+    user: User,
   ): Promise<StockMovementReport[]> {
+    await this.checkPermission(eventId, user.id);
     const { startDate, endDate } = queryDto;
 
     const queryBuilder = this.stockMovementRepository
@@ -419,26 +441,28 @@ export class ReportsService {
     reportType: string,
     queryDto: QueryReportsDto,
     format: ReportExportFormat,
+    user: User,
   ): Promise<{ data: string; contentType: string; filename: string }> {
+    await this.checkPermission(organizationId, user.id);
     let reportData: unknown[];
     const filename = `report-${reportType}-${new Date().toISOString().slice(0, 10)}`;
 
     switch (reportType) {
       case 'sales':
-        reportData = [await this.getSalesReport(organizationId, queryDto)];
+        reportData = [await this.getSalesReport(organizationId, queryDto, user)];
         break;
       case 'products':
-        reportData = await this.getProductsReport(organizationId, queryDto);
+        reportData = await this.getProductsReport(organizationId, queryDto, user);
         break;
       case 'payments':
-        reportData = await this.getPaymentsReport(organizationId, queryDto);
+        reportData = await this.getPaymentsReport(organizationId, queryDto, user);
         break;
       case 'hourly':
-        reportData = await this.getHourlyReport(organizationId, queryDto);
+        reportData = await this.getHourlyReport(organizationId, queryDto, user);
         break;
       case 'inventory':
         if (queryDto.eventId) {
-          reportData = await this.getInventoryReport(queryDto.eventId);
+          reportData = await this.getInventoryReport(queryDto.eventId, user);
         } else {
           reportData = [];
         }
@@ -470,6 +494,41 @@ export class ReportsService {
       contentType: 'application/json',
       filename: `${filename}.json`,
     };
+  }
+
+  private async checkMembership(
+    organizationId: string,
+    userId: string,
+  ): Promise<UserOrganization> {
+    const membership = await this.userOrganizationRepository.findOne({
+      where: { organizationId, userId },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Sie sind kein Mitglied dieser Organisation',
+      });
+    }
+
+    return membership;
+  }
+
+  private async checkPermission(
+    organizationId: string,
+    userId: string,
+  ): Promise<void> {
+    const membership = await this.checkMembership(organizationId, userId);
+
+    if (
+      membership.role !== OrganizationRole.ADMIN &&
+      !membership.permissions?.reports
+    ) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Keine ausreichenden Berechtigungen',
+      });
+    }
   }
 
   private convertToCSV(data: unknown[]): string {

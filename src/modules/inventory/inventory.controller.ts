@@ -35,8 +35,9 @@ export class InventoryController {
   async findAllCounts(
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Query() queryDto: QueryInventoryCountsDto,
+    @CurrentUser() user: User,
   ) {
-    const result = await this.inventoryService.findAllCounts(eventId, queryDto);
+    const result = await this.inventoryService.findAllCounts(eventId, queryDto, user.id);
     return {
       data: result.data,
       meta: {
@@ -52,8 +53,9 @@ export class InventoryController {
   async findOneCount(
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
   ) {
-    const count = await this.inventoryService.findOneCount(eventId, id);
+    const count = await this.inventoryService.findOneCount(eventId, id, user.id);
     return { data: count };
   }
 
@@ -76,8 +78,9 @@ export class InventoryController {
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateInventoryCountDto,
+    @CurrentUser() user: User,
   ) {
-    const count = await this.inventoryService.updateCount(eventId, id, updateDto);
+    const count = await this.inventoryService.updateCount(eventId, id, updateDto, user.id);
     return { data: count };
   }
 
@@ -85,8 +88,9 @@ export class InventoryController {
   async deleteCount(
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
   ) {
-    await this.inventoryService.deleteCount(eventId, id);
+    await this.inventoryService.deleteCount(eventId, id, user.id);
     return { data: { success: true } };
   }
 
@@ -94,8 +98,9 @@ export class InventoryController {
   async startCount(
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
   ) {
-    const count = await this.inventoryService.startCount(eventId, id);
+    const count = await this.inventoryService.startCount(eventId, id, user.id);
     return { data: count };
   }
 
@@ -113,8 +118,9 @@ export class InventoryController {
   async cancelCount(
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
   ) {
-    const count = await this.inventoryService.cancelCount(eventId, id);
+    const count = await this.inventoryService.cancelCount(eventId, id, user.id);
     return { data: count };
   }
 
@@ -125,8 +131,9 @@ export class InventoryController {
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Param('id', ParseUUIDPipe) countId: string,
     @Body() addDto: AddInventoryItemDto,
+    @CurrentUser() user: User,
   ) {
-    const item = await this.inventoryService.addItem(eventId, countId, addDto);
+    const item = await this.inventoryService.addItem(eventId, countId, addDto, user.id);
     return { data: item };
   }
 
@@ -135,8 +142,9 @@ export class InventoryController {
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Param('id', ParseUUIDPipe) countId: string,
     @Body() bulkDto: BulkAddInventoryItemsDto,
+    @CurrentUser() user: User,
   ) {
-    const items = await this.inventoryService.bulkAddItems(eventId, countId, bulkDto);
+    const items = await this.inventoryService.bulkAddItems(eventId, countId, bulkDto, user.id);
     return { data: items };
   }
 
@@ -164,8 +172,9 @@ export class InventoryController {
   async findAllMovements(
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Query() queryDto: QueryStockMovementsDto,
+    @CurrentUser() user: User,
   ) {
-    const result = await this.inventoryService.findAllMovements(eventId, queryDto);
+    const result = await this.inventoryService.findAllMovements(eventId, queryDto, user.id);
     return {
       data: result.data,
       meta: {
@@ -181,8 +190,9 @@ export class InventoryController {
   async findOneMovement(
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
   ) {
-    const movement = await this.inventoryService.findOneMovement(eventId, id);
+    const movement = await this.inventoryService.findOneMovement(eventId, id, user.id);
     return { data: movement };
   }
 }

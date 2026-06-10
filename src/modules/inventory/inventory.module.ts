@@ -5,6 +5,8 @@ import {
   InventoryCountItem,
   StockMovement,
   Product,
+  Event,
+  UserOrganization,
 } from '../../database/entities';
 import { InventoryController } from './inventory.controller';
 import { InventoryService } from './inventory.service';
@@ -16,6 +18,8 @@ import { InventoryService } from './inventory.service';
       InventoryCountItem,
       StockMovement,
       Product,
+      Event,
+      UserOrganization,
     ]),
   ],
   controllers: [InventoryController],
