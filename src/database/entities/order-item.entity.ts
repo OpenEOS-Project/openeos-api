@@ -90,6 +90,18 @@ export class OrderItem extends BaseEntity {
   @Column({ name: 'production_station_id', type: 'uuid', nullable: true })
   productionStationId: string | null;
 
+  /** Deposit ("Pfand") type applied to this line, snapshot from the product. */
+  @Column({ name: 'pfand_type_id', type: 'uuid', nullable: true })
+  pfandTypeId: string | null;
+
+  /** Deposit charged per unit (snapshot). 0 when no Pfand or when refilling. */
+  @Column({ name: 'deposit_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  depositAmount: number;
+
+  /** True = "Nachfüllen": guest reuses their cup, so no new deposit is charged. */
+  @Column({ name: 'is_refill', type: 'boolean', default: false })
+  isRefill: boolean;
+
   // Relations
   @ManyToOne(() => Order, (order) => order.items, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'order_id' })

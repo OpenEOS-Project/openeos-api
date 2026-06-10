@@ -10,6 +10,7 @@ import {
   StockMovement,
   Event,
   ProductionStation,
+  Organization,
 } from '../../database/entities';
 import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 import { GatewayModule } from '../gateway/gateway.module';
@@ -24,6 +25,7 @@ import { GatewayModule } from '../gateway/gateway.module';
       StockMovement,
       Event,
       ProductionStation,
+      Organization,
     ]),
     PrintJobsModule,
     forwardRef(() => GatewayModule),

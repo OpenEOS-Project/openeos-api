@@ -7,6 +7,7 @@ import {
   Product,
   Category,
   StockMovement,
+  PfandReturn,
 } from '../../database/entities';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
@@ -20,6 +21,7 @@ import { ReportsService } from './reports.service';
       Product,
       Category,
       StockMovement,
+      PfandReturn,
     ]),
   ],
   controllers: [ReportsController],

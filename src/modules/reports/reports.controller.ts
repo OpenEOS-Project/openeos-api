@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  Query,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { ReportsService } from './reports.service';
@@ -14,7 +8,6 @@ import { CurrentOrganization } from '../../common/decorators/current-organizatio
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { OrganizationGuard } from '../../common/guards/organization.guard';
 import { Role } from '../../common/constants/roles.enum';
-import type { Organization } from '../../database/entities';
 
 @ApiTags('Reports')
 @ApiBearerAuth('JWT-auth')
@@ -26,70 +19,85 @@ export class ReportsController {
   @Get('sales')
   @Roles(Role.ADMIN)
   async getSalesReport(
-    @CurrentOrganization() organization: Organization,
+    @CurrentOrganization() organizationId: string,
     @Query() queryDto: QueryReportsDto,
   ) {
-    const report = await this.reportsService.getSalesReport(organization.id, queryDto);
+    const report = await this.reportsService.getSalesReport(
+      organizationId,
+      queryDto,
+    );
     return { data: report };
   }
 
   @Get('products')
   @Roles(Role.ADMIN)
   async getProductsReport(
-    @CurrentOrganization() organization: Organization,
+    @CurrentOrganization() organizationId: string,
     @Query() queryDto: QueryReportsDto,
   ) {
-    const report = await this.reportsService.getProductsReport(organization.id, queryDto);
+    const report = await this.reportsService.getProductsReport(
+      organizationId,
+      queryDto,
+    );
     return { data: report };
   }
 
   @Get('payments')
   @Roles(Role.ADMIN)
   async getPaymentsReport(
-    @CurrentOrganization() organization: Organization,
+    @CurrentOrganization() organizationId: string,
     @Query() queryDto: QueryReportsDto,
   ) {
-    const report = await this.reportsService.getPaymentsReport(organization.id, queryDto);
+    const report = await this.reportsService.getPaymentsReport(
+      organizationId,
+      queryDto,
+    );
     return { data: report };
   }
 
   @Get('hourly')
   @Roles(Role.ADMIN)
   async getHourlyReport(
-    @CurrentOrganization() organization: Organization,
+    @CurrentOrganization() organizationId: string,
     @Query() queryDto: QueryReportsDto,
   ) {
-    const report = await this.reportsService.getHourlyReport(organization.id, queryDto);
+    const report = await this.reportsService.getHourlyReport(
+      organizationId,
+      queryDto,
+    );
     return { data: report };
   }
 
   @Get('inventory')
   @Roles(Role.ADMIN)
-  async getInventoryReport(@CurrentOrganization() organization: Organization) {
-    const report = await this.reportsService.getInventoryReport(organization.id);
+  async getInventoryReport(@CurrentOrganization() organizationId: string) {
+    const report = await this.reportsService.getInventoryReport(organizationId);
     return { data: report };
   }
 
   @Get('stock-movements')
   @Roles(Role.ADMIN)
   async getStockMovementsReport(
-    @CurrentOrganization() organization: Organization,
+    @CurrentOrganization() organizationId: string,
     @Query() queryDto: QueryReportsDto,
   ) {
-    const report = await this.reportsService.getStockMovementsReport(organization.id, queryDto);
+    const report = await this.reportsService.getStockMovementsReport(
+      organizationId,
+      queryDto,
+    );
     return { data: report };
   }
 
   @Get('export')
   @Roles(Role.ADMIN)
   async exportReport(
-    @CurrentOrganization() organization: Organization,
+    @CurrentOrganization() organizationId: string,
     @Query() exportDto: ExportReportsDto,
     @Query('type') reportType: string,
     @Res() res: unknown,
   ) {
     const result = await this.reportsService.exportReport(
-      organization.id,
+      organizationId,
       reportType || 'sales',
       exportDto,
       exportDto.format || ReportExportFormat.JSON,
@@ -97,7 +105,10 @@ export class ReportsController {
 
     const response = res as Response;
     response.setHeader('Content-Type', result.contentType);
-    response.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${result.filename}"`,
+    );
     response.send(result.data);
   }
 }

@@ -26,6 +26,8 @@ import {
 } from '../../database/entities';
 import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 import { OrdersModule } from '../orders/orders.module';
+import { DiscountVouchersModule } from '../discount-vouchers';
+import { PfandTypesModule } from '../pfand-types';
 
 @Module({
   imports: [
@@ -49,8 +51,15 @@ import { OrdersModule } from '../orders/orders.module';
     forwardRef(() => PrintJobsModule),
     forwardRef(() => OrdersModule),
     SumUpModule,
+    DiscountVouchersModule,
+    PfandTypesModule,
   ],
-  controllers: [DevicesController, DevicesPublicController, DevicesLinkController, DeviceApiController],
+  controllers: [
+    DevicesController,
+    DevicesPublicController,
+    DevicesLinkController,
+    DeviceApiController,
+  ],
   providers: [DevicesService, DeviceAuthGuard],
   exports: [DevicesService, DeviceAuthGuard],
 })

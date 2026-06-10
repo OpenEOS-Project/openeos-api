@@ -8,6 +8,7 @@ import {
   Product,
   Category,
   StockMovement,
+  PfandReturn,
 } from '../../database/entities';
 import { OrderStatus } from '../../database/entities/order.entity';
 import { QueryReportsDto, ReportGroupBy, ReportExportFormat } from './dto';
@@ -17,6 +18,12 @@ export interface SalesReport {
   totalOrders: number;
   averageOrderValue: number;
   totalItemsSold: number;
+  /** Deposits (Pfand) collected with sales — pass-through, not revenue. */
+  pfandCollected: number;
+  /** Deposits paid back to guests on return. */
+  pfandReturned: number;
+  /** pfandCollected − pfandReturned (deposits still out in the wild). */
+  pfandBalance: number;
 }
 
 export interface ProductReport {
@@ -67,6 +74,8 @@ export class ReportsService {
     private readonly categoryRepository: Repository<Category>,
     @InjectRepository(StockMovement)
     private readonly stockMovementRepository: Repository<StockMovement>,
+    @InjectRepository(PfandReturn)
+    private readonly pfandReturnRepository: Repository<PfandReturn>,
   ) {}
 
   async getSalesReport(
@@ -103,11 +112,44 @@ export class ReportsService {
 
     const result = await queryBuilder
       .select([
-        'SUM(order.total) as totalRevenue',
-        'COUNT(order.id) as totalOrders',
-        'AVG(order.total) as averageOrderValue',
+        // Revenue excludes Pfand (deposits are a pass-through, not turnover).
+        // Aliases are quoted so Postgres preserves their camelCase.
+        'SUM(order.total - order.pfandTotal) as "totalRevenue"',
+        'COUNT(order.id) as "totalOrders"',
+        'AVG(order.total - order.pfandTotal) as "averageOrderValue"',
+        'SUM(order.pfandTotal) as "pfandCollected"',
       ])
-      .getRawOne();
+      .getRawOne<{
+        totalRevenue: string | null;
+        totalOrders: string | null;
+        averageOrderValue: string | null;
+        pfandCollected: string | null;
+      }>();
+
+    // Deposits paid back to guests (separate ledger), same time/event filter.
+    const returnsQb = this.pfandReturnRepository
+      .createQueryBuilder('ret')
+      .where('ret.organizationId = :organizationId', { organizationId });
+    if (eventId) {
+      returnsQb.andWhere('ret.eventId = :eventId', { eventId });
+    }
+    if (startDate && endDate) {
+      returnsQb.andWhere('ret.createdAt BETWEEN :startDate AND :endDate', {
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+      });
+    } else if (startDate) {
+      returnsQb.andWhere('ret.createdAt >= :startDate', {
+        startDate: new Date(startDate),
+      });
+    } else if (endDate) {
+      returnsQb.andWhere('ret.createdAt <= :endDate', {
+        endDate: new Date(endDate),
+      });
+    }
+    const returnsResult = await returnsQb
+      .select('SUM(ret.totalAmount)', 'pfandReturned')
+      .getRawOne<{ pfandReturned: string | null }>();
 
     // Get total items sold
     const itemsQueryBuilder = this.orderItemRepository
@@ -123,21 +165,30 @@ export class ReportsService {
     }
 
     if (startDate && endDate) {
-      itemsQueryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-      });
+      itemsQueryBuilder.andWhere(
+        'order.createdAt BETWEEN :startDate AND :endDate',
+        {
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+        },
+      );
     }
 
     const itemsResult = await itemsQueryBuilder
       .select('SUM(item.quantity)', 'totalItems')
       .getRawOne();
 
+    const pfandCollected = Number(result?.pfandCollected || 0);
+    const pfandReturned = Number(returnsResult?.pfandReturned || 0);
+
     return {
       totalRevenue: Number(result?.totalRevenue || 0),
       totalOrders: Number(result?.totalOrders || 0),
       averageOrderValue: Number(result?.averageOrderValue || 0),
       totalItemsSold: Number(itemsResult?.totalItems || 0),
+      pfandCollected,
+      pfandReturned,
+      pfandBalance: pfandCollected - pfandReturned,
     };
   }
 
@@ -207,10 +258,13 @@ export class ReportsService {
     }
 
     if (startDate && endDate) {
-      queryBuilder.andWhere('payment.createdAt BETWEEN :startDate AND :endDate', {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-      });
+      queryBuilder.andWhere(
+        'payment.createdAt BETWEEN :startDate AND :endDate',
+        {
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+        },
+      );
     }
 
     const results = await queryBuilder
@@ -222,13 +276,17 @@ export class ReportsService {
       .groupBy('payment.method')
       .getRawMany();
 
-    const grandTotal = results.reduce((sum, r) => sum + Number(r.total || 0), 0);
+    const grandTotal = results.reduce(
+      (sum, r) => sum + Number(r.total || 0),
+      0,
+    );
 
     return results.map((r) => ({
       method: r.method,
       count: Number(r.count || 0),
       total: Number(r.total || 0),
-      percentage: grandTotal > 0 ? (Number(r.total || 0) / grandTotal) * 100 : 0,
+      percentage:
+        grandTotal > 0 ? (Number(r.total || 0) / grandTotal) * 100 : 0,
     }));
   }
 
@@ -280,9 +338,14 @@ export class ReportsService {
     return hourlyData;
   }
 
-  async getInventoryReport(
-    eventId: string,
-  ): Promise<{ productId: string; productName: string; currentStock: number; lowStock: boolean }[]> {
+  async getInventoryReport(eventId: string): Promise<
+    {
+      productId: string;
+      productName: string;
+      currentStock: number;
+      lowStock: boolean;
+    }[]
+  > {
     const products = await this.productRepository.find({
       where: { eventId, trackInventory: true },
       order: { name: 'ASC' },
@@ -308,10 +371,13 @@ export class ReportsService {
       .where('movement.eventId = :eventId', { eventId });
 
     if (startDate && endDate) {
-      queryBuilder.andWhere('movement.createdAt BETWEEN :startDate AND :endDate', {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-      });
+      queryBuilder.andWhere(
+        'movement.createdAt BETWEEN :startDate AND :endDate',
+        {
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+        },
+      );
     }
 
     const results = await queryBuilder
@@ -355,7 +421,7 @@ export class ReportsService {
     format: ReportExportFormat,
   ): Promise<{ data: string; contentType: string; filename: string }> {
     let reportData: unknown[];
-    let filename = `report-${reportType}-${new Date().toISOString().slice(0, 10)}`;
+    const filename = `report-${reportType}-${new Date().toISOString().slice(0, 10)}`;
 
     switch (reportType) {
       case 'sales':
@@ -411,13 +477,15 @@ export class ReportsService {
 
     const headers = Object.keys(data[0] as Record<string, unknown>);
     const rows = data.map((row) =>
-      headers.map((h) => {
-        const val = (row as Record<string, unknown>)[h];
-        if (typeof val === 'string' && val.includes(',')) {
-          return `"${val}"`;
-        }
-        return String(val ?? '');
-      }).join(',')
+      headers
+        .map((h) => {
+          const val = (row as Record<string, unknown>)[h];
+          if (typeof val === 'string' && val.includes(',')) {
+            return `"${val}"`;
+          }
+          return String(val ?? '');
+        })
+        .join(','),
     );
 
     return [headers.join(','), ...rows].join('\n');

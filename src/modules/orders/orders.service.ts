@@ -18,14 +18,24 @@ import {
   StockMovement,
   Event,
   ProductionStation,
+  Organization,
 } from '../../database/entities';
-import { OrderStatus, PaymentStatus, OrderSource, OrderFulfillmentType } from '../../database/entities/order.entity';
+import { isPfandChargedForFulfillment } from '../../common/utils/pfand-policy';
+import {
+  OrderStatus,
+  PaymentStatus,
+  OrderSource,
+  OrderFulfillmentType,
+} from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import { EventStatus } from '../../database/entities/event.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
+import {
+  PaginatedResult,
+  createPaginatedResult,
+} from '../../common/dto/pagination.dto';
 import {
   CreateOrderDto,
   UpdateOrderDto,
@@ -49,6 +59,8 @@ export class OrdersService {
     private readonly orderItemRepository: Repository<OrderItem>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    @InjectRepository(Organization)
+    private readonly organizationRepository: Repository<Organization>,
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     @InjectRepository(StockMovement)
@@ -83,7 +95,10 @@ export class OrdersService {
         });
       }
 
-      if (event.status !== EventStatus.ACTIVE && event.status !== EventStatus.TEST) {
+      if (
+        event.status !== EventStatus.ACTIVE &&
+        event.status !== EventStatus.TEST
+      ) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
           message: 'Event ist nicht aktiv',
@@ -93,7 +108,10 @@ export class OrdersService {
 
     // Generate order number
     const orderNumber = await this.generateOrderNumber(organizationId);
-    const dailyNumber = await this.getDailyNumber(organizationId, createDto.eventId || null);
+    const dailyNumber = await this.getDailyNumber(
+      organizationId,
+      createDto.eventId || null,
+    );
 
     const order = this.orderRepository.create({
       organizationId,
@@ -106,7 +124,10 @@ export class OrdersService {
       notes: createDto.notes || null,
       priority: createDto.priority || undefined,
       source: createDto.source || OrderSource.POS,
-      fulfillmentType: createDto.fulfillmentType || OrderFulfillmentType.COUNTER_PICKUP,
+      fulfillmentType:
+        createDto.fulfillmentType || OrderFulfillmentType.COUNTER_PICKUP,
+      discountAmount: createDto.discountAmount || 0,
+      discountReason: createDto.discountReason || null,
       createdByUserId: user.id,
       status: OrderStatus.OPEN,
       paymentStatus: PaymentStatus.UNPAID,
@@ -116,8 +137,9 @@ export class OrdersService {
 
     // Add items if provided
     if (createDto.items && createDto.items.length > 0) {
+      const chargePfand = await this.shouldChargePfand(order);
       for (const itemDto of createDto.items) {
-        await this.addItemToOrder(order, itemDto, user);
+        await this.addItemToOrder(order, itemDto, user, chargePfand);
       }
 
       // Recalculate totals
@@ -128,20 +150,27 @@ export class OrdersService {
 
     // Trigger auto-printing asynchronously
     const createdOrder = await this.findOne(organizationId, order.id, user);
-    this.orderPrintService.handleOrderCreated(organizationId, {
-      order: createdOrder,
-      orderId: createdOrder.id,
-      orderNumber: createdOrder.orderNumber,
-      tableNumber: createdOrder.tableNumber,
-      total: createdOrder.total,
-      source: createdOrder.source,
-    }).catch((error) => {
-      this.logger.error(`Failed to trigger auto-printing for order ${order.id}: ${error.message}`);
-    });
+    this.orderPrintService
+      .handleOrderCreated(organizationId, {
+        order: createdOrder,
+        orderId: createdOrder.id,
+        orderNumber: createdOrder.orderNumber,
+        tableNumber: createdOrder.tableNumber,
+        total: createdOrder.total,
+        source: createdOrder.source,
+      })
+      .catch((error) => {
+        this.logger.error(
+          `Failed to trigger auto-printing for order ${order.id}: ${error.message}`,
+        );
+      });
 
     // Print station tickets for new order items
     if (createdOrder.items && createdOrder.items.length > 0) {
-      const itemsByStation = new Map<string | null, typeof createdOrder.items>();
+      const itemsByStation = new Map<
+        string | null,
+        typeof createdOrder.items
+      >();
       for (const item of createdOrder.items) {
         const key = item.productionStationId || null;
         if (!itemsByStation.has(key)) itemsByStation.set(key, []);
@@ -150,7 +179,9 @@ export class OrdersService {
 
       for (const [stationId, items] of itemsByStation) {
         if (stationId) {
-          const station = await this.productionStationRepository.findOne({ where: { id: stationId } });
+          const station = await this.productionStationRepository.findOne({
+            where: { id: stationId },
+          });
           if (station && station.printerId) {
             this.printToStation(organizationId, station, createdOrder, items);
           }
@@ -176,7 +207,9 @@ export class OrdersService {
       .where('ord.organizationId = :organizationId', { organizationId });
 
     if (query.eventId) {
-      queryBuilder.andWhere('ord.eventId = :eventId', { eventId: query.eventId });
+      queryBuilder.andWhere('ord.eventId = :eventId', {
+        eventId: query.eventId,
+      });
     }
 
     if (query.status) {
@@ -184,7 +217,9 @@ export class OrdersService {
     }
 
     if (query.paymentStatus) {
-      queryBuilder.andWhere('ord.paymentStatus = :paymentStatus', { paymentStatus: query.paymentStatus });
+      queryBuilder.andWhere('ord.paymentStatus = :paymentStatus', {
+        paymentStatus: query.paymentStatus,
+      });
     }
 
     if (query.source) {
@@ -192,32 +227,39 @@ export class OrdersService {
     }
 
     if (query.fulfillmentType) {
-      queryBuilder.andWhere('ord.fulfillmentType = :fulfillmentType', { fulfillmentType: query.fulfillmentType });
+      queryBuilder.andWhere('ord.fulfillmentType = :fulfillmentType', {
+        fulfillmentType: query.fulfillmentType,
+      });
     }
 
     if (query.dateFrom) {
-      queryBuilder.andWhere('ord.createdAt >= :dateFrom', { dateFrom: query.dateFrom });
+      queryBuilder.andWhere('ord.createdAt >= :dateFrom', {
+        dateFrom: query.dateFrom,
+      });
     }
 
     if (query.dateTo) {
-      queryBuilder.andWhere('ord.createdAt <= :dateTo', { dateTo: query.dateTo });
+      queryBuilder.andWhere('ord.createdAt <= :dateTo', {
+        dateTo: query.dateTo,
+      });
     }
 
     if (query.includeItems) {
       queryBuilder.leftJoinAndSelect('ord.items', 'items');
     }
 
-    queryBuilder
-      .orderBy('ord.createdAt', 'DESC')
-      .skip(skip)
-      .take(limit);
+    queryBuilder.orderBy('ord.createdAt', 'DESC').skip(skip).take(limit);
 
     const [items, total] = await queryBuilder.getManyAndCount();
 
     return createPaginatedResult(items, total, page, limit);
   }
 
-  async findOne(organizationId: string, orderId: string, user: User): Promise<Order> {
+  async findOne(
+    organizationId: string,
+    orderId: string,
+    user: User,
+  ): Promise<Order> {
     await this.checkMembership(organizationId, user.id);
 
     const order = await this.orderRepository.findOne({
@@ -245,10 +287,14 @@ export class OrdersService {
 
     const order = await this.findOne(organizationId, orderId, user);
 
-    if (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.CANCELLED) {
+    if (
+      order.status === OrderStatus.COMPLETED ||
+      order.status === OrderStatus.CANCELLED
+    ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
+        message:
+          'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
       });
     }
 
@@ -256,7 +302,10 @@ export class OrdersService {
     await this.orderRepository.save(order);
 
     // Recalculate totals if discount changed
-    if (updateDto.discountAmount !== undefined || updateDto.tipAmount !== undefined) {
+    if (
+      updateDto.discountAmount !== undefined ||
+      updateDto.tipAmount !== undefined
+    ) {
       await this.recalculateOrderTotals(order.id);
     }
 
@@ -265,7 +314,11 @@ export class OrdersService {
     return this.findOne(organizationId, orderId, user);
   }
 
-  async remove(organizationId: string, orderId: string, user: User): Promise<void> {
+  async remove(
+    organizationId: string,
+    orderId: string,
+    user: User,
+  ): Promise<void> {
     await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
@@ -298,14 +351,19 @@ export class OrdersService {
 
     const order = await this.findOne(organizationId, orderId, user);
 
-    if (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.CANCELLED) {
+    if (
+      order.status === OrderStatus.COMPLETED ||
+      order.status === OrderStatus.CANCELLED
+    ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
+        message:
+          'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
       });
     }
 
-    await this.addItemToOrder(order, itemDto, user);
+    const chargePfand = await this.shouldChargePfand(order);
+    await this.addItemToOrder(order, itemDto, user, chargePfand);
     await this.recalculateOrderTotals(order.id);
     await this.updateOrderStatus(order.id);
 
@@ -325,14 +383,18 @@ export class OrdersService {
 
     const order = await this.findOne(organizationId, orderId, user);
 
-    if (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.CANCELLED) {
+    if (
+      order.status === OrderStatus.COMPLETED ||
+      order.status === OrderStatus.CANCELLED
+    ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
+        message:
+          'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
       });
     }
 
-    const item = order.items.find(i => i.id === itemId);
+    const item = order.items.find((i) => i.id === itemId);
     if (!item) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
@@ -375,7 +437,9 @@ export class OrdersService {
             -quantityDiff,
             previousQuantity,
             product.stockQuantity,
-            quantityDiff > 0 ? StockMovementType.SALE : StockMovementType.SALE_CANCELLED,
+            quantityDiff > 0
+              ? StockMovementType.SALE
+              : StockMovementType.SALE_CANCELLED,
             'order',
             order.id,
             'Bestellungsänderung',
@@ -383,24 +447,31 @@ export class OrdersService {
           );
 
           // Notify POS terminals about stock change
-          const event = await this.eventRepository.findOne({ where: { id: order.eventId! } });
+          const event = await this.eventRepository.findOne({
+            where: { id: order.eventId! },
+          });
           if (event) {
-            this.gatewayService.notifyProductUpdated(event.organizationId, event.id, {
-              id: product.id,
-              name: product.name,
-              categoryId: product.categoryId,
-              price: Number(product.price),
-              isAvailable: product.isAvailable,
-              isActive: product.isActive,
-              stockQuantity: product.stockQuantity,
-              trackInventory: product.trackInventory,
-            });
+            this.gatewayService.notifyProductUpdated(
+              event.organizationId,
+              event.id,
+              {
+                id: product.id,
+                name: product.name,
+                categoryId: product.categoryId,
+                price: Number(product.price),
+                isAvailable: product.isAvailable,
+                isActive: product.isActive,
+                stockQuantity: product.stockQuantity,
+                trackInventory: product.trackInventory,
+              },
+            );
           }
         }
       }
 
       item.quantity = updateDto.quantity;
-      item.totalPrice = Number(item.unitPrice) * updateDto.quantity + Number(item.optionsPrice);
+      item.totalPrice =
+        Number(item.unitPrice) * updateDto.quantity + Number(item.optionsPrice);
     }
 
     if (updateDto.notes !== undefined) {
@@ -429,14 +500,18 @@ export class OrdersService {
 
     const order = await this.findOne(organizationId, orderId, user);
 
-    if (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.CANCELLED) {
+    if (
+      order.status === OrderStatus.COMPLETED ||
+      order.status === OrderStatus.CANCELLED
+    ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
+        message:
+          'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
       });
     }
 
-    const item = order.items.find(i => i.id === itemId);
+    const item = order.items.find((i) => i.id === itemId);
     if (!item) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
@@ -474,7 +549,7 @@ export class OrdersService {
     await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
-    const item = order.items.find(i => i.id === itemId);
+    const item = order.items.find((i) => i.id === itemId);
 
     if (!item) {
       throw new NotFoundException({
@@ -493,7 +568,10 @@ export class OrdersService {
     return this.processItemReady(organizationId, order, item);
   }
 
-  async markItemReadyFromDevice(organizationId: string, itemId: string): Promise<Order> {
+  async markItemReadyFromDevice(
+    organizationId: string,
+    itemId: string,
+  ): Promise<Order> {
     const item = await this.orderItemRepository.findOne({
       where: { id: itemId },
       relations: ['order'],
@@ -544,7 +622,7 @@ export class OrdersService {
     await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
-    const item = order.items.find(i => i.id === itemId);
+    const item = order.items.find((i) => i.id === itemId);
 
     if (!item) {
       throw new NotFoundException({
@@ -558,12 +636,18 @@ export class OrdersService {
     await this.orderItemRepository.save(item);
     await this.updateOrderStatus(order.id);
 
-    this.logger.log(`Item marked delivered: ${item.id} in order ${order.orderNumber}`);
+    this.logger.log(
+      `Item marked delivered: ${item.id} in order ${order.orderNumber}`,
+    );
 
     // Check if all items are delivered (collected)
     const updatedOrder = await this.findOne(organizationId, orderId, user);
-    const activeItems = updatedOrder.items.filter(i => i.status !== OrderItemStatus.CANCELLED);
-    const allDelivered = activeItems.length > 0 && activeItems.every(i => i.status === OrderItemStatus.DELIVERED);
+    const activeItems = updatedOrder.items.filter(
+      (i) => i.status !== OrderItemStatus.CANCELLED,
+    );
+    const allDelivered =
+      activeItems.length > 0 &&
+      activeItems.every((i) => i.status === OrderItemStatus.DELIVERED);
 
     if (allDelivered) {
       // Auto-complete if all delivered and fully paid
@@ -675,14 +759,35 @@ export class OrdersService {
 
   // Private helper methods
 
+  /** Whether deposits apply to this order, per the org's fulfillment-type policy. */
+  private async shouldChargePfand(order: Order): Promise<boolean> {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: order.organizationId },
+    });
+    return isPfandChargedForFulfillment(
+      order.fulfillmentType,
+      organization?.settings,
+    );
+  }
+
   private async addItemToOrder(
     order: Order,
-    itemDto: AddOrderItemDto | { productId: string; quantity: number; notes?: string; kitchenNotes?: string; selectedOptions?: any[] },
+    itemDto:
+      | AddOrderItemDto
+      | {
+          productId: string;
+          quantity: number;
+          notes?: string;
+          kitchenNotes?: string;
+          selectedOptions?: any[];
+          isRefill?: boolean;
+        },
     user: User,
+    chargePfand = true,
   ): Promise<OrderItem> {
     const product = await this.productRepository.findOne({
       where: { id: itemDto.productId, eventId: order.eventId! },
-      relations: ['category'],
+      relations: ['category', 'pfandType'],
     });
 
     if (!product) {
@@ -717,13 +822,25 @@ export class OrdersService {
     const unitPrice = Number(product.price);
     const totalPrice = (unitPrice + optionsPrice) * itemDto.quantity;
 
+    // Resolve deposit (Pfand): charged per unit unless this is a refill or the
+    // order's fulfillment type is exempt (e.g. table service).
+    const isRefill = itemDto.isRefill === true;
+    const depositAmount =
+      chargePfand && !isRefill && product.pfandType
+        ? Number(product.pfandType.amount)
+        : 0;
+    const pfandTypeId = depositAmount > 0 ? product.pfandTypeId : null;
+
     // Determine the next sort order
     const existingItems = await this.orderItemRepository.count({
       where: { orderId: order.id },
     });
 
     // Resolve production station: product overrides category
-    const productionStationId = product.productionStationId || product.category?.productionStationId || null;
+    const productionStationId =
+      product.productionStationId ||
+      product.category?.productionStationId ||
+      null;
 
     const item = this.orderItemRepository.create({
       orderId: order.id,
@@ -742,6 +859,9 @@ export class OrdersService {
       status: OrderItemStatus.PENDING,
       sortOrder: existingItems,
       productionStationId,
+      pfandTypeId,
+      depositAmount,
+      isRefill,
     });
 
     await this.orderItemRepository.save(item);
@@ -766,25 +886,34 @@ export class OrdersService {
       );
 
       // Notify POS terminals about stock change
-      const event = await this.eventRepository.findOne({ where: { id: order.eventId! } });
+      const event = await this.eventRepository.findOne({
+        where: { id: order.eventId! },
+      });
       if (event) {
-        this.gatewayService.notifyProductUpdated(event.organizationId, event.id, {
-          id: product.id,
-          name: product.name,
-          categoryId: product.categoryId,
-          price: Number(product.price),
-          isAvailable: product.isAvailable,
-          isActive: product.isActive,
-          stockQuantity: product.stockQuantity,
-          trackInventory: product.trackInventory,
-        });
+        this.gatewayService.notifyProductUpdated(
+          event.organizationId,
+          event.id,
+          {
+            id: product.id,
+            name: product.name,
+            categoryId: product.categoryId,
+            price: Number(product.price),
+            isAvailable: product.isAvailable,
+            isActive: product.isActive,
+            stockQuantity: product.stockQuantity,
+            trackInventory: product.trackInventory,
+          },
+        );
       }
     }
 
     return item;
   }
 
-  private async restoreStockForItem(item: OrderItem, userId: string): Promise<void> {
+  private async restoreStockForItem(
+    item: OrderItem,
+    userId: string,
+  ): Promise<void> {
     const product = await this.productRepository.findOne({
       where: { id: item.productId },
     });
@@ -813,18 +942,24 @@ export class OrdersService {
         );
 
         // Notify POS terminals about stock restoration
-        const event = await this.eventRepository.findOne({ where: { id: order.eventId! } });
+        const event = await this.eventRepository.findOne({
+          where: { id: order.eventId! },
+        });
         if (event) {
-          this.gatewayService.notifyProductUpdated(event.organizationId, event.id, {
-            id: product.id,
-            name: product.name,
-            categoryId: product.categoryId,
-            price: Number(product.price),
-            isAvailable: product.isAvailable,
-            isActive: product.isActive,
-            stockQuantity: product.stockQuantity,
-            trackInventory: product.trackInventory,
-          });
+          this.gatewayService.notifyProductUpdated(
+            event.organizationId,
+            event.id,
+            {
+              id: product.id,
+              name: product.name,
+              categoryId: product.categoryId,
+              price: Number(product.price),
+              isAvailable: product.isAvailable,
+              isActive: product.isActive,
+              stockQuantity: product.stockQuantity,
+              trackInventory: product.trackInventory,
+            },
+          );
         }
       }
     }
@@ -857,20 +992,29 @@ export class OrdersService {
     await this.stockMovementRepository.save(movement);
   }
 
-  private async processItemReady(organizationId: string, order: Order, item: OrderItem): Promise<Order> {
+  private async processItemReady(
+    organizationId: string,
+    order: Order,
+    item: OrderItem,
+  ): Promise<Order> {
     const previousStatus = item.status;
     item.status = OrderItemStatus.READY;
     item.readyAt = new Date();
     await this.orderItemRepository.save(item);
 
-    this.logger.log(`Item marked ready: ${item.id} in order ${order.orderNumber}`);
+    this.logger.log(
+      `Item marked ready: ${item.id} in order ${order.orderNumber}`,
+    );
 
     await this.updateOrderStatus(order.id);
 
     return this.reloadOrder(organizationId, order.id);
   }
 
-  private async reloadOrder(organizationId: string, orderId: string): Promise<Order> {
+  private async reloadOrder(
+    organizationId: string,
+    orderId: string,
+  ): Promise<Order> {
     const order = await this.orderRepository.findOne({
       where: { id: orderId, organizationId },
       relations: ['items', 'items.product', 'createdByUser', 'event'],
@@ -918,7 +1062,9 @@ export class OrdersService {
         },
       );
     } catch (err) {
-      this.logger.error(`Station printing failed for ${station.name}: ${err.message}`);
+      this.logger.error(
+        `Station printing failed for ${station.name}: ${err.message}`,
+      );
     }
   }
 
@@ -932,17 +1078,27 @@ export class OrdersService {
 
     let subtotal = 0;
     let taxTotal = 0;
+    let pfandTotal = 0;
 
     for (const item of order.items) {
       if (item.status !== OrderItemStatus.CANCELLED) {
         subtotal += Number(item.totalPrice);
         taxTotal += Number(item.totalPrice) * (Number(item.taxRate) / 100);
+        pfandTotal += Number(item.depositAmount) * item.quantity;
       }
     }
 
     order.subtotal = subtotal;
     order.taxTotal = taxTotal;
-    order.total = subtotal - Number(order.discountAmount) + Number(order.tipAmount);
+    order.pfandTotal = pfandTotal;
+
+    // Cap the discount at the subtotal so the order total can never go negative —
+    // any voucher value beyond the order amount is forfeited (not paid out).
+    // Pfand (deposit) is added on top and is tax-free (not part of subtotal/taxTotal).
+    const effectiveDiscount = Math.min(Number(order.discountAmount), subtotal);
+    order.discountAmount = effectiveDiscount;
+    order.total =
+      subtotal - effectiveDiscount + Number(order.tipAmount) + pfandTotal;
 
     await this.orderRepository.save(order);
   }
@@ -955,13 +1111,17 @@ export class OrdersService {
 
     if (!order) return;
 
-    const activeItems = order.items.filter(i => i.status !== OrderItemStatus.CANCELLED);
+    const activeItems = order.items.filter(
+      (i) => i.status !== OrderItemStatus.CANCELLED,
+    );
 
     if (activeItems.length === 0) {
       order.status = OrderStatus.OPEN;
-    } else if (activeItems.every(i => i.status === OrderItemStatus.DELIVERED)) {
+    } else if (
+      activeItems.every((i) => i.status === OrderItemStatus.DELIVERED)
+    ) {
       order.status = OrderStatus.READY;
-    } else if (activeItems.some(i => i.status !== OrderItemStatus.PENDING)) {
+    } else if (activeItems.some((i) => i.status !== OrderItemStatus.PENDING)) {
       order.status = OrderStatus.IN_PROGRESS;
     }
 
@@ -989,7 +1149,10 @@ export class OrdersService {
     return `${dateStr}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  private async getDailyNumber(organizationId: string, eventId: string | null): Promise<number> {
+  private async getDailyNumber(
+    organizationId: string,
+    eventId: string | null,
+  ): Promise<number> {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -1004,7 +1167,10 @@ export class OrdersService {
     return count + 1;
   }
 
-  private async checkMembership(organizationId: string, userId: string): Promise<void> {
+  private async checkMembership(
+    organizationId: string,
+    userId: string,
+  ): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });

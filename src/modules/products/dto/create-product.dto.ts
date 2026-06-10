@@ -87,4 +87,9 @@ export class CreateProductDto {
   @IsOptional()
   @IsUUID('4', { message: 'Ungültige Produktionsstandort-ID' })
   productionStationId?: string;
+
+  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID des Pfand-Typs (optional)' })
+  @IsOptional()
+  @IsUUID('4', { message: 'Ungültige Pfand-Typ-ID' })
+  pfandTypeId?: string | null;
 }

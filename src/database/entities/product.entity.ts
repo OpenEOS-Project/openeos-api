@@ -6,6 +6,7 @@ import { OrderItem } from './order-item.entity';
 import { StockMovement } from './stock-movement.entity';
 import { InventoryCountItem } from './inventory-count-item.entity';
 import { ProductionStation } from './production-station.entity';
+import { PfandType } from './pfand-type.entity';
 
 export interface ProductOption {
   name: string;
@@ -81,6 +82,10 @@ export class Product extends SoftDeleteEntity {
   @Column({ name: 'production_station_id', type: 'uuid', nullable: true })
   productionStationId: string | null;
 
+  /** Optional deposit ("Pfand") type charged on top of the price when sold. */
+  @Column({ name: 'pfand_type_id', type: 'uuid', nullable: true })
+  pfandTypeId: string | null;
+
   // Relations
   @ManyToOne(() => Event, (event) => event.products, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'event_id' })
@@ -93,6 +98,10 @@ export class Product extends SoftDeleteEntity {
   @ManyToOne(() => ProductionStation, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'production_station_id' })
   productionStation: ProductionStation | null;
+
+  @ManyToOne(() => PfandType, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'pfand_type_id' })
+  pfandType: PfandType | null;
 
   @OneToMany(() => OrderItem, (item) => item.product)
   orderItems: OrderItem[];

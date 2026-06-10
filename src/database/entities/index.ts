@@ -22,6 +22,13 @@ export * from './order-item.entity';
 export * from './payment.entity';
 export * from './order-item-payment.entity';
 
+// Discounts
+export * from './discount-voucher.entity';
+
+// Pfand (deposits)
+export * from './pfand-type.entity';
+export * from './pfand-return.entity';
+
 // Devices & Print
 export * from './device.entity';
 export * from './printer.entity';

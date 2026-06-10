@@ -97,6 +97,10 @@ export class Order extends BaseEntity {
   @Column({ name: 'discount_reason', type: 'varchar', length: 255, nullable: true })
   discountReason: string | null;
 
+  /** Total deposit ("Pfand") charged on this order. Part of `total`, excluded from revenue/tax. */
+  @Column({ name: 'pfand_total', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  pfandTotal: number;
+
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 

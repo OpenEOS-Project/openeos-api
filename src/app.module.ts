@@ -43,6 +43,8 @@ import { EmailModule } from './modules/email';
 import { ShiftsModule } from './modules/shifts';
 import { SumUpModule } from './modules/sumup';
 import { ProductionStationsModule } from './modules/production-stations/production-stations.module';
+import { DiscountVouchersModule } from './modules/discount-vouchers';
+import { PfandTypesModule } from './modules/pfand-types';
 
 @Module({
   imports: [
@@ -138,6 +140,8 @@ import { ProductionStationsModule } from './modules/production-stations/producti
     ShiftsModule,
     SumUpModule,
     ProductionStationsModule,
+    DiscountVouchersModule,
+    PfandTypesModule,
   ],
   controllers: [],
   providers: [

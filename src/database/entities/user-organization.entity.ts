@@ -14,6 +14,8 @@ export interface OrganizationPermissions {
   devices?: boolean;
   members?: boolean;
   shiftPlans?: boolean;
+  discounts?: boolean;
+  pfand?: boolean;
 }
 
 @Entity('user_organizations')
@@ -41,11 +43,15 @@ export class UserOrganization extends BaseEntity {
   pin: string | null;
 
   // Relations
-  @ManyToOne(() => User, (user) => user.userOrganizations, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, (user) => user.userOrganizations, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @ManyToOne(() => Organization, (org) => org.userOrganizations, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Organization, (org) => org.userOrganizations, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'organization_id' })
   organization: Organization;
 }

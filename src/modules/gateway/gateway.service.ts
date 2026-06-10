@@ -31,26 +31,53 @@ export class GatewayService {
 
   // Order Events
 
-  notifyOrderCreated(organizationId: string, eventId: string | null, order: OrderCreatedEvent['order']) {
+  notifyOrderCreated(
+    organizationId: string,
+    eventId: string | null,
+    order: OrderCreatedEvent['order'],
+  ) {
     const payload: OrderCreatedEvent = { order };
 
     this.logger.debug(`Emitting orderCreated for order ${order.id}`);
 
     if (eventId) {
-      this.appGateway.emitToEvent(organizationId, eventId, GatewayEvents.ORDER_CREATED, payload);
+      this.appGateway.emitToEvent(
+        organizationId,
+        eventId,
+        GatewayEvents.ORDER_CREATED,
+        payload,
+      );
     }
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.ORDER_CREATED, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.ORDER_CREATED,
+      payload,
+    );
   }
 
-  notifyOrderUpdated(organizationId: string, eventId: string | null, orderId: string, changes: Record<string, unknown>) {
+  notifyOrderUpdated(
+    organizationId: string,
+    eventId: string | null,
+    orderId: string,
+    changes: Record<string, unknown>,
+  ) {
     const payload: OrderUpdatedEvent = { orderId, changes };
 
     this.logger.debug(`Emitting orderUpdated for order ${orderId}`);
 
     if (eventId) {
-      this.appGateway.emitToEvent(organizationId, eventId, GatewayEvents.ORDER_UPDATED, payload);
+      this.appGateway.emitToEvent(
+        organizationId,
+        eventId,
+        GatewayEvents.ORDER_UPDATED,
+        payload,
+      );
     }
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.ORDER_UPDATED, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.ORDER_UPDATED,
+      payload,
+    );
   }
 
   notifyOrderItemStatusChanged(
@@ -60,12 +87,23 @@ export class GatewayService {
   ) {
     const payload: OrderItemStatusChangedEvent = data;
 
-    this.logger.debug(`Emitting orderItemStatusChanged for item ${data.itemId}`);
+    this.logger.debug(
+      `Emitting orderItemStatusChanged for item ${data.itemId}`,
+    );
 
     if (eventId) {
-      this.appGateway.emitToEvent(organizationId, eventId, GatewayEvents.ORDER_ITEM_STATUS_CHANGED, payload);
+      this.appGateway.emitToEvent(
+        organizationId,
+        eventId,
+        GatewayEvents.ORDER_ITEM_STATUS_CHANGED,
+        payload,
+      );
     }
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.ORDER_ITEM_STATUS_CHANGED, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.ORDER_ITEM_STATUS_CHANGED,
+      payload,
+    );
   }
 
   // Payment Events
@@ -80,27 +118,72 @@ export class GatewayService {
     this.logger.debug(`Emitting paymentReceived for order ${data.orderId}`);
 
     if (eventId) {
-      this.appGateway.emitToEvent(organizationId, eventId, GatewayEvents.PAYMENT_RECEIVED, payload);
+      this.appGateway.emitToEvent(
+        organizationId,
+        eventId,
+        GatewayEvents.PAYMENT_RECEIVED,
+        payload,
+      );
     }
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.PAYMENT_RECEIVED, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.PAYMENT_RECEIVED,
+      payload,
+    );
+  }
+
+  notifyPfandReturned(
+    organizationId: string,
+    eventId: string | null,
+    data: { pfandReturnId: string; totalAmount: number },
+  ) {
+    this.logger.debug(`Emitting pfandReturned ${data.pfandReturnId}`);
+
+    if (eventId) {
+      this.appGateway.emitToEvent(
+        organizationId,
+        eventId,
+        GatewayEvents.PFAND_RETURNED,
+        data,
+      );
+    }
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.PFAND_RETURNED,
+      data,
+    );
   }
 
   // Print Job Events
 
-  notifyPrintJobCreated(organizationId: string, data: Omit<PrintJobCreatedEvent, 'type'>) {
+  notifyPrintJobCreated(
+    organizationId: string,
+    data: Omit<PrintJobCreatedEvent, 'type'>,
+  ) {
     const payload: PrintJobCreatedEvent = data;
 
     this.logger.debug(`Emitting printJobCreated for job ${data.jobId}`);
 
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.PRINT_JOB_CREATED, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.PRINT_JOB_CREATED,
+      payload,
+    );
   }
 
-  notifyPrintJobStatusChanged(organizationId: string, data: Omit<PrintJobStatusChangedEvent, 'type'>) {
+  notifyPrintJobStatusChanged(
+    organizationId: string,
+    data: Omit<PrintJobStatusChangedEvent, 'type'>,
+  ) {
     const payload: PrintJobStatusChangedEvent = data;
 
     this.logger.debug(`Emitting printJobStatusChanged for job ${data.jobId}`);
 
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.PRINT_JOB_STATUS_CHANGED, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.PRINT_JOB_STATUS_CHANGED,
+      payload,
+    );
   }
 
   /**
@@ -111,20 +194,33 @@ export class GatewayService {
    * `templates` is a map from template type (`receipt`, `kitchen_ticket`,
    * `order_ticket`) to the rendered Jinja2 source string.
    */
-  pushTemplatesToAgents(organizationId: string, templates: Record<string, string>) {
+  pushTemplatesToAgents(
+    organizationId: string,
+    templates: Record<string, string>,
+  ) {
     this.logger.debug(
       `Pushing ${Object.keys(templates).length} template(s) to agents in org ${organizationId}`,
     );
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.TEMPLATE_UPDATE, {
-      templates,
-    });
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.TEMPLATE_UPDATE,
+      {
+        templates,
+      },
+    );
   }
 
   sendPrintJobToAgent(organizationId: string, data: PrinterJobEvent) {
-    this.logger.debug(`Sending print job ${data.jobId} to agent via organization ${organizationId}`);
+    this.logger.debug(
+      `Sending print job ${data.jobId} to agent via organization ${organizationId}`,
+    );
 
     // Send to all devices in the organization (the agent will filter by printerId)
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.PRINTER_JOB, data);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.PRINTER_JOB,
+      data,
+    );
   }
 
   /**
@@ -139,52 +235,93 @@ export class GatewayService {
 
   // Broadcast Messages
 
-  broadcastMessage(organizationId: string, data: Omit<BroadcastMessageEvent, 'id' | 'timestamp'>) {
+  broadcastMessage(
+    organizationId: string,
+    data: Omit<BroadcastMessageEvent, 'id' | 'timestamp'>,
+  ) {
     const payload: BroadcastMessageEvent = {
       ...data,
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
     };
 
-    this.logger.debug(`Broadcasting message to organization ${organizationId}: ${data.message}`);
+    this.logger.debug(
+      `Broadcasting message to organization ${organizationId}: ${data.message}`,
+    );
 
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.BROADCAST_MESSAGE, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.BROADCAST_MESSAGE,
+      payload,
+    );
 
     return payload;
   }
 
   // Menu Events (used by admin dashboard / POS)
 
-  notifyProductUpdated(organizationId: string, eventId: string, product: ProductUpdatedEvent['product']) {
+  notifyProductUpdated(
+    organizationId: string,
+    eventId: string,
+    product: ProductUpdatedEvent['product'],
+  ) {
     const payload: ProductUpdatedEvent = { product, eventId };
 
     this.logger.debug(`Emitting productUpdated for product ${product.id}`);
 
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.PRODUCT_UPDATED, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.PRODUCT_UPDATED,
+      payload,
+    );
   }
 
-  notifyProductDeleted(organizationId: string, eventId: string, productId: string) {
+  notifyProductDeleted(
+    organizationId: string,
+    eventId: string,
+    productId: string,
+  ) {
     const payload: ProductDeletedEvent = { productId, eventId };
 
     this.logger.debug(`Emitting productDeleted for product ${productId}`);
 
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.PRODUCT_DELETED, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.PRODUCT_DELETED,
+      payload,
+    );
   }
 
-  notifyCategoryUpdated(organizationId: string, eventId: string, category: CategoryUpdatedEvent['category']) {
+  notifyCategoryUpdated(
+    organizationId: string,
+    eventId: string,
+    category: CategoryUpdatedEvent['category'],
+  ) {
     const payload: CategoryUpdatedEvent = { category, eventId };
 
     this.logger.debug(`Emitting categoryUpdated for category ${category.id}`);
 
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.CATEGORY_UPDATED, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.CATEGORY_UPDATED,
+      payload,
+    );
   }
 
-  notifyCategoryDeleted(organizationId: string, eventId: string, categoryId: string) {
+  notifyCategoryDeleted(
+    organizationId: string,
+    eventId: string,
+    categoryId: string,
+  ) {
     const payload: CategoryDeletedEvent = { categoryId, eventId };
 
     this.logger.debug(`Emitting categoryDeleted for category ${categoryId}`);
 
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.CATEGORY_DELETED, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.CATEGORY_DELETED,
+      payload,
+    );
   }
 
   notifyMenuRefresh(organizationId: string, eventId: string, reason: string) {
@@ -192,43 +329,80 @@ export class GatewayService {
 
     this.logger.debug(`Emitting menuRefresh for event ${eventId}: ${reason}`);
 
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.MENU_REFRESH, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.MENU_REFRESH,
+      payload,
+    );
   }
 
   notifyEventStatusChanged(
     organizationId: string,
     payload: EventStatusChangedEvent,
   ) {
-    this.logger.debug(`Emitting eventStatusChanged for event ${payload.eventId}: ${payload.status}`);
+    this.logger.debug(
+      `Emitting eventStatusChanged for event ${payload.eventId}: ${payload.status}`,
+    );
 
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.EVENT_STATUS_CHANGED, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.EVENT_STATUS_CHANGED,
+      payload,
+    );
   }
 
   // Kitchen notifications (fallback for items without station)
 
-  notifyKitchenOrderCancelled(organizationId: string, orderId: string, orderNumber: string) {
+  notifyKitchenOrderCancelled(
+    organizationId: string,
+    orderId: string,
+    orderNumber: string,
+  ) {
     this.logger.debug(`Emitting kitchenOrderCancelled for order ${orderId}`);
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.KITCHEN_ORDER_CANCELLED, { orderId, orderNumber });
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.KITCHEN_ORDER_CANCELLED,
+      { orderId, orderNumber },
+    );
   }
 
   // Device Events
 
-  notifyDeviceSettingsUpdated(organizationId: string, deviceId: string, settings: Record<string, unknown>) {
+  notifyDeviceSettingsUpdated(
+    organizationId: string,
+    deviceId: string,
+    settings: Record<string, unknown>,
+  ) {
     const payload: DeviceSettingsUpdatedEvent = { deviceId, settings };
 
     this.logger.debug(`Emitting deviceSettingsUpdated for device ${deviceId}`);
 
     // Send only to the specific device
-    this.appGateway.emitToDevice(organizationId, deviceId, GatewayEvents.DEVICE_SETTINGS_UPDATED, payload);
+    this.appGateway.emitToDevice(
+      organizationId,
+      deviceId,
+      GatewayEvents.DEVICE_SETTINGS_UPDATED,
+      payload,
+    );
   }
 
-  notifyDeviceConfigUpdated(organizationId: string, deviceId: string, name?: string, type?: string) {
+  notifyDeviceConfigUpdated(
+    organizationId: string,
+    deviceId: string,
+    name?: string,
+    type?: string,
+  ) {
     const payload: DeviceConfigUpdatedEvent = { deviceId, name, type };
 
     this.logger.debug(`Emitting deviceConfigUpdated for device ${deviceId}`);
 
     // Send only to the specific device
-    this.appGateway.emitToDevice(organizationId, deviceId, GatewayEvents.DEVICE_CONFIG_UPDATED, payload);
+    this.appGateway.emitToDevice(
+      organizationId,
+      deviceId,
+      GatewayEvents.DEVICE_CONFIG_UPDATED,
+      payload,
+    );
   }
 
   notifyDeviceStatusChanged(
@@ -238,9 +412,16 @@ export class GatewayService {
   ) {
     const payload: DeviceStatusChangedEvent = { deviceId, status };
 
-    this.logger.debug(`Emitting deviceStatusChanged for device ${deviceId}: ${status}`);
+    this.logger.debug(
+      `Emitting deviceStatusChanged for device ${deviceId}: ${status}`,
+    );
 
-    this.appGateway.emitToDevice(organizationId, deviceId, GatewayEvents.DEVICE_STATUS_CHANGED, payload);
+    this.appGateway.emitToDevice(
+      organizationId,
+      deviceId,
+      GatewayEvents.DEVICE_STATUS_CHANGED,
+      payload,
+    );
   }
 
   // Printer Agent Config Events
@@ -250,7 +431,12 @@ export class GatewayService {
 
     this.logger.debug(`Emitting printerConfigUpdate for device ${deviceId}`);
 
-    this.appGateway.emitToDevice(organizationId, deviceId, GatewayEvents.PRINTER_CONFIG_UPDATE, payload);
+    this.appGateway.emitToDevice(
+      organizationId,
+      deviceId,
+      GatewayEvents.PRINTER_CONFIG_UPDATE,
+      payload,
+    );
   }
 
   // Cash Drawer Events
@@ -260,7 +446,11 @@ export class GatewayService {
 
     this.logger.debug(`Emitting openCashDrawer for printer ${printerId}`);
 
-    this.appGateway.emitToOrganization(organizationId, GatewayEvents.OPEN_CASH_DRAWER, payload);
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.OPEN_CASH_DRAWER,
+      payload,
+    );
   }
 
   // Device Online Status

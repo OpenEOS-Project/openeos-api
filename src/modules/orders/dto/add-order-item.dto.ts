@@ -5,6 +5,7 @@ import {
   ValidateNested,
   MaxLength,
   IsNumber,
+  IsBoolean,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -40,4 +41,9 @@ export class AddOrderItemDto {
   @ValidateNested({ each: true })
   @Type(() => SelectedOptionDto)
   selectedOptions?: SelectedOptionDto[];
+
+  @ApiPropertyOptional({ example: false, description: 'Nachfüllen: kein Pfand berechnen' })
+  @IsOptional()
+  @IsBoolean()
+  isRefill?: boolean;
 }

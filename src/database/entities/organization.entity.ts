@@ -37,6 +37,14 @@ export interface OrganizationSettings {
     soundEnabled: boolean;
     orderingMode: 'immediate' | 'tab';
   };
+  /**
+   * When/where deposits (Pfand) are charged, by fulfillment type.
+   * Defaults when unset: no Pfand for table service, Pfand for counter/takeaway.
+   */
+  pfand?: {
+    tableService?: boolean;
+    counterPickup?: boolean;
+  };
   onlineOrdering?: {
     enabled: boolean;
     requirePayment: boolean;
@@ -120,7 +128,12 @@ export class Organization extends SoftDeleteEntity {
   @Column({ type: 'jsonb', default: {} })
   settings: OrganizationSettings;
 
-  @Column({ name: 'billing_email', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'billing_email',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   billingEmail: string | null;
 
   @Column({ name: 'billing_address', type: 'jsonb', nullable: true })
@@ -129,10 +142,22 @@ export class Organization extends SoftDeleteEntity {
   @Column({ name: 'support_pin', type: 'varchar', length: 6 })
   supportPin: string;
 
-  @Column({ name: 'discount_percent', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  @Column({
+    name: 'discount_percent',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
   discountPercent: number | null;
 
-  @Column({ name: 'discount_type', type: 'enum', enum: DiscountType, enumName: 'discount_type', nullable: true })
+  @Column({
+    name: 'discount_type',
+    type: 'enum',
+    enum: DiscountType,
+    enumName: 'discount_type',
+    nullable: true,
+  })
   discountType: DiscountType | null;
 
   @Column({ name: 'discount_valid_until', type: 'date', nullable: true })
@@ -142,16 +167,36 @@ export class Organization extends SoftDeleteEntity {
   discountNote: string | null;
 
   // Stripe Fields
-  @Column({ name: 'stripe_customer_id', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'stripe_customer_id',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   stripeCustomerId: string | null;
 
-  @Column({ name: 'stripe_subscription_id', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'stripe_subscription_id',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   stripeSubscriptionId: string | null;
 
-  @Column({ name: 'subscription_status', type: 'enum', enum: SubscriptionStatus, enumName: 'subscription_status', nullable: true })
+  @Column({
+    name: 'subscription_status',
+    type: 'enum',
+    enum: SubscriptionStatus,
+    enumName: 'subscription_status',
+    nullable: true,
+  })
   subscriptionStatus: SubscriptionStatus | null;
 
-  @Column({ name: 'subscription_current_period_end', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'subscription_current_period_end',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   subscriptionCurrentPeriodEnd: Date | null;
 
   // Relations

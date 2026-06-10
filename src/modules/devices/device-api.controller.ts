@@ -34,8 +34,16 @@ import {
   ProductionStation,
 } from '../../database/entities';
 import { EventStatus } from '../../database/entities/event.entity';
-import { PrinterType, PrinterConnectionType } from '../../database/entities/printer.entity';
-import { OrderStatus, PaymentStatus, OrderSource, OrderFulfillmentType } from '../../database/entities/order.entity';
+import {
+  PrinterType,
+  PrinterConnectionType,
+} from '../../database/entities/printer.entity';
+import {
+  OrderStatus,
+  PaymentStatus,
+  OrderSource,
+  OrderFulfillmentType,
+} from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import {
@@ -54,6 +62,11 @@ import { GatewayService } from '../gateway/gateway.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { OrdersService } from '../orders/orders.service';
+import { DiscountVouchersService } from '../discount-vouchers/discount-vouchers.service';
+import { PfandTypesService } from '../pfand-types/pfand-types.service';
+import { PfandReturnsService } from '../pfand-types/pfand-returns.service';
+import { CreatePfandReturnDto } from '../pfand-types/dto';
+import { isPfandChargedForFulfillment } from '../../common/utils/pfand-policy';
 
 /**
  * Helper to ensure device has an organization.
@@ -111,6 +124,9 @@ export class DeviceApiController {
     private readonly orderPrintService: OrderPrintService,
     private readonly printJobsService: PrintJobsService,
     private readonly ordersService: OrdersService,
+    private readonly discountVouchersService: DiscountVouchersService,
+    private readonly pfandTypesService: PfandTypesService,
+    private readonly pfandReturnsService: PfandReturnsService,
   ) {}
 
   @Get('organization')
@@ -138,8 +154,59 @@ export class DeviceApiController {
     };
   }
 
+  @Get('discount-vouchers')
+  @ApiOperation({
+    summary:
+      'Get active discount vouchers (Rabatt-Bons) for the device organization',
+  })
+  async getDiscountVouchers(@CurrentDevice() device: Device) {
+    const organizationId = requireOrganization(device);
+    const vouchers =
+      await this.discountVouchersService.findActiveForOrg(organizationId);
+    return { data: vouchers };
+  }
+
+  @Get('pfand-types')
+  @ApiOperation({
+    summary: 'Get active deposit (Pfand) types for the device organization',
+  })
+  async getPfandTypes(@CurrentDevice() device: Device) {
+    const organizationId = requireOrganization(device);
+    const pfandTypes =
+      await this.pfandTypesService.findActiveForOrg(organizationId);
+    return { data: pfandTypes };
+  }
+
+  @Post('pfand-returns')
+  @ApiOperation({
+    summary:
+      'Record a deposit payout (Pfand-Rückgabe) and open the cash drawer',
+  })
+  async createPfandReturn(
+    @CurrentDevice() device: Device,
+    @Body() dto: CreatePfandReturnDto,
+  ) {
+    const organizationId = requireOrganization(device);
+    const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as
+      | string
+      | undefined;
+
+    const pfandReturn = await this.pfandReturnsService.create(
+      organizationId,
+      dto,
+      {
+        eventId: dto.eventId ?? null,
+        deviceId: device.id,
+        cashDrawerPrinterId: cashDrawerPrinterId ?? null,
+      },
+    );
+    return { data: pfandReturn };
+  }
+
   @Get('printers')
-  @ApiOperation({ summary: 'Get printer configurations assigned to this device' })
+  @ApiOperation({
+    summary: 'Get printer configurations assigned to this device',
+  })
   async getPrinters(@CurrentDevice() device: Device) {
     const printers = await this.printersService.findByDeviceId(device.id);
 
@@ -233,12 +300,17 @@ export class DeviceApiController {
     @Body() verifyPinDto: VerifyPinDto,
   ) {
     const organizationId = requireOrganization(device);
-    const result = await this.devicesService.verifyPin(organizationId, verifyPinDto.pin);
+    const result = await this.devicesService.verifyPin(
+      organizationId,
+      verifyPinDto.pin,
+    );
     return { data: result };
   }
 
   @Get('events')
-  @ApiOperation({ summary: 'Get active or test event for device organization (at most one)' })
+  @ApiOperation({
+    summary: 'Get active or test event for device organization (at most one)',
+  })
   async getEvents(@CurrentDevice() device: Device) {
     const organizationId = requireOrganization(device);
     const events = await this.eventRepository.find({
@@ -315,6 +387,7 @@ export class DeviceApiController {
 
     const products = await this.productRepository.find({
       where: { eventId, isActive: true },
+      relations: ['pfandType'],
       order: { sortOrder: 'ASC', name: 'ASC' },
     });
 
@@ -324,7 +397,9 @@ export class DeviceApiController {
   // Order endpoints
 
   @Get('orders/open')
-  @ApiOperation({ summary: 'Get open (unpaid/partly paid) orders for device organization' })
+  @ApiOperation({
+    summary: 'Get open (unpaid/partly paid) orders for device organization',
+  })
   async getOpenOrders(@CurrentDevice() device: Device) {
     const organizationId = requireOrganization(device);
     const orders = await this.orderRepository.find({
@@ -361,7 +436,10 @@ export class DeviceApiController {
         });
       }
 
-      if (event.status !== EventStatus.ACTIVE && event.status !== EventStatus.TEST) {
+      if (
+        event.status !== EventStatus.ACTIVE &&
+        event.status !== EventStatus.TEST
+      ) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
           message: 'Event ist nicht aktiv',
@@ -371,7 +449,10 @@ export class DeviceApiController {
 
     // Generate order number
     const orderNumber = await this.generateOrderNumber(organizationId);
-    const dailyNumber = await this.getDailyNumber(organizationId, createDto.eventId || null);
+    const dailyNumber = await this.getDailyNumber(
+      organizationId,
+      createDto.eventId || null,
+    );
 
     const order = this.orderRepository.create({
       organizationId,
@@ -384,9 +465,12 @@ export class DeviceApiController {
       notes: createDto.notes || null,
       priority: createDto.priority || undefined,
       source: createDto.source || OrderSource.POS,
-      fulfillmentType: device.settings?.serviceMode === 'table'
-        ? OrderFulfillmentType.TABLE_SERVICE
-        : OrderFulfillmentType.COUNTER_PICKUP,
+      fulfillmentType:
+        device.settings?.serviceMode === 'table'
+          ? OrderFulfillmentType.TABLE_SERVICE
+          : OrderFulfillmentType.COUNTER_PICKUP,
+      discountAmount: createDto.discountAmount || 0,
+      discountReason: createDto.discountReason || null,
       createdByDeviceId: device.id,
       status: OrderStatus.OPEN,
       paymentStatus: PaymentStatus.UNPAID,
@@ -394,17 +478,29 @@ export class DeviceApiController {
 
     await this.orderRepository.save(order);
 
+    // Resolve the Pfand policy for this order's fulfillment type (e.g. no
+    // deposit for table service).
+    const orgForPfand = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
+    const chargePfand = isPfandChargedForFulfillment(
+      order.fulfillmentType,
+      orgForPfand?.settings,
+    );
+
     // Add items if provided
     if (createDto.items && createDto.items.length > 0) {
       for (const itemDto of createDto.items) {
-        await this.addItemToOrder(order, itemDto);
+        await this.addItemToOrder(order, itemDto, chargePfand);
       }
 
       // Recalculate totals
       await this.recalculateOrderTotals(order.id);
     }
 
-    this.logger.log(`Device order created: ${order.orderNumber} (${order.id}) by device ${device.name}`);
+    this.logger.log(
+      `Device order created: ${order.orderNumber} (${order.id}) by device ${device.name}`,
+    );
 
     // Fetch the complete order with items
     const completeOrder = await this.orderRepository.findOne({
@@ -413,7 +509,11 @@ export class DeviceApiController {
     });
 
     // Print station tickets and notify admin order list
-    if (completeOrder && completeOrder.items && completeOrder.items.length > 0) {
+    if (
+      completeOrder &&
+      completeOrder.items &&
+      completeOrder.items.length > 0
+    ) {
       // Group items by production station for printing
       const itemsByStation = new Map<string | null, OrderItem[]>();
       for (const item of completeOrder.items) {
@@ -424,7 +524,9 @@ export class DeviceApiController {
 
       for (const [stationId, items] of itemsByStation) {
         if (stationId) {
-          const station = await this.productionStationRepository.findOne({ where: { id: stationId } });
+          const station = await this.productionStationRepository.findOne({
+            where: { id: stationId },
+          });
           if (station && station.printerId) {
             this.printToStation(organizationId, station, completeOrder, items);
           }
@@ -432,24 +534,28 @@ export class DeviceApiController {
       }
 
       // Notify admin order list
-      this.gatewayService.notifyOrderCreated(organizationId, completeOrder.eventId, {
-        id: completeOrder.id,
-        orderNumber: completeOrder.orderNumber,
-        dailyNumber: completeOrder.dailyNumber,
-        tableNumber: completeOrder.tableNumber || undefined,
-        customerName: completeOrder.customerName || undefined,
-        status: completeOrder.status,
-        fulfillmentType: completeOrder.fulfillmentType,
-        source: completeOrder.source,
-        items: completeOrder.items.map((item) => ({
-          id: item.id,
-          productName: item.productName,
-          quantity: item.quantity,
-          status: item.status,
-          notes: item.notes || undefined,
-          kitchenNotes: item.kitchenNotes || undefined,
-        })),
-      });
+      this.gatewayService.notifyOrderCreated(
+        organizationId,
+        completeOrder.eventId,
+        {
+          id: completeOrder.id,
+          orderNumber: completeOrder.orderNumber,
+          dailyNumber: completeOrder.dailyNumber,
+          tableNumber: completeOrder.tableNumber || undefined,
+          customerName: completeOrder.customerName || undefined,
+          status: completeOrder.status,
+          fulfillmentType: completeOrder.fulfillmentType,
+          source: completeOrder.source,
+          items: completeOrder.items.map((item) => ({
+            id: item.id,
+            productName: item.productName,
+            quantity: item.quantity,
+            status: item.status,
+            notes: item.notes || undefined,
+            kitchenNotes: item.kitchenNotes || undefined,
+          })),
+        },
+      );
 
       // Auto-print kitchen / order tickets according to org orderFlow,
       // with fallback to the device's defaultPrinterId.
@@ -535,9 +641,11 @@ export class DeviceApiController {
       }
 
       // Only auto-complete if no active station workflow is running
-      const activeItems = order.items.filter(i => i.status !== OrderItemStatus.CANCELLED);
-      const allWorkflowDone = activeItems.every(i =>
-        !i.productionStationId || i.status === OrderItemStatus.DELIVERED,
+      const activeItems = order.items.filter(
+        (i) => i.status !== OrderItemStatus.CANCELLED,
+      );
+      const allWorkflowDone = activeItems.every(
+        (i) => !i.productionStationId || i.status === OrderItemStatus.DELIVERED,
       );
 
       if (allWorkflowDone) {
@@ -547,14 +655,21 @@ export class DeviceApiController {
       }
     }
 
-    this.logger.log(`Device payment created: ${payment.id} for order ${order.orderNumber}`);
+    this.logger.log(
+      `Device payment created: ${payment.id} for order ${order.orderNumber}`,
+    );
 
     // Auto-open cash drawer on cash payment
     if (createDto.paymentMethod === PaymentMethod.CASH) {
       try {
-        const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as string | undefined;
+        const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as
+          | string
+          | undefined;
         if (cashDrawerPrinterId) {
-          this.gatewayService.sendOpenCashDrawer(organizationId, cashDrawerPrinterId);
+          this.gatewayService.sendOpenCashDrawer(
+            organizationId,
+            cashDrawerPrinterId,
+          );
         }
       } catch (e) {
         this.logger.warn(`Failed to open cash drawer: ${e}`);
@@ -582,10 +697,13 @@ export class DeviceApiController {
   }
 
   @Post('payments/split')
-  @ApiOperation({ summary: 'Create a split payment for specific items from device' })
+  @ApiOperation({
+    summary: 'Create a split payment for specific items from device',
+  })
   async createSplitPayment(
     @CurrentDevice() device: Device,
-    @Body() createDto: {
+    @Body()
+    createDto: {
       orderId: string;
       amount: number;
       paymentMethod: PaymentMethod;
@@ -678,9 +796,11 @@ export class DeviceApiController {
     const isFullyPaid = Number(order.paidAmount) >= Number(order.total);
     if (isFullyPaid) {
       // Only auto-complete if no active station workflow is running
-      const activeItems = order.items.filter(i => i.status !== OrderItemStatus.CANCELLED);
-      const allWorkflowDone = activeItems.every(i =>
-        !i.productionStationId || i.status === OrderItemStatus.DELIVERED,
+      const activeItems = order.items.filter(
+        (i) => i.status !== OrderItemStatus.CANCELLED,
+      );
+      const allWorkflowDone = activeItems.every(
+        (i) => !i.productionStationId || i.status === OrderItemStatus.DELIVERED,
       );
 
       if (allWorkflowDone) {
@@ -690,14 +810,21 @@ export class DeviceApiController {
       }
     }
 
-    this.logger.log(`Device split payment created: ${payment.id} for order ${order.orderNumber}`);
+    this.logger.log(
+      `Device split payment created: ${payment.id} for order ${order.orderNumber}`,
+    );
 
     // Auto-open cash drawer on cash payment
     if (createDto.paymentMethod === PaymentMethod.CASH) {
       try {
-        const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as string | undefined;
+        const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as
+          | string
+          | undefined;
         if (cashDrawerPrinterId) {
-          this.gatewayService.sendOpenCashDrawer(organizationId, cashDrawerPrinterId);
+          this.gatewayService.sendOpenCashDrawer(
+            organizationId,
+            cashDrawerPrinterId,
+          );
         }
       } catch (e) {
         this.logger.warn(`Failed to open cash drawer: ${e}`);
@@ -713,7 +840,9 @@ export class DeviceApiController {
   @ApiOperation({ summary: 'Open the cash drawer via configured printer' })
   async openCashDrawer(@CurrentDevice() device: Device) {
     const organizationId = requireOrganization(device);
-    const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as string | undefined;
+    const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as
+      | string
+      | undefined;
 
     if (!cashDrawerPrinterId) {
       throw new BadRequestException({
@@ -878,7 +1007,9 @@ export class DeviceApiController {
   // Order History & Management
 
   @Get('orders')
-  @ApiOperation({ summary: 'Get all orders for device organization (paginated)' })
+  @ApiOperation({
+    summary: 'Get all orders for device organization (paginated)',
+  })
   async getAllOrders(
     @CurrentDevice() device: Device,
     @Query('status') status?: string,
@@ -889,7 +1020,10 @@ export class DeviceApiController {
     const organizationId = requireOrganization(device);
 
     const pageNum = Math.max(1, parseInt(page || '1', 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit || '50', 10) || 50));
+    const limitNum = Math.min(
+      100,
+      Math.max(1, parseInt(limit || '50', 10) || 50),
+    );
     const skip = (pageNum - 1) * limitNum;
 
     const where: any = { organizationId };
@@ -945,10 +1079,14 @@ export class DeviceApiController {
       });
     }
 
-    if (order.status === OrderStatus.COMPLETED || order.status === OrderStatus.CANCELLED) {
+    if (
+      order.status === OrderStatus.COMPLETED ||
+      order.status === OrderStatus.CANCELLED
+    ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Bestellung kann nicht storniert werden (bereits abgeschlossen oder storniert)',
+        message:
+          'Bestellung kann nicht storniert werden (bereits abgeschlossen oder storniert)',
       });
     }
 
@@ -982,16 +1120,20 @@ export class DeviceApiController {
 
         // Notify POS terminals about stock change
         if (order.eventId) {
-          this.gatewayService.notifyProductUpdated(organizationId, order.eventId, {
-            id: product.id,
-            name: product.name,
-            categoryId: product.categoryId,
-            price: Number(product.price),
-            isAvailable: product.isAvailable,
-            isActive: product.isActive,
-            stockQuantity: product.stockQuantity,
-            trackInventory: product.trackInventory,
-          });
+          this.gatewayService.notifyProductUpdated(
+            organizationId,
+            order.eventId,
+            {
+              id: product.id,
+              name: product.name,
+              categoryId: product.categoryId,
+              price: Number(product.price),
+              isAvailable: product.isAvailable,
+              isActive: product.isActive,
+              stockQuantity: product.stockQuantity,
+              trackInventory: product.trackInventory,
+            },
+          );
         }
       }
 
@@ -1007,10 +1149,15 @@ export class DeviceApiController {
     await this.orderRepository.save(order);
 
     // Gateway notifications
-    this.gatewayService.notifyOrderUpdated(organizationId, order.eventId, order.id, {
-      status: OrderStatus.CANCELLED,
-      cancelledAt: order.cancelledAt,
-    });
+    this.gatewayService.notifyOrderUpdated(
+      organizationId,
+      order.eventId,
+      order.id,
+      {
+        status: OrderStatus.CANCELLED,
+        cancelledAt: order.cancelledAt,
+      },
+    );
 
     if (order.eventId) {
       this.gatewayService.notifyKitchenOrderCancelled(
@@ -1020,7 +1167,9 @@ export class DeviceApiController {
       );
     }
 
-    this.logger.log(`Order ${order.orderNumber} cancelled by device ${device.name}`);
+    this.logger.log(
+      `Order ${order.orderNumber} cancelled by device ${device.name}`,
+    );
 
     return { data: order };
   }
@@ -1082,7 +1231,9 @@ export class DeviceApiController {
       });
     }
 
-    this.logger.log(`Reprint (${printType}) for order ${order.orderNumber} by device ${device.name}`);
+    this.logger.log(
+      `Reprint (${printType}) for order ${order.orderNumber} by device ${device.name}`,
+    );
 
     return { data: { success: true } };
   }
@@ -1090,7 +1241,7 @@ export class DeviceApiController {
   // Station display endpoints
 
   @Get('station/items')
-  @ApiOperation({ summary: 'Get open items for this device\'s station' })
+  @ApiOperation({ summary: "Get open items for this device's station" })
   async getStationItems(@CurrentDevice() device: Device) {
     const organizationId = requireOrganization(device);
     const stationId = device.settings?.stationId as string | undefined;
@@ -1107,8 +1258,16 @@ export class DeviceApiController {
       .createQueryBuilder('item')
       .leftJoinAndSelect('item.order', 'ord')
       .where('item.productionStationId = :stationId', { stationId })
-      .andWhere('item.status NOT IN (:...excludedStatuses)', { excludedStatuses: [OrderItemStatus.CANCELLED, OrderItemStatus.DELIVERED, OrderItemStatus.READY] })
-      .andWhere('ord.status NOT IN (:...excludedOrderStatuses)', { excludedOrderStatuses: [OrderStatus.CANCELLED, OrderStatus.COMPLETED] })
+      .andWhere('item.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: [
+          OrderItemStatus.CANCELLED,
+          OrderItemStatus.DELIVERED,
+          OrderItemStatus.READY,
+        ],
+      })
+      .andWhere('ord.status NOT IN (:...excludedOrderStatuses)', {
+        excludedOrderStatuses: [OrderStatus.CANCELLED, OrderStatus.COMPLETED],
+      })
       .andWhere('ord.organizationId = :organizationId', { organizationId })
       .orderBy('ord.priority', 'DESC')
       .addOrderBy('ord.createdAt', 'ASC')
@@ -1157,7 +1316,10 @@ export class DeviceApiController {
     @Param('itemId', ParseUUIDPipe) itemId: string,
   ) {
     const organizationId = requireOrganization(device);
-    const order = await this.ordersService.markItemReadyFromDevice(organizationId, itemId);
+    const order = await this.ordersService.markItemReadyFromDevice(
+      organizationId,
+      itemId,
+    );
     return { data: order };
   }
 
@@ -1165,11 +1327,19 @@ export class DeviceApiController {
 
   private async addItemToOrder(
     order: Order,
-    itemDto: { productId: string; quantity: number; notes?: string; kitchenNotes?: string; selectedOptions?: any[] },
+    itemDto: {
+      productId: string;
+      quantity: number;
+      notes?: string;
+      kitchenNotes?: string;
+      selectedOptions?: any[];
+      isRefill?: boolean;
+    },
+    chargePfand = true,
   ): Promise<OrderItem> {
     const product = await this.productRepository.findOne({
       where: { id: itemDto.productId, eventId: order.eventId! },
-      relations: ['category'],
+      relations: ['category', 'pfandType'],
     });
 
     if (!product) {
@@ -1204,13 +1374,25 @@ export class DeviceApiController {
     const unitPrice = Number(product.price);
     const totalPrice = (unitPrice + optionsPrice) * itemDto.quantity;
 
+    // Resolve deposit (Pfand): charged per unit unless this is a refill or the
+    // order's fulfillment type is exempt (e.g. table service).
+    const isRefill = itemDto.isRefill === true;
+    const depositAmount =
+      chargePfand && !isRefill && product.pfandType
+        ? Number(product.pfandType.amount)
+        : 0;
+    const pfandTypeId = depositAmount > 0 ? product.pfandTypeId : null;
+
     // Determine the next sort order
     const existingItems = await this.orderItemRepository.count({
       where: { orderId: order.id },
     });
 
     // Resolve production station: product overrides category
-    const productionStationId = product.productionStationId || product.category?.productionStationId || null;
+    const productionStationId =
+      product.productionStationId ||
+      product.category?.productionStationId ||
+      null;
 
     const item = this.orderItemRepository.create({
       orderId: order.id,
@@ -1229,6 +1411,9 @@ export class DeviceApiController {
       status: OrderItemStatus.PENDING,
       sortOrder: existingItems,
       productionStationId,
+      pfandTypeId,
+      depositAmount,
+      isRefill,
     });
 
     await this.orderItemRepository.save(item);
@@ -1239,18 +1424,24 @@ export class DeviceApiController {
       await this.productRepository.save(product);
 
       // Notify POS terminals about stock change
-      const event = await this.eventRepository.findOne({ where: { id: order.eventId! } });
+      const event = await this.eventRepository.findOne({
+        where: { id: order.eventId! },
+      });
       if (event) {
-        this.gatewayService.notifyProductUpdated(event.organizationId, event.id, {
-          id: product.id,
-          name: product.name,
-          categoryId: product.categoryId,
-          price: Number(product.price),
-          isAvailable: product.isAvailable,
-          isActive: product.isActive,
-          stockQuantity: product.stockQuantity,
-          trackInventory: product.trackInventory,
-        });
+        this.gatewayService.notifyProductUpdated(
+          event.organizationId,
+          event.id,
+          {
+            id: product.id,
+            name: product.name,
+            categoryId: product.categoryId,
+            price: Number(product.price),
+            isAvailable: product.isAvailable,
+            isActive: product.isActive,
+            stockQuantity: product.stockQuantity,
+            trackInventory: product.trackInventory,
+          },
+        );
       }
     }
 
@@ -1289,7 +1480,9 @@ export class DeviceApiController {
         },
       );
     } catch (err) {
-      this.logger.error(`Station printing failed for ${station.name}: ${err.message}`);
+      this.logger.error(
+        `Station printing failed for ${station.name}: ${err.message}`,
+      );
     }
   }
 
@@ -1303,17 +1496,30 @@ export class DeviceApiController {
 
     let subtotal = 0;
     let taxTotal = 0;
+    let pfandTotal = 0;
 
     for (const item of order.items) {
       if (item.status !== OrderItemStatus.CANCELLED) {
         subtotal += Number(item.totalPrice);
         taxTotal += Number(item.totalPrice) * (Number(item.taxRate) / 100);
+        pfandTotal += Number(item.depositAmount || 0) * item.quantity;
       }
     }
 
     order.subtotal = subtotal;
     order.taxTotal = taxTotal;
-    order.total = subtotal - Number(order.discountAmount || 0) + Number(order.tipAmount || 0);
+    order.pfandTotal = pfandTotal;
+
+    // Cap the discount at the subtotal so the order total can never go negative —
+    // any voucher value beyond the order amount is forfeited (not paid out).
+    // Pfand (deposit) is added on top and is tax-free (not part of subtotal/taxTotal).
+    const effectiveDiscount = Math.min(
+      Number(order.discountAmount || 0),
+      subtotal,
+    );
+    order.discountAmount = effectiveDiscount;
+    order.total =
+      subtotal - effectiveDiscount + Number(order.tipAmount || 0) + pfandTotal;
 
     await this.orderRepository.save(order);
   }
@@ -1353,7 +1559,10 @@ export class DeviceApiController {
     return `${dateStr}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  private async getDailyNumber(organizationId: string, eventId: string | null): Promise<number> {
+  private async getDailyNumber(
+    organizationId: string,
+    eventId: string | null,
+  ): Promise<number> {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
