@@ -17,6 +17,15 @@ import { PaginatedResult, createPaginatedResult } from '../../common/dto/paginat
 import { CreatePrintJobDto, QueryPrintJobsDto } from './dto';
 import { GatewayService } from '../gateway/gateway.service';
 
+/** Websocket payload a printer agent receives for one job. */
+interface AgentJobEvent {
+  jobId: string;
+  printerId: string;
+  templateName: string;
+  copies: number;
+  payload: Record<string, unknown>;
+}
+
 @Injectable()
 export class PrintJobsService {
   private readonly logger = new Logger(PrintJobsService.name);
@@ -89,31 +98,43 @@ export class PrintJobsService {
     // Send full print data to agent via WebSocket — targeted at the printer's
     // agent device. On ack the job moves to PRINTING; unacked jobs stay
     // QUEUED and are replayed when the agent (re)connects.
+    this.dispatchJobToAgent(organizationId, printer.deviceId, {
+      jobId: printJob.id,
+      printerId: createDto.printerId,
+      templateName,
+      copies: createDto.payload?.copies as number || 1,
+      payload: createDto.payload?.data as Record<string, unknown> || createDto.payload,
+    });
+
+    return printJob;
+  }
+
+  /**
+   * Fire-and-forget delivery with ack handling: on ack the job transitions
+   * QUEUED -> PRINTING, otherwise it stays QUEUED for replay-on-connect.
+   */
+  private dispatchJobToAgent(
+    organizationId: string,
+    agentDeviceId: string | null,
+    event: AgentJobEvent,
+  ): void {
     void this.gatewayService
-      .sendPrintJobToAgent(organizationId, printer.deviceId, {
-        jobId: printJob.id,
-        printerId: createDto.printerId,
-        templateName,
-        copies: createDto.payload?.copies as number || 1,
-        payload: createDto.payload?.data as Record<string, unknown> || createDto.payload,
-      })
+      .sendPrintJobToAgent(organizationId, agentDeviceId, event)
       .then((acked) => {
         if (acked) {
-          return this.markJobPrinting(printJob.id);
+          return this.markJobPrinting(event.jobId);
         }
         this.logger.warn(
-          `Print job ${printJob.id} not acked by agent — stays queued for replay`,
+          `Print job ${event.jobId} not acked by agent — stays queued for replay`,
         );
       })
       .catch((error) => {
         this.logger.error(
-          `Print job ${printJob.id} delivery error: ${
+          `Print job ${event.jobId} delivery error: ${
             error instanceof Error ? error.message : error
           }`,
         );
       });
-
-    return printJob;
   }
 
   async findAll(
@@ -210,7 +231,7 @@ export class PrintJobsService {
     }
 
     // Resend to agent
-    this.gatewayService.sendPrintJobToAgent(organizationId, {
+    this.dispatchJobToAgent(organizationId, job.printer?.deviceId ?? null, {
       jobId: job.id,
       printerId: job.printerId,
       templateName,
@@ -303,7 +324,7 @@ export class PrintJobsService {
     }
 
     // Send to agent via WebSocket
-    this.gatewayService.sendPrintJobToAgent(organizationId, {
+    this.dispatchJobToAgent(organizationId, printer.deviceId, {
       jobId: printJob.id,
       printerId,
       templateName,

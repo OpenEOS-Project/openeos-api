@@ -290,7 +290,8 @@ export class PrintersService {
         ? crypto.randomUUID()
         : `test-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-    this.gatewayService.sendPrintJobToAgent(printer.organizationId, {
+    // Test jobs are not persisted — fire-and-forget, no ack handling needed.
+    void this.gatewayService.sendPrintJobToAgent(printer.organizationId, printer.deviceId, {
       jobId,
       printerId: printer.id,
       templateName: '_admin_test',
