@@ -44,4 +44,12 @@ export class UpdateProductionStationDto {
   @IsOptional()
   @IsUUID('4', { message: 'Ungültige Drucker-ID' })
   printerId?: string | null;
+
+  @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'ID des Übergabe-Standorts (nächste Station in der Kette)',
+  })
+  @IsOptional()
+  @IsUUID('4', { message: 'Ungültige Standort-ID' })
+  handoffStationId?: string | null;
 }

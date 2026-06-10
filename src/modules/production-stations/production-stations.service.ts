@@ -39,10 +39,16 @@ export class ProductionStationsService {
       await this.validatePrinter(event.organizationId, createDto.printerId);
     }
 
+    // Handoff target must be a station of the same event
+    if (createDto.handoffStationId) {
+      await this.validateHandoffStation(eventId, createDto.handoffStationId);
+    }
+
     const station = this.productionStationRepository.create({
       eventId: event.id,
       ...createDto,
       printerId: createDto.printerId || null,
+      handoffStationId: createDto.handoffStationId || null,
     });
 
     await this.productionStationRepository.save(station);
@@ -94,6 +100,17 @@ export class ProductionStationsService {
       await this.validatePrinter(event.organizationId, updateDto.printerId);
     }
 
+    // Handoff target must be a station of the same event and not the station itself
+    if (updateDto.handoffStationId) {
+      if (updateDto.handoffStationId === stationId) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          message: 'Ein Standort kann nicht an sich selbst übergeben',
+        });
+      }
+      await this.validateHandoffStation(eventId, updateDto.handoffStationId);
+    }
+
     Object.assign(station, updateDto);
     await this.productionStationRepository.save(station);
 
@@ -123,6 +140,19 @@ export class ProductionStationsService {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         message: 'Drucker nicht gefunden oder gehört nicht zur selben Organisation',
+      });
+    }
+  }
+
+  private async validateHandoffStation(eventId: string, handoffStationId: string): Promise<void> {
+    const target = await this.productionStationRepository.findOne({
+      where: { id: handoffStationId, eventId },
+    });
+
+    if (!target) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Übergabe-Standort nicht gefunden oder gehört nicht zum selben Event',
       });
     }
   }

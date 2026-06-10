@@ -27,6 +27,11 @@ export class ProductionStation extends BaseEntity {
   @Column({ name: 'printer_id', type: 'uuid', nullable: true })
   printerId: string | null;
 
+  // Next station in the preparation chain (e.g. Küche -> Ausgabe);
+  // drives the handoff/flow view in the dashboard.
+  @Column({ name: 'handoff_station_id', type: 'uuid', nullable: true })
+  handoffStationId: string | null;
+
   // Relations
   @ManyToOne(() => Event, (event) => event.productionStations, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'event_id' })
@@ -35,4 +40,8 @@ export class ProductionStation extends BaseEntity {
   @ManyToOne(() => Printer, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'printer_id' })
   printer: Printer | null;
+
+  @ManyToOne(() => ProductionStation, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'handoff_station_id' })
+  handoffStation: ProductionStation | null;
 }
