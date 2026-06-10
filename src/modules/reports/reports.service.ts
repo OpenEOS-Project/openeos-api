@@ -16,6 +16,7 @@ import {
   OrganizationRole,
 } from '../../database/entities/user-organization.entity';
 import { OrderStatus } from '../../database/entities/order.entity';
+import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
 import { QueryReportsDto, ReportGroupBy, ReportExportFormat } from './dto';
 import { ErrorCodes } from '../../common/constants/error-codes';
 
@@ -265,7 +266,12 @@ export class ReportsService {
     const queryBuilder = this.paymentRepository
       .createQueryBuilder('payment')
       .innerJoin('payment.order', 'order')
-      .where('order.organizationId = :organizationId', { organizationId });
+      .where('order.organizationId = :organizationId', { organizationId })
+      // Only money that actually arrived — pending/failed payments would
+      // inflate the breakdown (same rule as the device revenue stats).
+      .andWhere('payment.status = :paymentStatus', {
+        paymentStatus: PaymentTransactionStatus.CAPTURED,
+      });
 
     if (eventId) {
       queryBuilder.andWhere('order.eventId = :eventId', { eventId });
@@ -283,11 +289,12 @@ export class ReportsService {
 
     const results = await queryBuilder
       .select([
-        'payment.method as method',
+        // Entity property is paymentMethod (column payment_method)
+        'payment.paymentMethod as method',
         'COUNT(payment.id) as count',
         'SUM(payment.amount) as total',
       ])
-      .groupBy('payment.method')
+      .groupBy('payment.paymentMethod')
       .getRawMany();
 
     const grandTotal = results.reduce(
