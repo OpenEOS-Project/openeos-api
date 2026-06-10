@@ -86,8 +86,9 @@ export class PrintJobsService {
       }
     }
 
-    // Send full print data to agent via WebSocket
-    this.gatewayService.sendPrintJobToAgent(organizationId, {
+    // Send full print data to agent via WebSocket — targeted at the printer's
+    // agent device; jobs stay QUEUED and are replayed when the agent connects.
+    this.gatewayService.sendPrintJobToAgent(organizationId, printer.deviceId, {
       jobId: printJob.id,
       printerId: createDto.printerId,
       templateName,
@@ -306,11 +307,51 @@ export class PrintJobsService {
     });
   }
 
+  /** Queued jobs for all printers handled by one agent device (replay on connect). */
+  async getQueuedJobsForDevice(deviceId: string): Promise<PrintJob[]> {
+    return this.printJobRepository.find({
+      where: { status: PrintJobStatus.QUEUED, printer: { deviceId } },
+      relations: ['template', 'printer'],
+      order: { createdAt: 'ASC' },
+      take: 50,
+    });
+  }
+
+  /** Build the websocket payload for an agent from a persisted job (same shape as create()). */
+  buildAgentJobEvent(job: PrintJob): {
+    jobId: string;
+    printerId: string;
+    templateName: string;
+    copies: number;
+    payload: Record<string, unknown>;
+  } {
+    return {
+      jobId: job.id,
+      printerId: job.printerId,
+      templateName: job.template?.type || 'receipt',
+      copies: (job.payload?.copies as number) || 1,
+      payload: (job.payload?.data as Record<string, unknown>) || job.payload,
+    };
+  }
+
+  /**
+   * Update a job's status, optionally scoped to an organization (printer
+   * agents may only touch jobs of their own org). Returns the job, or null
+   * if it does not exist / belongs to another organization.
+   */
   async updateJobStatus(
     jobId: string,
     status: PrintJobStatus,
     error?: string,
-  ): Promise<void> {
+    organizationId?: string,
+  ): Promise<PrintJob | null> {
+    const job = await this.printJobRepository.findOne({
+      where: organizationId ? { id: jobId, organizationId } : { id: jobId },
+    });
+    if (!job) {
+      return null;
+    }
+
     const update: {
       status: PrintJobStatus;
       error?: string | null;
@@ -325,8 +366,9 @@ export class PrintJobsService {
       update.printedAt = new Date();
     }
 
-    await this.printJobRepository.update({ id: jobId }, update);
+    await this.printJobRepository.update({ id: job.id }, update);
     this.logger.log(`Print job ${jobId} status updated to ${status}`);
+    return job;
   }
 
   private async checkMembership(organizationId: string, userId: string): Promise<void> {

@@ -126,11 +126,11 @@ export class DevicesController {
   }
 
   @Get('online/ids')
-  getOnlineDeviceIds(
+  async getOnlineDeviceIds(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @CurrentUser() _user: User,
   ) {
-    const onlineIds = this.gatewayService.getOnlineDeviceIds(organizationId);
+    const onlineIds = await this.gatewayService.getOnlineDeviceIds(organizationId);
     return { data: onlineIds };
   }
 }

@@ -210,12 +210,30 @@ export class GatewayService {
     );
   }
 
-  sendPrintJobToAgent(organizationId: string, data: PrinterJobEvent) {
-    this.logger.debug(
-      `Sending print job ${data.jobId} to agent via organization ${organizationId}`,
-    );
+  sendPrintJobToAgent(
+    organizationId: string,
+    agentDeviceId: string | null,
+    data: PrinterJobEvent,
+  ) {
+    if (agentDeviceId) {
+      // Targeted delivery to the printer's agent device
+      this.logger.debug(
+        `Sending print job ${data.jobId} to agent device ${agentDeviceId}`,
+      );
+      this.appGateway.emitToDevice(
+        organizationId,
+        agentDeviceId,
+        GatewayEvents.PRINTER_JOB,
+        data,
+      );
+      return;
+    }
 
-    // Send to all devices in the organization (the agent will filter by printerId)
+    // Fallback for printers without a device assignment: broadcast to the
+    // organization (agents filter by printerId)
+    this.logger.debug(
+      `Sending print job ${data.jobId} to agents via organization ${organizationId}`,
+    );
     this.appGateway.emitToOrganization(
       organizationId,
       GatewayEvents.PRINTER_JOB,
@@ -453,17 +471,18 @@ export class GatewayService {
     );
   }
 
-  // Device Online Status
+  // Device Online Status (async — resolved across all replicas via the
+  // socket.io Redis adapter)
 
-  getOnlineDeviceIds(organizationId: string): string[] {
+  getOnlineDeviceIds(organizationId: string): Promise<string[]> {
     return this.appGateway.getOnlineDeviceIds(organizationId);
   }
 
-  getAllOnlineDeviceIds(): string[] {
+  getAllOnlineDeviceIds(): Promise<string[]> {
     return this.appGateway.getAllOnlineDeviceIds();
   }
 
-  isDeviceOnline(deviceId: string): boolean {
+  isDeviceOnline(deviceId: string): Promise<boolean> {
     return this.appGateway.isDeviceOnline(deviceId);
   }
 }

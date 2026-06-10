@@ -12,11 +12,22 @@ import { join } from 'path';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters';
 import { TransformInterceptor, LoggingInterceptor, SentryContextInterceptor } from './common/interceptors';
+import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
+
+  // Socket.io over Redis pub/sub — required so websocket broadcasts and
+  // presence work when running more than one API replica.
+  const redisIoAdapter = new RedisIoAdapter(app);
+  await redisIoAdapter.connectToRedis(
+    configService.get<string>('redis.host') || 'localhost',
+    configService.get<number>('redis.port') || 6379,
+    process.env.REDIS_PASSWORD || undefined,
+  );
+  app.useWebSocketAdapter(redisIoAdapter);
 
   // Security Headers — disable cross-origin-resource-policy for /uploads so the
   // Next.js frontend can embed images served from this API.

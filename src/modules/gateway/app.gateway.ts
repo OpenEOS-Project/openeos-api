@@ -9,9 +9,13 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Logger, UseGuards } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { UserOrganization } from '../../database/entities';
+import { DeviceType } from '../../database/entities/device.entity';
 import { GatewayEvents } from './dto';
 import type {
   JoinRoomPayload,
@@ -56,15 +60,14 @@ export class AppGateway
 
   private readonly logger = new Logger(AppGateway.name);
 
-  // Track connected devices: Map<deviceId, { socketId, organizationId, type }>
-  private connectedDevices = new Map<string, { socketId: string; organizationId: string; type: string }>();
-
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly devicesService: DevicesService,
     private readonly printersService: PrintersService,
     private readonly printJobsService: PrintJobsService,
+    @InjectRepository(UserOrganization)
+    private readonly userOrganizationRepository: Repository<UserOrganization>,
   ) {}
 
   afterInit(server: Server) {
@@ -105,6 +108,16 @@ export class AppGateway
             type: device.type,
           };
 
+          // socket.data is shared across replicas via the Redis adapter
+          // (fetchSockets) and is the basis for online-presence queries.
+          client.data.deviceId = device.id;
+          client.data.organizationId = device.organizationId || '';
+          client.data.deviceType = device.type;
+
+          // Global per-device room: presence lookups and cross-replica
+          // room operations (reassign/disconnect) target this room.
+          client.join(`device:${device.id}`);
+
           if (hasOrg) {
             // Auto-join organization room
             client.join(`org:${device.organizationId}`);
@@ -113,18 +126,16 @@ export class AppGateway
             client.join(`org:${device.organizationId}:device:${device.id}`);
           }
 
-          // Track connected device
-          this.connectedDevices.set(device.id, {
-            socketId: client.id,
-            organizationId: device.organizationId || '',
-            type: device.type,
-          });
-
           // Update last seen
           await this.devicesService.updateLastSeen(deviceToken as string);
 
-          this.logger.log(`Device connected: ${device.name} (${client.id}) - ${this.connectedDevices.size} devices online`);
+          this.logger.log(`Device connected: ${device.name} (${client.id})`);
           client.emit(GatewayEvents.CONNECTED, { deviceId: device.id, hasOrganization: hasOrg });
+
+          // Re-deliver print jobs that were queued while the agent was offline
+          if (device.type === DeviceType.PRINTER_AGENT && hasOrg) {
+            void this.replayQueuedPrintJobs(client, device.id);
+          }
           return;
         }
       }
@@ -143,21 +154,47 @@ export class AppGateway
     if (client.user) {
       this.logger.log(`User disconnected: ${client.user.email} (${client.id})`);
     } else if (client.device) {
-      // Remove from connected devices
-      this.connectedDevices.delete(client.device.id);
-      this.logger.log(`Device disconnected: ${client.device.id} (${client.id}) - ${this.connectedDevices.size} devices online`);
+      this.logger.log(`Device disconnected: ${client.device.id} (${client.id})`);
     } else {
       this.logger.log(`Client disconnected: ${client.id}`);
     }
   }
 
+  /**
+   * A socket may only enter rooms of an organization it belongs to:
+   * devices their own org, users any org they are a member of.
+   */
+  private async canAccessOrganization(
+    client: AuthenticatedSocket,
+    organizationId: string,
+  ): Promise<boolean> {
+    if (!organizationId) return false;
+    if (client.device) {
+      return client.device.organizationId === organizationId;
+    }
+    if (client.user) {
+      const membership = await this.userOrganizationRepository.findOne({
+        where: { userId: client.user.id, organizationId },
+      });
+      return !!membership;
+    }
+    return false;
+  }
+
   @SubscribeMessage(GatewayEvents.JOIN_ROOM)
-  handleJoinRoom(
+  async handleJoinRoom(
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() payload: JoinRoomPayload,
   ) {
     if (!this.isAuthenticated(client)) {
       return { error: 'Not authenticated' };
+    }
+
+    if (!(await this.canAccessOrganization(client, payload.organizationId))) {
+      this.logger.warn(
+        `Client ${client.id} denied joinRoom for org ${payload.organizationId}`,
+      );
+      return { error: 'Forbidden' };
     }
 
     const roomName = payload.eventId
@@ -175,6 +212,10 @@ export class AppGateway
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() payload: LeaveRoomPayload,
   ) {
+    if (!this.isAuthenticated(client)) {
+      return { error: 'Not authenticated' };
+    }
+
     const roomName = payload.eventId
       ? `org:${payload.organizationId}:event:${payload.eventId}`
       : `org:${payload.organizationId}`;
@@ -229,6 +270,15 @@ export class AppGateway
     client.join(room);
     this.logger.debug(`Device ${client.device.id} watches POS cart: ${room}`);
 
+    // Ask the POS to re-broadcast its current cart so the display is not
+    // blank until the next cart mutation (e.g. after a display reconnect).
+    this.emitToDevice(
+      client.device.organizationId,
+      payload.posDeviceId,
+      GatewayEvents.CART_SNAPSHOT_REQUESTED,
+      { requestedBy: client.device.id },
+    );
+
     return { success: true, room };
   }
 
@@ -249,12 +299,11 @@ export class AppGateway
   }
 
   @SubscribeMessage(GatewayEvents.DEVICE_HEARTBEAT)
-  async handleDeviceHeartbeat(
-    @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() payload: DeviceHeartbeatEvent,
-  ) {
+  async handleDeviceHeartbeat(@ConnectedSocket() client: AuthenticatedSocket) {
     if (client.device) {
-      await this.devicesService.updateLastSeen(payload.deviceToken);
+      // The socket's authenticated identity is the source of truth — the
+      // payload token is ignored so a device can only refresh itself.
+      await this.devicesService.updateLastSeenById(client.device.id);
       return { success: true };
     }
     return { error: 'Not a device connection' };
@@ -265,10 +314,16 @@ export class AppGateway
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() payload: PrinterHeartbeatEvent,
   ) {
-    if (!client.device) {
+    if (!client.device || !client.device.organizationId) {
       return { error: 'Not a device connection' };
     }
-    await this.printersService.updateOnlineStatus(payload.printerId, payload.isOnline);
+    // Scoped to the caller's organization — a device cannot flip the
+    // online status of printers belonging to another tenant.
+    await this.printersService.updateOnlineStatus(
+      payload.printerId,
+      payload.isOnline,
+      client.device.organizationId,
+    );
     return { success: true };
   }
 
@@ -277,17 +332,29 @@ export class AppGateway
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() payload: PrinterJobCompleteEvent,
   ) {
-    if (!client.device) {
+    if (!client.device || !client.device.organizationId) {
       return { error: 'Not a device connection' };
     }
     try {
-      await this.printJobsService.updateJobStatus(payload.jobId, PrintJobStatus.COMPLETED);
+      // Scoped to the agent's organization — returns null for foreign jobs.
+      const job = await this.printJobsService.updateJobStatus(
+        payload.jobId,
+        PrintJobStatus.COMPLETED,
+        undefined,
+        client.device.organizationId,
+      );
+      if (!job) {
+        this.logger.warn(
+          `Agent ${client.device.id} reported completion for unknown/foreign job ${payload.jobId}`,
+        );
+        return { error: 'Job not found' };
+      }
       this.logger.log(`Print job completed: ${payload.jobId} (agent: ${payload.agentId})`);
 
       // Notify organization about status change
       this.emitToOrganization(client.device.organizationId, GatewayEvents.PRINT_JOB_STATUS_CHANGED, {
         jobId: payload.jobId,
-        printerId: '',
+        printerId: job.printerId,
         status: PrintJobStatus.COMPLETED,
       });
 
@@ -303,21 +370,29 @@ export class AppGateway
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() payload: PrinterJobFailedEvent,
   ) {
-    if (!client.device) {
+    if (!client.device || !client.device.organizationId) {
       return { error: 'Not a device connection' };
     }
     try {
-      await this.printJobsService.updateJobStatus(
+      // Scoped to the agent's organization — returns null for foreign jobs.
+      const job = await this.printJobsService.updateJobStatus(
         payload.jobId,
         PrintJobStatus.FAILED,
         `${payload.errorCode}: ${payload.errorMessage}`,
+        client.device.organizationId,
       );
+      if (!job) {
+        this.logger.warn(
+          `Agent ${client.device.id} reported failure for unknown/foreign job ${payload.jobId}`,
+        );
+        return { error: 'Job not found' };
+      }
       this.logger.warn(`Print job failed: ${payload.jobId} - ${payload.errorCode}: ${payload.errorMessage}`);
 
       // Notify organization about status change
       this.emitToOrganization(client.device.organizationId, GatewayEvents.PRINT_JOB_STATUS_CHANGED, {
         jobId: payload.jobId,
-        printerId: '',
+        printerId: job.printerId,
         status: PrintJobStatus.FAILED,
         error: `${payload.errorCode}: ${payload.errorMessage}`,
       });
@@ -349,61 +424,74 @@ export class AppGateway
     this.logger.debug(`Emitted ${event} to device room ${roomName}`);
   }
 
-  // Get online device IDs for an organization
-  getOnlineDeviceIds(organizationId: string): string[] {
-    const onlineIds: string[] = [];
-    for (const [deviceId, info] of this.connectedDevices) {
-      if (info.organizationId === organizationId) {
-        onlineIds.push(deviceId);
-      }
+  // Presence is derived from connected sockets via fetchSockets(), which the
+  // Redis adapter resolves across all replicas — no in-process state.
+
+  async getOnlineDeviceIds(organizationId: string): Promise<string[]> {
+    const sockets = await this.server.in(`org:${organizationId}`).fetchSockets();
+    const ids = new Set<string>();
+    for (const socket of sockets) {
+      const deviceId = socket.data?.deviceId as string | undefined;
+      if (deviceId) ids.add(deviceId);
     }
-    return onlineIds;
+    return [...ids];
   }
 
-  // Get all online device IDs
-  getAllOnlineDeviceIds(): string[] {
-    return Array.from(this.connectedDevices.keys());
+  async getAllOnlineDeviceIds(): Promise<string[]> {
+    const sockets = await this.server.fetchSockets();
+    const ids = new Set<string>();
+    for (const socket of sockets) {
+      const deviceId = socket.data?.deviceId as string | undefined;
+      if (deviceId) ids.add(deviceId);
+    }
+    return [...ids];
   }
 
   /**
-   * Move a connected device's socket between organization rooms when its
-   * assignment changes. `newOrganizationId = null` removes the device from the
-   * old org-room without joining a new one (e.g. on unassign).
+   * A device's organization assignment changed: force its sockets (on any
+   * replica) to reconnect — handleConnection re-resolves rooms and identity
+   * from the database, so the device lands in the correct org rooms.
    */
   reassignDeviceRoom(deviceId: string, newOrganizationId: string | null): void {
-    const info = this.connectedDevices.get(deviceId);
-    if (!info) return;
-    const sockets = this.server?.sockets?.sockets;
-    if (!sockets) return;
-    const socket = sockets.get(info.socketId);
-    if (!socket) return;
-
-    if (info.organizationId) {
-      socket.leave(`org:${info.organizationId}`);
-      socket.leave(`org:${info.organizationId}:device:${deviceId}`);
-    }
-    if (newOrganizationId) {
-      socket.join(`org:${newOrganizationId}`);
-      socket.join(`org:${newOrganizationId}:device:${deviceId}`);
-    }
-
-    this.connectedDevices.set(deviceId, {
-      ...info,
-      organizationId: newOrganizationId ?? '',
-    });
-    const authedSocket = socket as AuthenticatedSocket;
-    if (authedSocket.device) {
-      authedSocket.device.organizationId = newOrganizationId ?? '';
-    }
-
+    this.server.in(`device:${deviceId}`).disconnectSockets();
     this.logger.log(
-      `Reassigned device ${deviceId} room: ${info.organizationId || '(none)'} -> ${newOrganizationId || '(none)'}`,
+      `Device ${deviceId} reassigned to org ${newOrganizationId || '(none)'} — forcing reconnect`,
     );
   }
 
-  // Check if a specific device is online
-  isDeviceOnline(deviceId: string): boolean {
-    return this.connectedDevices.has(deviceId);
+  async isDeviceOnline(deviceId: string): Promise<boolean> {
+    const sockets = await this.server.in(`device:${deviceId}`).fetchSockets();
+    return sockets.length > 0;
+  }
+
+  /**
+   * Re-deliver jobs that were queued while the printer agent was offline.
+   * Called fire-and-forget from handleConnection.
+   */
+  private async replayQueuedPrintJobs(
+    client: AuthenticatedSocket,
+    deviceId: string,
+  ): Promise<void> {
+    try {
+      const jobs = await this.printJobsService.getQueuedJobsForDevice(deviceId);
+      for (const job of jobs) {
+        client.emit(
+          GatewayEvents.PRINTER_JOB,
+          this.printJobsService.buildAgentJobEvent(job),
+        );
+      }
+      if (jobs.length > 0) {
+        this.logger.log(
+          `Replayed ${jobs.length} queued print job(s) to agent device ${deviceId}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to replay queued print jobs for device ${deviceId}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
   }
 
   // Helper methods

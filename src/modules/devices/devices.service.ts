@@ -190,6 +190,13 @@ export class DevicesService {
     );
   }
 
+  async updateLastSeenById(deviceId: string): Promise<void> {
+    await this.deviceRepository.update(
+      { id: deviceId },
+      { lastSeenAt: new Date() },
+    );
+  }
+
   async findByToken(deviceToken: string): Promise<Device | null> {
     return this.deviceRepository.findOne({
       where: { deviceToken, isActive: true },
@@ -577,7 +584,7 @@ export class DevicesService {
 
     const revenueTotal = parseFloat(revenueResult?.total || '0');
 
-    const isOnline = this.gatewayService.isDeviceOnline(deviceId);
+    const isOnline = await this.gatewayService.isDeviceOnline(deviceId);
 
     return {
       ordersCount,

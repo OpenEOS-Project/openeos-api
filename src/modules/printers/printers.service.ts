@@ -224,11 +224,16 @@ export class PrintersService {
     return result;
   }
 
-  async updateOnlineStatus(printerId: string, isOnline: boolean): Promise<void> {
+  async updateOnlineStatus(
+    printerId: string,
+    isOnline: boolean,
+    organizationId: string,
+  ): Promise<void> {
     // Always refresh last_seen_at so the admin UI knows the agent is reachable,
     // even if the underlying USB printer reports offline (e.g. cable unplugged).
+    // Scoped to the reporting agent's organization.
     await this.printerRepository.update(
-      { id: printerId },
+      { id: printerId, organizationId },
       { isOnline, lastSeenAt: new Date() },
     );
   }

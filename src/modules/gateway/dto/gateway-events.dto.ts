@@ -249,6 +249,8 @@ export const GatewayEvents = {
   PAYMENT_RECEIVED: 'paymentReceived',
   PFAND_RETURNED: 'pfandReturned',
   POS_CART_UPDATED: 'posCartUpdated',
+  // Server -> POS: a display subscribed, please re-broadcast the current cart
+  CART_SNAPSHOT_REQUESTED: 'cartSnapshotRequested',
   PRINT_JOB_CREATED: 'printJobCreated',
   PRINT_JOB_STATUS_CHANGED: 'printJobStatusChanged',
   PRINTER_JOB: 'printerJob',
