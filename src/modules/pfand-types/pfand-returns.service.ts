@@ -92,11 +92,21 @@ export class PfandReturnsService {
     );
 
     // Open the cash drawer to hand out the deposit, if one is configured.
+    // The ledger row is already saved — a drawer failure must not roll it
+    // back, but it should be visible in the logs.
     if (context.cashDrawerPrinterId) {
-      this.gatewayService.sendOpenCashDrawer(
-        organizationId,
-        context.cashDrawerPrinterId,
-      );
+      try {
+        this.gatewayService.sendOpenCashDrawer(
+          organizationId,
+          context.cashDrawerPrinterId,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Cash drawer open failed for pfand return ${pfandReturn.id}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
     }
 
     this.gatewayService.notifyPfandReturned(
