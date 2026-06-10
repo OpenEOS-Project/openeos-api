@@ -79,6 +79,10 @@ RUN mkdir -p /app/uploads && chown nestjs:nodejs /app/uploads
 ENV NODE_ENV=production
 ENV PORT=3000
 
+# Build version injected by CI (GitHub run number), exposed via /api/health
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 # Switch to non-root user
 USER nestjs
 

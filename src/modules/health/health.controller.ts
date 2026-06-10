@@ -13,8 +13,14 @@ interface HealthCheck {
   status: 'ok' | 'error';
   timestamp: string;
   uptime: number;
+  version: string;
   checks?: Record<string, { status: 'ok' | 'error'; message?: string; latency?: number }>;
 }
+
+// Injected by the GitHub Action as build number (e.g. "1.0.123"); falls back
+// to the package version for local/dev runs.
+const APP_VERSION =
+  process.env.APP_VERSION || process.env.npm_package_version || 'dev';
 
 @ApiTags('Health')
 @Controller('health')
@@ -33,6 +39,7 @@ export class HealthController {
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
+      version: APP_VERSION,
     };
   }
 
@@ -76,6 +83,7 @@ export class HealthController {
       status: hasErrors ? 'error' : 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
+      version: APP_VERSION,
       checks,
     };
   }
@@ -87,6 +95,7 @@ export class HealthController {
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
+      version: APP_VERSION,
     };
   }
 
@@ -98,7 +107,6 @@ export class HealthController {
     return {
       ...readinessCheck,
       memory: process.memoryUsage(),
-      version: process.env.npm_package_version || '0.0.1',
     };
   }
 }
