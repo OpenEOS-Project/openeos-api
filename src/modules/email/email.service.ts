@@ -168,6 +168,40 @@ export class EmailService {
     return this.sendEmail({ to: email, subject, html });
   }
 
+  async sendShopOrderConfirmationEmail(options: {
+    to: string;
+    name: string;
+    organizationName: string;
+    eventName: string;
+    orderNumber: string;
+    tableNumber?: string | null;
+    itemsHtml: string;
+    totalFormatted: string;
+  }): Promise<boolean> {
+    const subject = `Bestellbestätigung ${options.orderNumber} – ${options.eventName}`;
+    const html = this.getBaseTemplate(`
+      <h1>Vielen Dank für deine Bestellung${options.name ? `, ${options.name}` : ''}!</h1>
+      <p>
+        Deine Zahlung ist eingegangen und die Bestellung
+        <strong>${options.orderNumber}</strong> bei
+        <strong>${options.organizationName}</strong> (${options.eventName}) wurde aufgenommen.
+      </p>
+      ${options.tableNumber ? `<p>Tisch: <strong>${options.tableNumber}</strong></p>` : ''}
+      <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+        ${options.itemsHtml}
+      </div>
+      <p style="font-size: 16px;">
+        <strong>Gesamtbetrag: ${options.totalFormatted}</strong><br>
+        <span style="color: #666; font-size: 13px;">bezahlt per SumUp Online-Zahlung</span>
+      </p>
+      <p style="color: #666; font-size: 14px;">
+        Diese E-Mail ist deine Bestellbestätigung und gilt als Zahlungsbeleg.
+      </p>
+    `);
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   async sendShiftConfirmationEmail(
     email: string,
     name: string,

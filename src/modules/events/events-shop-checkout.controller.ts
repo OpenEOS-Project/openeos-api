@@ -28,7 +28,6 @@ import {
 } from '../../database/entities';
 import {
   ShopCheckoutStatus,
-  ShopCheckoutAddress,
   ShopCheckoutCustomerName,
   ShopCheckoutFulfillment,
   ShopCheckoutItem,
@@ -46,11 +45,11 @@ import {
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
 import { SumUpApiService } from '../sumup/sumup-api.service';
+import { EmailService } from '../email/email.service';
 
 interface CreateCheckoutBody {
   email: string;
   customerName?: ShopCheckoutCustomerName;
-  address?: ShopCheckoutAddress;
   fulfillmentType?: ShopCheckoutFulfillment;
   tableNumber?: string | null;
   items: Array<{
@@ -92,6 +91,7 @@ export class EventsShopCheckoutController {
     @InjectRepository(ShopCheckout)
     private readonly shopCheckoutRepository: Repository<ShopCheckout>,
     private readonly sumupApi: SumUpApiService,
+    private readonly emailService: EmailService,
   ) {}
 
   private async loadShopEvent(eventId: string): Promise<Event> {
@@ -119,6 +119,12 @@ export class EventsShopCheckoutController {
       throw new BadRequestException({
         code: 'INVALID_EMAIL',
         message: 'Eine gültige E-Mail-Adresse ist erforderlich',
+      });
+    }
+    if (!body.customerName?.firstName?.trim()) {
+      throw new BadRequestException({
+        code: 'NAME_REQUIRED',
+        message: 'Bitte einen Namen angeben',
       });
     }
     if (!Array.isArray(body.items) || body.items.length === 0) {
@@ -213,7 +219,6 @@ export class EventsShopCheckoutController {
       eventId: event.id,
       email: body.email.trim().toLowerCase(),
       customerName: body.customerName ?? null,
-      address: body.address ?? null,
       items,
       totalAmount: totalAmount.toFixed(2),
       serviceFee: serviceFee.toFixed(2),
@@ -355,6 +360,8 @@ export class EventsShopCheckoutController {
         checkout.status = ShopCheckoutStatus.PAID;
         checkout.orderId = order.id;
         await this.shopCheckoutRepository.save(checkout);
+        // Fire-and-forget — a failed mail must never fail the settlement.
+        void this.sendOrderConfirmation(checkout, order);
         return { status: 'paid' as const, orderNumber: order.orderNumber };
       } catch (error) {
         // Release the claim so a later verify/webhook retries order creation.
@@ -379,6 +386,70 @@ export class EventsShopCheckoutController {
     }
 
     return { status: 'pending' as const };
+  }
+
+  /** Confirmation/receipt mail to the shopper, sent once the order exists. */
+  private async sendOrderConfirmation(checkout: ShopCheckout, order: Order): Promise<void> {
+    try {
+      if (!checkout.email) return;
+
+      const [event, organization] = await Promise.all([
+        this.eventRepository.findOne({ where: { id: checkout.eventId } }),
+        this.organizationRepository.findOne({ where: { id: checkout.organizationId } }),
+      ]);
+
+      const formatAmount = (value: number) =>
+        new Intl.NumberFormat('de-DE', {
+          style: 'currency',
+          currency: checkout.currency || 'EUR',
+        }).format(value);
+
+      const rows = checkout.items
+        .map((item) => {
+          const lineTotal = lineUnitPrice(Number(item.unitPrice), item.options) * item.quantity;
+          const optionsText = (item.options || [])
+            .map((o) => (o.excluded ? `ohne ${o.option}` : o.option))
+            .join(', ');
+          return `<tr>
+            <td style="padding: 4px 8px 4px 0;">${item.quantity}× ${item.name}${
+              optionsText ? `<br><span style="color: #666; font-size: 12px;">${optionsText}</span>` : ''
+            }</td>
+            <td style="padding: 4px 0; text-align: right; white-space: nowrap;">${formatAmount(lineTotal)}</td>
+          </tr>`;
+        })
+        .join('');
+
+      const serviceFee = Number(checkout.serviceFee || 0);
+      const feeRow = serviceFee > 0
+        ? `<tr>
+            <td style="padding: 4px 8px 4px 0; color: #666;">Servicegebühr</td>
+            <td style="padding: 4px 0; text-align: right;">${formatAmount(serviceFee)}</td>
+          </tr>`
+        : '';
+
+      const name = [checkout.customerName?.firstName, checkout.customerName?.lastName]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+      await this.emailService.sendShopOrderConfirmationEmail({
+        to: checkout.email,
+        name,
+        organizationName: organization?.name || 'OpenEOS',
+        eventName: event?.name || 'Event',
+        orderNumber: order.orderNumber,
+        tableNumber: checkout.tableNumber,
+        itemsHtml: `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">${rows}${feeRow}</table>`,
+        totalFormatted: formatAmount(Number(checkout.totalAmount)),
+      });
+      this.logger.log(`Order confirmation sent for ${order.orderNumber} to ${checkout.email}`);
+    } catch (error) {
+      this.logger.warn(
+        `Order confirmation mail for ${order.orderNumber} failed: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
   }
 
   private async createOrderFromCheckout(checkout: ShopCheckout): Promise<Order> {

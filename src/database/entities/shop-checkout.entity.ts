@@ -31,13 +31,6 @@ export interface ShopCheckoutItem {
   options?: ShopCheckoutItemOption[];
 }
 
-export interface ShopCheckoutAddress {
-  street?: string;
-  postalCode?: string;
-  city?: string;
-  country?: string;
-}
-
 export interface ShopCheckoutCustomerName {
   firstName?: string;
   lastName?: string;
@@ -59,9 +52,6 @@ export class ShopCheckout extends BaseEntity {
 
   @Column({ name: 'customer_name', type: 'jsonb', nullable: true })
   customerName: ShopCheckoutCustomerName | null;
-
-  @Column({ type: 'jsonb', nullable: true })
-  address: ShopCheckoutAddress | null;
 
   @Column({ type: 'jsonb' })
   items: ShopCheckoutItem[];
