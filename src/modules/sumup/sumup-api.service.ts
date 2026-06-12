@@ -187,7 +187,10 @@ export class SumUpApiService {
       currency: string;
       description: string;
       checkoutReference: string;
+      /** Server-side webhook that SumUp POSTs payment-status updates to. */
       returnUrl: string;
+      /** Where the shopper's BROWSER is redirected after paying. */
+      redirectUrl: string;
     },
   ): Promise<{ id: string; checkoutUrl: string }> {
     const response = await fetch('https://api.sumup.com/v0.1/checkouts', {
@@ -201,7 +204,10 @@ export class SumUpApiService {
         currency: data.currency,
         description: data.description,
         checkout_reference: data.checkoutReference,
+        // SumUp semantics: return_url = async status webhook (server POST),
+        // redirect_url = customer redirect after the hosted checkout.
         return_url: data.returnUrl,
+        redirect_url: data.redirectUrl,
         merchant_code: merchantCode,
         hosted_checkout: { enabled: true },
       }),

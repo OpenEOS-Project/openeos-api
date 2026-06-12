@@ -168,6 +168,10 @@ export class SumUpService {
         description,
         checkoutReference: `openeos-${Date.now()}`,
         returnUrl,
+        // This flow has no server webhook (the order exists before payment
+        // and the status page polls) — the URL doubles as browser redirect
+        // so the customer lands back in the app after paying.
+        redirectUrl: returnUrl,
       },
     );
 

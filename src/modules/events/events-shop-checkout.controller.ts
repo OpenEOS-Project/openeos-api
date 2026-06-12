@@ -7,6 +7,9 @@ import {
   Body,
   BadRequestException,
   NotFoundException,
+  HttpCode,
+  HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -69,6 +72,8 @@ function lineUnitPrice(unit: number, options?: ShopCheckoutItemOption[]): number
 @Controller('public/shop')
 @Public()
 export class EventsShopCheckoutController {
+  private readonly logger = new Logger(EventsShopCheckoutController.name);
+
   constructor(
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
@@ -219,15 +224,22 @@ export class EventsShopCheckoutController {
     });
     await this.shopCheckoutRepository.save(checkout);
 
-    const returnBase = process.env.SHOP_RETURN_URL_BASE || 'http://localhost:3004';
+    // Browser redirect after payment -> shop return page (polls verify).
+    const returnBase = process.env.SHOP_RETURN_URL_BASE || 'https://shop.openeos.de';
     const returnUrl = `${returnBase}/${event.id}/checkout/return?checkoutId=${checkout.id}`;
+
+    // Server webhook -> settles the checkout (creates the order) even when
+    // the customer never makes it back to the shop after paying.
+    const apiBase = process.env.API_PUBLIC_URL || 'https://api.openeos.de';
+    const webhookUrl = `${apiBase}/api/public/shop/checkout/${checkout.id}/webhook`;
 
     const sumup = await this.sumupApi.createOnlineCheckout(apiKey, merchantCode, {
       amount: Number(totalAmount.toFixed(2)),
       currency,
       description: `Shop · ${event.name}`,
       checkoutReference: checkout.id,
-      returnUrl,
+      returnUrl: webhookUrl,
+      redirectUrl: returnUrl,
     });
 
     checkout.sumupCheckoutId = sumup.id;
@@ -251,18 +263,48 @@ export class EventsShopCheckoutController {
       throw new NotFoundException({ code: 'CHECKOUT_NOT_FOUND', message: 'Checkout nicht gefunden' });
     }
 
+    return { data: await this.settleCheckout(checkout) };
+  }
+
+  /**
+   * SumUp posts asynchronous payment-status updates here (the checkout's
+   * return_url). The payload is NOT trusted — settleCheckout re-verifies the
+   * status against the SumUp API before creating the order. This makes order
+   * creation independent of the customer returning to the shop.
+   */
+  @Post('checkout/:checkoutId/webhook')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'SumUp payment-status webhook; settles the checkout server-side' })
+  async checkoutWebhook(@Param('checkoutId', ParseUUIDPipe) checkoutId: string) {
+    const checkout = await this.shopCheckoutRepository.findOne({ where: { id: checkoutId } });
+    if (!checkout) {
+      // Always answer 200 — SumUp retries on errors and the checkout may
+      // simply be unknown (e.g. deleted test data).
+      return { received: true };
+    }
+
+    try {
+      const result = await this.settleCheckout(checkout);
+      this.logger.log(`Shop checkout webhook ${checkoutId}: ${result.status}`);
+    } catch (error) {
+      this.logger.error(
+        `Shop checkout webhook ${checkoutId} failed: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+    return { received: true };
+  }
+
+  private async settleCheckout(checkout: ShopCheckout): Promise<{
+    status: 'pending' | 'paid' | 'failed' | 'cancelled';
+    orderNumber?: string | null;
+  }> {
     if (checkout.status === ShopCheckoutStatus.PAID && checkout.orderId) {
       const order = await this.orderRepository.findOne({ where: { id: checkout.orderId } });
-      return {
-        data: {
-          status: 'paid' as const,
-          orderNumber: order?.orderNumber ?? null,
-        },
-      };
+      return { status: 'paid' as const, orderNumber: order?.orderNumber ?? null };
     }
 
     if (!checkout.sumupCheckoutId) {
-      return { data: { status: checkout.status as 'pending' | 'failed' | 'cancelled' } };
+      return { status: checkout.status as 'pending' | 'failed' | 'cancelled' };
     }
 
     const organization = await this.organizationRepository.findOne({
@@ -273,7 +315,7 @@ export class EventsShopCheckoutController {
       | null;
     const apiKey = orgSettings?.sumup?.apiKey;
     if (!apiKey) {
-      return { data: { status: checkout.status as 'pending' | 'failed' | 'cancelled' } };
+      return { status: checkout.status as 'pending' | 'failed' | 'cancelled' };
     }
 
     let sumupStatus: string | undefined;
@@ -291,27 +333,52 @@ export class EventsShopCheckoutController {
     }
 
     if (sumupStatus === 'PAID') {
-      const order = await this.createOrderFromCheckout(checkout);
-      checkout.status = ShopCheckoutStatus.PAID;
-      checkout.orderId = order.id;
-      checkout.paidAt = new Date();
-      await this.shopCheckoutRepository.save(checkout);
-      return { data: { status: 'paid' as const, orderNumber: order.orderNumber } };
+      // Claim the PENDING -> PAID transition atomically: the webhook and the
+      // return-page polling may settle concurrently, only the claimer creates
+      // the order.
+      const claim = await this.shopCheckoutRepository.update(
+        { id: checkout.id, status: ShopCheckoutStatus.PENDING },
+        { status: ShopCheckoutStatus.PAID, paidAt: new Date() },
+      );
+      if (!claim.affected) {
+        const fresh = await this.shopCheckoutRepository.findOne({ where: { id: checkout.id } });
+        if (fresh?.status === ShopCheckoutStatus.PAID && fresh.orderId) {
+          const order = await this.orderRepository.findOne({ where: { id: fresh.orderId } });
+          return { status: 'paid' as const, orderNumber: order?.orderNumber ?? null };
+        }
+        // Another request is mid-settlement — report pending so pollers retry.
+        return { status: 'pending' as const };
+      }
+
+      try {
+        const order = await this.createOrderFromCheckout(checkout);
+        checkout.status = ShopCheckoutStatus.PAID;
+        checkout.orderId = order.id;
+        await this.shopCheckoutRepository.save(checkout);
+        return { status: 'paid' as const, orderNumber: order.orderNumber };
+      } catch (error) {
+        // Release the claim so a later verify/webhook retries order creation.
+        await this.shopCheckoutRepository.update(
+          { id: checkout.id },
+          { status: ShopCheckoutStatus.PENDING, paidAt: null },
+        );
+        throw error;
+      }
     }
 
     if (sumupStatus === 'FAILED' || sumupStatus === 'EXPIRED') {
       checkout.status = ShopCheckoutStatus.FAILED;
       await this.shopCheckoutRepository.save(checkout);
-      return { data: { status: 'failed' as const } };
+      return { status: 'failed' as const };
     }
 
     if (sumupStatus === 'CANCELLED' || sumupStatus === 'CANCELED') {
       checkout.status = ShopCheckoutStatus.CANCELLED;
       await this.shopCheckoutRepository.save(checkout);
-      return { data: { status: 'cancelled' as const } };
+      return { status: 'cancelled' as const };
     }
 
-    return { data: { status: 'pending' as const } };
+    return { status: 'pending' as const };
   }
 
   private async createOrderFromCheckout(checkout: ShopCheckout): Promise<Order> {
