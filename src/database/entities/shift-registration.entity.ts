@@ -26,8 +26,8 @@ export class ShiftRegistration extends BaseEntity {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
-  @Column({ type: 'varchar', length: 255 })
-  email: string;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  email: string | null;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   phone: string | null;

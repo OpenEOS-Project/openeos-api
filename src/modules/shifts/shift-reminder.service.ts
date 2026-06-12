@@ -98,6 +98,11 @@ export class ShiftReminderService {
         return;
       }
 
+      if (!registration.email) {
+        this.logger.debug(`Skipping reminder for registration ${registration.id} — no email address`);
+        return;
+      }
+
       const shiftDate = new Date(shift.date);
       const formattedDate = shiftDate.toLocaleDateString('de-DE', {
         weekday: 'long',
@@ -171,6 +176,10 @@ export class ShiftReminderService {
         }
 
         for (const reg of byGroup.values()) {
+          if (!reg.email) {
+            this.logger.debug(`Skipping verification reminder for registration ${reg.id} — no email address`);
+            continue;
+          }
           try {
             const verifyUrl = `${baseUrl}/s/verify/${reg.verificationToken}`;
             await this.emailService.sendVerificationReminderEmail(

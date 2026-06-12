@@ -366,7 +366,7 @@ export class ShiftsService {
       // otherwise start a new group (= a fresh standalone helper).
       registrationGroupId: dto.registrationGroupId ?? uuidv4(),
       name: dto.name,
-      email: dto.email,
+      email: dto.email || null,
       phone: dto.phone || null,
       notes: dto.notes || null,
       adminNotes: dto.adminNotes || null,
@@ -376,12 +376,12 @@ export class ShiftsService {
 
     const saved = await this.registrationRepository.save(reg);
 
-    if (dto.notify) {
+    if (dto.notify && saved.email) {
       const full = await this.registrationRepository.findOne({
         where: { id: saved.id },
         relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
       });
-      if (full) {
+      if (full && full.email) {
         const summary = this.formatShiftsSummary([full]);
         await this.emailService.sendShiftConfirmationEmail(
           full.email,
@@ -411,7 +411,7 @@ export class ShiftsService {
       : '';
 
     if (dto.name !== undefined) reg.name = dto.name;
-    if (dto.email !== undefined) reg.email = dto.email;
+    if (dto.email !== undefined) reg.email = dto.email || null;
     if (dto.phone !== undefined) reg.phone = dto.phone || null;
     if (dto.notes !== undefined) reg.notes = dto.notes || null;
     if (dto.adminNotes !== undefined) reg.adminNotes = dto.adminNotes || null;
@@ -439,7 +439,7 @@ export class ShiftsService {
         where: { id: saved.id },
         relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
       });
-      if (full) {
+      if (full && full.email) {
         const newShiftLine = this.formatShiftsSummary([full]).replace(/<\/?p[^>]*>/g, '').trim();
         await this.emailService.sendShiftUpdatedEmail(
           full.email,
@@ -518,6 +518,12 @@ export class ShiftsService {
       status: ShiftChangeProposalStatus.PENDING,
     });
     const saved = await this.proposalRepository.save(proposal);
+
+    if (!anchor.email) {
+      // No email on the anchor registration — return the saved proposal
+      // without sending a mail (admin must inform the helper another way).
+      return saved;
+    }
 
     const proposalBase = baseUrl || this.emailService.appUrl;
     const acceptUrl = `${proposalBase}/s/proposal/${saved.token}?action=accept`;
@@ -639,16 +645,18 @@ export class ShiftsService {
       }
     }
 
-    // Send confirmation email
-    const shiftsSummary = this.formatShiftsSummary(groupRegistrations);
-    const planName = groupRegistrations[0]?.shift?.job?.shiftPlan?.name || 'Schichtplan';
+    // Send confirmation email (skip if no email address on file)
+    if (reg.email) {
+      const shiftsSummary = this.formatShiftsSummary(groupRegistrations);
+      const planName = groupRegistrations[0]?.shift?.job?.shiftPlan?.name || 'Schichtplan';
 
-    await this.emailService.sendShiftConfirmationEmail(
-      reg.email,
-      reg.name,
-      planName,
-      shiftsSummary,
-    );
+      await this.emailService.sendShiftConfirmationEmail(
+        reg.email,
+        reg.name,
+        planName,
+        shiftsSummary,
+      );
+    }
 
     return reg;
   }
@@ -672,9 +680,11 @@ export class ShiftsService {
       await this.registrationRepository.save(r);
     }
 
-    // Send rejection email
-    const planName = groupRegistrations[0]?.shift?.job?.shiftPlan?.name || 'Schichtplan';
-    await this.emailService.sendShiftRejectionEmail(reg.email, reg.name, planName, reason);
+    // Send rejection email (skip if no email address on file)
+    if (reg.email) {
+      const planName = groupRegistrations[0]?.shift?.job?.shiftPlan?.name || 'Schichtplan';
+      await this.emailService.sendShiftRejectionEmail(reg.email, reg.name, planName, reason);
+    }
 
     return reg;
   }
@@ -686,6 +696,7 @@ export class ShiftsService {
     message: string,
   ): Promise<void> {
     const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+    if (!reg.email) return; // no email — nothing to send
     const planName = reg.shift?.job?.shiftPlan?.name || 'Schichtplan';
 
     await this.emailService.sendShiftMessageEmail(
@@ -874,7 +885,7 @@ export class ShiftsService {
       },
     );
 
-    if (!plan.settings.requireApproval) {
+    if (!plan.settings.requireApproval && registration.email) {
       const groupRegistrations = await this.registrationRepository.find({
         where: { registrationGroupId: registration.registrationGroupId },
         relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
@@ -919,7 +930,7 @@ export class ShiftsService {
           : ShiftRegistrationStatus.CONFIRMED,
       },
     );
-    if (!plan.settings.requireApproval) {
+    if (!plan.settings.requireApproval && reg.email) {
       const groupRegistrations = await this.registrationRepository.find({
         where: { registrationGroupId: reg.registrationGroupId },
         relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
@@ -1011,13 +1022,15 @@ export class ShiftsService {
 
     const base = baseUrl || this.emailService.appUrl;
     const url = `${base}/s/manage/${token}`;
-    await this.emailService.sendHelperMagicLinkEmail(reg.email, reg.name, plan.name, url);
+    if (reg.email) {
+      await this.emailService.sendHelperMagicLinkEmail(reg.email, reg.name, plan.name, url);
+    }
   }
 
   /** Load the helper's data for the manage screen. Throws on
    *  invalid / expired tokens. */
   async getHelperManageData(token: string): Promise<{
-    helper: { name: string; email: string; phone: string | null };
+    helper: { name: string; email: string | null; phone: string | null };
     plan: ShiftPlan;
     registrations: ShiftRegistration[];
   }> {
@@ -1058,7 +1071,7 @@ export class ShiftsService {
       where: { id: registrationId },
       relations: ['shift', 'shift.job'],
     });
-    if (!reg || reg.email.trim().toLowerCase() !== link.email) {
+    if (!reg || !reg.email || reg.email.trim().toLowerCase() !== link.email) {
       throw new NotFoundException('Anmeldung nicht gefunden');
     }
     if (reg.shift?.job?.shiftPlanId !== link.shiftPlanId) {

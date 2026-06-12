@@ -7,9 +7,10 @@ export class AdminCreateRegistrationDto {
   @MinLength(2)
   name: string;
 
-  @ApiProperty({ description: 'Helper email — used for notifications', example: 'max@example.com' })
+  @ApiPropertyOptional({ description: 'Helper email — used for notifications. Optional when adding helpers manually.', example: 'max@example.com' })
   @IsEmail()
-  email: string;
+  @IsOptional()
+  email?: string;
 
   @ApiPropertyOptional({ description: 'Phone number' })
   @IsString()
