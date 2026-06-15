@@ -14,6 +14,7 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { CreateProductDto, UpdateProductDto, AdjustStockDto } from './dto';
+import { ImportProductsDto } from './dto/import-products.dto';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
@@ -32,6 +33,17 @@ export class ProductsController {
   ) {
     const product = await this.productsService.create(eventId, createDto, user);
     return { data: product };
+  }
+
+  @Post('import')
+  @HttpCode(HttpStatus.OK)
+  async importProducts(
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Body() importDto: ImportProductsDto,
+    @CurrentUser() user: User,
+  ) {
+    const result = await this.productsService.importProducts(eventId, importDto, user);
+    return { data: result };
   }
 
   @Get()
