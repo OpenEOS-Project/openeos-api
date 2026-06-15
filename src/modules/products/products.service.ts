@@ -118,6 +118,10 @@ export class ProductsService {
 
     const product = await this.findOne(eventId, productId, user);
     Object.assign(product, updateDto);
+    // findOne eager-loads the `category` relation. On save, TypeORM derives the
+    // FK from that (stale) relation object and would overwrite a changed
+    // categoryId — so drop it and let the FK column win.
+    delete (product as { category?: unknown }).category;
     await this.productRepository.save(product);
 
     this.logger.log(`Product updated: ${product.name} (${product.id})`);
