@@ -60,6 +60,14 @@ export class CreateDiscountVoucherDto {
   isActive?: boolean;
 
   @ApiPropertyOptional({
+    example: false,
+    description: 'Ob der Bon mehrfach pro Bestellung verwendet werden darf',
+  })
+  @IsOptional()
+  @IsBoolean()
+  allowMultiplePerOrder?: boolean;
+
+  @ApiPropertyOptional({
     example: 0,
     description: 'Sortierreihenfolge an der Kasse',
   })

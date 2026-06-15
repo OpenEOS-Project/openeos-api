@@ -44,6 +44,7 @@ export class DiscountVouchersService {
       type: createDto.type,
       amount: this.normalizeAmount(createDto.type, createDto.amount),
       isActive: createDto.isActive ?? true,
+      allowMultiplePerOrder: createDto.allowMultiplePerOrder ?? false,
       sortOrder: createDto.sortOrder ?? 0,
     });
 
@@ -110,6 +111,8 @@ export class DiscountVouchersService {
     if (updateDto.description !== undefined)
       voucher.description = updateDto.description ?? null;
     if (updateDto.isActive !== undefined) voucher.isActive = updateDto.isActive;
+    if (updateDto.allowMultiplePerOrder !== undefined)
+      voucher.allowMultiplePerOrder = updateDto.allowMultiplePerOrder;
     if (updateDto.sortOrder !== undefined)
       voucher.sortOrder = updateDto.sortOrder;
 

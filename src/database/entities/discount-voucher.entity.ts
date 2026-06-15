@@ -35,6 +35,10 @@ export class DiscountVoucher extends BaseEntity {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
+  /** Whether the voucher may be applied more than once to the same order. */
+  @Column({ name: 'allow_multiple_per_order', type: 'boolean', default: false })
+  allowMultiplePerOrder: boolean;
+
   @Column({ name: 'sort_order', type: 'int', default: 0 })
   sortOrder: number;
 
