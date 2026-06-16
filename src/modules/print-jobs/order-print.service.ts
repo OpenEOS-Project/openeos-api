@@ -46,6 +46,10 @@ export class OrderPrintService {
       customer_name: order.customerName ?? null,
       priority: order.priority ?? 'normal',
       created_at: order.createdAt ?? null,
+      // Channel info so the kitchen template can render a clear "where does
+      // this go" banner (Bedienung→Tisch / Online→Abholung / SB→Theke).
+      source: order.source ?? 'pos',
+      fulfillment_type: order.fulfillmentType ?? 'counter_pickup',
       // Pass the raw entity too in case a template wants nested access.
       order,
     };
