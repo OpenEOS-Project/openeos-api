@@ -206,6 +206,15 @@ export class OrdersService {
       .createQueryBuilder('ord')
       .where('ord.organizationId = :organizationId', { organizationId });
 
+    // Surface "who created it" without leaking sensitive user columns
+    // (the User entity has no @Exclude on passwordHash, so never use
+    // leftJoinAndSelect here — select only the display fields explicitly).
+    queryBuilder
+      .leftJoin('ord.createdByUser', 'creator')
+      .addSelect(['creator.id', 'creator.firstName', 'creator.lastName'])
+      .leftJoin('ord.createdByDevice', 'creatorDevice')
+      .addSelect(['creatorDevice.id', 'creatorDevice.name']);
+
     if (query.eventId) {
       queryBuilder.andWhere('ord.eventId = :eventId', {
         eventId: query.eventId,
