@@ -289,9 +289,32 @@ export class OrderPrintService {
     }
   }
 
+  /**
+   * Build the option lines for a kitchen ticket. The kitchen only cares about
+   * *deviations* from the standard product, not the full ingredient list:
+   *   - excluded ingredients  → "ohne X"   (e.g. "ohne Zwiebeln")
+   *   - paid extras (priceModifier > 0) → "+ X"
+   * Kept default / free options (not excluded, no surcharge) are noise on a
+   * kitchen ticket and are dropped.
+   */
   private formatOptions(item: OrderItem): string[] {
-    const selected = (item.options as { selected?: Array<{ option?: string }> } | null)?.selected ?? [];
-    return selected.map((o) => o.option ?? '').filter(Boolean);
+    const selected =
+      (item.options as {
+        selected?: Array<{
+          option?: string;
+          excluded?: boolean;
+          priceModifier?: number;
+        }>;
+      } | null)?.selected ?? [];
+    return selected
+      .map((o) => {
+        const name = o.option ?? '';
+        if (!name) return '';
+        if (o.excluded) return `ohne ${name}`;
+        if (Number(o.priceModifier) > 0) return `+ ${name}`;
+        return '';
+      })
+      .filter(Boolean);
   }
 
   async handlePaymentReceived(
