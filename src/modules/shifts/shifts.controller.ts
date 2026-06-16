@@ -27,6 +27,7 @@ import {
   ApproveRegistrationDto,
   RejectRegistrationDto,
   SendMessageDto,
+  BroadcastMessageDto,
   UpdateRegistrationNotesDto,
   AdminCreateRegistrationDto,
   AdminUpdateRegistrationDto,
@@ -268,6 +269,25 @@ export class ShiftsController {
     @CurrentUser() user: User,
   ) {
     await this.shiftsService.sendMessage(organizationId, registrationId, user, dto.message);
+  }
+
+  @Post(':planId/broadcast')
+  @HttpCode(HttpStatus.OK)
+  async broadcastMessage(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('planId', ParseUUIDPipe) planId: string,
+    @Body() dto: BroadcastMessageDto,
+    @CurrentUser() user: User,
+  ) {
+    const result = await this.shiftsService.broadcastMessage(
+      organizationId,
+      planId,
+      user,
+      dto.message,
+      dto.recipientEmails,
+      dto.subject,
+    );
+    return { data: result };
   }
 
   @Delete('registrations/:registrationId')

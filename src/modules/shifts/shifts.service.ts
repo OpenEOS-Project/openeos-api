@@ -708,6 +708,117 @@ export class ShiftsService {
     );
   }
 
+  /** Send a templated email to every helper in the plan (or a subset by email).
+   *  Helpers are grouped by email so each address gets ONE mail listing all of
+   *  their shifts; rejected/cancelled rows are ignored. Supports placeholders
+   *  {{name}}, {{plan}} and {{schichten}}/{{shifts}}. */
+  async broadcastMessage(
+    organizationId: string,
+    planId: string,
+    user: User,
+    message: string,
+    recipientEmails?: string[] | null,
+    subject?: string,
+  ): Promise<{ sent: number; recipients: number }> {
+    const plan = await this.findOnePlan(organizationId, planId);
+    const registrations = await this.findAllRegistrations(organizationId, planId);
+
+    // Group by lowercased email; skip rows we can't deliver (no email) or that
+    // are no longer active (rejected/cancelled).
+    const byEmail = new Map<
+      string,
+      { email: string; name: string; regs: ShiftRegistration[] }
+    >();
+    for (const reg of registrations) {
+      const email = (reg.email || '').trim();
+      if (!email) continue;
+      if (
+        reg.status === ShiftRegistrationStatus.REJECTED ||
+        reg.status === ShiftRegistrationStatus.CANCELLED
+      ) {
+        continue;
+      }
+      const key = email.toLowerCase();
+      const existing = byEmail.get(key);
+      if (existing) existing.regs.push(reg);
+      else byEmail.set(key, { email, name: reg.name, regs: [reg] });
+    }
+
+    const filter =
+      recipientEmails && recipientEmails.length
+        ? new Set(recipientEmails.map((e) => e.trim().toLowerCase()))
+        : null;
+
+    const senderName =
+      user.firstName && user.lastName
+        ? `${user.firstName} ${user.lastName}`
+        : user.email;
+    const planName = plan.name || 'Schichtplan';
+    const finalSubject = (subject || '').trim() || `Info zu: ${planName}`;
+
+    let sent = 0;
+    let recipients = 0;
+    for (const { email, name, regs } of byEmail.values()) {
+      if (filter && !filter.has(email.toLowerCase())) continue;
+      recipients++;
+      const body = this.renderMessageTemplate(message, {
+        name,
+        plan: planName,
+        shifts: this.formatShiftsPlain(regs),
+      });
+      const ok = await this.emailService.sendShiftBroadcastEmail({
+        email,
+        subject: finalSubject,
+        body,
+        senderName,
+      });
+      if (ok) sent++;
+    }
+
+    return { sent, recipients };
+  }
+
+  /** Substitute the message placeholders. Both English and German aliases are
+   *  accepted, with optional surrounding whitespace inside the braces. */
+  private renderMessageTemplate(
+    template: string,
+    vars: { name: string; plan: string; shifts: string },
+  ): string {
+    return template
+      .replace(/\{\{\s*name\s*\}\}/gi, vars.name)
+      .replace(/\{\{\s*(plan|schichtplan)\s*\}\}/gi, vars.plan)
+      .replace(/\{\{\s*(shifts?|schichten)\s*\}\}/gi, vars.shifts);
+  }
+
+  /** Plain-text (one bullet per line) shift list for the {{schichten}}
+   *  placeholder — the broadcast email renders it inside a pre-wrap block. */
+  private formatShiftsPlain(registrations: ShiftRegistration[]): string {
+    const hhmm = (t: string) => (t || '').slice(0, 5);
+    const dayValue = (r: ShiftRegistration) =>
+      r.shift?.date ? new Date(r.shift.date).getTime() : 0;
+    return registrations
+      .slice()
+      .sort(
+        (a, b) =>
+          dayValue(a) - dayValue(b) ||
+          (a.shift?.startTime || '').localeCompare(b.shift?.startTime || ''),
+      )
+      .map((r) => {
+        const shift = r.shift;
+        const job = shift?.job;
+        if (!shift || !job) return '';
+        const date = new Date(shift.date).toLocaleDateString('de-DE', {
+          weekday: 'long',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        });
+        return `• ${job.name}: ${date}, ${hhmm(shift.startTime)}–${hhmm(shift.endTime)} Uhr`;
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+
   async deleteRegistration(organizationId: string, registrationId: string): Promise<void> {
     const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
 

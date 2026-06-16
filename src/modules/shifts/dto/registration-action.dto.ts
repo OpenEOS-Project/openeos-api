@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsOptional, MaxLength, IsArray } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ApproveRegistrationDto {
@@ -22,6 +22,31 @@ export class SendMessageDto {
   @IsString()
   @MaxLength(2000)
   message: string;
+}
+
+export class BroadcastMessageDto {
+  @ApiPropertyOptional({
+    description:
+      'Message template. Supports placeholders {{name}}, {{plan}} and {{schichten}}/{{shifts}} (the helper\'s registered shifts).',
+  })
+  @IsString()
+  @MaxLength(5000)
+  message: string;
+
+  @ApiPropertyOptional({ description: 'Optional subject line' })
+  @IsString()
+  @MaxLength(200)
+  @IsOptional()
+  subject?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Limit delivery to these helper emails (case-insensitive). Omit to send to every helper with an email.',
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  recipientEmails?: string[];
 }
 
 export class UpdateRegistrationNotesDto {

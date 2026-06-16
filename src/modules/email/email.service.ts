@@ -440,6 +440,25 @@ export class EmailService {
     return this.sendEmail({ to: email, subject, html });
   }
 
+  /** Free-form broadcast to a helper. Unlike sendShiftMessageEmail this does
+   *  NOT prepend a "Hallo {name}" greeting or boilerplate — the admin controls
+   *  the whole body via placeholders ({{name}}, {{plan}}, {{schichten}}), so we
+   *  render it verbatim (HTML-escaped, newlines preserved). */
+  async sendShiftBroadcastEmail(opts: {
+    email: string;
+    subject: string;
+    body: string;
+    senderName: string;
+  }): Promise<boolean> {
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html = this.getBaseTemplate(`
+      <div style="white-space: pre-wrap; font-size: 15px; color: #333;">${esc(opts.body)}</div>
+      <p style="color: #a1a1aa; font-size: 13px; margin-top: 28px;">Gesendet von ${esc(opts.senderName)}</p>
+    `);
+    return this.sendEmail({ to: opts.email, subject: opts.subject, html });
+  }
+
   private getBaseTemplate(content: string): string {
     // Always serve the logo from the public marketing site so the asset is
     // reachable from any email client, regardless of how/where this API is
