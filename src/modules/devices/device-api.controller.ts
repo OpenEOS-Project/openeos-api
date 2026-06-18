@@ -514,24 +514,12 @@ export class DeviceApiController {
       completeOrder.items &&
       completeOrder.items.length > 0
     ) {
-      // Group items by production station for printing
-      const itemsByStation = new Map<string | null, OrderItem[]>();
-      for (const item of completeOrder.items) {
-        const key = item.productionStationId || null;
-        if (!itemsByStation.has(key)) itemsByStation.set(key, []);
-        itemsByStation.get(key)!.push(item);
-      }
-
-      for (const [stationId, items] of itemsByStation) {
-        if (stationId) {
-          const station = await this.productionStationRepository.findOne({
-            where: { id: stationId },
-          });
-          if (station && station.printerId) {
-            this.printToStation(organizationId, station, completeOrder, items);
-          }
-        }
-      }
+      // Kitchen/station ticket printing is handled centrally by
+      // OrderPrintService.handleOrderCreated below — it is template-driven and
+      // respects the org's kitchenTicketPrinting settings (per_station splits
+      // by Produktionsstandort). The legacy direct printToStation path was
+      // removed: it bypassed the template and emitted a malformed duplicate
+      // ticket (camelCase payload, no template → "half receipt, no products").
 
       // Notify admin order list
       this.gatewayService.notifyOrderCreated(
@@ -1446,44 +1434,6 @@ export class DeviceApiController {
     }
 
     return item;
-  }
-
-  private async printToStation(
-    organizationId: string,
-    station: ProductionStation,
-    order: Order,
-    items: OrderItem[],
-  ): Promise<void> {
-    if (!station.printerId) return;
-
-    try {
-      await this.printJobsService.createFromWorkflow(
-        organizationId,
-        station.printerId,
-        null,
-        order.id,
-        1,
-        {
-          order,
-          orderNumber: order.orderNumber,
-          dailyNumber: order.dailyNumber,
-          tableNumber: order.tableNumber,
-          stationName: station.name,
-          items: items.map((i) => ({
-            productName: i.productName,
-            categoryName: i.categoryName,
-            quantity: i.quantity,
-            notes: i.notes,
-            kitchenNotes: i.kitchenNotes,
-            options: i.options,
-          })),
-        },
-      );
-    } catch (err) {
-      this.logger.error(
-        `Station printing failed for ${station.name}: ${err.message}`,
-      );
-    }
   }
 
   private async recalculateOrderTotals(orderId: string): Promise<void> {

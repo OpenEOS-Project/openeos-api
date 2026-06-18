@@ -55,6 +55,29 @@ export class OrderPrintService {
     };
   }
 
+  /**
+   * Build the `organization` payload (name/address/phone) so templates that
+   * include organization fields render on any workflow — not just receipts.
+   * Kitchen/order tickets use StrictUndefined, so an `{{ organization.* }}`
+   * reference throws "'organization' is undefined" when this is missing.
+   */
+  private async buildOrgPayload(
+    organizationId: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    const org = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: ['id', 'name', 'settings'],
+    });
+    if (!org) return undefined;
+    return {
+      name: org.name,
+      address: org.settings?.address
+        ? `${org.settings.address.street}, ${org.settings.address.zip} ${org.settings.address.city}`
+        : undefined,
+      phone: org.settings?.contact?.phone,
+    };
+  }
+
   async handleOrderCreated(
     organizationId: string,
     data: {
@@ -111,6 +134,7 @@ export class OrderPrintService {
             1,
             {
               ...this.buildOrderPayload(data.order),
+              organization: await this.buildOrgPayload(organizationId),
               total: data.total,
               source: data.source,
             },
@@ -144,6 +168,7 @@ export class OrderPrintService {
     },
   ): Promise<void> {
     const { mode, templateId } = kitchen;
+    const orgPayload = await this.buildOrgPayload(organizationId);
 
     if (mode === 'per_order') {
       const { printerId } = await this.printRoutingService.resolveOrderPrinter({
@@ -165,6 +190,7 @@ export class OrderPrintService {
         1,
         {
           ...this.buildOrderPayload(data.order),
+          organization: orgPayload,
           total: data.total,
           source: data.source,
         },
@@ -204,6 +230,7 @@ export class OrderPrintService {
           1,
           {
             ...this.buildOrderPayload(data.order),
+            organization: orgPayload,
             // Single-item items array so the kitchen template's items_list still
             // renders cleanly. The barcode field uses order_item_id.
             items: [
@@ -277,6 +304,7 @@ export class OrderPrintService {
           1,
           {
             ...this.buildOrderPayload(data.order),
+            organization: orgPayload,
             station_name: bucket.stationName,
             station_id: bucket.stationId,
             items: bucket.items.map((it) => ({
