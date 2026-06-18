@@ -47,6 +47,9 @@ export class QueryOrdersDto extends PaginationDto {
 
   @ApiPropertyOptional({ example: true, description: 'Bestellpositionen einschließen' })
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
+  // Accept both the raw query string and an already-coerced boolean:
+  // enableImplicitConversion can turn "true" into boolean true *before* this
+  // transform runs, in which case `value === 'true'` would wrongly be false.
+  @Transform(({ value }) => value === true || value === 'true')
   includeItems?: boolean;
 }

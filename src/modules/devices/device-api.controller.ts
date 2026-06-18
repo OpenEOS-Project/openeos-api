@@ -1481,12 +1481,15 @@ export class DeviceApiController {
   }
 
   private async updateOrderPaymentStatus(order: Order): Promise<void> {
-    const paidAmount = Number(order.paidAmount);
-    const total = Number(order.total);
+    // Compare in integer cents — summing decimal payments in floating point
+    // can land a fully-paid order at e.g. 41.0999999 < 41.10, which would
+    // mark it "partly paid" even though it was settled in full.
+    const paidCents = Math.round(Number(order.paidAmount) * 100);
+    const totalCents = Math.round(Number(order.total) * 100);
 
-    if (paidAmount >= total) {
+    if (paidCents >= totalCents) {
       order.paymentStatus = PaymentStatus.PAID;
-    } else if (paidAmount > 0) {
+    } else if (paidCents > 0) {
       order.paymentStatus = PaymentStatus.PARTLY_PAID;
     } else {
       order.paymentStatus = PaymentStatus.UNPAID;

@@ -231,13 +231,16 @@ export class ReportsService {
     }
 
     const results = await queryBuilder
+      // Quote the aliases — Postgres folds unquoted identifiers to lower case,
+      // so getRawMany() would return `productname`/`quantitysold` and the
+      // camelCase mapping below would read undefined (empty product, qty 0).
       .select([
-        'item.productId as productId',
-        'item.productName as productName',
-        'item.categoryName as categoryName',
-        'SUM(item.quantity) as quantitySold',
-        'SUM(item.totalPrice) as revenue',
-        'AVG(item.unitPrice) as averagePrice',
+        'item.productId as "productId"',
+        'item.productName as "productName"',
+        'item.categoryName as "categoryName"',
+        'SUM(item.quantity) as "quantitySold"',
+        'SUM(item.totalPrice) as "revenue"',
+        'AVG(item.unitPrice) as "averagePrice"',
       ])
       .groupBy('item.productId')
       .addGroupBy('item.productName')
@@ -411,8 +414,8 @@ export class ReportsService {
 
     const results = await queryBuilder
       .select([
-        'movement.productId as productId',
-        'product.name as productName',
+        'movement.productId as "productId"',
+        'product.name as "productName"',
         'SUM(CASE WHEN movement.quantity > 0 THEN movement.quantity ELSE 0 END) as additions',
         'SUM(CASE WHEN movement.quantity < 0 THEN ABS(movement.quantity) ELSE 0 END) as deductions',
       ])

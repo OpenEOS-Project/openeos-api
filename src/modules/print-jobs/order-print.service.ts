@@ -345,7 +345,9 @@ export class OrderPrintService {
         if (!name) return '';
         if (o.excluded) return `ohne ${name}`;
         if (Number(o.priceModifier) > 0) return `+ ${name}`;
-        return '';
+        // Every chosen option matters to the kitchen even when it's free —
+        // e.g. a "Zero" variant or a "Ketchup"/"Senf" extra. Show its name.
+        return name;
       })
       .filter(Boolean);
   }
