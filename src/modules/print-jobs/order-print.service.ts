@@ -225,7 +225,11 @@ export class OrderPrintService {
     }
 
     if (mode === 'per_station') {
-      // Group items by *resolved* printerId (cascade-aware).
+      // Group items by *production station*, then by resolved printer. One
+      // ticket per (printer, station) so even a fixed-printer POS prints a
+      // separate ticket per Produktionsstandort (e.g. Getränke vs. Essen on
+      // the same printer). Items without a station fall into a per-printer
+      // bucket that prints under the generic "KÜCHE" banner.
       type Bucket = {
         printerId: string;
         stationName: string | null;
@@ -233,7 +237,6 @@ export class OrderPrintService {
         items: OrderItem[];
       };
       const buckets = new Map<string, Bucket>();
-      const fallbackBucketKey = '__fallback__';
 
       for (const item of items) {
         const { printerId } = await this.printRoutingService.resolveItemPrinter({
@@ -248,15 +251,17 @@ export class OrderPrintService {
           );
           continue;
         }
-        const key = printerId ? resolvedPrinterId : fallbackBucketKey;
         const station = item.productionStation;
+        const stationKey = item.productionStationId ?? '__nostation__';
+        const key = `${resolvedPrinterId}::${stationKey}`;
         const existing = buckets.get(key);
         if (existing) {
           existing.items.push(item);
         } else {
           buckets.set(key, {
             printerId: resolvedPrinterId,
-            stationName: station?.name ?? (printerId ? null : 'Sonstiges'),
+            // null → the kitchen template renders its generic "KÜCHE" banner.
+            stationName: station?.name ?? null,
             stationId: station?.id ?? null,
             items: [item],
           });
