@@ -370,7 +370,10 @@ export class OrderPrintService {
       // Receipt printing on payment.
       const receipt = orderFlow.receiptPrinting;
       const trigger = receipt?.trigger ?? 'payment_received';
-      if (receipt?.enabled !== false && trigger === 'payment_received') {
+      // Opt-in: only print a receipt when explicitly enabled (consistent with
+      // order-ticket printing). An unset/null receiptPrinting means "off", so
+      // deactivating it actually stops the receipt.
+      if (receipt?.enabled && trigger === 'payment_received') {
         const { printerId } = await this.printRoutingService.resolveOrderPrinter({
           organizationId,
           orderDeviceId,

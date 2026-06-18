@@ -459,7 +459,13 @@ export class DeviceApiController {
       eventId: createDto.eventId || null,
       orderNumber,
       dailyNumber,
-      tableNumber: createDto.tableNumber || null,
+      // Table numbers only apply in table-service mode; a counter device never
+      // carries one (otherwise a stray table number shows up on the kitchen
+      // ticket of a counter order).
+      tableNumber:
+        device.settings?.serviceMode === 'table'
+          ? createDto.tableNumber || null
+          : null,
       customerName: createDto.customerName || null,
       customerPhone: createDto.customerPhone || null,
       notes: createDto.notes || null,
