@@ -394,6 +394,13 @@ export class OrderPrintService {
                 phone: org.settings?.contact?.phone,
               }
             : undefined;
+          // The receipt's items_list iterates a top-level `items` array
+          // (item.quantity/name/total/...). Without it the receipt prints no
+          // products. Load + map the order items just like the kitchen path.
+          const receiptItems = await this.orderItemRepository.find({
+            where: { orderId: data.orderId },
+            order: { createdAt: 'ASC' },
+          });
           await this.printJobsService.createFromWorkflow(
             organizationId,
             printerId,
@@ -403,10 +410,21 @@ export class OrderPrintService {
             {
               ...this.buildOrderPayload(data.order),
               organization: orgPayload,
+              items: receiptItems.map((it) => ({
+                quantity: it.quantity,
+                name: it.productName,
+                total: it.totalPrice,
+                notes: it.notes ?? null,
+                options: this.formatOptions(it),
+              })),
               total: data.order?.total,
               subtotal: data.order?.subtotal,
               tax_amount: data.order?.taxAmount,
               tax_rate: data.order?.taxRate,
+              // Pfand (deposit) is part of `total` but not `subtotal`, which is
+              // why total > subtotal. Expose it so the receipt can show it.
+              pfand_total: data.order?.pfandTotal ?? null,
+              discount_amount: data.order?.discountAmount ?? null,
               paid_amount: data.order?.paidAmount,
               change: data.order?.change,
               payment_method: data.paymentMethod,
