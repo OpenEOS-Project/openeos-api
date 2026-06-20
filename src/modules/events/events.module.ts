@@ -6,6 +6,7 @@ import { EventsShopCheckoutController } from './events-shop-checkout.controller'
 import { EventsService } from './events.service';
 import { GatewayModule } from '../gateway/gateway.module';
 import { SumUpModule } from '../sumup/sumup.module';
+import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 import {
   Event,
   Organization,
@@ -33,6 +34,7 @@ import {
     ]),
     forwardRef(() => GatewayModule),
     SumUpModule,
+    PrintJobsModule,
   ],
   controllers: [EventsController, EventsShopPublicController, EventsShopCheckoutController],
   providers: [EventsService],

@@ -365,6 +365,12 @@ export class OnlineOrdersService {
         categoryId: product.categoryId,
         productName: product.name,
         categoryName: product.category?.name || '',
+        // Snapshot the production station (Standort) like the POS path does, so
+        // per_station kitchen printing can route online items by station.
+        productionStationId:
+          product.productionStationId ??
+          product.category?.productionStationId ??
+          null,
         quantity: cartItem.quantity,
         unitPrice: cartItem.unitPrice,
         optionsPrice,

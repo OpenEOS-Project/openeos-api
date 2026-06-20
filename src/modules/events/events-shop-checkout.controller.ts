@@ -46,6 +46,7 @@ import {
 } from '../../database/entities/payment.entity';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { EmailService } from '../email/email.service';
+import { OrderPrintService } from '../print-jobs/order-print.service';
 
 interface CreateCheckoutBody {
   email: string;
@@ -92,6 +93,7 @@ export class EventsShopCheckoutController {
     private readonly shopCheckoutRepository: Repository<ShopCheckout>,
     private readonly sumupApi: SumUpApiService,
     private readonly emailService: EmailService,
+    private readonly orderPrintService: OrderPrintService,
   ) {}
 
   private async loadShopEvent(eventId: string): Promise<Event> {
@@ -523,6 +525,10 @@ export class EventsShopCheckoutController {
         categoryId: product?.categoryId ?? '',
         productName: line.name,
         categoryName: category?.name ?? '',
+        // Snapshot the production station (Standort) so per_station kitchen
+        // printing routes shop items to the right station printer.
+        productionStationId:
+          product?.productionStationId ?? category?.productionStationId ?? null,
         quantity: line.quantity,
         unitPrice: line.unitPrice,
         optionsPrice,
@@ -549,6 +555,39 @@ export class EventsShopCheckoutController {
       metadata: { receiptUrl: checkout.sumupCheckoutUrl ?? undefined },
     });
     await this.paymentRepository.save(payment);
+
+    // Print kitchen ticket + receipt for the paid shop order. There is no POS
+    // device, so routing relies on the org print settings / production-station
+    // printers. Fire-and-forget so a printing hiccup never fails checkout.
+    this.orderPrintService
+      .handleOrderCreated(order.organizationId, {
+        order,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        tableNumber: order.tableNumber,
+        total: Number(order.total),
+        source: order.source,
+      })
+      .catch((err) =>
+        this.logger.error(
+          `Shop order ${order.id} kitchen print failed: ${(err as Error)?.message}`,
+        ),
+      );
+    this.orderPrintService
+      .handlePaymentReceived(order.organizationId, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        paymentId: payment.id,
+        amount: Number(payment.amount),
+        paymentMethod: 'online',
+        isFullyPaid: true,
+        order,
+      })
+      .catch((err) =>
+        this.logger.error(
+          `Shop order ${order.id} receipt print failed: ${(err as Error)?.message}`,
+        ),
+      );
 
     return order;
   }
