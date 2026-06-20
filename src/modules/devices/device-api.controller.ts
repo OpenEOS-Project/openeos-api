@@ -653,22 +653,11 @@ export class DeviceApiController {
       `Device payment created: ${payment.id} for order ${order.orderNumber}`,
     );
 
-    // Auto-open cash drawer on cash payment
-    if (createDto.paymentMethod === PaymentMethod.CASH) {
-      try {
-        const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as
-          | string
-          | undefined;
-        if (cashDrawerPrinterId) {
-          this.gatewayService.sendOpenCashDrawer(
-            organizationId,
-            cashDrawerPrinterId,
-          );
-        }
-      } catch (e) {
-        this.logger.warn(`Failed to open cash drawer: ${e}`);
-      }
-    }
+    // NB: the cash drawer is opened by the POS as soon as the cash payment
+    // starts (POST /device-api/cash-drawer/open when the cash modal opens), so
+    // the cashier can make change while entering the amount. We deliberately do
+    // NOT re-open it here on confirm — that would pop the drawer again after
+    // they already closed it.
 
     // Auto-print receipt on payment_received trigger (with device fallback).
     this.orderPrintService
