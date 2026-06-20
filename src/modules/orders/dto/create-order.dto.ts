@@ -180,6 +180,15 @@ export class CreateOrderDto {
   discountAmount?: number;
 
   @ApiPropertyOptional({
+    example: 1.0,
+    description: 'Trinkgeld in EUR (z. B. bei Kartenzahlung)',
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  tipAmount?: number;
+
+  @ApiPropertyOptional({
     example: 'Künstler-Bon 3 €',
     description: 'Grund/Bezeichnung des Rabatts',
   })

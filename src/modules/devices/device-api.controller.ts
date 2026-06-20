@@ -481,6 +481,7 @@ export class DeviceApiController {
           : OrderFulfillmentType.COUNTER_PICKUP,
       discountAmount: createDto.discountAmount || 0,
       discountReason: createDto.discountReason || null,
+      tipAmount: createDto.tipAmount || 0,
       createdByDeviceId: device.id,
       status: OrderStatus.OPEN,
       paymentStatus: PaymentStatus.UNPAID,
