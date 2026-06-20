@@ -98,6 +98,29 @@ export class SumUpApiService {
     );
   }
 
+  /**
+   * Resolve the result of a reader checkout via the Transactions API. The
+   * reader status endpoint only reports device telemetry (battery/connection),
+   * never the payment outcome — that lives on the transaction created from the
+   * checkout's client_transaction_id. Returns null while the transaction does
+   * not exist yet (customer hasn't paid), which the caller treats as pending.
+   */
+  async getTransactionStatus(
+    apiKey: string,
+    merchantCode: string,
+    clientTransactionId: string,
+  ): Promise<{ status: string | null }> {
+    const client = this.createClient(apiKey);
+    try {
+      const txn = await client.transactions.get(merchantCode, {
+        client_transaction_id: clientTransactionId,
+      });
+      return { status: txn?.status ?? null };
+    } catch {
+      return { status: null };
+    }
+  }
+
   async updateReader(apiKey: string, merchantCode: string, readerId: string, name: string): Promise<SumUp.Readers.Reader> {
     const client = this.createClient(apiKey);
     return this.execute(

@@ -924,7 +924,10 @@ export class DeviceApiController {
 
   @Get('sumup/status')
   @ApiOperation({ summary: 'Get SumUp reader/checkout status' })
-  async getSumupStatus(@CurrentDevice() device: Device) {
+  async getSumupStatus(
+    @CurrentDevice() device: Device,
+    @Query('clientTransactionId') clientTransactionId?: string,
+  ) {
     const organizationId = requireOrganization(device);
     const readerId = device.settings?.sumupReaderId;
     if (!readerId) {
@@ -950,6 +953,18 @@ export class DeviceApiController {
         code: ErrorCodes.VALIDATION_ERROR,
         message: 'SumUp ist nicht für diese Organisation konfiguriert',
       });
+    }
+
+    // Preferred: resolve the actual payment outcome via the transaction the
+    // checkout created. The reader status (below) only reports device
+    // telemetry, never SUCCESSFUL/FAILED, so the POS could never detect success.
+    if (clientTransactionId) {
+      const { status } = await this.sumupApiService.getTransactionStatus(
+        sumupSettings.apiKey,
+        sumupSettings.merchantCode,
+        clientTransactionId,
+      );
+      return { data: { checkout: { status } } };
     }
 
     const result = await this.sumupApiService.getReaderStatus(
