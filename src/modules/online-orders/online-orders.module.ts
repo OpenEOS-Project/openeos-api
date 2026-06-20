@@ -15,6 +15,7 @@ import { OnlineOrdersController } from './online-orders.controller';
 import { OnlineOrdersService } from './online-orders.service';
 import { PaymentsModule } from '../payments/payments.module';
 import { SumUpModule } from '../sumup/sumup.module';
+import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { SumUpModule } from '../sumup/sumup.module';
     ]),
     PaymentsModule,
     SumUpModule,
+    PrintJobsModule,
   ],
   controllers: [OnlineOrdersController],
   providers: [OnlineOrdersService],

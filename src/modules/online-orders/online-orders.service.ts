@@ -32,6 +32,7 @@ import { ErrorCodes } from '../../common/constants/error-codes';
 import { StartSessionDto, AddCartItemDto, UpdateCartItemDto, SubmitOrderDto, CreateOnlinePaymentDto, OnlinePaymentMethod } from './dto';
 import { PayPalService } from '../payments/providers/paypal.service';
 import { SumUpService } from '../sumup/sumup.service';
+import { OrderPrintService } from '../print-jobs/order-print.service';
 
 @Injectable()
 export class OnlineOrdersService {
@@ -58,6 +59,7 @@ export class OnlineOrdersService {
     private readonly paypalService: PayPalService,
     private readonly sumUpService: SumUpService,
     private readonly configService: ConfigService,
+    private readonly orderPrintService: OrderPrintService,
   ) {}
 
   async startSession(startDto: StartSessionDto): Promise<{ sessionToken: string; session: OnlineOrderSession }> {
@@ -593,6 +595,40 @@ export class OnlineOrdersService {
             ? PaymentStatus.PAID
             : PaymentStatus.PARTLY_PAID;
         await this.orderRepository.save(order);
+
+        // Online orders have no POS device, so the kitchen ticket + receipt are
+        // triggered here once payment is captured (routing falls back to the
+        // org-level print settings / production-station printers). Fire-and-
+        // forget so a printing hiccup never fails the payment.
+        this.orderPrintService
+          .handleOrderCreated(order.organizationId, {
+            order,
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            tableNumber: order.tableNumber,
+            total: Number(order.total),
+            source: order.source,
+          })
+          .catch((err) =>
+            this.logger.error(
+              `Online order ${order.id} kitchen print failed: ${(err as Error)?.message}`,
+            ),
+          );
+        this.orderPrintService
+          .handlePaymentReceived(order.organizationId, {
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            paymentId: payment.id,
+            amount: Number(payment.amount),
+            paymentMethod: 'online',
+            isFullyPaid: order.paymentStatus === PaymentStatus.PAID,
+            order,
+          })
+          .catch((err) =>
+            this.logger.error(
+              `Online order ${order.id} receipt print failed: ${(err as Error)?.message}`,
+            ),
+          );
       }
     }
 
