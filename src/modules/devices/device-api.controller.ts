@@ -518,6 +518,15 @@ export class DeviceApiController {
       relations: ['items'],
     });
 
+    // A fully-discounted order (total 0) has nothing to pay. Mark it paid right
+    // away so the POS reaches the success screen without sending a 0-amount
+    // payment (which the payment endpoint rejects).
+    if (completeOrder && Number(completeOrder.total) <= 0) {
+      completeOrder.paymentStatus = PaymentStatus.PAID;
+      completeOrder.paidAmount = 0;
+      await this.orderRepository.save(completeOrder);
+    }
+
     // Print station tickets and notify admin order list
     if (
       completeOrder &&
