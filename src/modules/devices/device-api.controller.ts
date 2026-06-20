@@ -454,6 +454,12 @@ export class DeviceApiController {
       createDto.eventId || null,
     );
 
+    // Match the POS, which treats an unset serviceMode as table service
+    // (Bedienung, default). The backend used to default unset → counter, so a
+    // Bedienung order on an unconfigured device was charged Pfand and lost its
+    // table number even though the POS showed it as table service (no Pfand).
+    const serviceMode = device.settings?.serviceMode || 'table';
+
     const order = this.orderRepository.create({
       organizationId,
       eventId: createDto.eventId || null,
@@ -463,16 +469,14 @@ export class DeviceApiController {
       // carries one (otherwise a stray table number shows up on the kitchen
       // ticket of a counter order).
       tableNumber:
-        device.settings?.serviceMode === 'table'
-          ? createDto.tableNumber || null
-          : null,
+        serviceMode === 'table' ? createDto.tableNumber || null : null,
       customerName: createDto.customerName || null,
       customerPhone: createDto.customerPhone || null,
       notes: createDto.notes || null,
       priority: createDto.priority || undefined,
       source: createDto.source || OrderSource.POS,
       fulfillmentType:
-        device.settings?.serviceMode === 'table'
+        serviceMode === 'table'
           ? OrderFulfillmentType.TABLE_SERVICE
           : OrderFulfillmentType.COUNTER_PICKUP,
       discountAmount: createDto.discountAmount || 0,
