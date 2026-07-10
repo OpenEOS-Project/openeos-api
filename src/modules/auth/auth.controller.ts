@@ -25,6 +25,8 @@ import {
   ForgotPasswordDto,
   ResetPasswordDto,
   ChangePasswordDto,
+  VerifyEmailDto,
+  ResendVerificationDto,
   LoginResponseDto,
   RegisterResponseDto,
   RefreshResponseDto,
@@ -53,22 +55,44 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  @ApiOperation({ summary: 'Register a new user', description: 'Create a new user account with email and password' })
-  @ApiResponse({ status: 201, description: 'User successfully registered', type: RegisterResponseDto })
+  @ApiOperation({ summary: 'Register a new user', description: 'Create a new user account with email and password; requires email verification before login' })
+  @ApiResponse({ status: 201, description: 'User successfully registered, verification email sent', type: RegisterResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 409, description: 'Email already exists' })
-  async register(
-    @Body() registerDto: RegisterDto,
-    @Res({ passthrough: true }) response: Response,
-  ) {
+  async register(@Body() registerDto: RegisterDto) {
     const result = await this.authService.register(registerDto);
-
-    // Set refresh token as httpOnly cookie
-    this.setRefreshTokenCookie(response, result.refreshToken);
 
     return {
       user: this.sanitizeUser(result.user),
-      accessToken: result.accessToken,
+      requiresEmailVerification: result.requiresEmailVerification,
+      message: 'Bitte bestätige deine E-Mail-Adresse. Wir haben dir einen Link geschickt.',
+    };
+  }
+
+  @Public()
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify email address', description: 'Verify a user\'s email using the token from the verification email' })
+  @ApiResponse({ status: 200, description: 'Email verified successfully', type: MessageResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid or expired token' })
+  async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
+    await this.authService.verifyEmail(verifyEmailDto.token);
+
+    return {
+      message: 'E-Mail-Adresse wurde erfolgreich bestätigt',
+    };
+  }
+
+  @Public()
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Resend verification email', description: 'Resend the email verification link if the account exists and is unverified' })
+  @ApiResponse({ status: 200, description: 'Verification email sent if applicable', type: MessageResponseDto })
+  async resendVerification(@Body() resendVerificationDto: ResendVerificationDto) {
+    await this.authService.resendVerificationEmail(resendVerificationDto.email);
+
+    return {
+      message: 'Falls ein Konto mit dieser E-Mail existiert und noch nicht bestätigt wurde, wurde eine neue Bestätigungs-E-Mail gesendet',
     };
   }
 
@@ -400,6 +424,8 @@ export class AuthController {
       passwordHash,
       passwordResetToken,
       passwordResetExpiresAt,
+      emailVerificationToken,
+      emailVerificationExpiresAt,
       failedLoginAttempts,
       lockedUntil,
       twoFactorSecretEncrypted,

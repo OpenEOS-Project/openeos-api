@@ -6,3 +6,5 @@ export * from './reset-password.dto';
 export * from './change-password.dto';
 export * from './responses.dto';
 export * from './two-factor.dto';
+export * from './verify-email.dto';
+export * from './resend-verification.dto';

@@ -1,6 +1,7 @@
 import {
   Injectable,
   UnauthorizedException,
+  ForbiddenException,
   BadRequestException,
   ConflictException,
   Logger,
@@ -22,6 +23,7 @@ import {
 } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { EmailService } from '../email/email.service';
 import {
   RegisterDto,
   ForgotPasswordDto,
@@ -35,6 +37,7 @@ const LOCK_DURATION_MINUTES = 15;
 const BCRYPT_ROUNDS = 12;
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 const PASSWORD_RESET_EXPIRY_HOURS = 1;
+const EMAIL_VERIFICATION_EXPIRY_HOURS = 24;
 
 @Injectable()
 export class AuthService {
@@ -54,6 +57,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
+    private readonly emailService: EmailService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) {}
@@ -75,8 +79,7 @@ export class AuthService {
 
   async register(registerDto: RegisterDto): Promise<{
     user: User;
-    accessToken: string;
-    refreshToken: string;
+    requiresEmailVerification: true;
   }> {
     const { email, password, firstName, lastName, organizationName } = registerDto;
 
@@ -95,6 +98,14 @@ export class AuthService {
     // Hash password
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
+    // Generate the email verification token up front so it's created
+    // atomically with the user in the same transaction
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationTokenHash = crypto
+      .createHash('sha256')
+      .update(verificationToken)
+      .digest('hex');
+
     // Use transaction for user and organization creation
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -108,6 +119,10 @@ export class AuthService {
         firstName,
         lastName,
         isActive: true,
+        emailVerificationToken: verificationTokenHash,
+        emailVerificationExpiresAt: new Date(
+          Date.now() + EMAIL_VERIFICATION_EXPIRY_HOURS * 60 * 60 * 1000,
+        ),
       });
       await queryRunner.manager.save(user);
 
@@ -135,14 +150,23 @@ export class AuthService {
 
       await queryRunner.commitTransaction();
 
-      // Generate tokens
-      const tokens = await this.generateTokens(user);
-
       this.logger.log(`User registered: ${user.email}`);
+
+      // Send verification + admin notification mails outside the transaction
+      // so a slow/failed email provider never rolls back the registration.
+      const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+      const verifyUrl = `${appUrl}/verify-email?token=${verificationToken}`;
+      await this.emailService.sendEmailVerificationEmail({
+        to: user.email,
+        firstName: user.firstName,
+        verifyUrl,
+      });
+
+      await this.notifyAdminOfRegistration(user);
 
       return {
         user,
-        ...tokens,
+        requiresEmailVerification: true,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -150,6 +174,96 @@ export class AuthService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Sends the "new registration" notice to ADMIN_NOTIFY_EMAIL (falling back
+   * to ADMIN_EMAIL). Silently does nothing if neither is configured.
+   */
+  private async notifyAdminOfRegistration(user: User): Promise<void> {
+    const notifyEmail = this.configService.get<string>('email.adminNotifyEmail');
+    if (!notifyEmail) {
+      return;
+    }
+
+    await this.emailService.sendAdminRegistrationNotification({
+      to: notifyEmail,
+      name: `${user.firstName} ${user.lastName}`.trim(),
+      email: user.email,
+      registeredAt: new Date(),
+    });
+  }
+
+  /**
+   * (Re)generates an email verification token for a user and sends the mail.
+   */
+  private async issueVerificationEmail(user: User): Promise<void> {
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.emailVerificationToken = crypto
+      .createHash('sha256')
+      .update(verificationToken)
+      .digest('hex');
+    user.emailVerificationExpiresAt = new Date(
+      Date.now() + EMAIL_VERIFICATION_EXPIRY_HOURS * 60 * 60 * 1000,
+    );
+    await this.userRepository.save(user);
+
+    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    const verifyUrl = `${appUrl}/verify-email?token=${verificationToken}`;
+    await this.emailService.sendEmailVerificationEmail({
+      to: user.email,
+      firstName: user.firstName,
+      verifyUrl,
+    });
+  }
+
+  async verifyEmail(token: string): Promise<void> {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await this.userRepository.findOne({
+      where: { emailVerificationToken: tokenHash },
+    });
+
+    if (!user) {
+      throw new BadRequestException({
+        code: ErrorCodes.INVALID_TOKEN,
+        message: 'Ungültiger oder abgelaufener Bestätigungslink',
+      });
+    }
+
+    if (
+      !user.emailVerificationExpiresAt ||
+      user.emailVerificationExpiresAt < new Date()
+    ) {
+      throw new BadRequestException({
+        code: ErrorCodes.TOKEN_EXPIRED,
+        message: 'Bestätigungslink ist abgelaufen',
+      });
+    }
+
+    user.emailVerifiedAt = new Date();
+    user.emailVerificationToken = null;
+    user.emailVerificationExpiresAt = null;
+    await this.userRepository.save(user);
+
+    this.logger.log(`Email verified for user: ${user.email}`);
+  }
+
+  async resendVerificationEmail(email: string): Promise<void> {
+    const user = await this.userRepository.findOne({
+      where: { email: email.toLowerCase() },
+    });
+
+    // Always behave the same way regardless of whether the account exists
+    // or is already verified, to prevent user enumeration.
+    if (!user || user.emailVerifiedAt) {
+      this.logger.log(`Verification resend requested for ${email} (no-op)`);
+      return;
+    }
+
+    await this.issueVerificationEmail(user);
+
+    this.logger.log(`Verification email resent to: ${user.email}`);
   }
 
   async validateUser(email: string, password: string): Promise<User | null> {
@@ -187,6 +301,15 @@ export class AuthService {
     if (!isPasswordValid) {
       await this.handleFailedLogin(user);
       return null;
+    }
+
+    // Password is valid — only now do we check email verification, so we
+    // never leak whether a password was correct via the error branch above.
+    if (!user.emailVerifiedAt) {
+      throw new ForbiddenException({
+        code: ErrorCodes.EMAIL_NOT_VERIFIED,
+        message: 'Bitte bestätigen Sie zuerst Ihre E-Mail-Adresse',
+      });
     }
 
     // Reset failed login attempts on successful login

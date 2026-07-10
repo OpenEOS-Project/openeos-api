@@ -101,6 +101,58 @@ export class EmailService {
       .trim();
   }
 
+  // ============ Registration / Email Verification Templates ============
+
+  async sendEmailVerificationEmail(options: {
+    to: string;
+    firstName: string;
+    verifyUrl: string;
+  }): Promise<boolean> {
+    const subject = 'Bitte bestätige deine E-Mail-Adresse';
+    const html = this.getBaseTemplate(`
+      <h1>Hallo ${options.firstName}!</h1>
+      <p>Vielen Dank für deine Registrierung bei OpenEOS. Bitte bestätige deine E-Mail-Adresse, indem du auf den folgenden Button klickst:</p>
+      <p style="text-align: center; margin: 30px 0;">
+        <a href="${options.verifyUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+          E-Mail-Adresse bestätigen
+        </a>
+      </p>
+      <p style="color: #666; font-size: 14px;">
+        Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:<br>
+        <a href="${options.verifyUrl}" style="color: #2563eb;">${options.verifyUrl}</a>
+      </p>
+      <p style="color: #666; font-size: 14px;">
+        Der Link ist 24 Stunden gültig. Falls du dich nicht registriert hast, kannst du diese E-Mail ignorieren.
+      </p>
+    `);
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  async sendAdminRegistrationNotification(options: {
+    to: string;
+    name: string;
+    email: string;
+    registeredAt: Date;
+  }): Promise<boolean> {
+    const subject = 'Neue Registrierung bei OpenEOS';
+    const timestamp = options.registeredAt.toLocaleString('de-DE', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    const html = this.getBaseTemplate(`
+      <h1>Neue Registrierung</h1>
+      <p>Es hat sich soeben ein neuer Benutzer bei OpenEOS registriert:</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr><td style="padding: 6px 0; color: #666;">Name:</td><td style="padding: 6px 0;"><strong>${options.name}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">E-Mail:</td><td style="padding: 6px 0;"><strong>${options.email}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Zeitpunkt:</td><td style="padding: 6px 0;"><strong>${timestamp}</strong></td></tr>
+      </table>
+    `);
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   // ============ Organization Invitation Email Templates ============
 
   async sendInvitationEmail(

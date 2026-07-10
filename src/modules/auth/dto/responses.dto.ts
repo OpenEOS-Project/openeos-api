@@ -45,10 +45,15 @@ export class RegisterResponseDto {
   user: UserResponseDto;
 
   @ApiProperty({
-    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-    description: 'JWT Access Token (30 min gültig)',
+    example: true,
+    description: 'Immer true — die E-Mail-Adresse muss vor dem Login bestätigt werden',
   })
-  accessToken: string;
+  requiresEmailVerification: boolean;
+
+  @ApiProperty({
+    example: 'Bitte bestätige deine E-Mail-Adresse. Wir haben dir einen Link geschickt.',
+  })
+  message: string;
 }
 
 export class RefreshResponseDto {

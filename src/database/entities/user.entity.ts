@@ -71,6 +71,12 @@ export class User extends SoftDeleteEntity {
   @Column({ name: 'password_reset_expires_at', type: 'timestamp with time zone', nullable: true })
   passwordResetExpiresAt: Date | null;
 
+  @Column({ name: 'email_verification_token', type: 'varchar', length: 255, nullable: true })
+  emailVerificationToken: string | null;
+
+  @Column({ name: 'email_verification_expires_at', type: 'timestamp with time zone', nullable: true })
+  emailVerificationExpiresAt: Date | null;
+
   // 2FA Fields
   @Column({ name: 'two_factor_enabled', type: 'boolean', default: false })
   twoFactorEnabled: boolean;

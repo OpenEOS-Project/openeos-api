@@ -52,5 +52,8 @@ export default () => ({
     user: process.env.EMAIL_USER || '',
     password: process.env.EMAIL_PASSWORD || '',
     from: process.env.EMAIL_FROM || 'noreply@openeos.de',
+    // Where "new registration" notifications go. Falls back to ADMIN_EMAIL
+    // (already used for seeding) so a single env var can cover both.
+    adminNotifyEmail: process.env.ADMIN_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || '',
   },
 });
