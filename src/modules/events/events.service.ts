@@ -65,15 +65,15 @@ export class EventsService {
   ): Promise<Event> {
     await this.checkPermission(organizationId, user.id, 'events');
 
-    // Validate dates if both provided
+    // Veranstaltungen sind eintägig — falls beide Daten kommen, müssen sie übereinstimmen
     if (createDto.startDate && createDto.endDate) {
       const startDate = new Date(createDto.startDate);
       const endDate = new Date(createDto.endDate);
 
-      if (endDate <= startDate) {
+      if (endDate.getTime() !== startDate.getTime()) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
-          message: 'Enddatum muss nach dem Startdatum liegen',
+          message: 'Veranstaltungen dauern genau einen Tag — Start- und Enddatum müssen übereinstimmen',
         });
       }
     }
@@ -146,15 +146,15 @@ export class EventsService {
 
     const event = await this.findOne(organizationId, eventId, user);
 
-    // Validate dates if both are provided
+    // Veranstaltungen sind eintägig — falls beide Daten kommen, müssen sie übereinstimmen
     if (updateDto.startDate && updateDto.endDate) {
       const startDate = new Date(updateDto.startDate);
       const endDate = new Date(updateDto.endDate);
 
-      if (endDate <= startDate) {
+      if (endDate.getTime() !== startDate.getTime()) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
-          message: 'Enddatum muss nach dem Startdatum liegen',
+          message: 'Veranstaltungen dauern genau einen Tag — Start- und Enddatum müssen übereinstimmen',
         });
       }
     }
