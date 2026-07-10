@@ -459,7 +459,7 @@ Nach jedem erfolgreichen Image-Build auf `main` (Workflow `.github/workflows/bui
 | Variable | Beschreibung |
 |----------|--------------|
 | `DEPLOY_ENABLED` | `true` aktiviert den Deploy-Job, sonst wird er übersprungen |
-| `DEPLOY_PATH` | Pfad zum `docker-compose.yml` auf dem Zielserver |
+| `DEPLOY_PATH` | Optional — Compose-Verzeichnis auf dem Server (Default: `/srv/docker/<repo-name>`) |
 | `DEPLOY_SERVICE` | Name des zu aktualisierenden Compose-Service |
 
 **Benötigte Secrets:**
