@@ -45,6 +45,7 @@ import { SumUpModule } from './modules/sumup';
 import { ProductionStationsModule } from './modules/production-stations/production-stations.module';
 import { DiscountVouchersModule } from './modules/discount-vouchers';
 import { PfandTypesModule } from './modules/pfand-types';
+import { PlatformSettingsModule } from './modules/platform-settings';
 
 @Module({
   imports: [
@@ -142,6 +143,7 @@ import { PfandTypesModule } from './modules/pfand-types';
     ProductionStationsModule,
     DiscountVouchersModule,
     PfandTypesModule,
+    PlatformSettingsModule,
   ],
   controllers: [],
   providers: [

@@ -26,6 +26,7 @@ import {
   CreateInvitationDto,
 } from './dto';
 import { EmailService } from '../email/email.service';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { ConfigService } from '@nestjs/config';
 
 const INVITATION_EXPIRY_DAYS = 7;
@@ -45,6 +46,7 @@ export class OrganizationsService {
     private readonly invitationRepository: Repository<Invitation>,
     private readonly dataSource: DataSource,
     private readonly emailService: EmailService,
+    private readonly platformSettingsService: PlatformSettingsService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -83,6 +85,10 @@ export class OrganizationsService {
 
       this.logger.log(`Organization created: ${organization.name} (${organization.id})`);
 
+      // Outside the transaction so a slow/failed email provider never rolls
+      // back the organization creation.
+      await this.notifyAdminOfOrganizationCreated(organization, user);
+
       return organization;
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -90,6 +96,25 @@ export class OrganizationsService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  /**
+   * Sends the "new organization" notice to the configured admin notification
+   * address. Silently does nothing if the toggle is off or no address is
+   * configured anywhere.
+   */
+  private async notifyAdminOfOrganizationCreated(organization: Organization, creator: User): Promise<void> {
+    const notifyEmail = await this.platformSettingsService.resolveNotificationTarget('organizationCreated');
+    if (!notifyEmail) {
+      return;
+    }
+
+    await this.emailService.sendAdminOrganizationCreatedNotification({
+      to: notifyEmail,
+      organizationName: organization.name,
+      creatorEmail: creator.email,
+      createdAt: new Date(),
+    });
   }
 
   async findAll(

@@ -24,6 +24,7 @@ import {
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { EmailService } from '../email/email.service';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import {
   RegisterDto,
   ForgotPasswordDto,
@@ -58,6 +59,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
     private readonly emailService: EmailService,
+    private readonly platformSettingsService: PlatformSettingsService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) {}
@@ -177,11 +179,13 @@ export class AuthService {
   }
 
   /**
-   * Sends the "new registration" notice to ADMIN_NOTIFY_EMAIL (falling back
-   * to ADMIN_EMAIL). Silently does nothing if neither is configured.
+   * Sends the "new registration" notice to the configured admin notification
+   * address (super-admin settings, falling back to ADMIN_NOTIFY_EMAIL /
+   * ADMIN_EMAIL). Silently does nothing if the toggle is off or no address
+   * is configured anywhere.
    */
   private async notifyAdminOfRegistration(user: User): Promise<void> {
-    const notifyEmail = this.configService.get<string>('email.adminNotifyEmail');
+    const notifyEmail = await this.platformSettingsService.resolveNotificationTarget('userRegistered');
     if (!notifyEmail) {
       return;
     }

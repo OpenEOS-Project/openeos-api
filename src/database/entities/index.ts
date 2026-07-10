@@ -47,6 +47,9 @@ export * from './invoice.entity';
 export * from './admin-audit-log.entity';
 export * from './subscription-config.entity';
 
+// Platform Settings
+export * from './platform-setting.entity';
+
 // Auth & Security
 export * from './trusted-device.entity';
 export * from './email-otp.entity';

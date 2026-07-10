@@ -153,6 +153,62 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  async sendAdminOrganizationCreatedNotification(options: {
+    to: string;
+    organizationName: string;
+    creatorEmail: string;
+    createdAt: Date;
+  }): Promise<boolean> {
+    const subject = 'Neue Organisation bei OpenEOS';
+    const timestamp = options.createdAt.toLocaleString('de-DE', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    const html = this.getBaseTemplate(`
+      <h1>Neue Organisation</h1>
+      <p>Es wurde soeben eine neue Organisation bei OpenEOS angelegt:</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${options.organizationName}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Erstellt von:</td><td style="padding: 6px 0;"><strong>${options.creatorEmail}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Zeitpunkt:</td><td style="padding: 6px 0;"><strong>${timestamp}</strong></td></tr>
+      </table>
+    `);
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  async sendAdminEventOrderedNotification(options: {
+    to: string;
+    organizationName: string;
+    eventName: string;
+    eventDate: Date | null;
+    priceCharged: number;
+    billingAddress: { name?: string; company?: string; street: string; zip: string; city: string; country: string };
+  }): Promise<boolean> {
+    const subject = 'Neue Veranstaltungs-Bestellung (auf Rechnung)';
+    const dateLabel = options.eventDate
+      ? options.eventDate.toLocaleDateString('de-DE', { dateStyle: 'medium' })
+      : '–';
+    const priceLabel = `${options.priceCharged.toFixed(2).replace('.', ',')} €`;
+    const addr = options.billingAddress;
+    const addressLine = [addr.company, addr.name, addr.street, `${addr.zip} ${addr.city}`, addr.country]
+      .filter(Boolean)
+      .join(', ');
+    const html = this.getBaseTemplate(`
+      <h1>Neue Veranstaltungs-Bestellung (auf Rechnung)</h1>
+      <p>Eine Organisation hat soeben eine Veranstaltung auf Rechnung bestellt:</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${options.organizationName}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Veranstaltung:</td><td style="padding: 6px 0;"><strong>${options.eventName}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Datum:</td><td style="padding: 6px 0;"><strong>${dateLabel}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Preis:</td><td style="padding: 6px 0;"><strong>${priceLabel}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Rechnungsadresse:</td><td style="padding: 6px 0;"><strong>${addressLine}</strong></td></tr>
+      </table>
+    `);
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   // ============ Organization Invitation Email Templates ============
 
   async sendInvitationEmail(
