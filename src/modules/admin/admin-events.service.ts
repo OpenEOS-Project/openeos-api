@@ -13,6 +13,7 @@ export interface AdminEventListItem {
   startDate: Date | null;
   endDate: Date | null;
   status: string;
+  billingStatus: string;
   orderCount: number;
   revenueTotal: number;
   invoicedAt: Date | null;
@@ -45,6 +46,7 @@ export class AdminEventsService {
         'event.startDate',
         'event.endDate',
         'event.status',
+        'event.billingStatus',
         'event.invoicedAt',
         'event.invoicedBy',
         'event.invoiceNote',
@@ -96,6 +98,7 @@ export class AdminEventsService {
       startDate: r.event_start_date,
       endDate: r.event_end_date,
       status: r.event_status,
+      billingStatus: r.event_billing_status,
       orderCount: parseInt(r.orderCount ?? '0', 10),
       revenueTotal: parseFloat(r.revenueTotal ?? '0'),
       invoicedAt: r.event_invoiced_at,
@@ -119,6 +122,7 @@ export class AdminEventsService {
         'event.startDate',
         'event.endDate',
         'event.status',
+        'event.billingStatus',
         'event.invoicedAt',
         'event.invoicedBy',
         'event.invoiceNote',
@@ -166,6 +170,7 @@ export class AdminEventsService {
       startDate: raw.event_start_date,
       endDate: raw.event_end_date,
       status: raw.event_status,
+      billingStatus: raw.event_billing_status,
       orderCount: parseInt(raw.orderCount ?? '0', 10),
       revenueTotal: parseFloat(raw.revenueTotal ?? '0'),
       invoicedAt: raw.event_invoiced_at,
@@ -186,6 +191,18 @@ export class AdminEventsService {
     event.invoicedBy = adminUserId;
     event.invoiceNote = dto.note ?? null;
 
+    await this.eventRepository.save(event);
+    return event;
+  }
+
+  async waive(eventId: string): Promise<Event> {
+    const event = await this.eventRepository.findOne({ where: { id: eventId } });
+
+    if (!event) {
+      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Event nicht gefunden' });
+    }
+
+    event.billingStatus = 'waived';
     await this.eventRepository.save(event);
     return event;
   }

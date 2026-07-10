@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { Repository, In } from 'typeorm';
 import { Public } from '../../common/decorators/public.decorator';
 import {
@@ -47,6 +48,7 @@ import {
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { EmailService } from '../email/email.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 
 interface CreateCheckoutBody {
   email: string;
@@ -94,6 +96,7 @@ export class EventsShopCheckoutController {
     private readonly sumupApi: SumUpApiService,
     private readonly emailService: EmailService,
     private readonly orderPrintService: OrderPrintService,
+    private readonly configService: ConfigService,
   ) {}
 
   private async loadShopEvent(eventId: string): Promise<Event> {
@@ -116,6 +119,17 @@ export class EventsShopCheckoutController {
     @Body() body: CreateCheckoutBody,
   ) {
     const event = await this.loadShopEvent(eventId);
+
+    if (event.status === EventStatus.TEST) {
+      const existingOrderCount = await this.orderRepository.count({
+        where: { eventId: event.id },
+      });
+      assertTestEventOrderLimitNotReached(
+        event.status,
+        existingOrderCount,
+        this.configService.get<number>('billing.testEventMaxOrders', 25),
+      );
+    }
 
     if (!body || typeof body.email !== 'string' || !body.email.includes('@')) {
       throw new BadRequestException({

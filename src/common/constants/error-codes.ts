@@ -38,6 +38,8 @@ export const ErrorCodes = {
   MEMBER_ALREADY_EXISTS: 'MEMBER_ALREADY_EXISTS',
   INVENTORY_IN_PROGRESS: 'INVENTORY_IN_PROGRESS',
   INVENTORY_ALREADY_COMPLETED: 'INVENTORY_ALREADY_COMPLETED',
+  EVENT_NOT_PAID: 'EVENT_NOT_PAID',
+  TEST_LIMIT_REACHED: 'TEST_LIMIT_REACHED',
 
   // Credit & License Errors
   INSUFFICIENT_CREDITS: 'INSUFFICIENT_CREDITS',
@@ -90,6 +92,8 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.MEMBER_ALREADY_EXISTS]: 'Bereits Mitglied',
   [ErrorCodes.INVENTORY_IN_PROGRESS]: 'Inventur läuft bereits',
   [ErrorCodes.INVENTORY_ALREADY_COMPLETED]: 'Inventur bereits abgeschlossen',
+  [ErrorCodes.EVENT_NOT_PAID]: 'Veranstaltung ist noch nicht freigeschaltet — bitte zuerst kostenpflichtig bestellen',
+  [ErrorCodes.TEST_LIMIT_REACHED]: 'Test-Limit erreicht',
 
   [ErrorCodes.INSUFFICIENT_CREDITS]: 'Nicht genug Guthaben',
   [ErrorCodes.CREDITS_REQUIRED]: 'Guthaben erforderlich für diese Aktion',

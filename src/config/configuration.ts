@@ -56,4 +56,10 @@ export default () => ({
     // (already used for seeding) so a single env var can cover both.
     adminNotifyEmail: process.env.ADMIN_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || '',
   },
+
+  billing: {
+    eventPriceEur: parseFloat(process.env.EVENT_PRICE_EUR || '25'),
+    testEventMaxOrders: parseInt(process.env.TEST_EVENT_MAX_ORDERS || '25', 10),
+    openRegisterApiKey: process.env.OPENREGISTER_API_KEY || '',
+  },
 });

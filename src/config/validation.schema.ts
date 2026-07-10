@@ -48,4 +48,9 @@ export const validationSchema = Joi.object({
   EMAIL_USER: Joi.string().allow('').default(''),
   EMAIL_PASSWORD: Joi.string().allow('').default(''),
   EMAIL_FROM: Joi.string().default('noreply@openeos.de'),
+
+  // Event billing (pay-per-event activation)
+  EVENT_PRICE_EUR: Joi.number().default(25),
+  TEST_EVENT_MAX_ORDERS: Joi.number().default(25),
+  OPENREGISTER_API_KEY: Joi.string().allow('').default(''),
 });

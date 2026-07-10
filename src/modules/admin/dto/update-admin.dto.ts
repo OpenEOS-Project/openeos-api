@@ -200,6 +200,17 @@ export class UpdateOrganizationAdminDto {
   @IsOptional()
   @IsObject()
   settings?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ example: 'invoice', enum: ['prepaid', 'invoice'], description: 'Abrechnungsmodus für Event-Freischaltungen' })
+  @IsOptional()
+  @IsEnum(['prepaid', 'invoice'])
+  billingMode?: 'prepaid' | 'invoice';
+
+  @ApiPropertyOptional({ example: 20, description: 'Individueller Event-Preis in Euro (überschreibt den Standardpreis)' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  eventPriceOverride?: number;
 }
 
 // === Subscription Config DTOs ===

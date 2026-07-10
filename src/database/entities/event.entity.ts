@@ -17,6 +17,8 @@ export enum EventStatus {
   TEST = 'test',
 }
 
+export type EventBillingStatus = 'none' | 'pending' | 'paid' | 'invoice' | 'waived';
+
 export type ShopWeekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
 export interface ShopTimeWindow {
@@ -77,6 +79,19 @@ export class Event extends BaseEntity {
 
   @Column({ name: 'invoice_note', type: 'text', nullable: true })
   invoiceNote: string | null;
+
+  // Event billing (pay-per-event activation)
+  @Column({ name: 'billing_status', type: 'varchar', length: 20, default: 'none' })
+  billingStatus: EventBillingStatus;
+
+  @Column({ name: 'paid_at', type: 'timestamp with time zone', nullable: true })
+  paidAt: Date | null;
+
+  @Column({ name: 'stripe_checkout_session_id', type: 'varchar', length: 255, nullable: true })
+  stripeCheckoutSessionId: string | null;
+
+  @Column({ name: 'price_charged', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  priceCharged: number | null;
 
   // Relations
   @ManyToOne(() => Organization, (org) => org.events, { onDelete: 'CASCADE' })

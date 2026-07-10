@@ -93,11 +93,16 @@ export interface OrganizationSettings {
 
 export interface BillingAddress {
   company?: string;
+  /** Kauf-auf-Rechnung: no dedicated `billingName` column exists, so the
+   *  billing contact name is folded into this jsonb blob instead. */
+  name?: string;
   street: string;
   city: string;
   zip: string;
   country: string;
 }
+
+export type OrganizationBillingMode = 'prepaid' | 'invoice';
 
 export enum DiscountType {
   ALL = 'all',
@@ -198,6 +203,13 @@ export class Organization extends SoftDeleteEntity {
     nullable: true,
   })
   subscriptionCurrentPeriodEnd: Date | null;
+
+  // Event billing (pay-per-event activation)
+  @Column({ name: 'billing_mode', type: 'varchar', length: 20, default: 'invoice' })
+  billingMode: OrganizationBillingMode;
+
+  @Column({ name: 'event_price_override', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  eventPriceOverride: number | null;
 
   // Relations
   @OneToMany(() => UserOrganization, (userOrg) => userOrg.organization)

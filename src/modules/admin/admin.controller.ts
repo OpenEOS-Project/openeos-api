@@ -14,6 +14,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { AdminService } from './admin.service';
 import { PrintersService } from '../printers/printers.service';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import {
   QueryOrganizationsDto,
   QueryUsersDto,
@@ -31,6 +32,7 @@ import {
   CreateSubscriptionConfigDto,
   UpdateSubscriptionConfigDto,
   AssignPrinterDeviceDto,
+  UpdateNotificationSettingsDto,
 } from './dto';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -44,6 +46,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly printersService: PrintersService,
+    private readonly platformSettingsService: PlatformSettingsService,
   ) {}
 
   private getClientInfo(req: Request): { ip: string; userAgent?: string } {
@@ -417,6 +420,20 @@ export class AdminController {
   async deleteSubscriptionConfig(@Param('id') id: string) {
     await this.adminService.deleteSubscriptionConfig(id);
     return { data: { success: true } };
+  }
+
+  // === Platform Notification Settings ===
+
+  @Get('settings/notifications')
+  async getNotificationSettings() {
+    const data = await this.platformSettingsService.getNotificationSettings();
+    return { data };
+  }
+
+  @Patch('settings/notifications')
+  async updateNotificationSettings(@Body() updateDto: UpdateNotificationSettingsDto) {
+    const data = await this.platformSettingsService.updateNotificationSettings(updateDto);
+    return { data };
   }
 
 }

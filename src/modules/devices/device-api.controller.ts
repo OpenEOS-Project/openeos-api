@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { Repository, Between, MoreThanOrEqual, In } from 'typeorm';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
 import { CurrentDevice } from '../../common/decorators';
@@ -67,6 +68,7 @@ import { PfandTypesService } from '../pfand-types/pfand-types.service';
 import { PfandReturnsService } from '../pfand-types/pfand-returns.service';
 import { CreatePfandReturnDto } from '../pfand-types/dto';
 import { isPfandChargedForFulfillment } from '../../common/utils/pfand-policy';
+import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 
 /**
  * Helper to ensure device has an organization.
@@ -127,6 +129,7 @@ export class DeviceApiController {
     private readonly discountVouchersService: DiscountVouchersService,
     private readonly pfandTypesService: PfandTypesService,
     private readonly pfandReturnsService: PfandReturnsService,
+    private readonly configService: ConfigService,
   ) {}
 
   @Get('organization')
@@ -444,6 +447,17 @@ export class DeviceApiController {
           code: ErrorCodes.VALIDATION_ERROR,
           message: 'Event ist nicht aktiv',
         });
+      }
+
+      if (event.status === EventStatus.TEST) {
+        const existingOrderCount = await this.orderRepository.count({
+          where: { eventId: event.id },
+        });
+        assertTestEventOrderLimitNotReached(
+          event.status,
+          existingOrderCount,
+          this.configService.get<number>('billing.testEventMaxOrders', 25),
+        );
       }
     }
 

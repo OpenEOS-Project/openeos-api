@@ -8,6 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import {
   Repository,
   Between,
@@ -38,6 +39,7 @@ import { StockMovementType } from '../../database/entities/stock-movement.entity
 import { EventStatus } from '../../database/entities/event.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 import {
   PaginatedResult,
   createPaginatedResult,
@@ -86,6 +88,7 @@ export class OrdersService {
     private readonly printJobsService: PrintJobsService,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
+    private readonly configService: ConfigService,
   ) {}
 
   async create(
@@ -116,6 +119,17 @@ export class OrdersService {
           code: ErrorCodes.VALIDATION_ERROR,
           message: 'Event ist nicht aktiv',
         });
+      }
+
+      if (event.status === EventStatus.TEST) {
+        const existingOrderCount = await this.orderRepository.count({
+          where: { eventId: event.id },
+        });
+        assertTestEventOrderLimitNotReached(
+          event.status,
+          existingOrderCount,
+          this.configService.get<number>('billing.testEventMaxOrders', 25),
+        );
       }
     }
 

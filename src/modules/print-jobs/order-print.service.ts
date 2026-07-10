@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Device } from '../../database/entities/device.entity';
 import { Organization } from '../../database/entities/organization.entity';
 import { OrderItem } from '../../database/entities/order-item.entity';
+import { Event, EventStatus } from '../../database/entities/event.entity';
 import { PrintJobsService } from './print-jobs.service';
 import { PrintRoutingService } from './print-routing.service';
 
@@ -18,9 +19,28 @@ export class OrderPrintService {
     private readonly orderItemRepository: Repository<OrderItem>,
     @InjectRepository(Device)
     private readonly deviceRepository: Repository<Device>,
+    @InjectRepository(Event)
+    private readonly eventRepository: Repository<Event>,
     private readonly printJobsService: PrintJobsService,
     private readonly printRoutingService: PrintRoutingService,
   ) {}
+
+  /**
+   * Whether the order's event is currently in TEST status. Order-creation and
+   * payment call sites don't consistently load the `event` relation, so this
+   * re-queries by eventId rather than trusting `order.event` to be populated.
+   * Printer-agent templates should render a "*** TESTMODUS ***" banner when
+   * `is_test` is true (follow-up on the printer-agent side — the API has no
+   * server-side template rendering step to inject the banner text into).
+   */
+  private async isTestEvent(eventId: string | null | undefined): Promise<boolean> {
+    if (!eventId) return false;
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+      select: ['id', 'status'],
+    });
+    return event?.status === EventStatus.TEST;
+  }
 
   private async deviceHasDefaultPrinter(deviceId: string): Promise<boolean> {
     const device = await this.deviceRepository.findOne({
@@ -93,6 +113,7 @@ export class OrderPrintService {
       const orderFlow = (await this.getOrderFlow(organizationId)) ?? {};
       const orderDeviceId: string | null =
         data.order?.createdByDeviceId ?? null;
+      const isTest = await this.isTestEvent(data.order?.eventId ?? null);
 
       // Kitchen ticket(s) on order creation — supports three dispatch modes.
       // The kitchen toggle gates ORG-level routing only. If a device has a
@@ -114,6 +135,7 @@ export class OrderPrintService {
             orgFallbackPrinterId: kitchen?.printerId ?? null,
           },
           data,
+          isTest,
         );
       }
 
@@ -137,6 +159,7 @@ export class OrderPrintService {
               organization: await this.buildOrgPayload(organizationId),
               total: data.total,
               source: data.source,
+              is_test: isTest,
             },
             null,
             'order_ticket',
@@ -166,6 +189,7 @@ export class OrderPrintService {
       total: number;
       source: string;
     },
+    isTest: boolean,
   ): Promise<void> {
     const { mode, templateId } = kitchen;
     const orgPayload = await this.buildOrgPayload(organizationId);
@@ -193,6 +217,7 @@ export class OrderPrintService {
           organization: orgPayload,
           total: data.total,
           source: data.source,
+          is_test: isTest,
         },
         null,
         'kitchen_ticket',
@@ -243,6 +268,7 @@ export class OrderPrintService {
               },
             ],
             order_item_id: item.id,
+            is_test: isTest,
           },
           item.id,
           'kitchen_ticket',
@@ -314,6 +340,7 @@ export class OrderPrintService {
               kitchen_notes: it.kitchenNotes ?? null,
               options: this.formatOptions(it),
             })),
+            is_test: isTest,
           },
           null,
           'kitchen_ticket',
@@ -368,6 +395,7 @@ export class OrderPrintService {
       const orderFlow = (await this.getOrderFlow(organizationId)) ?? {};
       const orderDeviceId: string | null =
         data.order?.createdByDeviceId ?? null;
+      const isTest = await this.isTestEvent(data.order?.eventId ?? null);
 
       // Receipt printing on payment.
       const receipt = orderFlow.receiptPrinting;
@@ -433,6 +461,7 @@ export class OrderPrintService {
               paymentId: data.paymentId,
               amount: data.amount,
               isFullyPaid: data.isFullyPaid,
+              is_test: isTest,
             },
             null,
             'receipt',

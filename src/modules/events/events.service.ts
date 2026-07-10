@@ -209,6 +209,13 @@ export class EventsService {
       });
     }
 
+    if (!['paid', 'invoice', 'waived'].includes(event.billingStatus)) {
+      throw new BadRequestException({
+        code: ErrorCodes.EVENT_NOT_PAID,
+        message: 'Veranstaltung ist noch nicht freigeschaltet — bitte zuerst kostenpflichtig bestellen',
+      });
+    }
+
     const deactivatedSiblings = await this.deactivateActiveOrTestSiblings(organizationId, event.id);
 
     event.status = EventStatus.ACTIVE;

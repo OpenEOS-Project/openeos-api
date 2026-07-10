@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Delete,
   Body,
@@ -57,6 +58,12 @@ export class AdminEventsController {
   @Delete(':id/invoice')
   async unmarkInvoiced(@Param('id') id: string) {
     const event = await this.adminEventsService.unmarkInvoiced(id);
+    return { data: event };
+  }
+
+  @Post(':id/waive')
+  async waive(@Param('id') id: string) {
+    const event = await this.adminEventsService.waive(id);
     return { data: event };
   }
 }
