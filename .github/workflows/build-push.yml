@@ -71,6 +71,32 @@ jobs:
           build-args: |
             APP_VERSION=1.0.${{ github.run_number }}
 
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    steps:
+      - name: Determine SSH port
+        id: ssh-port
+        run: echo "port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+
+      - name: Update production via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.ssh-port.outputs.port }}
+          script: |
+            set -e
+            cd ${{ vars.DEPLOY_PATH }}
+            docker compose pull ${{ vars.DEPLOY_SERVICE }}
+            docker compose up -d ${{ vars.DEPLOY_SERVICE }}
+            docker image prune -f
+
   # Optional: Run migrations after successful deploy
   # migrate:
   #   needs: build-and-push

@@ -448,6 +448,31 @@ docker-compose down
 docker-compose down -v
 ```
 
+## Automatisches Deployment
+
+Nach jedem erfolgreichen Image-Build auf `main` (Workflow `.github/workflows/build-push.yml`) kann automatisch auf den Produktionsserver deployed werden. Der Deploy-Job ist standardmäßig deaktiviert und muss explizit aktiviert werden.
+
+**Aktivieren:** Repository-Variable `DEPLOY_ENABLED` auf `true` setzen (Settings → Secrets and variables → Actions → Variables).
+
+**Benötigte Variables:**
+
+| Variable | Beschreibung |
+|----------|--------------|
+| `DEPLOY_ENABLED` | `true` aktiviert den Deploy-Job, sonst wird er übersprungen |
+| `DEPLOY_PATH` | Pfad zum `docker-compose.yml` auf dem Zielserver |
+| `DEPLOY_SERVICE` | Name des zu aktualisierenden Compose-Service |
+
+**Benötigte Secrets:**
+
+| Secret | Beschreibung |
+|--------|--------------|
+| `DEPLOY_HOST` | Hostname/IP des Produktionsservers |
+| `DEPLOY_USER` | SSH-Benutzer |
+| `DEPLOY_SSH_KEY` | Privater SSH-Key für den Zugriff |
+| `DEPLOY_PORT` | (optional) SSH-Port, Standard: `22` |
+
+Der Deploy-Job verbindet sich per SSH auf den Server und führt dort `docker compose pull` + `docker compose up -d` für den konfigurierten Service aus, gefolgt von `docker image prune -f`.
+
 ## License
 
 AGPLv3
