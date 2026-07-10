@@ -50,6 +50,9 @@ export * from './subscription-config.entity';
 // Platform Settings
 export * from './platform-setting.entity';
 
+// Support Chat
+export * from './support-message.entity';
+
 // Auth & Security
 export * from './trusted-device.entity';
 export * from './email-otp.entity';

@@ -211,6 +211,11 @@ export class UpdateOrganizationAdminDto {
   @IsNumber()
   @Min(0)
   eventPriceOverride?: number;
+
+  @ApiPropertyOptional({ example: false, description: 'Priorisierter Support-Chat (unabhängig von der automatischen Regel für zahlende Organisationen)' })
+  @IsOptional()
+  @IsBoolean()
+  prioritySupport?: boolean;
 }
 
 // === Subscription Config DTOs ===

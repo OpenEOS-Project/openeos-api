@@ -62,4 +62,9 @@ export default () => ({
     testEventMaxOrders: parseInt(process.env.TEST_EVENT_MAX_ORDERS || '25', 10),
     openRegisterApiKey: process.env.OPENREGISTER_API_KEY || '',
   },
+
+  support: {
+    telegramBotToken: process.env.SUPPORT_TELEGRAM_BOT_TOKEN || '',
+    telegramChatId: process.env.SUPPORT_TELEGRAM_CHAT_ID || '',
+  },
 });

@@ -93,4 +93,24 @@ export class PlatformSettingsService {
 
     return email || null;
   }
+
+  /**
+   * Generic accessors for simple, single-value settings (e.g. a persisted
+   * polling cursor) that don't warrant their own typed getter/setter pair.
+   */
+  async getValue<T>(key: string): Promise<T | null> {
+    const row = await this.platformSettingRepository.findOne({ where: { key } });
+    if (!row) {
+      return null;
+    }
+    return (row.value as { value: T }).value ?? null;
+  }
+
+  async setValue<T>(key: string, value: T): Promise<void> {
+    const row = this.platformSettingRepository.create({
+      key,
+      value: { value } as unknown as Record<string, unknown>,
+    });
+    await this.platformSettingRepository.save(row);
+  }
 }

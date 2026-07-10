@@ -53,4 +53,8 @@ export const validationSchema = Joi.object({
   EVENT_PRICE_EUR: Joi.number().default(25),
   TEST_EVENT_MAX_ORDERS: Joi.number().default(25),
   OPENREGISTER_API_KEY: Joi.string().allow('').default(''),
+
+  // Support-Chat Telegram-Bridge (optional)
+  SUPPORT_TELEGRAM_BOT_TOKEN: Joi.string().allow('').default(''),
+  SUPPORT_TELEGRAM_CHAT_ID: Joi.string().allow('').default(''),
 });

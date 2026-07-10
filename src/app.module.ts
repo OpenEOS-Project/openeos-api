@@ -46,6 +46,7 @@ import { ProductionStationsModule } from './modules/production-stations/producti
 import { DiscountVouchersModule } from './modules/discount-vouchers';
 import { PfandTypesModule } from './modules/pfand-types';
 import { PlatformSettingsModule } from './modules/platform-settings';
+import { SupportModule } from './modules/support';
 
 @Module({
   imports: [
@@ -144,6 +145,7 @@ import { PlatformSettingsModule } from './modules/platform-settings';
     DiscountVouchersModule,
     PfandTypesModule,
     PlatformSettingsModule,
+    SupportModule,
   ],
   controllers: [],
   providers: [

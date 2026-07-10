@@ -211,6 +211,13 @@ export class Organization extends SoftDeleteEntity {
   @Column({ name: 'event_price_override', type: 'decimal', precision: 10, scale: 2, nullable: true })
   eventPriceOverride: number | null;
 
+  // Support Chat
+  @Column({ name: 'priority_support', type: 'boolean', default: false })
+  prioritySupport: boolean;
+
+  @Column({ name: 'support_telegram_topic_id', type: 'integer', nullable: true })
+  supportTelegramTopicId: number | null;
+
   // Relations
   @OneToMany(() => UserOrganization, (userOrg) => userOrg.organization)
   userOrganizations: UserOrganization[];
