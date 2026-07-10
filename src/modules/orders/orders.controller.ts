@@ -48,6 +48,17 @@ export class OrdersController {
     return this.ordersService.findAll(organizationId, user, query);
   }
 
+  // Must be registered before ':orderId' below, otherwise Nest would match
+  // GET /orders/stats as GET /orders/:orderId with orderId="stats".
+  @Get('stats')
+  getStats(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Query() query: QueryOrdersDto,
+    @CurrentUser() user: User,
+  ) {
+    return this.ordersService.getStats(organizationId, user, query);
+  }
+
   @Get(':orderId')
   findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

@@ -3,13 +3,26 @@ import {
   IsUUID,
   IsEnum,
   IsDateString,
+  IsInt,
+  Min,
+  Max,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OrderStatus, PaymentStatus, OrderSource, OrderFulfillmentType } from '../../../database/entities/order.entity';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export class QueryOrdersDto extends PaginationDto {
+  // Narrower than PaginationDto's generic cap of 500 — the orders list/stats
+  // views are not meant to page through hundreds of rows at once.
+  @ApiPropertyOptional({ example: 50, description: 'Anzahl pro Seite (max. 100)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 50;
+
   @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'Filter nach Event-ID' })
   @IsOptional()
   @IsUUID()

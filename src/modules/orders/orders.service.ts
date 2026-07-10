@@ -8,7 +8,13 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import {
+  Repository,
+  Between,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  SelectQueryBuilder,
+} from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -47,6 +53,13 @@ import {
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { GatewayService } from '../gateway/gateway.service';
+
+export interface OrderStats {
+  count: number;
+  revenue: number;
+  avgReceipt: number;
+  pfand: number;
+}
 
 @Injectable()
 export class OrdersService {
@@ -215,43 +228,7 @@ export class OrdersService {
       .leftJoin('ord.createdByDevice', 'creatorDevice')
       .addSelect(['creatorDevice.id', 'creatorDevice.name']);
 
-    if (query.eventId) {
-      queryBuilder.andWhere('ord.eventId = :eventId', {
-        eventId: query.eventId,
-      });
-    }
-
-    if (query.status) {
-      queryBuilder.andWhere('ord.status = :status', { status: query.status });
-    }
-
-    if (query.paymentStatus) {
-      queryBuilder.andWhere('ord.paymentStatus = :paymentStatus', {
-        paymentStatus: query.paymentStatus,
-      });
-    }
-
-    if (query.source) {
-      queryBuilder.andWhere('ord.source = :source', { source: query.source });
-    }
-
-    if (query.fulfillmentType) {
-      queryBuilder.andWhere('ord.fulfillmentType = :fulfillmentType', {
-        fulfillmentType: query.fulfillmentType,
-      });
-    }
-
-    if (query.dateFrom) {
-      queryBuilder.andWhere('ord.createdAt >= :dateFrom', {
-        dateFrom: query.dateFrom,
-      });
-    }
-
-    if (query.dateTo) {
-      queryBuilder.andWhere('ord.createdAt <= :dateTo', {
-        dateTo: query.dateTo,
-      });
-    }
+    this.applyOrderFilters(queryBuilder, 'ord', query);
 
     if (query.includeItems) {
       queryBuilder.leftJoinAndSelect('ord.items', 'items');
@@ -262,6 +239,61 @@ export class OrdersService {
     const [items, total] = await queryBuilder.getManyAndCount();
 
     return createPaginatedResult(items, total, page, limit);
+  }
+
+  /**
+   * Aggregate order stats (count/revenue/avgReceipt/pfand) over ALL orders
+   * matching the given filters — no pagination. Mirrors the same money
+   * semantics as the (soon to be removed) client-side summary in
+   * orders-list.tsx: cancelled orders count toward `count` but are excluded
+   * from every money sum, so `avgReceipt` divides by the non-cancelled count.
+   */
+  async getStats(
+    organizationId: string,
+    user: User,
+    query: QueryOrdersDto,
+  ): Promise<OrderStats> {
+    await this.checkMembership(organizationId, user.id);
+
+    const queryBuilder = this.orderRepository
+      .createQueryBuilder('ord')
+      .where('ord.organizationId = :organizationId', { organizationId });
+
+    this.applyOrderFilters(queryBuilder, 'ord', query);
+
+    const raw = await queryBuilder
+      .select('COUNT(ord.id)', 'count')
+      .addSelect(
+        `COUNT(CASE WHEN ord.status != :cancelledStatus THEN ord.id END)`,
+        'countedCount',
+      )
+      .addSelect(
+        `COALESCE(SUM(CASE WHEN ord.status != :cancelledStatus THEN ord.total ELSE 0 END), 0)`,
+        'revenue',
+      )
+      .addSelect(
+        `COALESCE(SUM(CASE WHEN ord.status != :cancelledStatus THEN ord.pfandTotal ELSE 0 END), 0)`,
+        'pfand',
+      )
+      .setParameter('cancelledStatus', OrderStatus.CANCELLED)
+      .getRawOne<{
+        count: string;
+        countedCount: string;
+        revenue: string;
+        pfand: string;
+      }>();
+
+    const count = Number(raw?.count || 0);
+    const countedCount = Number(raw?.countedCount || 0);
+    const revenue = Number(raw?.revenue || 0);
+    const pfand = Number(raw?.pfand || 0);
+
+    return {
+      count,
+      revenue,
+      avgReceipt: countedCount > 0 ? revenue / countedCount : 0,
+      pfand,
+    };
   }
 
   async findOne(
@@ -767,6 +799,59 @@ export class OrdersService {
   }
 
   // Private helper methods
+
+  /**
+   * Applies the shared QueryOrdersDto filters (everything except pagination
+   * and includeItems) to a query builder. Used by both findAll and getStats
+   * so their result sets can never diverge.
+   */
+  private applyOrderFilters(
+    queryBuilder: SelectQueryBuilder<Order>,
+    alias: string,
+    query: QueryOrdersDto,
+  ): void {
+    if (query.eventId) {
+      queryBuilder.andWhere(`${alias}.eventId = :eventId`, {
+        eventId: query.eventId,
+      });
+    }
+
+    if (query.status) {
+      queryBuilder.andWhere(`${alias}.status = :status`, {
+        status: query.status,
+      });
+    }
+
+    if (query.paymentStatus) {
+      queryBuilder.andWhere(`${alias}.paymentStatus = :paymentStatus`, {
+        paymentStatus: query.paymentStatus,
+      });
+    }
+
+    if (query.source) {
+      queryBuilder.andWhere(`${alias}.source = :source`, {
+        source: query.source,
+      });
+    }
+
+    if (query.fulfillmentType) {
+      queryBuilder.andWhere(`${alias}.fulfillmentType = :fulfillmentType`, {
+        fulfillmentType: query.fulfillmentType,
+      });
+    }
+
+    if (query.dateFrom) {
+      queryBuilder.andWhere(`${alias}.createdAt >= :dateFrom`, {
+        dateFrom: query.dateFrom,
+      });
+    }
+
+    if (query.dateTo) {
+      queryBuilder.andWhere(`${alias}.createdAt <= :dateTo`, {
+        dateTo: query.dateTo,
+      });
+    }
+  }
 
   /** Whether deposits apply to this order, per the org's fulfillment-type policy. */
   private async shouldChargePfand(order: Order): Promise<boolean> {
