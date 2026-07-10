@@ -93,7 +93,7 @@ export class DevicesController {
     @Body() verifyDto: VerifyDeviceDto,
     @CurrentUser() user: User,
   ) {
-    return this.devicesService.verifyDevice(organizationId, deviceId, verifyDto.code, user);
+    return this.devicesService.verifyDevice(organizationId, deviceId, verifyDto.code, user, verifyDto.type);
   }
 
   @Post(':deviceId/block')

@@ -40,6 +40,15 @@ export class VerifyDeviceDto {
   @IsNotEmpty()
   @MaxLength(6)
   code: string;
+
+  @ApiPropertyOptional({
+    description: 'Gerätetyp, der bei der Verifizierung festgelegt wird',
+    example: 'pos',
+    enum: DeviceType,
+  })
+  @IsEnum(DeviceType)
+  @IsOptional()
+  type?: DeviceType;
 }
 
 // New DTO for TV device initialization (no organization required)

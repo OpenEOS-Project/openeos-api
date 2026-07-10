@@ -313,6 +313,7 @@ export class DevicesService {
     device.verifiedAt = new Date();
     device.verifiedById = user.id;
     device.verificationCode = null; // Clear the code after linking
+    this.applyTypeDefaults(device);
 
     await this.deviceRepository.save(device);
     this.logger.log(`Device linked: ${device.name} (${device.id}) to org ${linkDto.organizationId} by user ${user.email}`);
@@ -468,11 +469,27 @@ export class DevicesService {
     this.logger.log(`Device logged out: ${device.name} (${device.id})`);
   }
 
+  /**
+   * Persist the defaults the admin UI displays for the device type, so a
+   * freshly verified device behaves as shown without an extra save.
+   */
+  private applyTypeDefaults(device: Device): void {
+    const settings = device.settings || {};
+    if (device.type === DeviceType.POS && !settings.serviceMode) {
+      settings.serviceMode = 'table';
+    }
+    if (device.type === DeviceType.DISPLAY && !settings.displayMode) {
+      settings.displayMode = 'customer';
+    }
+    device.settings = settings;
+  }
+
   async verifyDevice(
     organizationId: string,
     deviceId: string,
     code: string,
     user: User,
+    type?: DeviceType,
   ): Promise<Device> {
     await this.checkPermission(organizationId, user.id, 'devices');
 
@@ -501,10 +518,14 @@ export class DevicesService {
       });
     }
 
+    if (type) {
+      device.type = type;
+    }
     device.status = DeviceStatus.VERIFIED;
     device.verifiedAt = new Date();
     device.verifiedById = user.id;
     device.verificationCode = null; // Clear the code after verification
+    this.applyTypeDefaults(device);
 
     await this.deviceRepository.save(device);
     this.logger.log(`Device verified: ${device.name} (${device.id}) by user ${user.email}`);
