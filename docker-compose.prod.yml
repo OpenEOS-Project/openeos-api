@@ -73,6 +73,9 @@ services:
       SUPPORT_TELEGRAM_BOT_TOKEN: ${SUPPORT_TELEGRAM_BOT_TOKEN:-}
       SUPPORT_TELEGRAM_CHAT_ID: ${SUPPORT_TELEGRAM_CHAT_ID:-}
 
+      # Zeitzone für stundenbasierte Auswertungen
+      REPORT_TIMEZONE: ${REPORT_TIMEZONE:-Europe/Berlin}
+
       # Optional: Sentry
       SENTRY_DSN: ${SENTRY_DSN:-}
     volumes:

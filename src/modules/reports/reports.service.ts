@@ -1,4 +1,5 @@
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
 import {
@@ -113,7 +114,19 @@ export class ReportsService {
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     @InjectRepository(Device)
     private readonly deviceRepository: Repository<Device>,
+    private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Zeitzone für stundenbasierte Auswertungen. created_at ist timestamptz —
+   * ohne Konvertierung liefert EXTRACT(HOUR ...) die UTC-Stunde und der
+   * Stundenverlauf ist in Deutschland um 1-2 Stunden verschoben.
+   * Wert wird gegen eine Whitelist geprüft, da er in SQL eingebettet wird.
+   */
+  private reportTimeZone(): string {
+    const tz = this.configService.get<string>('REPORT_TIMEZONE') || 'Europe/Berlin';
+    return /^[A-Za-z0-9_+\/-]+$/.test(tz) ? tz : 'Europe/Berlin';
+  }
 
   async getSalesReport(
     organizationId: string,
@@ -406,13 +419,15 @@ export class ReportsService {
       });
     }
 
+    const tz = this.reportTimeZone();
+    const localHour = `EXTRACT(HOUR FROM order.createdAt AT TIME ZONE '${tz}')`;
     const results = await queryBuilder
       .select([
-        'EXTRACT(HOUR FROM order.createdAt) as hour',
+        `${localHour} as hour`,
         'COUNT(order.id) as orders',
         'SUM(order.total) as revenue',
       ])
-      .groupBy('EXTRACT(HOUR FROM order.createdAt)')
+      .groupBy(localHour)
       .orderBy('hour', 'ASC')
       .getRawMany();
 
