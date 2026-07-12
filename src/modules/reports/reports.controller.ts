@@ -78,6 +78,51 @@ export class ReportsController {
     return { data: report };
   }
 
+  @Get('channels')
+  @Roles(Role.MEMBER)
+  async getChannelsReport(
+    @CurrentOrganization() organizationId: string,
+    @Query() queryDto: QueryReportsDto,
+    @CurrentUser() user: User,
+  ) {
+    const report = await this.reportsService.getChannelsReport(
+      organizationId,
+      queryDto,
+      user,
+    );
+    return { data: report };
+  }
+
+  @Get('categories')
+  @Roles(Role.MEMBER)
+  async getCategoriesReport(
+    @CurrentOrganization() organizationId: string,
+    @Query() queryDto: QueryReportsDto,
+    @CurrentUser() user: User,
+  ) {
+    const report = await this.reportsService.getCategoriesReport(
+      organizationId,
+      queryDto,
+      user,
+    );
+    return { data: report };
+  }
+
+  @Get('devices')
+  @Roles(Role.MEMBER)
+  async getDevicesReport(
+    @CurrentOrganization() organizationId: string,
+    @Query() queryDto: QueryReportsDto,
+    @CurrentUser() user: User,
+  ) {
+    const report = await this.reportsService.getDevicesReport(
+      organizationId,
+      queryDto,
+      user,
+    );
+    return { data: report };
+  }
+
   @Get('inventory')
   @Roles(Role.MEMBER)
   async getInventoryReport(

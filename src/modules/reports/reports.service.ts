@@ -11,6 +11,7 @@ import {
   PfandReturn,
   UserOrganization,
   User,
+  Device,
 } from '../../database/entities';
 import {
   OrganizationRole,
@@ -31,6 +32,31 @@ export interface SalesReport {
   pfandReturned: number;
   /** pfandCollected − pfandReturned (deposits still out in the wild). */
   pfandBalance: number;
+  /** Orders with status CANCELLED, same filters, excluded from totalOrders/totalRevenue. */
+  cancelledOrders: number;
+  /** cancelledOrders / (totalOrders + cancelledOrders), in percent. */
+  cancellationRate: number;
+}
+
+export interface ChannelReport {
+  channel: string;
+  orders: number;
+  revenue: number;
+  avgReceipt: number;
+}
+
+export interface CategoryReport {
+  categoryId: string;
+  name: string;
+  quantity: number;
+  revenue: number;
+}
+
+export interface DeviceReport {
+  deviceId: string;
+  name: string;
+  orders: number;
+  revenue: number;
 }
 
 export interface ProductReport {
@@ -85,6 +111,8 @@ export class ReportsService {
     private readonly pfandReturnRepository: Repository<PfandReturn>,
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
+    @InjectRepository(Device)
+    private readonly deviceRepository: Repository<Device>,
   ) {}
 
   async getSalesReport(
@@ -189,17 +217,55 @@ export class ReportsService {
       .select('SUM(item.quantity)', 'totalItems')
       .getRawOne();
 
+    // Cancelled orders, same filters — mirrors the queries above but flips
+    // the status filter instead of excluding CANCELLED.
+    const cancelledQueryBuilder = this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.organizationId = :organizationId', { organizationId })
+      .andWhere('order.status = :cancelledStatus', {
+        cancelledStatus: OrderStatus.CANCELLED,
+      });
+
+    if (eventId) {
+      cancelledQueryBuilder.andWhere('order.eventId = :eventId', { eventId });
+    }
+
+    if (startDate && endDate) {
+      cancelledQueryBuilder.andWhere(
+        'order.createdAt BETWEEN :startDate AND :endDate',
+        {
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+        },
+      );
+    } else if (startDate) {
+      cancelledQueryBuilder.andWhere('order.createdAt >= :startDate', {
+        startDate: new Date(startDate),
+      });
+    } else if (endDate) {
+      cancelledQueryBuilder.andWhere('order.createdAt <= :endDate', {
+        endDate: new Date(endDate),
+      });
+    }
+
+    const cancelledCount = await cancelledQueryBuilder.getCount();
+
     const pfandCollected = Number(result?.pfandCollected || 0);
     const pfandReturned = Number(returnsResult?.pfandReturned || 0);
+    const totalOrders = Number(result?.totalOrders || 0);
+    const totalConsidered = totalOrders + cancelledCount;
 
     return {
       totalRevenue: Number(result?.totalRevenue || 0),
-      totalOrders: Number(result?.totalOrders || 0),
+      totalOrders,
       averageOrderValue: Number(result?.averageOrderValue || 0),
       totalItemsSold: Number(itemsResult?.totalItems || 0),
       pfandCollected,
       pfandReturned,
       pfandBalance: pfandCollected - pfandReturned,
+      cancelledOrders: cancelledCount,
+      cancellationRate:
+        totalConsidered > 0 ? (cancelledCount / totalConsidered) * 100 : 0,
     };
   }
 
@@ -364,6 +430,173 @@ export class ReportsService {
     return hourlyData;
   }
 
+  async getChannelsReport(
+    organizationId: string,
+    queryDto: QueryReportsDto,
+    user: User,
+  ): Promise<ChannelReport[]> {
+    await this.checkPermission(organizationId, user.id);
+    const { eventId, startDate, endDate } = queryDto;
+
+    const queryBuilder = this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.organizationId = :organizationId', { organizationId })
+      .andWhere('order.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: [OrderStatus.CANCELLED],
+      });
+
+    if (eventId) {
+      queryBuilder.andWhere('order.eventId = :eventId', { eventId });
+    }
+
+    if (startDate && endDate) {
+      queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+      });
+    } else if (startDate) {
+      queryBuilder.andWhere('order.createdAt >= :startDate', {
+        startDate: new Date(startDate),
+      });
+    } else if (endDate) {
+      queryBuilder.andWhere('order.createdAt <= :endDate', {
+        endDate: new Date(endDate),
+      });
+    }
+
+    const results = await queryBuilder
+      .select([
+        'order.source as channel',
+        'COUNT(order.id) as orders',
+        // Revenue excludes Pfand, same convention as getSalesReport.
+        'SUM(order.total - order.pfandTotal) as revenue',
+      ])
+      .groupBy('order.source')
+      .orderBy('SUM(order.total - order.pfandTotal)', 'DESC')
+      .getRawMany();
+
+    return results.map((r) => {
+      const orders = Number(r.orders || 0);
+      const revenue = Number(r.revenue || 0);
+      return {
+        channel: r.channel,
+        orders,
+        revenue,
+        avgReceipt: orders > 0 ? revenue / orders : 0,
+      };
+    });
+  }
+
+  async getCategoriesReport(
+    organizationId: string,
+    queryDto: QueryReportsDto,
+    user: User,
+  ): Promise<CategoryReport[]> {
+    await this.checkPermission(organizationId, user.id);
+    const { eventId, startDate, endDate } = queryDto;
+
+    const queryBuilder = this.orderItemRepository
+      .createQueryBuilder('item')
+      .innerJoin('item.order', 'order')
+      .where('order.organizationId = :organizationId', { organizationId })
+      .andWhere('order.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: [OrderStatus.CANCELLED],
+      });
+
+    if (eventId) {
+      queryBuilder.andWhere('order.eventId = :eventId', { eventId });
+    }
+
+    if (startDate && endDate) {
+      queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+      });
+    } else if (startDate) {
+      queryBuilder.andWhere('order.createdAt >= :startDate', {
+        startDate: new Date(startDate),
+      });
+    } else if (endDate) {
+      queryBuilder.andWhere('order.createdAt <= :endDate', {
+        endDate: new Date(endDate),
+      });
+    }
+
+    const results = await queryBuilder
+      .select([
+        'item.categoryId as "categoryId"',
+        'item.categoryName as "name"',
+        'SUM(item.quantity) as "quantity"',
+        'SUM(item.totalPrice) as "revenue"',
+      ])
+      .groupBy('item.categoryId')
+      .addGroupBy('item.categoryName')
+      .orderBy('SUM(item.totalPrice)', 'DESC')
+      .getRawMany();
+
+    return results.map((r) => ({
+      categoryId: r.categoryId,
+      name: r.name,
+      quantity: Number(r.quantity || 0),
+      revenue: Number(r.revenue || 0),
+    }));
+  }
+
+  async getDevicesReport(
+    organizationId: string,
+    queryDto: QueryReportsDto,
+    user: User,
+  ): Promise<DeviceReport[]> {
+    await this.checkPermission(organizationId, user.id);
+    const { eventId, startDate, endDate } = queryDto;
+
+    const queryBuilder = this.orderRepository
+      .createQueryBuilder('order')
+      .leftJoin('order.createdByDevice', 'device')
+      .where('order.organizationId = :organizationId', { organizationId })
+      .andWhere('order.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: [OrderStatus.CANCELLED],
+      });
+
+    if (eventId) {
+      queryBuilder.andWhere('order.eventId = :eventId', { eventId });
+    }
+
+    if (startDate && endDate) {
+      queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+      });
+    } else if (startDate) {
+      queryBuilder.andWhere('order.createdAt >= :startDate', {
+        startDate: new Date(startDate),
+      });
+    } else if (endDate) {
+      queryBuilder.andWhere('order.createdAt <= :endDate', {
+        endDate: new Date(endDate),
+      });
+    }
+
+    const results = await queryBuilder
+      .select([
+        'order.createdByDeviceId as "deviceId"',
+        'device.name as "name"',
+        'COUNT(order.id) as "orders"',
+        'SUM(order.total - order.pfandTotal) as "revenue"',
+      ])
+      .groupBy('order.createdByDeviceId')
+      .addGroupBy('device.name')
+      .orderBy('SUM(order.total - order.pfandTotal)', 'DESC')
+      .getRawMany();
+
+    return results.map((r) => ({
+      deviceId: r.deviceId,
+      name: r.name || 'Unbekanntes Gerät',
+      orders: Number(r.orders || 0),
+      revenue: Number(r.revenue || 0),
+    }));
+  }
+
   async getInventoryReport(
     eventId: string,
     user: User,
@@ -469,6 +702,15 @@ export class ReportsService {
         break;
       case 'hourly':
         reportData = await this.getHourlyReport(organizationId, queryDto, user);
+        break;
+      case 'channels':
+        reportData = await this.getChannelsReport(organizationId, queryDto, user);
+        break;
+      case 'categories':
+        reportData = await this.getCategoriesReport(organizationId, queryDto, user);
+        break;
+      case 'devices':
+        reportData = await this.getDevicesReport(organizationId, queryDto, user);
         break;
       case 'inventory':
         if (queryDto.eventId) {

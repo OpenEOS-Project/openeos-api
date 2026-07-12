@@ -9,6 +9,7 @@ import {
   StockMovement,
   PfandReturn,
   UserOrganization,
+  Device,
 } from '../../database/entities';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
@@ -24,6 +25,7 @@ import { ReportsService } from './reports.service';
       StockMovement,
       PfandReturn,
       UserOrganization,
+      Device,
     ]),
   ],
   controllers: [ReportsController],
