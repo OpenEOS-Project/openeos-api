@@ -13,6 +13,9 @@ services:
       PORT: 3000
       API_PREFIX: api
       API_VERSION: 1
+      # Basis-URL des Dashboards — wird in E-Mail-Links verwendet
+      # (Registrierungs-Bestätigung, Passwort-Reset, Einladungen)
+      APP_URL: ${APP_URL:-https://app.openeos.de}
 
       # Database
       DATABASE_HOST: postgres

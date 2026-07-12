@@ -471,12 +471,19 @@ export class AuthService {
     );
     await this.userRepository.save(user);
 
-    // TODO: Send email with reset link
-    // For now, log the token (mock email service)
-    this.logger.log(`Password reset token for ${email}: ${resetToken}`);
-    this.logger.log(
-      `Reset link: ${this.configService.get('frontendUrl')}/auth/reset-password?token=${resetToken}`,
-    );
+    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    const resetUrl = `${appUrl}/reset-password?token=${resetToken}`;
+
+    try {
+      await this.emailService.sendPasswordResetEmail({
+        to: user.email,
+        firstName: user.firstName,
+        resetUrl,
+      });
+      this.logger.log(`Password reset email sent to ${email}`);
+    } catch (error) {
+      this.logger.error(`Failed to send password reset email to ${email}`, error);
+    }
   }
 
   async resetPassword(resetPasswordDto: ResetPasswordDto): Promise<void> {

@@ -129,6 +129,32 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  async sendPasswordResetEmail(options: {
+    to: string;
+    firstName: string;
+    resetUrl: string;
+  }): Promise<boolean> {
+    const subject = 'Passwort zurücksetzen';
+    const html = this.getBaseTemplate(`
+      <h1>Hallo ${options.firstName}!</h1>
+      <p>Du hast angefordert, dein Passwort bei OpenEOS zurückzusetzen. Klicke auf den folgenden Button, um ein neues Passwort zu vergeben:</p>
+      <p style="text-align: center; margin: 30px 0;">
+        <a href="${options.resetUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+          Neues Passwort vergeben
+        </a>
+      </p>
+      <p style="color: #666; font-size: 14px;">
+        Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:<br>
+        <a href="${options.resetUrl}" style="color: #2563eb;">${options.resetUrl}</a>
+      </p>
+      <p style="color: #666; font-size: 14px;">
+        Der Link ist 1 Stunde gültig. Falls du kein neues Passwort angefordert hast, kannst du diese E-Mail ignorieren — dein Passwort bleibt unverändert.
+      </p>
+    `);
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   async sendAdminRegistrationNotification(options: {
     to: string;
     name: string;
