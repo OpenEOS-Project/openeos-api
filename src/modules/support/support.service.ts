@@ -6,6 +6,8 @@ import { ErrorCodes } from '../../common/constants/error-codes';
 import { SendSupportMessageDto } from './dto';
 import { SupportMessageDto, SupportThreadSummaryDto } from './support.types';
 import { TelegramSupportService } from './telegram-support.service';
+import { EmailService } from '../email/email.service';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 
 const PRIORITY_EVENT_STATUSES = ['paid', 'invoice'];
 const PRIORITY_EVENT_WINDOW_MONTHS = 12;
@@ -40,6 +42,8 @@ export class SupportService {
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
     private readonly telegramSupportService: TelegramSupportService,
+    private readonly emailService: EmailService,
+    private readonly platformSettingsService: PlatformSettingsService,
   ) {}
 
   // === Member-facing ===
@@ -97,6 +101,30 @@ export class SupportService {
     } catch (error) {
       this.logger.warn(
         `Telegram-Weiterleitung fehlgeschlagen für Organisation ${organizationId}: ${(error as Error).message}`,
+      );
+    }
+
+    // Admin-E-Mail nur für die ERSTE ungelesene Nachricht eines Schwungs —
+    // solange der Admin nicht gelesen hat, lösen Folgenachrichten keine Mail aus.
+    try {
+      const unreadInbound = await this.supportMessageRepository.count({
+        where: { organizationId, direction: 'inbound', readByAdminAt: IsNull() },
+      });
+      if (unreadInbound === 1) {
+        const notifyEmail = await this.platformSettingsService.resolveNotificationTarget('supportMessage');
+        if (notifyEmail) {
+          await this.emailService.sendAdminSupportMessageNotification({
+            to: notifyEmail,
+            organizationName: organization.name,
+            senderName: user.fullName,
+            preview: body.length > 200 ? `${body.slice(0, 200)}…` : body,
+            priority: await this.isPrioritySupport(organization),
+          });
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Admin-Benachrichtigung (Support) fehlgeschlagen für Organisation ${organizationId}: ${(error as Error).message}`,
       );
     }
 

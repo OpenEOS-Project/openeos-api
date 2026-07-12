@@ -10,6 +10,7 @@ export interface AdminNotifyOnSettings {
   userRegistered: boolean;
   organizationCreated: boolean;
   eventOrdered: boolean;
+  supportMessage: boolean;
 }
 
 export interface AdminNotificationSettings {
@@ -23,6 +24,7 @@ const DEFAULT_NOTIFICATION_SETTINGS: AdminNotificationSettings = {
     userRegistered: true,
     organizationCreated: true,
     eventOrdered: true,
+    supportMessage: true,
   },
 };
 

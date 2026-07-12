@@ -17,6 +17,11 @@ export class NotifyOnSettingsDto {
   @IsOptional()
   @IsBoolean()
   eventOrdered?: boolean;
+
+  @ApiPropertyOptional({ example: true, description: 'Benachrichtigung bei neuer Support-Anfrage' })
+  @IsOptional()
+  @IsBoolean()
+  supportMessage?: boolean;
 }
 
 export class UpdateNotificationSettingsDto {

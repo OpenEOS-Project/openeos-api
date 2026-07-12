@@ -235,6 +235,27 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  async sendAdminSupportMessageNotification(options: {
+    to: string;
+    organizationName: string;
+    senderName: string;
+    preview: string;
+    priority: boolean;
+  }): Promise<boolean> {
+    const subject = `${options.priority ? '🚨 ' : ''}Neue Support-Anfrage: ${options.organizationName}`;
+    const html = this.getBaseTemplate(`
+      <h1>Neue Support-Anfrage${options.priority ? ' (Priority)' : ''}</h1>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${options.organizationName}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Von:</td><td style="padding: 6px 0;"><strong>${options.senderName}</strong></td></tr>
+      </table>
+      <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333;">${options.preview}</p>
+      <p style="color: #666; font-size: 14px;">Antworten kannst du im Super-Admin-Bereich unter Support oder direkt im Telegram-Topic der Organisation.</p>
+    `);
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   // ============ Organization Invitation Email Templates ============
 
   async sendInvitationEmail(

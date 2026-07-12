@@ -60,6 +60,19 @@ services:
       EMAIL_PASSWORD: ${EMAIL_PASSWORD:-}
       EMAIL_FROM: ${EMAIL_FROM:-noreply@openeos.de}
 
+      # Admin-Benachrichtigungen (Fallback, konfigurierbar im Super-Admin-UI)
+      ADMIN_NOTIFY_EMAIL: ${ADMIN_NOTIFY_EMAIL:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+
+      # Abrechnung (§ 19 UStG — Endpreise ohne USt)
+      EVENT_PRICE_EUR: ${EVENT_PRICE_EUR:-25}
+      TEST_EVENT_MAX_ORDERS: ${TEST_EVENT_MAX_ORDERS:-25}
+      OPENREGISTER_API_KEY: ${OPENREGISTER_API_KEY:-}
+
+      # Support-Chat: Telegram-Brücke (Forum-Gruppe mit Topics)
+      SUPPORT_TELEGRAM_BOT_TOKEN: ${SUPPORT_TELEGRAM_BOT_TOKEN:-}
+      SUPPORT_TELEGRAM_CHAT_ID: ${SUPPORT_TELEGRAM_CHAT_ID:-}
+
       # Optional: Sentry
       SENTRY_DSN: ${SENTRY_DSN:-}
     volumes:
