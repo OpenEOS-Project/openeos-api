@@ -22,6 +22,11 @@ export class NotifyOnSettingsDto {
   @IsOptional()
   @IsBoolean()
   supportMessage?: boolean;
+
+  @ApiPropertyOptional({ example: true, description: 'Benachrichtigung bei neuer Kontakt-/Demo-Anfrage über die Website' })
+  @IsOptional()
+  @IsBoolean()
+  contactRequest?: boolean;
 }
 
 export class UpdateNotificationSettingsDto {

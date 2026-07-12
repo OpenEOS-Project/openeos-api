@@ -37,7 +37,7 @@ services:
       JWT_REFRESH_TOKEN_EXPIRATION: ${JWT_REFRESH_TOKEN_EXPIRATION:-7d}
 
       # CORS
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://app.openeos.de,https://display.openeos.de,https://printer.openeos.de}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://app.openeos.de,https://display.openeos.de,https://printer.openeos.de,https://openeos.de,https://www.openeos.de}
 
       # Rate Limiting
       THROTTLE_TTL: ${THROTTLE_TTL:-60000}

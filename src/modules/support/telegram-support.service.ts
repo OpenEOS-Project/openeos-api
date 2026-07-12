@@ -6,6 +6,7 @@ import { Organization, SupportMessage } from '../../database/entities';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 
 const OFFSET_SETTING_KEY = 'supportTelegramOffset';
+const WEBSITE_TOPIC_SETTING_KEY = 'supportTelegramWebsiteTopicId';
 const POLL_INTERVAL_MS = 4000;
 const REQUEST_TIMEOUT_MS = 8000;
 
@@ -90,7 +91,7 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
     effectivePriority: boolean,
   ): Promise<number | null> {
     if (!this.enabled) return null;
-    const text = `👤 ${senderName}${effectivePriority ? ' · 🚨 PRIORITY' : ''}\n\n${body}`;
+    const text = `👤 ${senderName}${effectivePriority ? ' · 🚨 PRIORITY' : ''}\n✅ Authentifizierter Benutzer\n\n${body}`;
     return this.sendToTopic(org, text, effectivePriority);
   }
 
@@ -99,6 +100,59 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
     if (!this.enabled) return null;
     const text = `💬 Antwort (via Plattform):\n\n${body}`;
     return this.sendToTopic(org, text, effectivePriority);
+  }
+
+  /**
+   * Sendet eine nicht-authentifizierte Website-Anfrage (Demo/Kontakt/Hardware/
+   * Gateway) in ein einziges, geteiltes Forum-Thema „🌐 Website-Anfragen“.
+   * Läuft unabhängig vom E-Mail-Benachrichtigungs-Toggle, wie auch der
+   * Support-Chat.
+   */
+  async sendWebsiteInquiry(text: string): Promise<number | null> {
+    if (!this.enabled) return null;
+    return this.sendToWebsiteTopic(text);
+  }
+
+  private async sendToWebsiteTopic(text: string, allowRecreate = true): Promise<number | null> {
+    const topicId = await this.ensureWebsiteTopic();
+    if (!topicId) return null;
+
+    const response = await this.request<{ message_id: number }>('sendMessage', {
+      chat_id: this.chatId,
+      message_thread_id: topicId,
+      text,
+    });
+
+    if (response?.ok && response.result) {
+      return response.result.message_id;
+    }
+
+    if (allowRecreate && this.isTopicNotFoundError(response)) {
+      this.logger.warn('Telegram-Website-Thema nicht mehr vorhanden, lege es neu an');
+      await this.platformSettingsService.setValue(WEBSITE_TOPIC_SETTING_KEY, null);
+      return this.sendToWebsiteTopic(text, false);
+    }
+
+    this.logger.warn(`Telegram sendMessage (Website-Thema) fehlgeschlagen: ${response?.description}`);
+    return null;
+  }
+
+  private async ensureWebsiteTopic(): Promise<number | null> {
+    const existing = await this.platformSettingsService.getValue<number>(WEBSITE_TOPIC_SETTING_KEY);
+    if (existing) return existing;
+
+    const response = await this.request<{ message_thread_id: number }>('createForumTopic', {
+      chat_id: this.chatId,
+      name: '🌐 Website-Anfragen',
+    });
+
+    if (!response?.ok || !response.result) {
+      this.logger.warn(`Anlegen des Telegram-Website-Themas fehlgeschlagen: ${response?.description}`);
+      return null;
+    }
+
+    await this.platformSettingsService.setValue(WEBSITE_TOPIC_SETTING_KEY, response.result.message_thread_id);
+    return response.result.message_thread_id;
   }
 
   /** Stellt sicher, dass die Organisation ein Telegram-Thema hat, und legt es bei Bedarf an. */
@@ -164,6 +218,7 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const offset = (await this.platformSettingsService.getValue<number>(OFFSET_SETTING_KEY)) ?? undefined;
+      const websiteTopicId = await this.platformSettingsService.getValue<number>(WEBSITE_TOPIC_SETTING_KEY);
 
       const response = await this.request<TelegramUpdate[]>('getUpdates', {
         offset,
@@ -197,6 +252,7 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
         if (
           message &&
           typeof message.message_thread_id === 'number' &&
+          message.message_thread_id !== websiteTopicId &&
           String(message.chat.id) === this.chatId &&
           !message.from?.is_bot &&
           message.text

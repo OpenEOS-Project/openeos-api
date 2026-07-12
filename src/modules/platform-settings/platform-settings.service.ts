@@ -11,6 +11,7 @@ export interface AdminNotifyOnSettings {
   organizationCreated: boolean;
   eventOrdered: boolean;
   supportMessage: boolean;
+  contactRequest: boolean;
 }
 
 export interface AdminNotificationSettings {
@@ -25,6 +26,7 @@ const DEFAULT_NOTIFICATION_SETTINGS: AdminNotificationSettings = {
     organizationCreated: true,
     eventOrdered: true,
     supportMessage: true,
+    contactRequest: true,
   },
 };
 

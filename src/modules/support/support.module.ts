@@ -10,6 +10,6 @@ import { TelegramSupportService } from './telegram-support.service';
   imports: [TypeOrmModule.forFeature([SupportMessage, Organization, UserOrganization, Event])],
   controllers: [SupportController, SupportAdminController],
   providers: [SupportService, TelegramSupportService],
-  exports: [SupportService],
+  exports: [SupportService, TelegramSupportService],
 })
 export class SupportModule {}

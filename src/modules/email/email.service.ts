@@ -256,6 +256,39 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  async sendAdminContactRequestNotification(options: {
+    to: string;
+    type: 'demo' | 'contact' | 'hardware' | 'gateway';
+    name: string;
+    email: string;
+    organization?: string;
+    message: string;
+  }): Promise<boolean> {
+    const typeLabels: Record<typeof options.type, string> = {
+      demo: 'Demo-Anfrage',
+      contact: 'Kontaktanfrage',
+      hardware: 'Hardware-Miete',
+      gateway: 'Kassen-Gateway',
+    };
+    const typeLabel = typeLabels[options.type];
+    const subject = `Neue ${typeLabel} über die Website`;
+    const html = this.getBaseTemplate(`
+      <h1>Neue ${typeLabel}</h1>
+      <p style="background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 10px 14px; color: #92400e; font-weight: 600;">
+        🌐 Website-Anfrage — NICHT authentifiziert
+      </p>
+      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+        <tr><td style="padding: 6px 0; color: #666;">Typ:</td><td style="padding: 6px 0;"><strong>${typeLabel}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Name:</td><td style="padding: 6px 0;"><strong>${options.name}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">E-Mail:</td><td style="padding: 6px 0;"><strong><a href="mailto:${options.email}" style="color: #2563eb;">${options.email}</a></strong></td></tr>
+        ${options.organization ? `<tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${options.organization}</strong></td></tr>` : ''}
+      </table>
+      <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333; white-space: pre-wrap;">${options.message}</p>
+    `);
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   // ============ Organization Invitation Email Templates ============
 
   async sendInvitationEmail(

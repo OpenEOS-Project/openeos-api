@@ -47,6 +47,7 @@ import { DiscountVouchersModule } from './modules/discount-vouchers';
 import { PfandTypesModule } from './modules/pfand-types';
 import { PlatformSettingsModule } from './modules/platform-settings';
 import { SupportModule } from './modules/support';
+import { ContactModule } from './modules/contact';
 
 @Module({
   imports: [
@@ -146,6 +147,7 @@ import { SupportModule } from './modules/support';
     PfandTypesModule,
     PlatformSettingsModule,
     SupportModule,
+    ContactModule,
   ],
   controllers: [],
   providers: [
