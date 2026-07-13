@@ -77,6 +77,8 @@ export interface PaymentReport {
 }
 
 export interface HourlyReport {
+  /** Lokales Datum (YYYY-MM-DD) — bei mehrtägigen Veranstaltungen mehrere Tage */
+  date: string;
   hour: number;
   orders: number;
   revenue: number;
@@ -324,7 +326,9 @@ export class ReportsService {
       .groupBy('item.productId')
       .addGroupBy('item.productName')
       .addGroupBy('item.categoryName')
-      .orderBy('SUM(item.totalPrice)', 'DESC')
+      // Top-Produkte nach verkaufter Menge (bei Gleichstand nach Umsatz)
+      .orderBy('SUM(item.quantity)', 'DESC')
+      .addOrderBy('SUM(item.totalPrice)', 'DESC')
       .getRawMany();
 
     return results.map((r) => ({
@@ -420,26 +424,47 @@ export class ReportsService {
     }
 
     const tz = this.reportTimeZone();
-    const localHour = `EXTRACT(HOUR FROM order.createdAt AT TIME ZONE '${tz}')`;
+    const localTs = `order.createdAt AT TIME ZONE '${tz}'`;
+    const localDate = `to_char((${localTs})::date, 'YYYY-MM-DD')`;
+    const localHour = `EXTRACT(HOUR FROM ${localTs})`;
     const results = await queryBuilder
       .select([
+        `${localDate} as date`,
         `${localHour} as hour`,
         'COUNT(order.id) as orders',
         'SUM(order.total) as revenue',
       ])
-      .groupBy(localHour)
-      .orderBy('hour', 'ASC')
+      .groupBy(localDate)
+      .addGroupBy(localHour)
+      .orderBy('date', 'ASC')
+      .addOrderBy('hour', 'ASC')
       .getRawMany();
 
-    // Fill in missing hours
-    const hourlyData: HourlyReport[] = [];
-    for (let h = 0; h < 24; h++) {
-      const found = results.find((r) => Number(r.hour) === h);
-      hourlyData.push({
-        hour: h,
-        orders: Number(found?.orders || 0),
-        revenue: Number(found?.revenue || 0),
+    // Pro vorkommendem Tag alle 24 Stunden auffüllen (getrennt je Tag —
+    // mehrtägige Veranstaltungen sollen nicht in einen 24h-Topf fallen).
+    const byDate = new Map<string, Map<number, { orders: number; revenue: number }>>();
+    for (const r of results) {
+      const date = String(r.date);
+      if (!byDate.has(date)) byDate.set(date, new Map());
+      byDate.get(date)!.set(Number(r.hour), {
+        orders: Number(r.orders || 0),
+        revenue: Number(r.revenue || 0),
       });
+    }
+
+    // Kein Umsatz → leerer Bericht (ein Tag mit Nullwerten wäre irreführend)
+    const hourlyData: HourlyReport[] = [];
+    for (const date of Array.from(byDate.keys()).sort()) {
+      const hours = byDate.get(date)!;
+      for (let h = 0; h < 24; h++) {
+        const found = hours.get(h);
+        hourlyData.push({
+          date,
+          hour: h,
+          orders: found?.orders ?? 0,
+          revenue: found?.revenue ?? 0,
+        });
+      }
     }
 
     return hourlyData;
