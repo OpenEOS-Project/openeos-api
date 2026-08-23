@@ -12,6 +12,7 @@ import {
   Res,
   StreamableFile,
   Headers,
+  UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -34,10 +35,12 @@ import {
 } from './dto';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
+import { OrganizationGuard } from '../../common/guards/organization.guard';
 
 @ApiTags('Shift Plans')
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/shift-plans')
+@UseGuards(OrganizationGuard)
 export class ShiftsController {
   constructor(
     private readonly shiftsService: ShiftsService,
