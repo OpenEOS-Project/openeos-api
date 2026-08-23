@@ -37,6 +37,30 @@ export interface PaymentMetadata {
   [key: string]: unknown;
 }
 
+/**
+ * Signed transaction record from the organization's TSE (Technische
+ * Sicherheitseinrichtung), per KassenSichV. Populated by TseService right
+ * after capture; `failed: true` marks a recorded TSE outage (BMF's
+ * Ausfall-Regelung — the sale still completes, but the gap must be provable).
+ */
+export interface TseTransactionData {
+  provider: 'fiskaly' | 'none';
+  clientId: string;
+  transactionNumber: number;
+  serialNumber: string;
+  signatureCounter: number;
+  signatureValue: string;
+  signatureAlgorithm: string;
+  startTime: string;
+  endTime: string;
+  processType: string;
+  processData: string;
+  /** Pre-built payload for the receipt's TSE QR code. */
+  qrCodeData: string;
+  failed?: boolean;
+  failureReason?: string;
+}
+
 @Entity('payments')
 @Index(['orderId'])
 export class Payment extends BaseEntity {
@@ -60,6 +84,9 @@ export class Payment extends BaseEntity {
 
   @Column({ type: 'jsonb', default: {} })
   metadata: PaymentMetadata;
+
+  @Column({ name: 'tse_data', type: 'jsonb', nullable: true, default: null })
+  tseData: TseTransactionData | null;
 
   @Column({ name: 'processed_by_user_id', type: 'uuid', nullable: true })
   processedByUserId: string | null;
@@ -86,5 +113,9 @@ export class Payment extends BaseEntity {
   // Helper methods
   isSuccessful(): boolean {
     return this.status === PaymentTransactionStatus.CAPTURED;
+  }
+
+  hasTseSignature(): boolean {
+    return !!this.tseData && !this.tseData.failed;
   }
 }

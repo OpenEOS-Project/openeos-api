@@ -48,6 +48,7 @@ import { PfandTypesModule } from './modules/pfand-types';
 import { PlatformSettingsModule } from './modules/platform-settings';
 import { SupportModule } from './modules/support';
 import { ContactModule } from './modules/contact';
+import { TseModule } from './modules/tse';
 
 @Module({
   imports: [
@@ -147,6 +148,7 @@ import { ContactModule } from './modules/contact';
     PfandTypesModule,
     PlatformSettingsModule,
     SupportModule,
+    TseModule,
     ContactModule,
   ],
   controllers: [],

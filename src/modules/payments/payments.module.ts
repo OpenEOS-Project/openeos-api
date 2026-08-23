@@ -11,6 +11,7 @@ import {
   UserOrganization,
 } from '../../database/entities';
 import { PrintJobsModule } from '../print-jobs/print-jobs.module';
+import { TseModule } from '../tse/tse.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { PrintJobsModule } from '../print-jobs/print-jobs.module';
       UserOrganization,
     ]),
     PrintJobsModule,
+    TseModule,
   ],
   controllers: [PaymentsController],
   providers: [PaymentsService, PayPalService],

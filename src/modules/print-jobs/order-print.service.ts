@@ -5,6 +5,7 @@ import { Device } from '../../database/entities/device.entity';
 import { Organization } from '../../database/entities/organization.entity';
 import { OrderItem } from '../../database/entities/order-item.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
+import { TseTransactionData } from '../../database/entities/payment.entity';
 import { PrintJobsService } from './print-jobs.service';
 import { PrintRoutingService } from './print-routing.service';
 
@@ -379,6 +380,25 @@ export class OrderPrintService {
       .filter(Boolean);
   }
 
+  /**
+   * Snake_case TSE block for the receipt template — signature/QR code data
+   * per KassenSichV. Undefined when TSE isn't configured for the org, so the
+   * template's `{% if tse is defined %}` guard just skips the section.
+   */
+  private buildTsePayload(tseData: TseTransactionData | null | undefined): Record<string, unknown> | undefined {
+    if (!tseData) return undefined;
+    return {
+      failed: !!tseData.failed,
+      signature: tseData.signatureValue,
+      signature_counter: tseData.signatureCounter,
+      transaction_number: tseData.transactionNumber,
+      serial_number: tseData.serialNumber,
+      time_start: tseData.startTime,
+      time_end: tseData.endTime,
+      qr_code_data: tseData.qrCodeData,
+    };
+  }
+
   async handlePaymentReceived(
     organizationId: string,
     data: {
@@ -389,6 +409,7 @@ export class OrderPrintService {
       paymentMethod: string;
       isFullyPaid: boolean;
       order: any;
+      tseData?: TseTransactionData | null;
     },
   ): Promise<void> {
     try {
@@ -462,6 +483,7 @@ export class OrderPrintService {
               amount: data.amount,
               isFullyPaid: data.isFullyPaid,
               is_test: isTest,
+              tse: this.buildTsePayload(data.tseData),
             },
             null,
             'receipt',
