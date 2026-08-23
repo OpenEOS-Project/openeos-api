@@ -1,0 +1,146 @@
+# Self-hosted / airgapped deployment for the OpenEOS API.
+#
+# Differences from docker-compose.prod.yml:
+#   - No Traefik labels, no ACME/Let's Encrypt certresolver (needs internet).
+#   - The api port is published directly on the host instead of only
+#     `expose`d to an external "frontend" network.
+#   - No dependency on an externally-created "frontend" network.
+# Put your own reverse proxy / TLS termination in front of this if you need
+# one; on a closed venue LAN you can just hit http://<host>:3000 directly.
+#
+# Airgap flow:
+#   1. On a machine with internet access:
+#        docker pull ghcr.io/openeos-project/openeos-api:latest
+#        docker save -o openeos-api.tar ghcr.io/openeos-project/openeos-api:latest
+#   2. Copy the tar to the offline host (USB / other offline media):
+#        docker load -i openeos-api.tar
+#   3. Set the required secrets below in a .env file next to this compose
+#      file, then:
+#        docker compose -f docker-compose.airgap.yml up -d
+#
+# APP_URL / CORS_ORIGINS must point at wherever clients actually reach this
+# host — an IP, or a name resolved via /etc/hosts or a local DNS server on
+# the venue LAN. There is no public DNS or CA available offline.
+
+services:
+  api:
+    image: ${API_IMAGE:-ghcr.io/openeos-project/openeos-api:latest}
+    container_name: openeos-api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_PREFIX: api
+      API_VERSION: 1
+      APP_URL: ${APP_URL:-http://localhost:3001}
+
+      # Database
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: ${DATABASE_USER:-openeos}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD is required}
+      DATABASE_NAME: ${DATABASE_NAME:-openeos}
+      DATABASE_SYNCHRONIZE: "false"
+      DATABASE_LOGGING: "false"
+      DATABASE_MIGRATIONS_RUN: "true"
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      # JWT - CHANGE THESE!
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ACCESS_TOKEN_EXPIRATION: ${JWT_ACCESS_TOKEN_EXPIRATION:-30m}
+      JWT_REFRESH_TOKEN_EXPIRATION: ${JWT_REFRESH_TOKEN_EXPIRATION:-7d}
+
+      # CORS - list every origin clients will load the frontend from
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3001}
+
+      # Rate Limiting
+      THROTTLE_TTL: ${THROTTLE_TTL:-60000}
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-300}
+
+      # 2FA
+      TWO_FACTOR_ENCRYPTION_KEY: ${TWO_FACTOR_ENCRYPTION_KEY:?TWO_FACTOR_ENCRYPTION_KEY is required}
+      TWO_FACTOR_ISSUER: ${TWO_FACTOR_ISSUER:-OpenEOS}
+
+      # Everything below requires outbound internet and should stay
+      # disabled/unset on an airgapped install:
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_USER: ${EMAIL_USER:-}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@openeos.de}
+      ADMIN_NOTIFY_EMAIL: ${ADMIN_NOTIFY_EMAIL:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      OPENREGISTER_API_KEY: ${OPENREGISTER_API_KEY:-}
+      SUPPORT_TELEGRAM_BOT_TOKEN: ${SUPPORT_TELEGRAM_BOT_TOKEN:-}
+      SUPPORT_TELEGRAM_CHAT_ID: ${SUPPORT_TELEGRAM_CHAT_ID:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+
+      EVENT_PRICE_EUR: ${EVENT_PRICE_EUR:-25}
+      TEST_EVENT_MAX_ORDERS: ${TEST_EVENT_MAX_ORDERS:-25}
+      REPORT_TIMEZONE: ${REPORT_TIMEZONE:-Europe/Berlin}
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - openeos-internal
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: openeos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-openeos}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD is required}
+      POSTGRES_DB: ${DATABASE_NAME:-openeos}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-openeos} -d ${DATABASE_NAME:-openeos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - openeos-internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: openeos-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - openeos-internal
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads:
+
+networks:
+  openeos-internal:
+    driver: bridge

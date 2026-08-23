@@ -473,6 +473,25 @@ Nach jedem erfolgreichen Image-Build auf `main` (Workflow `.github/workflows/bui
 
 Der Deploy-Job verbindet sich per SSH auf den Server und führt dort `docker compose pull` + `docker compose up -d` für den konfigurierten Service aus, gefolgt von `docker image prune -f`.
 
+## Airgapped / Self-Hosted Deployment
+
+`docker-compose.prod.yml` assumes Traefik + Let's Encrypt on a server with internet access. For a closed network (e.g. an offline event venue) use `docker-compose.airgap.yml` instead — no Traefik, no ACME, the api port is published directly.
+
+```bash
+# 1. On a machine with internet access
+docker pull ghcr.io/openeos-project/openeos-api:latest
+docker save -o openeos-api.tar ghcr.io/openeos-project/openeos-api:latest
+
+# 2. Copy openeos-api.tar to the offline host, then load it
+docker load -i openeos-api.tar
+
+# 3. Set DATABASE_PASSWORD, JWT_SECRET, TWO_FACTOR_ENCRYPTION_KEY in a .env
+#    file next to docker-compose.airgap.yml, then:
+docker compose -f docker-compose.airgap.yml up -d
+```
+
+Set `APP_URL` and `CORS_ORIGINS` to whatever address the [openeos-web](https://github.com/OpenEOS-Project/openeos-web) dashboard is actually reachable at on your LAN (an IP, or a name resolved via `/etc/hosts`/local DNS — there's no public DNS or CA offline). Anything requiring outbound internet (Stripe, SMTP email, Sentry, Telegram support bridge, `OPENREGISTER_API_KEY`) should stay unset; the API degrades those features gracefully rather than failing.
+
 ## License
 
 AGPLv3
