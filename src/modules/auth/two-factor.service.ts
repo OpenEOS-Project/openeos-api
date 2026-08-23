@@ -18,6 +18,7 @@ import {
 import { EmailOtpPurpose } from '../../database/entities/email-otp.entity';
 import { EncryptionService } from '../../common/services/encryption.service';
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { EmailService } from '../email/email.service';
 
 const TOTP_WINDOW = 1; // Allow 1 step before/after for clock drift
 const EMAIL_OTP_EXPIRY_MINUTES = 5;
@@ -49,6 +50,7 @@ export class TwoFactorService {
     private readonly emailOtpRepository: Repository<EmailOtp>,
     private readonly encryptionService: EncryptionService,
     private readonly configService: ConfigService,
+    private readonly emailService: EmailService,
   ) {
     this.issuer = this.configService.get<string>('TWO_FACTOR_ISSUER', 'OpenEOS');
 
@@ -432,9 +434,16 @@ export class TwoFactorService {
     });
     await this.emailOtpRepository.save(emailOtp);
 
-    // TODO: Send email with code
-    // For now, log the code (mock email service)
-    this.logger.log(`Email OTP for ${user.email}: ${code}`);
+    const sent = await this.emailService.sendTwoFactorOtpEmail({
+      to: user.email,
+      code,
+      context: purpose === EmailOtpPurpose.TWO_FACTOR_SETUP ? 'setup' : 'login',
+    });
+    if (!sent) {
+      // Never log the code itself — a failed send must not become a second,
+      // quieter way to read a live 2FA code out of the logs.
+      this.logger.error(`Failed to send 2FA email OTP to ${user.email} (purpose: ${purpose})`);
+    }
   }
 
   private async verifyEmailOtp(
