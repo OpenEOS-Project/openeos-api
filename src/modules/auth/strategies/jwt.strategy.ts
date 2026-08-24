@@ -3,8 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import type { Request } from 'express';
 import { Repository } from 'typeorm';
 import { User } from '../../../database/entities';
+
+// Falls back to the httpOnly `accessToken` cookie set by AuthController when
+// no Authorization header is present, so browser clients no longer need to
+// keep the access token in localStorage to stay authenticated.
+function extractFromCookie(req: Request): string | null {
+  return req.cookies?.accessToken || null;
+}
 
 export interface JwtPayload {
   sub: string;
@@ -26,7 +34,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new Error('JWT_SECRET is not configured');
     }
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        extractFromCookie,
+      ]),
       ignoreExpiration: false,
       secretOrKey: secret,
     });
