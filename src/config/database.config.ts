@@ -12,6 +12,7 @@ export default registerAs(
     database: process.env.DATABASE_NAME || 'openeos',
     entities: [__dirname + '/../database/entities/*.entity{.ts,.js}'],
     migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
+    subscribers: [__dirname + '/../database/subscribers/*.subscriber{.ts,.js}'],
     synchronize: process.env.DATABASE_SYNCHRONIZE === 'true',
     logging: process.env.DATABASE_LOGGING === 'true',
     migrationsRun: process.env.DATABASE_MIGRATIONS_RUN === 'true',

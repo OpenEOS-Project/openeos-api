@@ -61,6 +61,10 @@ export * from './email-otp.entity';
 export * from './rental-hardware.entity';
 export * from './rental-assignment.entity';
 
+// Offline Box Sync (docs/design/offline-box-sync.md)
+export * from './sync-outbox.entity';
+export * from './sync-inbox.entity';
+
 // Inventory
 export * from './stock-movement.entity';
 export * from './inventory-count.entity';

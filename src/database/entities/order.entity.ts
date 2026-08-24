@@ -1,5 +1,5 @@
 import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { SoftDeleteEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { Event } from './event.entity';
 import { User } from './user.entity';
@@ -45,9 +45,28 @@ export enum OrderFulfillmentType {
 @Index(['orderNumber'])
 @Index(['eventId', 'dailyNumber'])
 @Index(['status', 'paymentStatus'])
-export class Order extends BaseEntity {
+export class Order extends SoftDeleteEntity {
   @Column({ name: 'organization_id', type: 'uuid' })
   organizationId: string;
+
+  /**
+   * Offline box sync (docs/design/offline-box-sync.md). 'central' or the
+   * rental_assignment.id of the box that wrote this row. Null means the row
+   * predates the sync columns or was never touched by sync machinery.
+   */
+  @Column({ name: 'origin_node', type: 'varchar', length: 255, nullable: true })
+  originNode: string | null;
+
+  /**
+   * Monotonic per-node counter (from sync_version_seq), not a timestamp —
+   * a box can run for days with a drifted or unset clock. Used by the
+   * central ingest endpoint to reject stale/duplicate replays.
+   */
+  @Column({ name: 'sync_version', type: 'bigint', nullable: true })
+  syncVersion: string | null;
+
+  @Column({ name: 'synced_at', type: 'timestamp with time zone', nullable: true })
+  syncedAt: Date | null;
 
   @Column({ name: 'event_id', type: 'uuid', nullable: true })
   eventId: string | null;

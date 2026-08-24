@@ -6,6 +6,11 @@ import { RentalAssignment } from './rental-assignment.entity';
 export enum RentalHardwareType {
   PRINTER = 'printer',
   DISPLAY = 'display',
+  /** Runs the offline box stack (api/web/db) — see docs/design/offline-box-sync.md */
+  LOCAL_SERVER = 'local_server',
+  TABLET = 'tablet',
+  PHONE = 'phone',
+  ROUTER = 'router',
 }
 
 export enum RentalHardwareStatus {

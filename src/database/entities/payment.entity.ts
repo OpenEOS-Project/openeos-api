@@ -1,5 +1,5 @@
 import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { SoftDeleteEntity } from './base.entity';
 import { Order } from './order.entity';
 import { User } from './user.entity';
 import { Device } from './device.entity';
@@ -39,9 +39,19 @@ export interface PaymentMetadata {
 
 @Entity('payments')
 @Index(['orderId'])
-export class Payment extends BaseEntity {
+export class Payment extends SoftDeleteEntity {
   @Column({ name: 'order_id', type: 'uuid' })
   orderId: string;
+
+  /** Offline box sync (docs/design/offline-box-sync.md) — see order.entity.ts. */
+  @Column({ name: 'origin_node', type: 'varchar', length: 255, nullable: true })
+  originNode: string | null;
+
+  @Column({ name: 'sync_version', type: 'bigint', nullable: true })
+  syncVersion: string | null;
+
+  @Column({ name: 'synced_at', type: 'timestamp with time zone', nullable: true })
+  syncedAt: Date | null;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount: number;

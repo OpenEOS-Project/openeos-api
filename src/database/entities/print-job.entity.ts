@@ -1,5 +1,5 @@
 import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { SoftDeleteEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { Printer } from './printer.entity';
 import { PrintTemplate } from './print-template.entity';
@@ -22,9 +22,19 @@ export interface PrintJobPayload {
 @Entity('print_jobs')
 @Index(['printerId', 'status'])
 @Index(['organizationId'])
-export class PrintJob extends BaseEntity {
+export class PrintJob extends SoftDeleteEntity {
   @Column({ name: 'organization_id', type: 'uuid' })
   organizationId: string;
+
+  /** Offline box sync (docs/design/offline-box-sync.md) — see order.entity.ts. */
+  @Column({ name: 'origin_node', type: 'varchar', length: 255, nullable: true })
+  originNode: string | null;
+
+  @Column({ name: 'sync_version', type: 'bigint', nullable: true })
+  syncVersion: string | null;
+
+  @Column({ name: 'synced_at', type: 'timestamp with time zone', nullable: true })
+  syncedAt: Date | null;
 
   @Column({ name: 'printer_id', type: 'uuid' })
   printerId: string;

@@ -33,6 +33,7 @@ import { QrCodesModule } from './modules/qr-codes';
 import { OnlineOrdersModule } from './modules/online-orders';
 import { InvoicesModule } from './modules/invoices';
 import { RentalsModule } from './modules/rentals';
+import { SyncModule } from './modules/sync/sync.module';
 import { AdminModule } from './modules/admin';
 import { ReportsModule } from './modules/reports';
 import { UploadsModule } from './modules/uploads';
@@ -133,6 +134,7 @@ import { ContactModule } from './modules/contact';
     OnlineOrdersModule,
     InvoicesModule,
     RentalsModule,
+    SyncModule,
     AdminModule,
     ReportsModule,
     UploadsModule,

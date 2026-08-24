@@ -14,6 +14,16 @@ export enum RentalAssignmentStatus {
   CANCELLED = 'cancelled',
 }
 
+/** Offline box sync state — see docs/design/offline-box-sync.md */
+export enum RentalSyncStatus {
+  NOT_PROVISIONED = 'not_provisioned',
+  PROVISIONING = 'provisioning',
+  ACTIVE = 'active',
+  SYNCING = 'syncing',
+  SYNCED = 'synced',
+  ERROR = 'error',
+}
+
 @Entity('rental_assignments')
 @Index(['rentalHardwareId', 'status'])
 @Index(['organizationId', 'startDate'])
@@ -63,6 +73,29 @@ export class RentalAssignment extends BaseEntity {
 
   @Column({ name: 'invoice_id', type: 'uuid', nullable: true })
   invoiceId: string | null;
+
+  /**
+   * Offline box sync state (docs/design/offline-box-sync.md). Only
+   * meaningful when rentalHardware.type === LOCAL_SERVER — a printer/
+   * display assignment stays NOT_PROVISIONED and is simply ignored by the
+   * sync machinery.
+   */
+  @Column({
+    name: 'sync_status',
+    type: 'enum',
+    enum: RentalSyncStatus,
+    enumName: 'rental_sync_status',
+    default: RentalSyncStatus.NOT_PROVISIONED,
+  })
+  syncStatus: RentalSyncStatus;
+
+  /**
+   * Bearer token the box's SyncPushService authenticates with against
+   * POST /sync/push. Generated at provisioning time (not yet automated —
+   * step 2 of the design doc seeds this by hand); null until then.
+   */
+  @Column({ name: 'sync_token', type: 'varchar', length: 255, nullable: true, unique: true })
+  syncToken: string | null;
 
   // Relations
   @ManyToOne(() => RentalHardware, (hardware) => hardware.assignments, { onDelete: 'CASCADE' })

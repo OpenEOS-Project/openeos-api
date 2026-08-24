@@ -1,6 +1,6 @@
 # Offline Box Sync — Design Doc
 
-**Status:** Draft, not implemented
+**Status:** §7 build-order steps 1–2 implemented (schema + SyncModule scaffold, branch `feat/offline-box-sync-step1-schema`). Steps 3–5 (provisioning endpoint, syncStatus UI, bidirectional catalog sync) not started.
 **Author:** proposed via community contribution
 **Depends on:** the airgapped/self-hosted deployment work in `docker-compose.airgap.yml` (this repo, `openeos-web`, `openeos-shop`, `openeos-landing`, `openeos-docs`)
 
@@ -121,14 +121,17 @@ No new code beyond what the airgap PRs already add. Printer-agents and POS devic
 
 ## 7. Suggested build order
 
-1. Schema: provenance columns + soft-delete on syncable entities, `RentalHardwareType` additions, unique-active-assignment constraint.
-2. `SyncModule`: outbox table, push loop, idempotent Central ingest endpoint. No provisioning automation yet — seed one box by hand, prove push-only sync against one real event.
+1. ✅ Schema: provenance columns + soft-delete on syncable entities, `RentalHardwareType` additions, unique-active-assignment constraint.
+2. ✅ `SyncModule`: outbox table, push loop, idempotent Central ingest endpoint. No provisioning automation yet — seed one box by hand, prove push-only sync against one real event.
+
+   Landed as designed, with one scope narrowing found during implementation: `POST /sync/push` writes into `sync_inbox` (a staging table), not directly into the live `orders`/`order_items`/`payments`/`print_jobs` tables. Materializing into those tables hits a real foreign-key gap — an `Order.createdByDeviceId` points at a `Device` row that self-registered against the box's *local* api and was never synced to Central, so a naive insert breaks on the first real order. Devices need their own sync path before materialization is safe. Tracked as an open question below, not papered over with an untested generic upsert.
 3. Provisioning endpoint (§3), wired into the `RentalAssignment` lifecycle (`confirmed` → auto-provision before `pickupAt`).
 4. `syncStatus` visibility in `openeos-web`'s rentals UI — so staff can see "this box hasn't synced back yet" without a terminal.
 5. Bidirectional catalog corrections — only if step 2 in production shows it's actually needed, not built ahead of evidence.
 
 ## Open questions
 
+- **New, found during step 2:** how do `sync_inbox` rows get materialized into the live tables? Needs Device rows to be resolvable centrally first — either Devices become syncable too (their own outbox/inbox flow, same pattern), or provisioning pre-creates placeholder Device rows centrally that the box's local devices map onto. Not designed yet.
 - Backup/export format for the "box never reconnects" case — plain `pg_dump`, or something the rentals UI can trigger remotely while the box still has connectivity?
 - Should `sync_outbox` payloads be full entity snapshots or diffs? Snapshots are simpler and idempotency-safe by construction; diffs are smaller but need care to stay replay-safe.
 - Does provisioning need to be resumable (box prep interrupted partway), or is "start over" acceptable given it's a warehouse process, not a live one?

@@ -67,4 +67,15 @@ export default () => ({
     telegramBotToken: process.env.SUPPORT_TELEGRAM_BOT_TOKEN || '',
     telegramChatId: process.env.SUPPORT_TELEGRAM_CHAT_ID || '',
   },
+
+  // Offline box sync (docs/design/offline-box-sync.md). role stays
+  // 'central' for every normal deployment — only a box's local server sets
+  // SYNC_ROLE=box, which is what turns on SyncOutboxSubscriber and
+  // SyncPushService's background push loop.
+  sync: {
+    role: process.env.SYNC_ROLE || 'central',
+    assignmentId: process.env.SYNC_ASSIGNMENT_ID || '',
+    centralUrl: process.env.SYNC_CENTRAL_URL || '',
+    token: process.env.SYNC_TOKEN || '',
+  },
 });
