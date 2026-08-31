@@ -155,6 +155,36 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  async sendTwoFactorOtpEmail(options: {
+    to: string;
+    code: string;
+    /** Purpose-specific copy — kept generic to avoid importing EmailOtpPurpose into this module. */
+    context: 'setup' | 'login';
+  }): Promise<boolean> {
+    const subject =
+      options.context === 'setup'
+        ? 'Bestätigungscode für die Einrichtung der Zwei-Faktor-Authentifizierung'
+        : 'Dein Anmeldecode für OpenEOS';
+    const intro =
+      options.context === 'setup'
+        ? 'Verwende den folgenden Code, um die E-Mail-Zwei-Faktor-Authentifizierung für dein Konto einzurichten:'
+        : 'Verwende den folgenden Code, um dich bei OpenEOS anzumelden:';
+    const html = this.getBaseTemplate(`
+      <h1>Dein Bestätigungscode</h1>
+      <p>${intro}</p>
+      <p style="text-align: center; margin: 30px 0;">
+        <span style="display: inline-block; background: #f3f4f6; color: #111827; padding: 16px 28px; border-radius: 8px; font-size: 28px; font-weight: 700; letter-spacing: 6px;">
+          ${options.code}
+        </span>
+      </p>
+      <p style="color: #666; font-size: 14px;">
+        Der Code ist 5 Minuten gültig. Falls du diese Anfrage nicht ausgelöst hast, kannst du diese E-Mail ignorieren — niemand kann sich ohne diesen Code anmelden.
+      </p>
+    `);
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   async sendAdminRegistrationNotification(options: {
     to: string;
     name: string;
