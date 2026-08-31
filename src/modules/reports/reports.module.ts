@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   Order,
@@ -10,9 +10,12 @@ import {
   PfandReturn,
   UserOrganization,
   Device,
+  Printer,
+  PrintJob,
 } from '../../database/entities';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
@@ -26,7 +29,12 @@ import { ReportsService } from './reports.service';
       PfandReturn,
       UserOrganization,
       Device,
+      Printer,
+      PrintJob,
     ]),
+    // forwardRef: GatewayModule haengt seinerseits an Modulen, die
+    // ReportsService nutzen.
+    forwardRef(() => GatewayModule),
   ],
   controllers: [ReportsController],
   providers: [ReportsService],

@@ -13,11 +13,14 @@ import {
   UserOrganization,
   User,
   Device,
+  Printer,
+  PrintJob,
 } from '../../database/entities';
 import {
   OrganizationRole,
 } from '../../database/entities/user-organization.entity';
 import { OrderStatus } from '../../database/entities/order.entity';
+import { DeviceType } from '../../database/entities/device.entity';
 import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
 import { QueryReportsDto, ReportGroupBy, ReportExportFormat } from './dto';
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -116,6 +119,10 @@ export class ReportsService {
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     @InjectRepository(Device)
     private readonly deviceRepository: Repository<Device>,
+    @InjectRepository(Printer)
+    private readonly printerRepository: Repository<Printer>,
+    @InjectRepository(PrintJob)
+    private readonly printJobRepository: Repository<PrintJob>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -841,4 +848,73 @@ export class ReportsService {
 
     return [headers.join(','), ...rows].join('\n');
   }
+
+  /**
+   * Systemstatus fuer die Statusleiste des Dashboards.
+   *
+   * Die Designvorlage zeigt an dieser Stelle eine TSE-Kachel. Eine TSE
+   * gibt es in OpenEOS nicht, deshalb steht dort die Zahl der offenen
+   * Bestellungen — eine Kennzahl, die tatsaechlich existiert, statt einer
+   * erfundenen.
+   *
+   * Online ist keine Spalte, sondern eine Laufzeit-Eigenschaft: welche
+   * Geraete verbunden sind, weiss allein das Gateway. Die Liste der
+   * verbundenen Geraete wird deshalb hereingereicht, statt sie hier aus
+   * der Datenbank zu raten (lastSeenAt sagt nur, wann zuletzt etwas kam).
+   */
+  async getSystemStatus(
+    organizationId: string,
+    user: User,
+    onlineDeviceIds: string[],
+  ) {
+    await this.checkPermission(organizationId, user.id);
+
+    const online = new Set(onlineDeviceIds);
+    const since = new Date(Date.now() - 60 * 60 * 1000);
+
+    const [devices, printers, queuedJobs, jobsLastHour, openOrders] =
+      await Promise.all([
+        this.deviceRepository.find({
+          where: { organizationId },
+          select: { id: true, type: true },
+        }),
+        this.printerRepository.find({
+          where: { organizationId, isActive: true },
+          select: { id: true, isOnline: true },
+        }),
+        this.printJobRepository.count({
+          where: { organizationId, status: 'queued' as never },
+        }),
+        this.printJobRepository.count({
+          where: {
+            organizationId,
+            status: 'completed' as never,
+            updatedAt: MoreThanOrEqual(since),
+          },
+        }),
+        this.orderRepository.count({
+          where: { organizationId, status: OrderStatus.OPEN },
+        }),
+      ]);
+
+    const posDevices = devices.filter((d) => d.type === DeviceType.POS);
+
+    return {
+      pos: {
+        online: posDevices.filter((d) => online.has(d.id)).length,
+        total: posDevices.length,
+      },
+      printers: {
+        online: printers.filter((p) => p.isOnline).length,
+        total: printers.length,
+      },
+      printQueue: {
+        queued: queuedJobs,
+        completedLastHour: jobsLastHour,
+      },
+      openOrders,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
 }

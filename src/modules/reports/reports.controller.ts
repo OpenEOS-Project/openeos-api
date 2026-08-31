@@ -2,6 +2,7 @@ import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { ReportsService } from './reports.service';
+import { GatewayService } from '../gateway/gateway.service';
 import { QueryReportsDto, ExportReportsDto, ReportExportFormat } from './dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentOrganization } from '../../common/decorators/current-organization.decorator';
@@ -16,7 +17,10 @@ import type { User } from '../../database/entities';
 @Controller('organizations/:organizationId/reports')
 @UseGuards(OrganizationGuard, RolesGuard)
 export class ReportsController {
-  constructor(private readonly reportsService: ReportsService) {}
+  constructor(
+    private readonly reportsService: ReportsService,
+    private readonly gatewayService: GatewayService,
+  ) {}
 
   @Get('sales')
   @Roles(Role.MEMBER)
@@ -176,4 +180,23 @@ export class ReportsController {
     );
     response.send(result.data);
   }
+
+  @Get('system-status')
+  @Roles(Role.MEMBER)
+  async getSystemStatus(
+    @CurrentOrganization() organizationId: string,
+    @CurrentUser() user: User,
+  ) {
+    // Welche Geraete verbunden sind, weiss nur das Gateway zur Laufzeit —
+    // die Datenbank kennt lediglich den letzten Kontakt.
+    const onlineDeviceIds =
+      await this.gatewayService.getOnlineDeviceIds(organizationId);
+    const status = await this.reportsService.getSystemStatus(
+      organizationId,
+      user,
+      onlineDeviceIds,
+    );
+    return { data: status };
+  }
+
 }
