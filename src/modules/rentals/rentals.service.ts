@@ -11,6 +11,7 @@ import { RentalAssignmentStatus } from '../../database/entities/rental-assignmen
 import { RentalHardwareStatus } from '../../database/entities/rental-hardware.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { QueryRentalsDto } from './dto';
+import { endOfDay } from '../../common/utils/date-range.util';
 
 @Injectable()
 export class RentalsService {
@@ -42,7 +43,7 @@ export class RentalsService {
     if (startDate && endDate) {
       queryBuilder.andWhere('assignment.startDate BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     } else if (startDate) {
       queryBuilder.andWhere('assignment.startDate >= :startDate', {
@@ -50,7 +51,7 @@ export class RentalsService {
       });
     } else if (endDate) {
       queryBuilder.andWhere('assignment.endDate <= :endDate', {
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 

@@ -30,6 +30,7 @@ import {
   QueryInventoryCountsDto,
   QueryStockMovementsDto,
 } from './dto';
+import { endOfDay } from '../../common/utils/date-range.util';
 
 @Injectable()
 export class InventoryService {
@@ -433,7 +434,7 @@ export class InventoryService {
     if (startDate && endDate) {
       queryBuilder.andWhere('movement.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 

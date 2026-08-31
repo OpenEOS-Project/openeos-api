@@ -55,6 +55,7 @@ import {
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { GatewayService } from '../gateway/gateway.service';
+import { endOfDay } from '../../common/utils/date-range.util';
 
 export interface OrderStats {
   count: number;
@@ -862,7 +863,9 @@ export class OrdersService {
 
     if (query.dateTo) {
       queryBuilder.andWhere(`${alias}.createdAt <= :dateTo`, {
-        dateTo: query.dateTo,
+        // Tagesende, nicht Mitternacht — sonst liefert dateFrom=dateTo
+        // (die Dashboard-Kacheln fragen genau so nach "heute") nie etwas.
+        dateTo: endOfDay(query.dateTo),
       });
     }
   }

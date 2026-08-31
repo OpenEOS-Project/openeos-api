@@ -7,6 +7,7 @@ import { Device } from './device.entity';
 import { OnlineOrderSession } from './online-order-session.entity';
 import { OrderItem } from './order-item.entity';
 import { Payment } from './payment.entity';
+import { numericTransformer } from '../transformers/numeric.transformer';
 
 export enum OrderStatus {
   OPEN = 'open',
@@ -76,29 +77,29 @@ export class Order extends BaseEntity {
   @Column({ type: 'enum', enum: OrderSource, enumName: 'order_source', default: OrderSource.POS })
   source: OrderSource;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, transformer: numericTransformer })
   subtotal: number;
 
-  @Column({ name: 'tax_total', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ name: 'tax_total', type: 'decimal', precision: 10, scale: 2, default: 0, transformer: numericTransformer })
   taxTotal: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0, transformer: numericTransformer })
   total: number;
 
-  @Column({ name: 'paid_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ name: 'paid_amount', type: 'decimal', precision: 10, scale: 2, default: 0, transformer: numericTransformer })
   paidAmount: number;
 
-  @Column({ name: 'tip_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ name: 'tip_amount', type: 'decimal', precision: 10, scale: 2, default: 0, transformer: numericTransformer })
   tipAmount: number;
 
-  @Column({ name: 'discount_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ name: 'discount_amount', type: 'decimal', precision: 10, scale: 2, default: 0, transformer: numericTransformer })
   discountAmount: number;
 
   @Column({ name: 'discount_reason', type: 'varchar', length: 255, nullable: true })
   discountReason: string | null;
 
   /** Total deposit ("Pfand") charged on this order. Part of `total`, excluded from revenue/tax. */
-  @Column({ name: 'pfand_total', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ name: 'pfand_total', type: 'decimal', precision: 10, scale: 2, default: 0, transformer: numericTransformer })
   pfandTotal: number;
 
   @Column({ type: 'text', nullable: true })

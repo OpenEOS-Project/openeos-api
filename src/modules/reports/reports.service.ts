@@ -24,6 +24,7 @@ import { DeviceType } from '../../database/entities/device.entity';
 import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
 import { QueryReportsDto, ReportGroupBy, ReportExportFormat } from './dto';
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { endOfDay } from '../../common/utils/date-range.util';
 
 export interface SalesReport {
   totalRevenue: number;
@@ -159,7 +160,7 @@ export class ReportsService {
     if (startDate && endDate) {
       queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     } else if (startDate) {
       queryBuilder.andWhere('order.createdAt >= :startDate', {
@@ -167,7 +168,7 @@ export class ReportsService {
       });
     } else if (endDate) {
       queryBuilder.andWhere('order.createdAt <= :endDate', {
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 
@@ -197,7 +198,7 @@ export class ReportsService {
     if (startDate && endDate) {
       returnsQb.andWhere('ret.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     } else if (startDate) {
       returnsQb.andWhere('ret.createdAt >= :startDate', {
@@ -205,7 +206,7 @@ export class ReportsService {
       });
     } else if (endDate) {
       returnsQb.andWhere('ret.createdAt <= :endDate', {
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
     const returnsResult = await returnsQb
@@ -230,7 +231,7 @@ export class ReportsService {
         'order.createdAt BETWEEN :startDate AND :endDate',
         {
           startDate: new Date(startDate),
-          endDate: new Date(endDate),
+          endDate: endOfDay(endDate),
         },
       );
     }
@@ -257,7 +258,7 @@ export class ReportsService {
         'order.createdAt BETWEEN :startDate AND :endDate',
         {
           startDate: new Date(startDate),
-          endDate: new Date(endDate),
+          endDate: endOfDay(endDate),
         },
       );
     } else if (startDate) {
@@ -266,7 +267,7 @@ export class ReportsService {
       });
     } else if (endDate) {
       cancelledQueryBuilder.andWhere('order.createdAt <= :endDate', {
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 
@@ -314,7 +315,7 @@ export class ReportsService {
     if (startDate && endDate) {
       queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 
@@ -375,7 +376,7 @@ export class ReportsService {
         'payment.createdAt BETWEEN :startDate AND :endDate',
         {
           startDate: new Date(startDate),
-          endDate: new Date(endDate),
+          endDate: endOfDay(endDate),
         },
       );
     }
@@ -426,7 +427,7 @@ export class ReportsService {
     if (startDate && endDate) {
       queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 
@@ -499,7 +500,7 @@ export class ReportsService {
     if (startDate && endDate) {
       queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     } else if (startDate) {
       queryBuilder.andWhere('order.createdAt >= :startDate', {
@@ -507,7 +508,7 @@ export class ReportsService {
       });
     } else if (endDate) {
       queryBuilder.andWhere('order.createdAt <= :endDate', {
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 
@@ -557,7 +558,7 @@ export class ReportsService {
     if (startDate && endDate) {
       queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     } else if (startDate) {
       queryBuilder.andWhere('order.createdAt >= :startDate', {
@@ -565,7 +566,7 @@ export class ReportsService {
       });
     } else if (endDate) {
       queryBuilder.andWhere('order.createdAt <= :endDate', {
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 
@@ -612,7 +613,7 @@ export class ReportsService {
     if (startDate && endDate) {
       queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     } else if (startDate) {
       queryBuilder.andWhere('order.createdAt >= :startDate', {
@@ -620,7 +621,7 @@ export class ReportsService {
       });
     } else if (endDate) {
       queryBuilder.andWhere('order.createdAt <= :endDate', {
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 
@@ -687,7 +688,7 @@ export class ReportsService {
         'movement.createdAt BETWEEN :startDate AND :endDate',
         {
           startDate: new Date(startDate),
-          endDate: new Date(endDate),
+          endDate: endOfDay(endDate),
         },
       );
     }

@@ -9,6 +9,7 @@ import { Invoice, Organization } from '../../database/entities';
 import { InvoiceStatus } from '../../database/entities/invoice.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { QueryInvoicesDto } from './dto';
+import { endOfDay } from '../../common/utils/date-range.util';
 
 @Injectable()
 export class InvoicesService {
@@ -38,7 +39,7 @@ export class InvoicesService {
     if (startDate && endDate) {
       queryBuilder.andWhere('invoice.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     } else if (startDate) {
       queryBuilder.andWhere('invoice.createdAt >= :startDate', {
@@ -46,7 +47,7 @@ export class InvoicesService {
       });
     } else if (endDate) {
       queryBuilder.andWhere('invoice.createdAt <= :endDate', {
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 

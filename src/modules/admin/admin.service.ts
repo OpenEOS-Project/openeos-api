@@ -73,6 +73,7 @@ import {
   CreateSubscriptionConfigDto,
   UpdateSubscriptionConfigDto,
 } from './dto';
+import { endOfDay } from '../../common/utils/date-range.util';
 
 @Injectable()
 export class AdminService {
@@ -394,7 +395,7 @@ export class AdminService {
     if (startDate && endDate) {
       queryBuilder.andWhere('invoice.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 
@@ -624,7 +625,7 @@ export class AdminService {
     if (startDate && endDate) {
       queryBuilder.andWhere('assignment.startDate BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 
@@ -1158,7 +1159,7 @@ export class AdminService {
     rentalRevenue: number;
   }> {
     const start = startDate ? new Date(startDate) : new Date(new Date().getFullYear(), 0, 1);
-    const end = endDate ? new Date(endDate) : new Date();
+    const end = endDate ? endOfDay(endDate) : new Date();
 
     const rentalRevenue = await this.rentalAssignmentRepository
       .createQueryBuilder('assignment')
@@ -1204,7 +1205,7 @@ export class AdminService {
     if (startDate && endDate) {
       queryBuilder.andWhere('log.createdAt BETWEEN :startDate AND :endDate', {
         startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        endDate: endOfDay(endDate),
       });
     }
 
