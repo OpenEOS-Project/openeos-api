@@ -44,6 +44,25 @@ import {
 import { Public, CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
 
+// Parses JWT_ACCESS_TOKEN_EXPIRATION-style durations ("30m", "7d", "45s",
+// "2h") into a millisecond cookie maxAge. Only the units actually used by
+// jwt.config.ts's default/examples are supported; falls back to 30 minutes
+// on anything unrecognized rather than issuing a cookie with no expiry.
+function parseDurationToMs(duration: string): number {
+  const match = /^(\d+)(s|m|h|d)$/.exec(duration.trim());
+  if (!match) {
+    return 30 * 60 * 1000;
+  }
+  const value = Number(match[1]);
+  const unitMs: Record<'s' | 'm' | 'h' | 'd', number> = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+  };
+  return value * unitMs[match[2] as 's' | 'm' | 'h' | 'd'];
+}
+
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
@@ -114,6 +133,10 @@ export class AuthController {
 
     // Set refresh token as httpOnly cookie
     this.setRefreshTokenCookie(response, result.refreshToken);
+    // Also set access token as httpOnly cookie so the frontend no longer
+    // needs to keep it in localStorage (XSS-readable). The JSON body still
+    // carries it too, for non-browser API consumers that can't rely on cookies.
+    this.setAccessTokenCookie(response, result.accessToken);
 
     return {
       user: this.sanitizeUser(result.user),
@@ -147,6 +170,7 @@ export class AuthController {
 
     // Set new refresh token as httpOnly cookie
     this.setRefreshTokenCookie(response, tokens.refreshToken);
+    this.setAccessTokenCookie(response, tokens.accessToken);
 
     return {
       accessToken: tokens.accessToken,
@@ -169,6 +193,12 @@ export class AuthController {
 
     // Clear refresh token cookie
     response.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: this.configService.get('nodeEnv') === 'production',
+      sameSite: 'lax',
+      path: '/',
+    });
+    response.clearCookie('accessToken', {
       httpOnly: true,
       secure: this.configService.get('nodeEnv') === 'production',
       sameSite: 'lax',
@@ -416,6 +446,19 @@ export class AuthController {
       sameSite: 'lax',
       path: '/',
       maxAge,
+    });
+  }
+
+  private setAccessTokenCookie(response: Response, token: string): void {
+    const isProduction = this.configService.get('nodeEnv') === 'production';
+    const expiration = this.configService.get<string>('jwt.accessTokenExpiration') || '30m';
+
+    response.cookie('accessToken', token, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: parseDurationToMs(expiration),
     });
   }
 
