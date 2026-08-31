@@ -17,7 +17,38 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm test
+
+      # `pnpm lint` isn't gated here yet: the repo currently has ~2,500
+      # pre-existing lint findings (mostly Prettier formatting), so turning
+      # this on today would make every run red for reasons unrelated to the
+      # change being tested. Needs a dedicated `eslint --fix` pass across the
+      # repo first — see the audit report — then this step can be added.
+
   build-and-push:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
