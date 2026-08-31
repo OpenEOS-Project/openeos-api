@@ -918,4 +918,91 @@ export class ReportsService {
     };
   }
 
+
+  /**
+   * Ereignisstrom für das Dashboard.
+   *
+   * Die Designvorlage zeigt hier ein "Audit-Log" mit TSE-Signaturen.
+   * Eine TSE gibt es in OpenEOS nicht, und ein eigenes Ereignis-Journal
+   * ebenso wenig. Statt eines zu erfinden, wird der Strom aus dem
+   * zusammengesetzt, was tatsächlich protokolliert wird: angelegte
+   * Bestellungen, gebuchte Zahlungen und Druckaufträge samt Fehlern.
+   *
+   * Bewusst drei getrennte Abfragen mit anschließendem Mischen statt
+   * einer UNION: die Tabellen haben nichts gemeinsam außer dem
+   * Zeitstempel, und drei schlanke Abfragen mit LIMIT sind hier
+   * billiger als ein Konstrukt, das der Planer nicht indexgestützt
+   * auflösen kann.
+   */
+  async getActivityStream(organizationId: string, user: User, limit = 20) {
+    await this.checkPermission(organizationId, user.id);
+
+    const [orders, payments, jobs] = await Promise.all([
+      this.orderRepository.find({
+        where: { organizationId },
+        order: { createdAt: 'DESC' },
+        take: limit,
+        select: { id: true, orderNumber: true, total: true, status: true, createdAt: true },
+      }),
+      /* Payment kennt keine organizationId — es haengt an der
+         Bestellung. Deshalb ueber den Join statt ueber eine Spalte,
+         die es nicht gibt. */
+      this.paymentRepository
+        .createQueryBuilder('payment')
+        .innerJoin('payment.order', 'order')
+        .where('order.organizationId = :organizationId', { organizationId })
+        .orderBy('payment.createdAt', 'DESC')
+        .take(limit)
+        .getMany(),
+      this.printJobRepository.find({
+        where: { organizationId },
+        order: { createdAt: 'DESC' },
+        take: limit,
+        select: { id: true, status: true, error: true, createdAt: true },
+      }),
+    ]);
+
+    type Eintrag = {
+      id: string;
+      at: string;
+      kind: 'order' | 'payment' | 'print';
+      tone: 'neutral' | 'ok' | 'error';
+      message: string;
+      amount: number | null;
+    };
+
+    const eintraege: Eintrag[] = [
+      ...orders.map<Eintrag>((o) => ({
+        id: `order:${o.id}`,
+        at: o.createdAt.toISOString(),
+        kind: 'order',
+        tone: o.status === OrderStatus.CANCELLED ? 'error' : 'neutral',
+        message: o.orderNumber,
+        amount: Number(o.total),
+      })),
+      ...payments.map<Eintrag>((p) => ({
+        id: `payment:${p.id}`,
+        at: p.createdAt.toISOString(),
+        kind: 'payment',
+        tone: p.status === 'failed' ? 'error' : 'ok',
+        message: p.paymentMethod,
+        amount: Number(p.amount),
+      })),
+      ...jobs.map<Eintrag>((j) => ({
+        id: `print:${j.id}`,
+        at: j.createdAt.toISOString(),
+        kind: 'print',
+        tone: j.status === 'failed' ? 'error' : 'ok',
+        /* Bei Fehlern trägt die Meldung die Ursache — sonst müsste man
+           für jeden fehlgeschlagenen Druck ins Log steigen. */
+        message: j.error ?? j.status,
+        amount: null,
+      })),
+    ];
+
+    return eintraege
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .slice(0, limit);
+  }
+
 }

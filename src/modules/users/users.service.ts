@@ -211,7 +211,13 @@ export class UsersService {
       };
     }
     if (dto.dashboard !== undefined) {
-      currentPreferences.dashboard = { widgets: dto.dashboard.widgets };
+      currentPreferences.dashboard = {
+        widgets: dto.dashboard.widgets,
+        // sizes muss mit uebernommen werden, sonst faellt die
+        // Kachelanordnung beim naechsten Speichern still zurueck auf
+        // die Vorgabegroessen.
+        sizes: dto.dashboard.sizes,
+      };
     }
 
     user.preferences = currentPreferences;

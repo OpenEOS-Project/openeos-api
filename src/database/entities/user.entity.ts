@@ -26,6 +26,8 @@ export interface UserPreferences {
   dashboard?: {
     /** Ordered list of enabled dashboard widget ids */
     widgets: string[];
+    /** Kachelgrößen im 12-Spalten-Raster; ohne Eintrag gilt die Vorgabe */
+    sizes?: { id: string; w: number; h: number }[];
   };
 }
 
