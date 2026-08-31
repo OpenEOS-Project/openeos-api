@@ -11,7 +11,15 @@ export const validationSchema = Joi.object({
   DATABASE_HOST: Joi.string().default('localhost'),
   DATABASE_PORT: Joi.number().default(5432),
   DATABASE_USER: Joi.string().default('openeos'),
-  DATABASE_PASSWORD: Joi.string().default('openeos_dev_password'),
+  // Defaults to the same password docker-compose.yml's dev Postgres service
+  // uses, for a zero-config local `docker compose up`. Required (no
+  // default) in production, so a misconfigured prod deploy fails at boot
+  // instead of silently starting against a well-known weak password.
+  DATABASE_PASSWORD: Joi.string().when('NODE_ENV', {
+    is: 'production',
+    then: Joi.required(),
+    otherwise: Joi.string().default('openeos_dev_password'),
+  }),
   DATABASE_NAME: Joi.string().default('openeos'),
   DATABASE_SYNCHRONIZE: Joi.boolean().default(false),
   DATABASE_LOGGING: Joi.boolean().default(true),
@@ -24,6 +32,16 @@ export const validationSchema = Joi.object({
   JWT_SECRET: Joi.string().required(),
   JWT_ACCESS_TOKEN_EXPIRATION: Joi.string().default('30m'),
   JWT_REFRESH_TOKEN_EXPIRATION: Joi.string().default('7d'),
+
+  // 2FA email OTP encryption/pepper. EncryptionService already refuses to
+  // construct without this in production (throws with a clear message) —
+  // listed here too so it fails at the same up-front config-validation
+  // step as everything else, instead of at first use of that service.
+  TWO_FACTOR_ENCRYPTION_KEY: Joi.string().when('NODE_ENV', {
+    is: 'production',
+    then: Joi.required(),
+    otherwise: Joi.string().allow('').default(''),
+  }),
 
   // CORS
   CORS_ORIGINS: Joi.string().default('http://localhost:3001,http://localhost:3002'),
