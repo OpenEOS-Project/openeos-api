@@ -31,11 +31,23 @@ export interface OrganizationSettings {
     footerText?: string;
     showTaxDetails: boolean;
   };
+  /**
+   * Weist die Organisation Umsatzsteuer aus?
+   *
+   * Vereine und Kleinunternehmer nach § 19 UStG tun das nicht; fuer sie
+   * gibt es am Produkt nur den Satz 0. Bewusst ein Schalter und keine
+   * Rechtsform: aus "Verein" laesst sich die Steuerpflicht nicht sicher
+   * ableiten, auch ein Verein kann steuerpflichtig sein.
+   */
+  vatExempt?: boolean;
   pos?: {
-    requireTableNumber: boolean;
-    autoPrintReceipt: boolean;
-    soundEnabled: boolean;
-    orderingMode: 'immediate' | 'tab';
+    /**
+     * Sofort kassieren oder auf Deckel buchen. Der einzige Wert aus dem
+     * frueheren POS-Block, den die Kassen-UI tatsaechlich liest — er liegt
+     * jetzt je Veranstaltung, weil sich die Betriebsart von Fest zu Fest
+     * unterscheidet. Bleibt hier als Rueckfallwert fuer Bestandsdaten.
+     */
+    orderingMode?: 'immediate' | 'tab';
   };
   /**
    * When/where deposits (Pfand) are charged, by fulfillment type.

@@ -189,7 +189,22 @@ export class OrganizationsService {
       }
     }
 
-    Object.assign(organization, updateDto);
+    /* Einstellungen zusammenfuehren statt ersetzen. Object.assign ist flach:
+       ein Aufrufer, der nur `settings: { vatExempt: true }` schickt, haette
+       sonst Waehrung, Zeitzone, Pfand-Regeln und SumUp-Zugangsdaten mit
+       geloescht. Bisher ging das nur gut, weil jeder Abschnitt der
+       Oberflaeche die vollstaendigen Einstellungen mitschickte — was
+       ausserdem bedeutet, dass zwei gleichzeitig geoeffnete Reiter einander
+       ueberschreiben. Zusammengefuehrt wird eine Ebene tief; wer `pos`
+       schickt, ersetzt `pos` als Ganzes, und das ist auch gemeint. */
+    const { settings: incomingSettings, ...rest } = updateDto;
+    Object.assign(organization, rest);
+    if (incomingSettings) {
+      organization.settings = {
+        ...organization.settings,
+        ...(incomingSettings as Record<string, unknown>),
+      } as typeof organization.settings;
+    }
     await this.organizationRepository.save(organization);
 
     this.logger.log(`Organization updated: ${organization.name} (${organization.id})`);

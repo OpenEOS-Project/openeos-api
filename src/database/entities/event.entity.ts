@@ -43,6 +43,12 @@ export interface ShopDaySetting {
 
 export interface EventSettings {
   orderNumberPrefix?: string;
+  /**
+   * Sofort kassieren oder auf Deckel buchen. Liegt je Veranstaltung, weil
+   * sich die Betriebsart von Fest zu Fest unterscheidet — dasselbe Team
+   * macht im Sommer Deckel und beim Weihnachtsmarkt Barverkauf.
+   */
+  orderingMode?: 'immediate' | 'tab';
   enableOnlineOrdering?: boolean;
   enableTableService?: boolean;
   enableTakeaway?: boolean;

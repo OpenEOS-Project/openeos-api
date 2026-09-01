@@ -2,12 +2,12 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProductsController } from './products.controller';
 import { ProductsService } from './products.service';
-import { Product, UserOrganization, StockMovement, Event, Category, PfandType } from '../../database/entities';
+import { Product, UserOrganization, StockMovement, Event, Category, PfandType, Organization } from '../../database/entities';
 import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Product, UserOrganization, StockMovement, Event, Category, PfandType]),
+    TypeOrmModule.forFeature([Product, UserOrganization, StockMovement, Event, Category, PfandType, Organization]),
     forwardRef(() => GatewayModule),
   ],
   controllers: [ProductsController],

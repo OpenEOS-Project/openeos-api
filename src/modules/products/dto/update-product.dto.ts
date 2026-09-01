@@ -8,6 +8,7 @@ import {
   IsObject,
   IsInt,
   Min,
+  Max,
   IsNumber,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -35,6 +36,13 @@ export class UpdateProductDto {
   @IsNumber({}, { message: 'Preis muss eine Zahl sein' })
   @Min(0, { message: 'Preis darf nicht negativ sein' })
   price?: number;
+
+  @ApiPropertyOptional({ example: 19, description: 'Umsatzsteuersatz in Prozent. 0 heißt steuerfrei.' })
+  @IsOptional()
+  @IsNumber({}, { message: 'Steuersatz muss eine Zahl sein' })
+  @Min(0, { message: 'Steuersatz darf nicht negativ sein' })
+  @Max(100, { message: 'Steuersatz darf 100 nicht überschreiten' })
+  taxRate?: number;
 
   @ApiPropertyOptional({ example: 'https://example.com/images/schnitzel.jpg', description: 'URL des Produktbilds' })
   @IsOptional()

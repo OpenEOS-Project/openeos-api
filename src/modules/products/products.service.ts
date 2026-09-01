@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  BadRequestException,
   ForbiddenException,
   Logger,
   Inject,
@@ -9,6 +10,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product, User, UserOrganization, StockMovement, Event, Category, PfandType } from '../../database/entities';
+import { Organization } from '../../database/entities/organization.entity';
+import { taxRatesFor } from '../../common/constants/tax-rates';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -27,6 +30,8 @@ export class ProductsService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
+    @InjectRepository(Organization)
+    private readonly organizationRepository: Repository<Organization>,
     @InjectRepository(StockMovement)
     private readonly stockMovementRepository: Repository<StockMovement>,
     @InjectRepository(Event)
@@ -45,6 +50,7 @@ export class ProductsService {
     user: User,
   ): Promise<Product> {
     const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
+    await this.assertTaxRateAllowed(event.organizationId, createDto.taxRate);
 
     const product = this.productRepository.create({
       eventId: event.id,
@@ -115,6 +121,7 @@ export class ProductsService {
     user: User,
   ): Promise<Product> {
     const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
+    await this.assertTaxRateAllowed(event.organizationId, updateDto.taxRate);
 
     const product = await this.findOne(eventId, productId, user);
     Object.assign(product, updateDto);
@@ -481,6 +488,31 @@ export class ProductsService {
     }
 
     return event;
+  }
+
+  /**
+   * Darf diese Organisation diesen Steuersatz fuehren?
+   *
+   * Die Auswahl im Formular richtet sich schon danach, aber sie ist nur
+   * eine Anzeige — geprueft wird hier. Ein steuerbefreiter Verein darf
+   * sonst ueber die API 19 % an ein Produkt schreiben und haette einen
+   * Satz im Bestand, den er nie erheben darf.
+   */
+  private async assertTaxRateAllowed(organizationId: string, taxRate: number | undefined): Promise<void> {
+    if (taxRate === undefined) return;
+
+    const organization = await this.organizationRepository.findOne({ where: { id: organizationId } });
+    const allowed = taxRatesFor(
+      organization?.settings?.address?.country,
+      organization?.settings?.vatExempt,
+    );
+
+    if (!allowed.some((option) => option.rate === Number(taxRate))) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: `Steuersatz ${taxRate} % ist für diese Organisation nicht zulässig`,
+      });
+    }
   }
 
   private async getEventAndCheckPermission(

@@ -1,5 +1,6 @@
 import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { SoftDeleteEntity } from './base.entity';
+import { numericTransformer } from '../transformers/numeric.transformer';
 import { Event } from './event.entity';
 import { Category } from './category.entity';
 import { OrderItem } from './order-item.entity';
@@ -51,6 +52,13 @@ export class Product extends SoftDeleteEntity {
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   price: number;
+
+  /**
+   * Umsatzsteuersatz in Prozent. Null bedeutet steuerfrei — das ist der
+   * Standard, weil die meisten Organisationen hier Vereine sind.
+   */
+  @Column({ name: 'tax_rate', type: 'decimal', precision: 5, scale: 2, default: 0, transformer: numericTransformer })
+  taxRate: number;
 
   @Column({ name: 'image_url', type: 'varchar', length: 500, nullable: true })
   imageUrl: string | null;
