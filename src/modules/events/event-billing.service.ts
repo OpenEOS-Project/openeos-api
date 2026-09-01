@@ -44,6 +44,23 @@ export interface EventBillingInfo extends EventPrice {
   billingAddress: BillingAddress | null;
 }
 
+/** Eine von Stripe ausgestellte Rechnung, auf das reduziert, was die Liste zeigt. */
+export interface OrganizationInvoice {
+  id: string;
+  /** Fortlaufende Rechnungsnummer von Stripe. Fehlt bei Entwürfen. */
+  number: string | null;
+  issuedAt: string | null;
+  total: number;
+  currency: string;
+  status: string;
+  paid: boolean;
+  description: string | null;
+  /** Stripes eigene Ansicht der Rechnung, für Zahlungsbelege und Rückfragen. */
+  hostedUrl: string | null;
+  /** Ob ein PDF abrufbar ist — Entwürfe haben noch keines. */
+  hasPdf: boolean;
+}
+
 export interface CompanySearchResultItem {
   name: string;
   registerNumber?: string;
@@ -386,6 +403,79 @@ export class EventBillingService {
     }
 
     return this.getBillingInfo(organizationId, eventId, user);
+  }
+
+  /**
+   * Die Rechnungen der Organisation.
+   *
+   * Ausgestellt werden sie von Stripe: Nummer, Datum und PDF stammen von
+   * dort, wir spiegeln nichts in die eigene Datenbank. Damit gibt es genau
+   * eine Wahrheit und keinen Abgleich, der auseinanderlaufen kann.
+   *
+   * Ohne Stripe-Kunden hat die Organisation noch nie online bezahlt — dann
+   * ist die Liste leer, und das ist kein Fehler.
+   */
+  async listInvoices(organizationId: string, user: User): Promise<OrganizationInvoice[]> {
+    await this.organizationsService.checkRole(organizationId, user, OrganizationRole.ADMIN);
+
+    const organization = await this.getOrganization(organizationId);
+    if (!organization.stripeCustomerId || !this.stripeService.isConfigured) {
+      return [];
+    }
+
+    const invoices = await this.stripeService.listInvoices(organization.stripeCustomerId);
+
+    return invoices.map((invoice) => ({
+      id: invoice.id ?? '',
+      number: invoice.number ?? null,
+      // Stripe zählt in Sekunden, der Rest der Anwendung in Millisekunden.
+      issuedAt: invoice.created ? new Date(invoice.created * 1000).toISOString() : null,
+      total: (invoice.total ?? 0) / 100,
+      currency: (invoice.currency ?? 'eur').toUpperCase(),
+      status: invoice.status ?? 'draft',
+      paid: invoice.status === 'paid',
+      description:
+        invoice.lines?.data?.[0]?.description ?? invoice.description ?? null,
+      hostedUrl: invoice.hosted_invoice_url ?? null,
+      hasPdf: !!invoice.invoice_pdf,
+    }));
+  }
+
+  /**
+   * Ein einzelnes Rechnungs-PDF, geprüft und weitergereicht.
+   *
+   * Die Zugehörigkeit wird gegen den Stripe-Kunden der Organisation geprüft.
+   * Ohne das könnte ein Administrator mit einer fremden Rechnungs-ID die
+   * Rechnung einer anderen Organisation abrufen — die IDs sind zwar nicht
+   * zu erraten, aber Unerratbarkeit ist keine Berechtigung.
+   */
+  async getInvoicePdf(
+    organizationId: string,
+    invoiceId: string,
+    user: User,
+  ): Promise<{ filename: string; content: Buffer }> {
+    await this.organizationsService.checkRole(organizationId, user, OrganizationRole.ADMIN);
+
+    const organization = await this.getOrganization(organizationId);
+    const invoice = await this.stripeService.getInvoice(invoiceId);
+
+    const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+    if (!organization.stripeCustomerId || customerId !== organization.stripeCustomerId) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Rechnung nicht gefunden',
+      });
+    }
+
+    if (!invoice.invoice_pdf) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Für diese Rechnung liegt noch kein PDF vor',
+      });
+    }
+
+    const content = await this.stripeService.fetchInvoicePdf(invoice.invoice_pdf);
+    return { filename: `${invoice.number ?? invoice.id}.pdf`, content };
   }
 
   async companySearch(organizationId: string, query: string, user: User): Promise<CompanySearchResult> {

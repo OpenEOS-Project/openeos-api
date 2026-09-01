@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Param, Body, Query, ParseUUIDPipe } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Body,
+  Query,
+  ParseUUIDPipe,
+  Res,
+  StreamableFile,
+} from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EventBillingService } from './event-billing.service';
 import { OrderInvoiceDto } from './dto';
@@ -54,6 +65,43 @@ export class EventBillingController {
   ) {
     const data = await this.eventBillingService.syncStripePayment(organizationId, eventId, user);
     return { data };
+  }
+
+  @Get('billing/invoices')
+  @ApiOperation({ summary: 'Von Stripe ausgestellte Rechnungen der Organisation' })
+  async listInvoices(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @CurrentUser() user: User,
+  ) {
+    const data = await this.eventBillingService.listInvoices(organizationId, user);
+    return { data };
+  }
+
+  @Get('billing/invoices/:invoiceId/pdf')
+  @ApiOperation({ summary: 'Rechnungs-PDF herunterladen' })
+  async downloadInvoicePdf(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('invoiceId') invoiceId: string,
+    @CurrentUser() user: User,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { filename, content } = await this.eventBillingService.getInvoicePdf(
+      organizationId,
+      invoiceId,
+      user,
+    );
+
+    // Die Rechnungsnummer kommt von Stripe und ist unbedenklich; entschärft
+    // wird sie trotzdem, damit ein Sonderzeichen den Content-Disposition-
+    // Header nicht zerlegen kann.
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${safeName}"`,
+    });
+
+    return new StreamableFile(content);
   }
 
   @Get('billing/company-search')

@@ -141,6 +141,41 @@ export class StripeService {
     return { id: session.id, url: session.url };
   }
 
+  /**
+   * Die Rechnungen eines Kunden, neueste zuerst.
+   *
+   * Ausgestellt hat sie Stripe, nicht wir — Nummernkreis, PDF und
+   * Hosted-Ansicht kommen von dort. Hier wird nur gelesen.
+   */
+  async listInvoices(customerId: string, limit = 100): Promise<Stripe.Invoice[]> {
+    const client = this.requireClient();
+    const page = await client.invoices.list({ customer: customerId, limit });
+    return page.data;
+  }
+
+  async getInvoice(invoiceId: string): Promise<Stripe.Invoice> {
+    return this.requireClient().invoices.retrieve(invoiceId);
+  }
+
+  /**
+   * Das Rechnungs-PDF holen.
+   *
+   * Stripe legt es unter einer eigenen, nicht erratbaren URL ab. Die wird
+   * bewusst nicht an den Browser durchgereicht, sondern hier abgerufen und
+   * weitergeleitet — sonst waere ein einmal kopierter Link dauerhaft und
+   * ohne Anmeldung gueltig.
+   */
+  async fetchInvoicePdf(invoicePdfUrl: string): Promise<Buffer> {
+    const response = await fetch(invoicePdfUrl);
+    if (!response.ok) {
+      throw new ServiceUnavailableException({
+        code: ErrorCodes.STRIPE_NOT_CONFIGURED,
+        message: `Rechnungs-PDF konnte nicht geladen werden (HTTP ${response.status})`,
+      });
+    }
+    return Buffer.from(await response.arrayBuffer());
+  }
+
   async getCheckoutSession(sessionId: string): Promise<Stripe.Checkout.Session> {
     return this.requireClient().checkout.sessions.retrieve(sessionId);
   }
