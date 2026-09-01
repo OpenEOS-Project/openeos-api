@@ -52,6 +52,9 @@ export const ErrorCodes = {
   // SumUp Errors
   SUMUP_NOT_CONFIGURED: 'SUMUP_NOT_CONFIGURED',
   SUMUP_API_ERROR: 'SUMUP_API_ERROR',
+
+  // Stripe Errors
+  STRIPE_NOT_CONFIGURED: 'STRIPE_NOT_CONFIGURED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -104,4 +107,6 @@ export const ErrorMessages: Record<ErrorCode, string> = {
 
   [ErrorCodes.SUMUP_NOT_CONFIGURED]: 'SumUp ist nicht konfiguriert',
   [ErrorCodes.SUMUP_API_ERROR]: 'SumUp API Fehler',
+
+  [ErrorCodes.STRIPE_NOT_CONFIGURED]: 'Online-Zahlung ist derzeit nicht verfügbar',
 };

@@ -34,6 +34,11 @@ export default () => ({
     limit: parseInt(process.env.THROTTLE_LIMIT || '300', 10),
   },
 
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  },
+
   sumup: {
     apiKey: process.env.SUMUP_API_KEY || '',
     merchantCode: process.env.SUMUP_MERCHANT_CODE || '',
@@ -58,7 +63,11 @@ export default () => ({
   },
 
   billing: {
+    // Preis je Veranstaltungstag. Eine mehrtaegige Veranstaltung kostet
+    // entsprechend ein Vielfaches davon.
     eventPriceEur: parseFloat(process.env.EVENT_PRICE_EUR || '25'),
+    // Nachlass auf die erste abgerechnete Veranstaltung einer Organisation.
+    firstEventDiscountPercent: parseFloat(process.env.FIRST_EVENT_DISCOUNT_PERCENT || '20'),
     testEventMaxOrders: parseInt(process.env.TEST_EVENT_MAX_ORDERS || '25', 10),
     openRegisterApiKey: process.env.OPENREGISTER_API_KEY || '',
   },

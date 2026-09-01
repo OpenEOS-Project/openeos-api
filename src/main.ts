@@ -16,7 +16,10 @@ import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // rawBody: der Stripe-Webhook prueft seine Signatur gegen den unveraenderten
+  // Rohtext. Nach dem JSON-Parser laesst sich der nicht mehr rekonstruieren —
+  // schon eine andere Schluesselreihenfolge macht die Signatur ungueltig.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   const configService = app.get(ConfigService);
 
   // Socket.io over Redis pub/sub — required so websocket broadcasts and

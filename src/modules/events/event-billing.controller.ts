@@ -34,6 +34,28 @@ export class EventBillingController {
     return { data: event };
   }
 
+  @Post('events/:eventId/checkout')
+  @ApiOperation({ summary: 'Stripe-Zahlungsseite für die Freischaltung anlegen' })
+  async createCheckout(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @CurrentUser() user: User,
+  ) {
+    const data = await this.eventBillingService.createStripeCheckout(organizationId, eventId, user);
+    return { data };
+  }
+
+  @Post('events/:eventId/billing/sync')
+  @ApiOperation({ summary: 'Nach der Rückkehr aus dem Stripe-Checkout den Zahlungsstand abgleichen' })
+  async syncPayment(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @CurrentUser() user: User,
+  ) {
+    const data = await this.eventBillingService.syncStripePayment(organizationId, eventId, user);
+    return { data };
+  }
+
   @Get('billing/company-search')
   @ApiOperation({ summary: 'Firmensuche (openregister.de) für das Kauf-auf-Rechnung-Formular' })
   async companySearch(

@@ -205,7 +205,7 @@ export class Organization extends SoftDeleteEntity {
   subscriptionCurrentPeriodEnd: Date | null;
 
   // Event billing (pay-per-event activation)
-  @Column({ name: 'billing_mode', type: 'varchar', length: 20, default: 'invoice' })
+  @Column({ name: 'billing_mode', type: 'varchar', length: 20, default: 'prepaid' })
   billingMode: OrganizationBillingMode;
 
   @Column({ name: 'event_price_override', type: 'decimal', precision: 10, scale: 2, nullable: true })
