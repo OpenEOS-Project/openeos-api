@@ -1,13 +1,16 @@
 /**
- * Zeitplan einer Veranstaltung: Wie viele Tage sie dauert und wann der
- * Online-Shop davon abgeleitet geoeffnet ist.
+ * Zeitplan einer Veranstaltung: wie viele Tage sie dauert und wann der
+ * Online-Shop an jedem davon geoeffnet ist.
  *
- * Der Kern ist der Begriff *Veranstaltungstag*. Ein Kalendertag endet um
- * Mitternacht, ein Fest nicht: Wer samstags um 18 Uhr aufmacht und sonntags
- * um 3 Uhr schliesst, hatte eine Veranstaltung, nicht zwei. Ein
- * Veranstaltungstag laeuft deshalb von 06:00 bis 06:00 des Folgetags. Alles,
- * was vor dem Morgengrauen passiert, zaehlt noch zum Vortag — und zwar
- * sowohl bei der Abrechnung als auch bei den Oeffnungszeiten.
+ * Eine Veranstaltung ist ein Bereich aus Kalendertagen — Freitag bis
+ * Sonntag sind drei Tage, danach wird abgerechnet. Die Uhrzeiten stecken
+ * nicht darin, sondern in den Oeffnungszeiten, und die werden je Tag
+ * einzeln gesetzt: freitags 18 bis 22 Uhr, samstags 10 bis 2 Uhr,
+ * sonntags 14 bis 18 Uhr.
+ *
+ * Der Fall ueber Mitternacht ergibt sich daraus von selbst. Liegt die
+ * Endzeit eines Tages nicht nach seiner Startzeit, laeuft das Fenster in
+ * den Folgetag — "10 bis 2 Uhr" ist eine Nacht, keine Falscheingabe.
  *
  * Gerechnet wird in der Zeitzone der Organisation, nicht in UTC. Ein Fest
  * beginnt um 18 Uhr Ortszeit, auch wenn zwischendurch die Sommerzeit endet
@@ -15,8 +18,18 @@
  * Wanduhrzeiten und Intl, nicht ueber Millisekunden-Addition.
  */
 
-/** Beginn eines Veranstaltungstags (Ortszeit). */
-export const EVENT_DAY_START_HOUR = 6;
+/**
+ * Ein Oeffnungsfenster, wie es der Nutzer eintraegt: ein Veranstaltungstag
+ * und die Uhrzeiten dazu.
+ */
+export interface ShopDayWindow {
+  /** Der Veranstaltungstag als 'YYYY-MM-DD'. */
+  date: string;
+  /** 'HH:mm' */
+  start: string;
+  /** 'HH:mm'. Nicht spaeter als `start` heisst: am Folgetag. */
+  end: string;
+}
 
 export interface ShopWindow {
   /** ISO-Zeitpunkt, ab dem der Shop offen ist. */
@@ -106,24 +119,39 @@ function dayToWallClock(day: number, hour: number, minute: number): WallClock {
   };
 }
 
-/**
- * Auf welchen Veranstaltungstag faellt dieser Zeitpunkt? Die Stunden vor
- * EVENT_DAY_START_HOUR gehoeren noch zum Vortag.
- */
-function eventDayNumber(date: Date, timeZone: string): number {
-  const wall = toWallClock(date, timeZone);
-  const day = dayNumber(wall);
-  return wall.hour < EVENT_DAY_START_HOUR ? day - 1 : day;
-}
-
 function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
+/** Kalendertag eines Zeitpunkts in einer Zeitzone, als 'YYYY-MM-DD'. */
+export function toDateKey(date: Date | string, timeZone: string): string {
+  const wall = toWallClock(toDate(date), timeZone);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${wall.year}-${pad(wall.month)}-${pad(wall.day)}`;
+}
+
+/** 'YYYY-MM-DD' in die Tageszahl, mit der sich rechnen laesst. */
+function dateKeyToDayNumber(dateKey: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / MS_PER_DAY;
+}
+
+function parseHHMM(value: string): { hour: number; minute: number } | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value ?? '');
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return { hour, minute };
+}
+
 /**
  * Anzahl der Veranstaltungstage — die Groesse, nach der abgerechnet wird.
- * Immer mindestens 1; ein Ende vor dem Beginn wird als eintaegig gewertet,
- * statt eine negative Rechnung zu erzeugen.
+ *
+ * Gezaehlt werden Kalendertage einschliesslich beider Enden: Freitag bis
+ * Sonntag sind drei. Immer mindestens einer; ein Ende vor dem Beginn wird
+ * als eintaegig gewertet, statt eine negative Rechnung zu erzeugen.
  */
 export function countEventDays(
   startDate: Date | string | null | undefined,
@@ -132,25 +160,74 @@ export function countEventDays(
 ): number {
   if (!startDate) return 1;
   const start = toDate(startDate);
-  const end = endDate ? toDate(endDate) : start;
   if (Number.isNaN(start.getTime())) return 1;
-  if (Number.isNaN(end.getTime())) return 1;
+  const end = endDate ? toDate(endDate) : start;
+  const effectiveEnd = Number.isNaN(end.getTime()) ? start : end;
 
-  const firstDay = eventDayNumber(start, timeZone);
-  const lastDay = eventDayNumber(end, timeZone);
+  const firstDay = dayNumber(toWallClock(start, timeZone));
+  const lastDay = dayNumber(toWallClock(effectiveEnd, timeZone));
   if (lastDay <= firstDay) return 1;
   return lastDay - firstDay + 1;
 }
 
+/** Die Kalendertage einer Veranstaltung als 'YYYY-MM-DD', der Reihe nach. */
+export function listEventDayKeys(
+  startDate: Date | string | null | undefined,
+  endDate: Date | string | null | undefined,
+  timeZone: string,
+): string[] {
+  if (!startDate) return [];
+  const start = toDate(startDate);
+  if (Number.isNaN(start.getTime())) return [];
+
+  const days = countEventDays(startDate, endDate, timeZone);
+  const firstDay = dayNumber(toWallClock(start, timeZone));
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  return Array.from({ length: days }, (_, offset) => {
+    const wall = dayToWallClock(firstDay + offset, 0, 0);
+    return `${wall.year}-${pad(wall.month)}-${pad(wall.day)}`;
+  });
+}
+
 /**
- * Oeffnungszeiten aus dem Veranstaltungszeitraum ableiten: je
- * Veranstaltungstag ein Fenster, das die Uhrzeiten von Beginn und Ende
- * wiederholt.
+ * Die eingetragenen Tagesfenster in absolute Zeitpunkte uebersetzen.
  *
- * Liegt die Endzeit nicht nach der Startzeit, laeuft das Fenster ueber
- * Mitternacht hinweg in den naechsten Kalendertag — genau der Fall
- * "18 Uhr bis 3 Uhr". Sind beide Zeiten gleich (etwa weil nur ein Datum
- * ohne Uhrzeit gewaehlt wurde), ergibt sich daraus ein voller Tag.
+ * Endet ein Tag nicht spaeter, als er beginnt, gehoert sein Ende auf den
+ * Folgetag — so wird aus "10 bis 2 Uhr" eine Nacht statt eines Fensters
+ * mit negativer Laenge. Unlesbare Eintraege werden uebergangen, damit ein
+ * einzelner Tippfehler in den Einstellungen nicht den ganzen Shop schliesst.
+ */
+export function dayWindowsToAbsolute(
+  days: ShopDayWindow[] | null | undefined,
+  timeZone: string,
+): ShopWindow[] {
+  if (!days || days.length === 0) return [];
+
+  const windows: ShopWindow[] = [];
+  for (const day of days) {
+    const dayNo = dateKeyToDayNumber(day.date);
+    const from = parseHHMM(day.start);
+    const until = parseHHMM(day.end);
+    if (dayNo === null || !from || !until) continue;
+
+    const overnight = until.hour * 60 + until.minute <= from.hour * 60 + from.minute;
+    windows.push({
+      start: fromWallClock(dayToWallClock(dayNo, from.hour, from.minute), timeZone).toISOString(),
+      end: fromWallClock(
+        dayToWallClock(dayNo + (overnight ? 1 : 0), until.hour, until.minute),
+        timeZone,
+      ).toISOString(),
+    });
+  }
+  return windows;
+}
+
+/**
+ * Ruecklaeufige Voreinstellung fuer Shops, die noch keine Tagesfenster
+ * haben: je Veranstaltungstag ein Fenster mit den Uhrzeiten aus Beginn und
+ * Ende der Veranstaltung. Neu angelegte Shops gehen diesen Weg nicht mehr,
+ * Bestandsdaten aus der ersten Fassung schon.
  */
 export function deriveShopWindows(
   startDate: Date | string | null | undefined,
@@ -165,34 +242,14 @@ export function deriveShopWindows(
   const startWall = toWallClock(start, timeZone);
   const endWall = toWallClock(Number.isNaN(end.getTime()) ? start : end, timeZone);
 
-  const startMinutes = startWall.hour * 60 + startWall.minute;
-  const endMinutes = endWall.hour * 60 + endWall.minute;
-  const overnight = endMinutes <= startMinutes;
-
-  const days = countEventDays(startDate, endDate, timeZone);
-  // Gezaehlt wird ueber Veranstaltungstage, platziert wird ueber Kalendertage.
-  // Beginnt eine Veranstaltung um Mitternacht, liegt ihr Veranstaltungstag
-  // wegen der 06-Uhr-Grenze noch auf dem Vortag — das Fenster gehoert
-  // trotzdem auf den Tag, den der Nutzer eingetragen hat.
-  const firstDay = dayNumber(startWall);
-
-  const windows: ShopWindow[] = [];
-  for (let offset = 0; offset < days; offset += 1) {
-    const openDay = firstDay + offset;
-    const closeDay = openDay + (overnight ? 1 : 0);
-    windows.push({
-      start: fromWallClock(
-        dayToWallClock(openDay, startWall.hour, startWall.minute),
-        timeZone,
-      ).toISOString(),
-      end: fromWallClock(
-        dayToWallClock(closeDay, endWall.hour, endWall.minute),
-        timeZone,
-      ).toISOString(),
-    });
-  }
-
-  return windows;
+  return dayWindowsToAbsolute(
+    listEventDayKeys(startDate, endDate, timeZone).map((date) => ({
+      date,
+      start: `${String(startWall.hour).padStart(2, '0')}:${String(startWall.minute).padStart(2, '0')}`,
+      end: `${String(endWall.hour).padStart(2, '0')}:${String(endWall.minute).padStart(2, '0')}`,
+    })),
+    timeZone,
+  );
 }
 
 /** Faellt der Zeitpunkt in eines der Fenster? Ende exklusiv. */

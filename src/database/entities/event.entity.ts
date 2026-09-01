@@ -28,6 +28,19 @@ export interface ShopTimeWindow {
 
 export type ShopOpeningHours = Partial<Record<ShopWeekday, ShopTimeWindow | null>>;
 
+/**
+ * Ein Oeffnungstag des Shops. Nur Tage, an denen geoeffnet ist, stehen in
+ * der Liste — ein geschlossener Tag fehlt einfach.
+ */
+export interface ShopDaySetting {
+  /** Veranstaltungstag als 'YYYY-MM-DD'. */
+  date: string;
+  /** 'HH:mm' */
+  start: string;
+  /** 'HH:mm'. Nicht spaeter als `start` heisst: Ende am Folgetag. */
+  end: string;
+}
+
 export interface EventSettings {
   orderNumberPrefix?: string;
   enableOnlineOrdering?: boolean;
@@ -39,14 +52,16 @@ export interface EventSettings {
     /**
      * Woher die Oeffnungszeiten kommen.
      *
-     * 'event' (Standard fuer neue Shops): aus Beginn und Ende der
-     * Veranstaltung abgeleitet, je Veranstaltungstag ein Fenster. Das laeuft
-     * ohne Zutun ueber Mitternacht, wenn die Veranstaltung das tut.
+     * 'event' (Standard fuer neue Shops): die Tagesfenster aus `days`. Fehlen
+     * die, werden sie ersatzweise aus Beginn und Ende der Veranstaltung
+     * abgeleitet — das betrifft nur Shops aus der ersten Fassung.
      *
      * 'weekly': die feste Wochentags-Tabelle aus `openingHours`. Bestandsshops
      * bleiben darauf, solange sie nicht umgestellt werden.
      */
     hoursMode?: 'event' | 'weekly';
+    /** Oeffnungszeiten je Veranstaltungstag. Geschlossene Tage fehlen. */
+    days?: ShopDaySetting[];
     openingHours?: ShopOpeningHours;
     /** Flat service fee added to every online order (in the event's currency). */
     serviceFee?: number;

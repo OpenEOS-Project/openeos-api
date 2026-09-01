@@ -18,6 +18,7 @@ import {
 import { Organization } from '../../database/entities/organization.entity';
 import {
   ShopWindow,
+  dayWindowsToAbsolute,
   deriveShopWindows,
   isWithinShopWindows,
 } from '../../common/utils/event-schedule.util';
@@ -57,6 +58,11 @@ export function resolveShopWindows(event: Event, timeZone: string): ShopWindow[]
   const shop = event.settings?.shop;
   const hours = shop?.openingHours ?? null;
   if (resolveShopHoursMode(shop?.hoursMode, hours) === 'event') {
+    // Die eingetragenen Tagesfenster haben Vorrang. Nur wenn keine da sind
+    // — Shops aus der ersten Fassung — wird ersatzweise abgeleitet.
+    if (shop?.days && shop.days.length > 0) {
+      return dayWindowsToAbsolute(shop.days, timeZone);
+    }
     return deriveShopWindows(event.startDate, event.endDate, timeZone);
   }
   return weeklyHoursToWindows(event, hours, timeZone);
