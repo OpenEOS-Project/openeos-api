@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsObject,
   IsDateString,
+  IsNotEmpty,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -20,12 +21,18 @@ export class CreateEventDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ example: '2024-07-15T10:00:00.000Z', description: 'Startdatum und -zeit des Events (optional, nur zur Information)' })
-  @IsOptional()
+  @ApiProperty({
+    example: '2024-07-15T10:00:00.000Z',
+    description: 'Beginn der Veranstaltung. Pflichtangabe — der Preis und die Shop-Öffnungszeiten leiten sich davon ab.',
+  })
+  @IsNotEmpty({ message: 'Startdatum ist erforderlich' })
   @IsDateString({}, { message: 'Ungültiges Startdatum' })
-  startDate?: string;
+  startDate: string;
 
-  @ApiPropertyOptional({ example: '2024-07-15T22:00:00.000Z', description: 'Enddatum und -zeit des Events (optional, nur zur Information)' })
+  @ApiPropertyOptional({
+    example: '2024-07-16T02:00:00.000Z',
+    description: 'Ende der Veranstaltung. Ohne Angabe endet sie am Starttag. Darf über Mitternacht hinausgehen.',
+  })
   @IsOptional()
   @IsDateString({}, { message: 'Ungültiges Enddatum' })
   endDate?: string;

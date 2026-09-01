@@ -16,6 +16,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository, In } from 'typeorm';
 import { Public } from '../../common/decorators/public.decorator';
+import { isWithinShopWindows } from '../../common/utils/event-schedule.util';
+import { resolveShopWindows } from './events-shop-public.controller';
 import {
   Event,
   EventStatus,
@@ -112,6 +114,29 @@ export class EventsShopCheckoutController {
     return event;
   }
 
+  /**
+   * Ausserhalb der Oeffnungszeiten wird nicht bestellt. Der Shop blendet die
+   * Kasse dann zwar aus, aber ein offener Tab oder ein direkter Aufruf kaeme
+   * sonst durch — und eine Bestellung, die um vier Uhr morgens in einer
+   * leeren Kueche landet, ist niemandem geholfen. Im Test-Modus gilt die
+   * Sperre nicht, sonst waere der Shop vor der Veranstaltung nicht pruefbar.
+   */
+  private async assertShopOpen(event: Event): Promise<void> {
+    if (event.status === EventStatus.TEST) return;
+
+    const organization = await this.organizationRepository.findOne({
+      where: { id: event.organizationId },
+    });
+    const windows = resolveShopWindows(event, organization?.settings?.timezone || 'Europe/Berlin');
+
+    if (!isWithinShopWindows(new Date(), windows)) {
+      throw new BadRequestException({
+        code: 'SHOP_CLOSED',
+        message: 'Der Shop ist derzeit geschlossen',
+      });
+    }
+  }
+
   @Post(':eventId/checkout')
   @ApiOperation({ summary: 'Create a pending shop checkout + SumUp Online Checkout session' })
   async createCheckout(
@@ -119,6 +144,7 @@ export class EventsShopCheckoutController {
     @Body() body: CreateCheckoutBody,
   ) {
     const event = await this.loadShopEvent(eventId);
+    await this.assertShopOpen(event);
 
     if (event.status === EventStatus.TEST) {
       const existingOrderCount = await this.orderRepository.count({

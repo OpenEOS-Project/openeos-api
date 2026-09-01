@@ -25,6 +25,7 @@ import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
 import { CreateEventDto, UpdateEventDto, CopyProductsDto } from './dto';
 import { GatewayService } from '../gateway/gateway.service';
+import { countEventDays } from '../../common/utils/event-schedule.util';
 
 @Injectable()
 export class EventsService {
@@ -58,6 +59,49 @@ export class EventsService {
     });
   }
 
+  private assertChronological(startDate: Date | null, endDate: Date | null): void {
+    if (!startDate || !endDate) return;
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Ungültiges Datum',
+      });
+    }
+    if (endDate.getTime() < startDate.getTime()) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Das Ende der Veranstaltung darf nicht vor dem Beginn liegen',
+      });
+    }
+  }
+
+  /**
+   * Eine bereits bezahlte Veranstaltung darf nachtraeglich nicht laenger
+   * werden. Sonst liesse sich ein Tag buchen und anschliessend auf eine Woche
+   * verlaengern, ohne dass je eine zweite Rechnung entstuende. Verschieben und
+   * verkuerzen bleiben erlaubt.
+   */
+  private async assertPaidDurationNotExtended(
+    event: Event,
+    nextStart: Date | null,
+    nextEnd: Date | null,
+  ): Promise<void> {
+    if (!['paid', 'invoice'].includes(event.billingStatus)) return;
+
+    const organization = await this.organizationRepository.findOne({ where: { id: event.organizationId } });
+    const timezone = organization?.settings?.timezone || 'Europe/Berlin';
+
+    const paidDays = countEventDays(event.startDate, event.endDate, timezone);
+    const nextDays = countEventDays(nextStart, nextEnd, timezone);
+
+    if (nextDays > paidDays) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: `Die Veranstaltung ist für ${paidDays} Tag(e) freigeschaltet und kann nicht auf ${nextDays} Tage verlängert werden`,
+      });
+    }
+  }
+
   async create(
     organizationId: string,
     createDto: CreateEventDto,
@@ -65,25 +109,18 @@ export class EventsService {
   ): Promise<Event> {
     await this.checkPermission(organizationId, user.id, 'events');
 
-    // Veranstaltungen sind eintägig — falls beide Daten kommen, müssen sie übereinstimmen
-    if (createDto.startDate && createDto.endDate) {
-      const startDate = new Date(createDto.startDate);
-      const endDate = new Date(createDto.endDate);
-
-      if (endDate.getTime() !== startDate.getTime()) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          message: 'Veranstaltungen dauern genau einen Tag — Start- und Enddatum müssen übereinstimmen',
-        });
-      }
-    }
+    const startDate = new Date(createDto.startDate);
+    // Ohne eigenes Ende endet die Veranstaltung mit ihrem Beginn — daraus wird
+    // ein eintaegiger Zeitraum, der Shop hat dann rund um die Uhr offen.
+    const endDate = createDto.endDate ? new Date(createDto.endDate) : startDate;
+    this.assertChronological(startDate, endDate);
 
     const event = this.eventRepository.create({
       organizationId,
       name: createDto.name,
       description: createDto.description,
-      startDate: createDto.startDate ? new Date(createDto.startDate) : null,
-      endDate: createDto.endDate ? new Date(createDto.endDate) : null,
+      startDate,
+      endDate,
       status: EventStatus.INACTIVE,
       settings: createDto.settings || {},
     });
@@ -146,23 +183,22 @@ export class EventsService {
 
     const event = await this.findOne(organizationId, eventId, user);
 
-    // Veranstaltungen sind eintägig — falls beide Daten kommen, müssen sie übereinstimmen
-    if (updateDto.startDate && updateDto.endDate) {
-      const startDate = new Date(updateDto.startDate);
-      const endDate = new Date(updateDto.endDate);
-
-      if (endDate.getTime() !== startDate.getTime()) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          message: 'Veranstaltungen dauern genau einen Tag — Start- und Enddatum müssen übereinstimmen',
-        });
-      }
+    const datesChanged = updateDto.startDate !== undefined || updateDto.endDate !== undefined;
+    if (datesChanged) {
+      const nextStart = updateDto.startDate ? new Date(updateDto.startDate) : event.startDate;
+      const nextEnd = updateDto.endDate
+        ? new Date(updateDto.endDate)
+        : updateDto.startDate
+          ? new Date(updateDto.startDate)
+          : event.endDate;
+      this.assertChronological(nextStart, nextEnd);
+      await this.assertPaidDurationNotExtended(event, nextStart, nextEnd);
+      event.startDate = nextStart;
+      event.endDate = nextEnd;
     }
 
     if (updateDto.name) event.name = updateDto.name;
     if (updateDto.description !== undefined) event.description = updateDto.description;
-    if (updateDto.startDate) event.startDate = new Date(updateDto.startDate);
-    if (updateDto.endDate) event.endDate = new Date(updateDto.endDate);
     if (updateDto.settings) event.settings = { ...event.settings, ...updateDto.settings };
 
     await this.eventRepository.save(event);

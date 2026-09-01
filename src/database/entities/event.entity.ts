@@ -36,6 +36,17 @@ export interface EventSettings {
   maxOrdersPerHour?: number;
   shop?: {
     enabled?: boolean;
+    /**
+     * Woher die Oeffnungszeiten kommen.
+     *
+     * 'event' (Standard fuer neue Shops): aus Beginn und Ende der
+     * Veranstaltung abgeleitet, je Veranstaltungstag ein Fenster. Das laeuft
+     * ohne Zutun ueber Mitternacht, wenn die Veranstaltung das tut.
+     *
+     * 'weekly': die feste Wochentags-Tabelle aus `openingHours`. Bestandsshops
+     * bleiben darauf, solange sie nicht umgestellt werden.
+     */
+    hoursMode?: 'event' | 'weekly';
     openingHours?: ShopOpeningHours;
     /** Flat service fee added to every online order (in the event's currency). */
     serviceFee?: number;
