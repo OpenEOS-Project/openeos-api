@@ -51,6 +51,21 @@ export class CategoriesController {
     return { data: category };
   }
 
+  /* Muss vor @Patch(':categoryId') stehen. Express prueft die Routen in
+     der Reihenfolge ihrer Deklaration, und 'reorder' passt auch auf den
+     Platzhalter — stand sie danach, landete der Aufruf im Bearbeiten-
+     Handler mit categoryId = "reorder" und scheiterte an der UUID-Pruefung.
+     Genau das ist passiert, die Route war nie erreichbar. */
+  @Patch('reorder')
+  async reorder(
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Body() reorderDto: ReorderCategoriesDto,
+    @CurrentUser() user: User,
+  ) {
+    await this.categoriesService.reorder(eventId, reorderDto, user);
+    return { message: 'Kategorien neu sortiert' };
+  }
+
   @Patch(':categoryId')
   async update(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -72,13 +87,4 @@ export class CategoriesController {
     await this.categoriesService.remove(eventId, categoryId, user);
   }
 
-  @Patch('reorder')
-  async reorder(
-    @Param('eventId', ParseUUIDPipe) eventId: string,
-    @Body() reorderDto: ReorderCategoriesDto,
-    @CurrentUser() user: User,
-  ) {
-    await this.categoriesService.reorder(eventId, reorderDto, user);
-    return { message: 'Kategorien neu sortiert' };
-  }
 }
