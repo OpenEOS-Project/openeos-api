@@ -1,11 +1,10 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import {
   IsEmail,
   IsString,
   MinLength,
   MaxLength,
   Matches,
-  IsOptional,
 } from 'class-validator';
 
 export class RegisterDto {
@@ -39,15 +38,14 @@ export class RegisterDto {
   @MaxLength(100, { message: 'Nachname darf maximal 100 Zeichen lang sein' })
   lastName: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     example: 'Mein Verein e.V.',
-    description: 'Name der Organisation (optional, wird bei Registrierung erstellt)',
+    description: 'Name der Organisation, wird bei der Registrierung angelegt',
     minLength: 2,
     maxLength: 200,
   })
-  @IsOptional()
   @IsString()
   @MinLength(2, { message: 'Organisationsname muss mindestens 2 Zeichen lang sein' })
   @MaxLength(200, { message: 'Organisationsname darf maximal 200 Zeichen lang sein' })
-  organizationName?: string;
+  organizationName: string;
 }
