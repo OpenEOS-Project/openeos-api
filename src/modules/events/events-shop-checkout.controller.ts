@@ -50,6 +50,7 @@ import {
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { EmailService } from '../email/email.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { TseService } from '../tse/tse.service';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 
 interface CreateCheckoutBody {
@@ -99,6 +100,7 @@ export class EventsShopCheckoutController {
     private readonly emailService: EmailService,
     private readonly orderPrintService: OrderPrintService,
     private readonly configService: ConfigService,
+    private readonly tseService: TseService,
   ) {}
 
   private async loadShopEvent(eventId: string): Promise<Event> {
@@ -341,13 +343,30 @@ export class EventsShopCheckoutController {
     return { received: true };
   }
 
+  /** Simplified TSE proof for the shop confirmation page — no raw signature. */
+  private async getTseSummary(
+    orderId: string,
+  ): Promise<{ fiscalized: boolean; transactionNumber?: number } | undefined> {
+    const payment = await this.paymentRepository.findOne({ where: { orderId } });
+    if (!payment?.tseData) return undefined;
+    return {
+      fiscalized: !payment.tseData.failed,
+      transactionNumber: payment.tseData.transactionNumber || undefined,
+    };
+  }
+
   private async settleCheckout(checkout: ShopCheckout): Promise<{
     status: 'pending' | 'paid' | 'failed' | 'cancelled';
     orderNumber?: string | null;
+    tse?: { fiscalized: boolean; transactionNumber?: number };
   }> {
     if (checkout.status === ShopCheckoutStatus.PAID && checkout.orderId) {
       const order = await this.orderRepository.findOne({ where: { id: checkout.orderId } });
-      return { status: 'paid' as const, orderNumber: order?.orderNumber ?? null };
+      return {
+        status: 'paid' as const,
+        orderNumber: order?.orderNumber ?? null,
+        tse: await this.getTseSummary(checkout.orderId),
+      };
     }
 
     if (!checkout.sumupCheckoutId) {
@@ -391,7 +410,11 @@ export class EventsShopCheckoutController {
         const fresh = await this.shopCheckoutRepository.findOne({ where: { id: checkout.id } });
         if (fresh?.status === ShopCheckoutStatus.PAID && fresh.orderId) {
           const order = await this.orderRepository.findOne({ where: { id: fresh.orderId } });
-          return { status: 'paid' as const, orderNumber: order?.orderNumber ?? null };
+          return {
+            status: 'paid' as const,
+            orderNumber: order?.orderNumber ?? null,
+            tse: await this.getTseSummary(fresh.orderId),
+          };
         }
         // Another request is mid-settlement — report pending so pollers retry.
         return { status: 'pending' as const };
@@ -404,7 +427,11 @@ export class EventsShopCheckoutController {
         await this.shopCheckoutRepository.save(checkout);
         // Fire-and-forget — a failed mail must never fail the settlement.
         void this.sendOrderConfirmation(checkout, order);
-        return { status: 'paid' as const, orderNumber: order.orderNumber };
+        return {
+          status: 'paid' as const,
+          orderNumber: order.orderNumber,
+          tse: await this.getTseSummary(order.id),
+        };
       } catch (error) {
         // Release the claim so a later verify/webhook retries order creation.
         await this.shopCheckoutRepository.update(
@@ -596,6 +623,21 @@ export class EventsShopCheckoutController {
     });
     await this.paymentRepository.save(payment);
 
+    // Online orders have no till, so they share one TSE client per org (see
+    // TseService.resolveClientId). Best-effort — never blocks the order.
+    try {
+      const tseData = await this.tseService.recordTransaction(order.organizationId, null, {
+        amount: Number(payment.amount),
+        paymentMethod: payment.paymentMethod,
+      });
+      if (tseData) {
+        payment.tseData = tseData;
+        await this.paymentRepository.save(payment);
+      }
+    } catch (error) {
+      this.logger.error(`TSE signing failed for shop payment ${payment.id}: ${(error as Error).message}`);
+    }
+
     // Print kitchen ticket + receipt for the paid shop order. There is no POS
     // device, so routing relies on the org print settings / production-station
     // printers. Fire-and-forget so a printing hiccup never fails checkout.
@@ -622,6 +664,7 @@ export class EventsShopCheckoutController {
         paymentMethod: 'online',
         isFullyPaid: true,
         order,
+        tseData: payment.tseData,
       })
       .catch((err) =>
         this.logger.error(

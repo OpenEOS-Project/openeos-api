@@ -26,6 +26,7 @@ import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
 import { CreatePaymentDto, SplitPaymentDto, QueryPaymentsDto } from './dto';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { TseService } from '../tse/tse.service';
 
 @Injectable()
 export class PaymentsService {
@@ -43,7 +44,29 @@ export class PaymentsService {
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     private readonly orderPrintService: OrderPrintService,
+    private readonly tseService: TseService,
   ) {}
+
+  /**
+   * Sign the captured payment through the org's TSE and persist the result.
+   * Best-effort: never throws — a TSE outage must not block the sale (see
+   * TseService.recordTransaction). No-op when TSE isn't configured.
+   */
+  private async signPaymentWithTse(order: Order, payment: Payment): Promise<void> {
+    try {
+      const tseData = await this.tseService.recordTransaction(
+        order.organizationId,
+        order.createdByDeviceId ?? null,
+        { amount: Number(payment.amount), paymentMethod: payment.paymentMethod },
+      );
+      if (tseData) {
+        payment.tseData = tseData;
+        await this.paymentRepository.save(payment);
+      }
+    } catch (error) {
+      this.logger.error(`TSE signing failed for payment ${payment.id}: ${(error as Error).message}`);
+    }
+  }
 
   async create(
     organizationId: string,
@@ -109,6 +132,10 @@ export class PaymentsService {
 
     this.logger.log(`Payment created: ${payment.id} for order ${order.orderNumber}`);
 
+    // Sign through the TSE before printing, so the receipt can carry the
+    // signature/QR code (see OrderPrintService.handlePaymentReceived).
+    await this.signPaymentWithTse(order, payment);
+
     // Trigger auto-printing for payment
     this.orderPrintService.handlePaymentReceived(organizationId, {
       orderId: order.id,
@@ -118,6 +145,7 @@ export class PaymentsService {
       paymentMethod: payment.paymentMethod,
       isFullyPaid: isFullyPaid,
       order,
+      tseData: payment.tseData,
     }).catch((err) => {
       this.logger.error(`Failed to trigger payment printing: ${err.message}`);
     });
@@ -221,6 +249,9 @@ export class PaymentsService {
 
     this.logger.log(`Split payment created: ${payment.id} for order ${order.orderNumber}`);
 
+    // Sign through the TSE before printing (see create() above).
+    await this.signPaymentWithTse(order, payment);
+
     // Trigger auto-printing for payment
     const isFullyPaid = Number(order.paidAmount) >= Number(order.total);
     this.orderPrintService.handlePaymentReceived(organizationId, {
@@ -231,6 +262,7 @@ export class PaymentsService {
       paymentMethod: payment.paymentMethod,
       isFullyPaid,
       order,
+      tseData: payment.tseData,
     }).catch((err) => {
       this.logger.error(`Failed to trigger payment printing: ${err.message}`);
     });

@@ -72,6 +72,23 @@ export interface OrganizationSettings {
     clientId: string;
     clientSecret: string;
   };
+  /**
+   * TSE (Technische Sicherheitseinrichtung) per KassenSichV — the German
+   * fiscalization requirement for electronic recording systems. When enabled,
+   * every captured payment is signed through the configured provider before
+   * the receipt is printed. `clientId` on each device (see DeviceSettings)
+   * distinguishes tills registered against the same TSS.
+   */
+  tse?: {
+    enabled: boolean;
+    provider: 'fiskaly' | 'none';
+    fiskaly?: {
+      apiKey: string;
+      apiSecret: string;
+      /** Technical Security System ID, provisioned in the fiskaly dashboard. */
+      tssId: string;
+    };
+  };
   orderFlow?: {
     receiptPrinting?: {
       enabled: boolean;

@@ -34,6 +34,13 @@ export interface DeviceSettings {
   displayMode?: DisplayMode;
   /** For customer displays: the POS device whose live cart is mirrored */
   posDeviceId?: string;
+  /**
+   * TSE client ID this device is registered under on the organization's TSS
+   * (see OrganizationSettings.tse). Generated on first signed transaction if
+   * unset — each till is its own client so KassenSichV per-Kasse signatures
+   * stay distinguishable even when several devices share one TSE.
+   */
+  tseClientId?: string;
   [key: string]: unknown;
 }
 
