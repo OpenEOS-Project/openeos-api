@@ -1,14 +1,14 @@
 import { ForbiddenException } from '@nestjs/common';
 import { TseService } from './tse.service';
 import { FiskalyTseProvider } from './providers/fiskaly-tse.provider';
-import { LocalTseProvider } from './providers/local-tse.provider';
+import { NullTseProvider } from './providers/null-tse.provider';
 
 describe('TseService', () => {
   let organizationRepository: { findOne: jest.Mock };
   let deviceRepository: { findOne: jest.Mock; find: jest.Mock; save: jest.Mock };
   let userOrganizationRepository: { findOne: jest.Mock };
-  let fiskalyProvider: jest.Mocked<Pick<FiskalyTseProvider, 'ensureClient' | 'recordTransaction' | 'testConnection' | 'exportData'>>;
-  let localProvider: jest.Mocked<Pick<LocalTseProvider, 'ensureClient' | 'recordTransaction' | 'testConnection' | 'exportData'>>;
+  let fiskalyProvider: jest.Mocked<Pick<FiskalyTseProvider, 'ensureClient' | 'recordTransaction' | 'testConnection'>>;
+  let nullProvider: jest.Mocked<Pick<NullTseProvider, 'ensureClient' | 'recordTransaction' | 'testConnection'>>;
   let service: TseService;
 
   beforeEach(() => {
@@ -19,28 +19,25 @@ describe('TseService', () => {
       ensureClient: jest.fn(),
       recordTransaction: jest.fn(),
       testConnection: jest.fn(),
-      exportData: jest.fn(),
     };
-    localProvider = {
+    nullProvider = {
       ensureClient: jest.fn(),
       recordTransaction: jest.fn(),
       testConnection: jest.fn(),
-      exportData: jest.fn(),
     };
 
     // Attach `name` in place (rather than spreading into a new object) so
-    // later mutations to fiskalyProvider/localProvider in a test — e.g.
-    // deleting `exportData` to simulate an unsupported provider — are
-    // visible through the same reference the service was constructed with.
+    // later mutations in a test are visible through the same reference the
+    // service was constructed with.
     (fiskalyProvider as any).name = 'fiskaly';
-    (localProvider as any).name = 'local';
+    (nullProvider as any).name = 'none';
 
     service = new TseService(
       organizationRepository as any,
       deviceRepository as any,
       userOrganizationRepository as any,
       fiskalyProvider as any,
-      localProvider as any,
+      nullProvider as any,
     );
   });
 
@@ -69,6 +66,18 @@ describe('TseService', () => {
       const result = await service.recordTransaction(ORG_ID, null, { amount: 10, paymentMethod: 'cash' });
 
       expect(result).toBeNull();
+    });
+
+    it('returns null when provider is none', async () => {
+      organizationRepository.findOne.mockResolvedValue({
+        id: ORG_ID,
+        settings: { tse: { enabled: true, provider: 'none' } },
+      });
+
+      const result = await service.recordTransaction(ORG_ID, null, { amount: 10, paymentMethod: 'cash' });
+
+      expect(result).toBeNull();
+      expect(fiskalyProvider.recordTransaction).not.toHaveBeenCalled();
     });
 
     it('signs through the fiskaly provider and returns failed: false on success', async () => {
@@ -116,34 +125,6 @@ describe('TseService', () => {
 
       expect(result).toEqual(
         expect.objectContaining({ failed: true, failureReason: 'network down', provider: 'fiskaly' }),
-      );
-    });
-
-    it('uses the local provider when configured, passing organizationId through config', async () => {
-      organizationRepository.findOne.mockResolvedValue({
-        id: ORG_ID,
-        settings: { tse: { enabled: true, provider: 'local', local: { agentDeviceId: 'agent-1' } } },
-      });
-      localProvider.recordTransaction.mockResolvedValue({
-        provider: 'local',
-        clientId: ORG_ID,
-        transactionNumber: 1,
-        serialNumber: 'SN',
-        signatureCounter: 1,
-        signatureValue: 'sig',
-        signatureAlgorithm: 'algo',
-        startTime: 't0',
-        endTime: 't1',
-        processType: 'Kassenbeleg-V1',
-        processData: '',
-        qrCodeData: 'qr',
-      });
-
-      await service.recordTransaction(ORG_ID, null, { amount: 10, paymentMethod: 'cash' });
-
-      expect(localProvider.recordTransaction).toHaveBeenCalledWith(
-        { agentDeviceId: 'agent-1', organizationId: ORG_ID },
-        expect.objectContaining({ organizationId: ORG_ID, clientId: ORG_ID }),
       );
     });
   });
@@ -246,74 +227,6 @@ describe('TseService', () => {
 
       expect(result).toEqual({ ok: true });
       expect(fiskalyProvider.testConnection).toHaveBeenCalledWith({ apiKey: 'k', apiSecret: 's', tssId: 't' });
-    });
-  });
-
-  describe('listClientIds', () => {
-    it('throws ForbiddenException for a non-member', async () => {
-      userOrganizationRepository.findOne.mockResolvedValue(null);
-
-      await expect(service.listClientIds(ORG_ID, USER_ID)).rejects.toThrow(ForbiddenException);
-    });
-
-    it('returns the org-wide id plus each distinct device client id', async () => {
-      userOrganizationRepository.findOne.mockResolvedValue({ id: 'membership-1' });
-      deviceRepository.find.mockResolvedValue([
-        { id: 'd1', settings: { tseClientId: 'client-a' } },
-        { id: 'd2', settings: { tseClientId: 'client-b' } },
-        { id: 'd3', settings: {} }, // never signed -> no client id yet
-        { id: 'd4', settings: { tseClientId: 'client-a' } }, // duplicate
-      ]);
-
-      const result = await service.listClientIds(ORG_ID, USER_ID);
-
-      expect(result).toEqual([ORG_ID, 'client-a', 'client-b']);
-    });
-  });
-
-  describe('exportData', () => {
-    beforeEach(() => {
-      userOrganizationRepository.findOne.mockResolvedValue({ id: 'membership-1' });
-    });
-
-    it('throws when the provider does not support export', async () => {
-      organizationRepository.findOne.mockResolvedValue({
-        id: ORG_ID,
-        settings: { tse: { enabled: true, provider: 'fiskaly', fiskaly: { apiKey: 'k', apiSecret: 's', tssId: 't' } } },
-      });
-      (fiskalyProvider as any).exportData = undefined;
-
-      await expect(
-        service.exportData(ORG_ID, USER_ID, new Date('2026-08-21'), new Date('2026-08-23')),
-      ).rejects.toThrow('TSE-Export ist für diese Organisation nicht verfügbar');
-    });
-
-    it('rejects a clientId that does not belong to this org', async () => {
-      organizationRepository.findOne.mockResolvedValue({
-        id: ORG_ID,
-        settings: { tse: { enabled: true, provider: 'fiskaly', fiskaly: { apiKey: 'k', apiSecret: 's', tssId: 't' } } },
-      });
-      deviceRepository.find.mockResolvedValue([{ id: 'd1', settings: { tseClientId: 'client-a' } }]);
-
-      await expect(
-        service.exportData(ORG_ID, USER_ID, new Date('2026-08-21'), new Date('2026-08-23'), 'not-my-client'),
-      ).rejects.toThrow(ForbiddenException);
-    });
-
-    it('defaults to the org-wide client id and returns the provider export', async () => {
-      organizationRepository.findOne.mockResolvedValue({
-        id: ORG_ID,
-        settings: { tse: { enabled: true, provider: 'fiskaly', fiskaly: { apiKey: 'k', apiSecret: 's', tssId: 't' } } },
-      });
-      fiskalyProvider.exportData.mockResolvedValue({ data: Buffer.from('x'), filename: 'export.tar' });
-
-      const result = await service.exportData(ORG_ID, USER_ID, new Date('2026-08-21'), new Date('2026-08-23'));
-
-      expect(result.filename).toBe('export.tar');
-      expect(fiskalyProvider.exportData).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ clientId: ORG_ID }),
-      );
     });
   });
 });

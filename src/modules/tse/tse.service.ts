@@ -88,6 +88,7 @@ export class TseService {
 
   async testConnection(organizationId: string, userId: string): Promise<{ ok: boolean; message?: string }> {
     await this.checkMembership(organizationId, userId);
+
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
       select: ['id', 'settings'],

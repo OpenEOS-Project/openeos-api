@@ -58,7 +58,6 @@ describe('FiskalyTseProvider', () => {
       fetchMock.mockResolvedValueOnce(jsonResponse({ serial_number: 'SN-1' })); // GET tss
 
       const result = await provider.recordTransaction(config, {
-        organizationId: 'org-1',
         clientId: 'client-1',
         amount: 12.5,
         currency: 'EUR',
@@ -88,7 +87,6 @@ describe('FiskalyTseProvider', () => {
 
       await expect(
         provider.recordTransaction(config, {
-          organizationId: 'org-1',
           clientId: 'client-1',
           amount: 12.5,
           currency: 'EUR',
@@ -103,7 +101,6 @@ describe('FiskalyTseProvider', () => {
 
       await expect(
         provider.recordTransaction(config, {
-          organizationId: 'org-1',
           clientId: 'client-1',
           amount: 12.5,
           currency: 'EUR',
@@ -132,45 +129,5 @@ describe('FiskalyTseProvider', () => {
       expect(result.ok).toBe(false);
       expect(result.message).toContain('401');
     });
-  });
-
-  describe('exportData', () => {
-    it('creates an export job, polls until DONE, then downloads it', async () => {
-      mockAuth();
-      fetchMock.mockResolvedValueOnce(jsonResponse({ _id: 'exp-1', state: 'RUNNING' })); // create
-      fetchMock.mockResolvedValueOnce(jsonResponse({ state: 'DONE' })); // poll
-      fetchMock.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        arrayBuffer: async () => new TextEncoder().encode('tar-bytes').buffer,
-      }); // download
-
-      const resultPromise = provider.exportData(config, {
-        organizationId: 'org-1',
-        clientId: 'client-1',
-        periodStart: new Date('2026-08-21'),
-        periodEnd: new Date('2026-08-23'),
-      });
-
-      const result = await resultPromise;
-
-      expect(Buffer.from(result.data).toString()).toBe('tar-bytes');
-      expect(result.filename).toContain('client-1');
-    }, 15000);
-
-    it('throws when the export job fails', async () => {
-      mockAuth();
-      fetchMock.mockResolvedValueOnce(jsonResponse({ _id: 'exp-1', state: 'RUNNING' }));
-      fetchMock.mockResolvedValueOnce(jsonResponse({ state: 'FAILED' }));
-
-      await expect(
-        provider.exportData(config, {
-          organizationId: 'org-1',
-          clientId: 'client-1',
-          periodStart: new Date('2026-08-21'),
-          periodEnd: new Date('2026-08-23'),
-        }),
-      ).rejects.toThrow(/failed/);
-    }, 15000);
   });
 });

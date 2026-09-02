@@ -3,7 +3,7 @@ import { PaymentMethod, PaymentTransactionStatus } from '../../database/entities
 import { PaymentStatus } from '../../database/entities/order.entity';
 
 describe('PaymentsService — TSE hook in create()', () => {
-  let paymentRepository: { create: jest.Mock; save: jest.Mock };
+  let paymentRepository: { create: jest.Mock; save: jest.Mock; findOne: jest.Mock };
   let orderRepository: { findOne: jest.Mock; save: jest.Mock };
   let orderItemRepository: { save: jest.Mock };
   let orderItemPaymentRepository: {};
@@ -32,6 +32,7 @@ describe('PaymentsService — TSE hook in create()', () => {
     paymentRepository = {
       create: jest.fn((dto) => ({ ...dto, id: 'payment-1' })),
       save: jest.fn(async (p) => p),
+      findOne: jest.fn(),
     };
     orderRepository = { findOne: jest.fn(), save: jest.fn(async (o) => o) };
     orderItemRepository = { save: jest.fn() };
