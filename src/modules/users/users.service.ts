@@ -220,6 +220,16 @@ export class UsersService {
       };
     }
 
+    if (dto.onboarding !== undefined) {
+      /* Zusammenfuehren statt ersetzen: die Karte schickt nur
+         quickStartHidden, die Tour nur ihre Version — wer das Objekt
+         austauschte, loeschte jeweils das andere. */
+      currentPreferences.onboarding = {
+        ...currentPreferences.onboarding,
+        ...dto.onboarding,
+      };
+    }
+
     user.preferences = currentPreferences;
     await this.userRepository.save(user);
 

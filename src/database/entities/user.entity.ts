@@ -29,6 +29,21 @@ export interface UserPreferences {
     /** Kachelgrößen im 12-Spalten-Raster; ohne Eintrag gilt die Vorgabe */
     sizes?: { id: string; w: number; h: number }[];
   };
+  /**
+   * Was der Nutzer beim Einstieg schon gesehen hat.
+   *
+   * Der Fortschritt der Einrichtung steht bewusst NICHT hier — der wird
+   * aus den echten Daten abgeleitet. Hier steht nur, was sich sonst
+   * nirgends ablesen liesse: ob jemand die Tour beendet und ob er die
+   * Checkliste weggeklickt hat.
+   */
+  onboarding?: {
+    /** Version der zuletzt abgeschlossenen Tour; erlaubt es, sie bei
+     *  groesseren Umbauten erneut zu zeigen. */
+    tourVersion?: number;
+    tourCompletedAt?: string;
+    quickStartHidden?: boolean;
+  };
 }
 
 @Entity('users')

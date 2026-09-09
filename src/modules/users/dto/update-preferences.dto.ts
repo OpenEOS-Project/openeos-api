@@ -55,6 +55,24 @@ export class NotificationPreferencesDto {
   push?: boolean;
 }
 
+export class OnboardingPreferencesDto {
+  @ApiPropertyOptional({ example: 1, description: 'Version der abgeschlossenen Tour' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  tourVersion?: number;
+
+  @ApiPropertyOptional({ example: '2026-09-09T10:00:00.000Z' })
+  @IsOptional()
+  @IsString()
+  tourCompletedAt?: string;
+
+  @ApiPropertyOptional({ example: true, description: 'Quick-Start ausgeblendet' })
+  @IsOptional()
+  @IsBoolean()
+  quickStartHidden?: boolean;
+}
+
 export class UpdatePreferencesDto {
   @ApiPropertyOptional({
     example: 'system',
@@ -95,4 +113,11 @@ export class UpdatePreferencesDto {
   @ValidateNested()
   @Type(() => DashboardPreferencesDto)
   dashboard?: DashboardPreferencesDto;
+
+  @ApiPropertyOptional({ type: OnboardingPreferencesDto })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => OnboardingPreferencesDto)
+  onboarding?: OnboardingPreferencesDto;
 }

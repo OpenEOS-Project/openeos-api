@@ -39,6 +39,7 @@ import { UploadsModule } from './modules/uploads';
 import { InventoryModule } from './modules/inventory';
 import { HealthModule } from './modules/health';
 import { SetupModule } from './modules/setup';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { EmailModule } from './modules/email';
 import { ShiftsModule } from './modules/shifts';
 import { SumUpModule } from './modules/sumup';
@@ -139,6 +140,7 @@ import { ContactModule } from './modules/contact';
     InventoryModule,
     HealthModule,
     SetupModule,
+    OnboardingModule,
     EmailModule,
     ShiftsModule,
     SumUpModule,
