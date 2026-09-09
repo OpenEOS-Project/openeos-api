@@ -16,6 +16,25 @@ import { UpdateProfileDto, UpdatePreferencesDto, RequestEmailChangeDto } from '.
 
 const EMAIL_CHANGE_EXPIRY_HOURS = 24;
 
+/**
+ * Nur die Felder uebernehmen, die tatsaechlich einen Wert haben.
+ *
+ * class-transformer legt fuer jedes optionale DTO-Feld einen Schluessel
+ * an, auch wenn nichts geschickt wurde — mit dem Wert undefined. Ein
+ * einfacher Spread schreibt diese undefined dann ueber vorhandene Werte,
+ * und aus "einen Wert aendern" wird "alle anderen loeschen".
+ *
+ * Gemessen auf Staging: nach `{ notifications: { email: false } }` war
+ * die Push-Einstellung weg, nach `{ onboarding: { quickStartHidden: true } }`
+ * der Tour-Status — wer die Checkliste wegklickte, bekam beim naechsten
+ * Besuch wieder die Tour.
+ */
+function nurGesetzte<T extends object>(werte: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(werte).filter(([, wert]) => wert !== undefined),
+  ) as Partial<T>;
+}
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -207,7 +226,7 @@ export class UsersService {
     if (dto.notifications !== undefined) {
       currentPreferences.notifications = {
         ...currentPreferences.notifications,
-        ...dto.notifications,
+        ...nurGesetzte(dto.notifications),
       };
     }
     if (dto.dashboard !== undefined) {
@@ -226,7 +245,7 @@ export class UsersService {
          austauschte, loeschte jeweils das andere. */
       currentPreferences.onboarding = {
         ...currentPreferences.onboarding,
-        ...dto.onboarding,
+        ...nurGesetzte(dto.onboarding),
       };
     }
 
