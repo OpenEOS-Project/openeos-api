@@ -208,8 +208,34 @@ export class DevicesService {
     return `dev_${uuidv4().replace(/-/g, '')}`;
   }
 
-  private generateVerificationCode(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+  /**
+   * Sechsstelliger Kopplungscode, der unter den offenen Geraeten
+   * eindeutig ist.
+   *
+   * Die Eindeutigkeit ist hier kein Komfort: der Code allein entscheidet,
+   * welches Geraet jemand seiner Organisation zuschlaegt. Zwei Geraete
+   * mit derselben Zahl hiessen, dass die Suche irgendeines davon
+   * zurueckgibt — und der Falsche landete in einer fremden Organisation.
+   *
+   * Nach einigen Versuchen wird abgebrochen statt endlos zu ziehen: sind
+   * so viele Codes gleichzeitig offen, stimmt etwas anderes nicht.
+   */
+  private async generateVerificationCode(): Promise<string> {
+    for (let versuch = 0; versuch < 10; versuch++) {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+      const vergeben = await this.deviceRepository.findOne({
+        where: { verificationCode: code, status: DeviceStatus.PENDING },
+        select: { id: true },
+      });
+
+      if (!vergeben) return code;
+    }
+
+    throw new BadRequestException({
+      code: ErrorCodes.VALIDATION_ERROR,
+      message: 'Derzeit kann kein Kopplungscode vergeben werden. Bitte später erneut versuchen.',
+    });
   }
 
   // ============================================
@@ -228,7 +254,7 @@ export class DevicesService {
   }> {
     // Generate tokens
     const deviceToken = this.generateDeviceToken();
-    const verificationCode = this.generateVerificationCode();
+    const verificationCode = await this.generateVerificationCode();
 
     // Create pending device without organization
     const device = this.deviceRepository.create({
@@ -342,7 +368,7 @@ export class DevicesService {
 
     // Generate tokens
     const deviceToken = this.generateDeviceToken();
-    const verificationCode = this.generateVerificationCode();
+    const verificationCode = await this.generateVerificationCode();
 
     // Create pending device
     const device = this.deviceRepository.create({
