@@ -13,6 +13,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import type { Response, Request } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -40,6 +41,8 @@ import {
   RecoveryCodesResponseDto,
   TwoFactorStatusResponseDto,
   TrustedDeviceResponseDto,
+  RequestMagicLinkDto,
+  VerifyMagicLinkDto,
 } from './dto';
 import { Public, CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
@@ -220,6 +223,53 @@ export class AuthController {
 
     return {
       message: 'Falls ein Konto mit dieser E-Mail existiert, wurde eine Anleitung zum Zurücksetzen des Passworts gesendet',
+    };
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 900000 } })
+  @Post('magic-link/request')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Request a login link',
+    description: 'Sends a one-time login link if the account exists. Always returns 200.',
+  })
+  @ApiResponse({ status: 200, description: 'Link sent if account exists', type: MessageResponseDto })
+  async requestMagicLink(@Body() dto: RequestMagicLinkDto, @Req() request: Request) {
+    const ip = request.ip || request.socket.remoteAddress;
+    await this.authService.requestLoginMagicLink(dto.email, ip);
+
+    // Immer dieselbe Antwort — sonst waere sie eine Auskunft darueber,
+    // welche Adressen ein Konto haben.
+    return {
+      message: 'Falls ein Konto mit dieser E-Mail existiert, wurde ein Anmeldelink gesendet',
+    };
+  }
+
+  @Public()
+  @Post('magic-link/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Redeem a login link',
+    description: 'Exchanges a one-time login token for a session.',
+  })
+  @ApiResponse({ status: 200, description: 'Login successful', type: LoginResponseDto })
+  @ApiResponse({ status: 401, description: 'Invalid or expired link' })
+  async verifyMagicLink(
+    @Body() dto: VerifyMagicLinkDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const user = await this.authService.consumeLoginMagicLink(dto.token);
+    const result = await this.authService.login(user);
+
+    // Gleiche Sitzungsbehandlung wie beim Passwort-Login: derselbe
+    // Zustand danach, egal welcher Weg hineinfuehrte.
+    this.setRefreshTokenCookie(response, result.refreshToken);
+    this.setAccessTokenCookie(response, result.accessToken);
+
+    return {
+      user: this.sanitizeUser(result.user),
+      accessToken: result.accessToken,
     };
   }
 

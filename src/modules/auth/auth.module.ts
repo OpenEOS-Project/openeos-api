@@ -16,6 +16,7 @@ import {
   Invitation,
   TrustedDevice,
   EmailOtp,
+  LoginMagicLink,
 } from '../../database/entities';
 
 @Module({
@@ -28,6 +29,7 @@ import {
       Invitation,
       TrustedDevice,
       EmailOtp,
+      LoginMagicLink,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({

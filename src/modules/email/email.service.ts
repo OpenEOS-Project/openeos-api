@@ -155,6 +155,42 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  /**
+   * Anmeldelink statt Passwort.
+   *
+   * Der Link steht auch im Klartext darunter: manche Postfaecher zeigen
+   * kein HTML, und ein Anmeldeweg, den man nicht kopieren kann, ist fuer
+   * diese Leute keiner.
+   */
+  async sendLoginMagicLinkEmail(options: {
+    to: string;
+    firstName: string;
+    loginUrl: string;
+    minutesValid: number;
+  }): Promise<boolean> {
+    const subject = 'Ihr Anmeldelink für OpenEOS';
+    const html = this.getBaseTemplate(`
+      <h1>Hallo ${options.firstName}!</h1>
+      <p>Mit diesem Link melden Sie sich ohne Passwort bei OpenEOS an:</p>
+      <p style="text-align: center; margin: 30px 0;">
+        <a href="${options.loginUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+          Jetzt anmelden
+        </a>
+      </p>
+      <p style="color: #666; font-size: 14px;">
+        Falls der Button nicht funktioniert, kopieren Sie diesen Link in Ihren Browser:<br>
+        <a href="${options.loginUrl}" style="color: #2563eb;">${options.loginUrl}</a>
+      </p>
+      <p style="color: #666; font-size: 14px;">
+        Der Link gilt ${options.minutesValid} Minuten und nur ein einziges Mal.
+        Falls Sie sich nicht anmelden wollten, ignorieren Sie diese E-Mail —
+        ohne den Link passiert nichts.
+      </p>
+    `);
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   async sendTwoFactorOtpEmail(options: {
     to: string;
     code: string;

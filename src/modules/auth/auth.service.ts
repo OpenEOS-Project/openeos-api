@@ -20,6 +20,7 @@ import {
   UserOrganization,
   RefreshToken,
   Invitation,
+  LoginMagicLink,
 } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -39,6 +40,9 @@ const BCRYPT_ROUNDS = 12;
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 const PASSWORD_RESET_EXPIRY_HOURS = 1;
 const EMAIL_VERIFICATION_EXPIRY_HOURS = 24;
+/* Kurz gehalten: ein Postfach steht laenger offen als ein Browserfenster,
+   und der Link ersetzt hier ein Passwort. */
+const MAGIC_LINK_EXPIRY_MINUTES = 15;
 
 @Injectable()
 export class AuthService {
@@ -55,6 +59,8 @@ export class AuthService {
     private readonly refreshTokenRepository: Repository<RefreshToken>,
     @InjectRepository(Invitation)
     private readonly invitationRepository: Repository<Invitation>,
+    @InjectRepository(LoginMagicLink)
+    private readonly loginMagicLinkRepository: Repository<LoginMagicLink>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
@@ -581,6 +587,113 @@ export class AuthService {
         message: 'Benutzer nicht gefunden',
       });
     }
+
+    return user;
+  }
+
+  /**
+   * Anmeldelink anfordern.
+   *
+   * Gibt nie preis, ob es die Adresse gibt — jeder Aufruf endet gleich.
+   * Wer hier eine Fehlermeldung bekaeme, koennte die Benutzerliste
+   * abfragen.
+   */
+  async requestLoginMagicLink(email: string, requestedIp?: string): Promise<void> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    const user = await this.userRepository.findOne({ where: { email: cleanEmail } });
+
+    /* Deaktivierte und gesperrte Konten bekommen keinen Link. Still, aus
+       demselben Grund wie oben: die Sperre selbst ist eine Auskunft. */
+    if (!user || !user.isActive) return;
+    if (user.lockedUntil && user.lockedUntil > new Date()) return;
+
+    /* Aeltere offene Links dieses Kontos entwerten. Sonst sammeln sich mit
+       jedem Klick auf "nochmal senden" weitere gueltige Schluessel an. */
+    await this.loginMagicLinkRepository.update(
+      { userId: user.id, usedAt: IsNull() },
+      { usedAt: new Date() },
+    );
+
+    const token = crypto.randomBytes(32).toString('hex');
+    await this.loginMagicLinkRepository.save(
+      this.loginMagicLinkRepository.create({
+        tokenHash: this.hashToken(token),
+        userId: user.id,
+        expiresAt: new Date(Date.now() + MAGIC_LINK_EXPIRY_MINUTES * 60 * 1000),
+        usedAt: null,
+        requestedIp: requestedIp ?? null,
+      }),
+    );
+
+    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    await this.emailService.sendLoginMagicLinkEmail({
+      to: user.email,
+      firstName: user.firstName,
+      loginUrl: `${appUrl}/magic-link?token=${token}`,
+      minutesValid: MAGIC_LINK_EXPIRY_MINUTES,
+    });
+
+    this.logger.log(`Magic link issued for ${user.email}`);
+  }
+
+  /**
+   * Anmeldelink einloesen und den zugehoerigen Benutzer liefern.
+   *
+   * Alle Fehlschlaege enden in derselben Meldung: ob ein Token unbekannt,
+   * abgelaufen oder schon benutzt ist, geht den Aufrufer nichts an.
+   */
+  async consumeLoginMagicLink(token: string): Promise<User> {
+    const ungueltig = () =>
+      new UnauthorizedException({
+        code: ErrorCodes.INVALID_TOKEN,
+        message: 'Dieser Anmeldelink ist ungültig oder abgelaufen',
+      });
+
+    if (!token) throw ungueltig();
+
+    const link = await this.loginMagicLinkRepository.findOne({
+      where: { tokenHash: this.hashToken(token) },
+    });
+
+    if (!link || link.usedAt || link.expiresAt <= new Date()) {
+      throw ungueltig();
+    }
+
+    /* Einloesen als bedingtes Update: zwei Klicks auf denselben Link —
+       etwa durch einen Linkpruefer im Mailserver und den Benutzer
+       gleich danach — duerfen nicht beide zu einer Anmeldung fuehren. */
+    const eingeloest = await this.loginMagicLinkRepository.update(
+      { id: link.id, usedAt: IsNull() },
+      { usedAt: new Date() },
+    );
+    if (!eingeloest.affected) throw ungueltig();
+
+    const user = await this.userRepository.findOne({
+      where: { id: link.userId },
+      relations: ['userOrganizations', 'userOrganizations.organization'],
+    });
+
+    if (!user || !user.isActive) throw ungueltig();
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const remainingMinutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+      throw new UnauthorizedException({
+        code: ErrorCodes.ACCOUNT_LOCKED,
+        message: `Konto ist für ${remainingMinutes} Minuten gesperrt`,
+      });
+    }
+
+    /* Wer den Link aus dem Postfach geholt hat, hat die Adresse belegt —
+       genau das, was die Bestaetigungsmail sonst prueft. Ein zweiter
+       Nachweis waere eine Huerde ohne Erkenntnisgewinn. */
+    if (!user.emailVerifiedAt) {
+      user.emailVerifiedAt = new Date();
+    }
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = null;
+    user.lastLoginAt = new Date();
+    await this.userRepository.save(user);
 
     return user;
   }

@@ -8,3 +8,4 @@ export * from './responses.dto';
 export * from './two-factor.dto';
 export * from './verify-email.dto';
 export * from './resend-verification.dto';
+export * from './magic-link.dto';
