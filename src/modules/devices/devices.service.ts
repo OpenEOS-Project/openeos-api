@@ -132,7 +132,26 @@ export class DevicesService {
     const previousType = device.type;
     const previousSettings = device.settings;
 
-    Object.assign(device, updateDto);
+    /* Einstellungen eine Ebene tief zusammenfuehren statt ersetzen.
+       Object.assign warf das ganze settings-Objekt weg, sobald ein
+       Aufrufer nur einen Teil schickte — Drucker, PIN und Anzeigemodus
+       waeren mit einer Aenderung am Aussehen verschwunden. Bisher fiel
+       das nicht auf, weil das Formular jedes Mal alles zurueckschickte;
+       das ist Glueck, keine Zusicherung. */
+    const { settings: neueSettings, ...uebrige } = updateDto;
+    Object.assign(device, uebrige);
+
+    if (neueSettings) {
+      device.settings = {
+        ...(device.settings ?? {}),
+        ...neueSettings,
+        // Das Aussehen ist selbst ein Objekt und braucht denselben Schutz.
+        ...(neueSettings.display
+          ? { display: { ...(device.settings?.display ?? {}), ...neueSettings.display } }
+          : {}),
+      };
+    }
+
     await this.deviceRepository.save(device);
 
     this.logger.log(`Device updated: ${device.name} (${device.id})`);

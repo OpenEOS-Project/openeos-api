@@ -23,6 +23,31 @@ export type ServiceMode = 'table' | 'counter';
 export type PrinterMode = 'fixed' | 'dynamic' | 'device' | 'category' | 'product';
 export type DisplayMode = 'customer' | 'station';
 
+/**
+ * Aussehen und Inhalt einer Anzeige.
+ *
+ * Liegt im JSON der Geraeteeinstellungen, nicht in eigenen Spalten: die
+ * Liste wird wachsen, und jede neue Stellschraube waere sonst eine
+ * Migration. Alles ist optional — fehlt ein Wert, gilt die Vorgabe der
+ * Anzeige selbst.
+ */
+export interface DisplayAppearance {
+  /** Farbgebung. 'auto' folgt der Tageszeit des Geraets. */
+  theme?: 'dark' | 'light' | 'auto';
+  /** Groessere Schrift fuer Bildschirme, die weiter weg haengen. */
+  scale?: 'normal' | 'large';
+  /** Eigene Kopfzeile statt des Organisationsnamens. */
+  headline?: string;
+  showLogo?: boolean;
+  /** Text, solange nichts anzuzeigen ist — statt einer leeren Flaeche. */
+  idleText?: string;
+  /**
+   * Stationsanzeige: erledigte Bestellungen nach so vielen Sekunden
+   * ausblenden. 0 heisst: stehen lassen, bis jemand sie wegnimmt.
+   */
+  autoClearSeconds?: number;
+}
+
 export interface DeviceSettings {
   defaultPrinterId?: string;
   soundEnabled?: boolean;
@@ -34,6 +59,8 @@ export interface DeviceSettings {
   displayMode?: DisplayMode;
   /** For customer displays: the POS device whose live cart is mirrored */
   posDeviceId?: string;
+  /** Aussehen und Inhalt — nur bei Anzeigen ausgewertet. */
+  display?: DisplayAppearance;
   [key: string]: unknown;
 }
 
