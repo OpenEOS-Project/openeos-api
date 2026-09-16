@@ -415,6 +415,8 @@ export class DevicesService {
   async getDeviceStatus(deviceToken: string): Promise<{
     status: DeviceStatus;
     deviceId: string;
+    /** Damit ein umbenanntes Geraet nicht ewig seinen alten Namen zeigt. */
+    name?: string;
     organizationId?: string;
     organizationName?: string;
     deviceClass?: string;
@@ -442,6 +444,7 @@ export class DevicesService {
     return {
       status: device.status,
       deviceId: device.id,
+      name: device.status === DeviceStatus.VERIFIED ? device.name : undefined,
       organizationId: device.status === DeviceStatus.VERIFIED && device.organizationId ? device.organizationId : undefined,
       organizationName: device.status === DeviceStatus.VERIFIED ? device.organization?.name : undefined,
       deviceClass: device.status === DeviceStatus.VERIFIED ? device.type : undefined,
