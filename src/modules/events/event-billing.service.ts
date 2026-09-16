@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Event } from '../../database/entities/event.entity';
 import { Organization, BillingAddress } from '../../database/entities/organization.entity';
@@ -234,7 +234,7 @@ export class EventBillingService {
     // Best-effort admin notification — failures are only logged, never block
     // the order-invoice flow that already succeeded above.
     try {
-      await this.notifyAdminOfEventOrdered(organization, event, finalPrice);
+      await this.notifyAdminOfEventOrdered(organization, event, finalPrice, 'invoice');
     } catch (error) {
       this.logger.warn(`Failed to send admin event-ordered notification: ${(error as Error).message}`);
     }
@@ -251,7 +251,11 @@ export class EventBillingService {
     organization: Organization,
     event: Event,
     priceCharged: number,
+    paymentMethod: 'invoice' | 'stripe',
   ): Promise<void> {
+    /* Derselbe Schalter fuer beide Wege: aus Betreibersicht ist es ein
+       Ereignis — jemand hat eine Veranstaltung gekauft. Wie bezahlt
+       wurde, steht in der Mail, nicht in den Einstellungen. */
     const notifyEmail = await this.platformSettingsService.resolveNotificationTarget('eventOrdered');
     if (!notifyEmail) {
       return;
@@ -263,6 +267,7 @@ export class EventBillingService {
       eventName: event.name,
       eventDate: event.startDate,
       priceCharged,
+      paymentMethod,
       billingAddress: {
         name: organization.billingAddress?.name,
         company: organization.billingAddress?.company,
@@ -373,13 +378,50 @@ export class EventBillingService {
       return event;
     }
 
+    const bezahltAm = new Date();
+    const betrag = (session.amount_total ?? 0) / 100;
+
+    /* Bedingtes Update statt Lesen-und-dann-Schreiben: der Webhook und die
+       Rueckkehr aus dem Checkout treffen regelmaessig in derselben Sekunde
+       ein. Beide laesen 'none', beide schrieben 'paid' — und beide
+       schickten eine Mail. So gewinnt genau einer die Zeile, und nur wer
+       sie gewonnen hat, benachrichtigt. */
+    const ergebnis = await this.eventRepository.update(
+      { id: event.id, billingStatus: Not(In(['paid', 'invoice', 'waived'])) },
+      {
+        billingStatus: 'paid',
+        paidAt: bezahltAm,
+        stripeCheckoutSessionId: session.id,
+        priceCharged: betrag,
+      },
+    );
+
+    if (!ergebnis.affected) {
+      // Ein anderer Aufruf war schneller — dessen Stand gilt.
+      return this.eventRepository.findOne({ where: { id: event.id } });
+    }
+
     event.billingStatus = 'paid';
-    event.paidAt = new Date();
+    event.paidAt = bezahltAm;
     event.stripeCheckoutSessionId = session.id;
-    event.priceCharged = (session.amount_total ?? 0) / 100;
-    await this.eventRepository.save(event);
+    event.priceCharged = betrag;
 
     this.logger.log(`Event ${event.id} bezahlt über Stripe (${event.priceCharged})`);
+
+    // Best-effort wie beim Rechnungsweg: eine gescheiterte Mail darf eine
+    // verbuchte Zahlung nicht zurueckdrehen.
+    try {
+      const organization = await this.organizationRepository.findOne({
+        where: { id: event.organizationId },
+      });
+      if (organization) {
+        await this.notifyAdminOfEventOrdered(organization, event, betrag, 'stripe');
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to send admin event-paid notification: ${(error as Error).message}`,
+      );
+    }
 
     return event;
   }

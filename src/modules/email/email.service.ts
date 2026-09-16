@@ -233,32 +233,53 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  /**
+   * Meldung an die Betreiberadresse, dass eine Veranstaltung gekauft wurde.
+   *
+   * Zwei Wege fuehren hierher: Kauf auf Rechnung und Zahlung ueber Stripe.
+   * Sie unterscheiden sich nur in Betreff und einer Zeile, deshalb eine
+   * Vorlage mit Schalter statt zweier fast gleicher. Die Rechnungsadresse
+   * ist optional — bei Stripe erhebt sie der Zahlungsdienst selbst, und
+   * eine leere Zeile ist schlechter als gar keine.
+   */
   async sendAdminEventOrderedNotification(options: {
     to: string;
     organizationName: string;
     eventName: string;
     eventDate: Date | null;
     priceCharged: number;
-    billingAddress: { name?: string; company?: string; street: string; zip: string; city: string; country: string };
+    paymentMethod: 'invoice' | 'stripe';
+    billingAddress?: { name?: string; company?: string; street: string; zip: string; city: string; country: string };
   }): Promise<boolean> {
-    const subject = 'Neue Veranstaltungs-Bestellung (auf Rechnung)';
+    const perRechnung = options.paymentMethod === 'invoice';
+    const subject = perRechnung
+      ? 'Neue Veranstaltungs-Bestellung (auf Rechnung)'
+      : 'Veranstaltung bezahlt (Stripe)';
+    const einleitung = perRechnung
+      ? 'Eine Organisation hat soeben eine Veranstaltung auf Rechnung bestellt:'
+      : 'Eine Organisation hat soeben eine Veranstaltung über Stripe bezahlt:';
     const dateLabel = options.eventDate
       ? options.eventDate.toLocaleDateString('de-DE', { dateStyle: 'medium' })
       : '–';
     const priceLabel = `${options.priceCharged.toFixed(2).replace('.', ',')} €`;
     const addr = options.billingAddress;
-    const addressLine = [addr.company, addr.name, addr.street, `${addr.zip} ${addr.city}`, addr.country]
-      .filter(Boolean)
-      .join(', ');
+    const addressLine = addr
+      ? [addr.company, addr.name, addr.street, `${addr.zip} ${addr.city}`, addr.country]
+          .filter((teil) => teil && teil.trim())
+          .join(', ')
+      : '';
+    const addressRow = addressLine
+      ? `<tr><td style="padding: 6px 0; color: #666;">Rechnungsadresse:</td><td style="padding: 6px 0;"><strong>${addressLine}</strong></td></tr>`
+      : '';
     const html = this.getBaseTemplate(`
-      <h1>Neue Veranstaltungs-Bestellung (auf Rechnung)</h1>
-      <p>Eine Organisation hat soeben eine Veranstaltung auf Rechnung bestellt:</p>
+      <h1>${subject}</h1>
+      <p>${einleitung}</p>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
         <tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${options.organizationName}</strong></td></tr>
         <tr><td style="padding: 6px 0; color: #666;">Veranstaltung:</td><td style="padding: 6px 0;"><strong>${options.eventName}</strong></td></tr>
         <tr><td style="padding: 6px 0; color: #666;">Datum:</td><td style="padding: 6px 0;"><strong>${dateLabel}</strong></td></tr>
         <tr><td style="padding: 6px 0; color: #666;">Preis:</td><td style="padding: 6px 0;"><strong>${priceLabel}</strong></td></tr>
-        <tr><td style="padding: 6px 0; color: #666;">Rechnungsadresse:</td><td style="padding: 6px 0;"><strong>${addressLine}</strong></td></tr>
+        ${addressRow}
       </table>
     `);
 
