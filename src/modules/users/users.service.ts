@@ -109,13 +109,18 @@ export class UsersService {
       where: { id: userId },
     });
 
-    // Verify current password
-    const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!isPasswordValid) {
-      throw new BadRequestException({
-        code: ErrorCodes.INVALID_CREDENTIALS,
-        message: 'Passwort ist falsch',
-      });
+    /* Das Passwort dient hier als zweite Bestaetigung fuer einen heiklen
+       Schritt. Konten ohne Passwort koennen es nicht liefern; fuer sie
+       traegt die angemeldete Sitzung allein. Sie zu sperren waere die
+       Alternative — eine Adresse, die sich nie mehr aendern laesst. */
+    if (user.passwordHash) {
+      const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+      if (!isPasswordValid) {
+        throw new BadRequestException({
+          code: ErrorCodes.INVALID_CREDENTIALS,
+          message: 'Passwort ist falsch',
+        });
+      }
     }
 
     // Check if new email is already in use

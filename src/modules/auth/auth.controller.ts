@@ -78,8 +78,12 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  @ApiOperation({ summary: 'Register a new user', description: 'Create a new user account with email and password; requires email verification before login' })
-  @ApiResponse({ status: 201, description: 'User successfully registered, verification email sent', type: RegisterResponseDto })
+  @ApiOperation({
+    summary: 'Register a new user',
+    description:
+      'Creates an account. Without a password the account is used via login links, and one is sent straight away.',
+  })
+  @ApiResponse({ status: 201, description: 'Registered; mail sent', type: RegisterResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 409, description: 'Email already exists' })
   async register(@Body() registerDto: RegisterDto) {
@@ -88,7 +92,12 @@ export class AuthController {
     return {
       user: this.sanitizeUser(result.user),
       requiresEmailVerification: result.requiresEmailVerification,
-      message: 'Bitte bestätige deine E-Mail-Adresse. Wir haben dir einen Link geschickt.',
+      magicLinkSent: result.magicLinkSent,
+      // Ohne Passwort fuehrt der zugesandte Link direkt hinein; die
+      // Bestaetigung passiert dabei mit.
+      message: result.magicLinkSent
+        ? 'Wir haben dir einen Anmeldelink geschickt. Damit geht es direkt los.'
+        : 'Bitte bestätige deine E-Mail-Adresse. Wir haben dir einen Link geschickt.',
     };
   }
 

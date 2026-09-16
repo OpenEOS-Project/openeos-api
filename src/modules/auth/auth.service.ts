@@ -93,6 +93,8 @@ export class AuthService {
   async register(registerDto: RegisterDto): Promise<{
     user: User;
     requiresEmailVerification: true;
+    /** Ohne Passwort ging statt der Bestaetigung ein Anmeldelink raus. */
+    magicLinkSent: boolean;
   }> {
     const { email, password, firstName, lastName, organizationName } = registerDto;
 
@@ -108,8 +110,9 @@ export class AuthService {
       });
     }
 
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    /* Ohne Passwort bleibt die Spalte leer — das Konto laeuft dann ueber
+       Anmeldelinks. */
+    const passwordHash = password ? await bcrypt.hash(password, BCRYPT_ROUNDS) : null;
 
     // Generate the email verification token up front so it's created
     // atomically with the user in the same transaction
@@ -165,21 +168,32 @@ export class AuthService {
 
       this.logger.log(`User registered: ${user.email}`);
 
-      // Send verification + admin notification mails outside the transaction
-      // so a slow/failed email provider never rolls back the registration.
-      const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
-      const verifyUrl = `${appUrl}/verify-email?token=${verificationToken}`;
-      await this.emailService.sendEmailVerificationEmail({
-        to: user.email,
-        firstName: user.firstName,
-        verifyUrl,
-      });
+      /* Mails ausserhalb der Transaktion, damit ein langsamer oder
+         ausgefallener Mailserver nie eine gelungene Registrierung
+         zuruecknimmt. */
+
+      /* Ohne Passwort waeren es sonst zwei Mails hintereinander, die
+         dasselbe verlangen: Adresse bestaetigen und dann anmelden. Der
+         Anmeldelink erledigt beides — das Einloesen setzt die Bestaetigung
+         mit. */
+      if (passwordHash) {
+        const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+        const verifyUrl = `${appUrl}/verify-email?token=${verificationToken}`;
+        await this.emailService.sendEmailVerificationEmail({
+          to: user.email,
+          firstName: user.firstName,
+          verifyUrl,
+        });
+      } else {
+        await this.requestLoginMagicLink(user.email);
+      }
 
       await this.notifyAdminOfRegistration(user);
 
       return {
         user,
         requiresEmailVerification: true,
+        magicLinkSent: !passwordHash,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -307,6 +321,17 @@ export class AuthService {
       throw new UnauthorizedException({
         code: ErrorCodes.ACCOUNT_INACTIVE,
         message: 'Konto ist deaktiviert',
+      });
+    }
+
+    /* Konten aus der Registrierung ohne Passwort haben keinen Hash. Hier
+       eine allgemeine "Anmeldedaten falsch"-Meldung auszugeben, hiesse,
+       Leute nach einem Passwort suchen zu lassen, das es nie gab. Dass
+       das Konto existiert, verraet die Registrierung ohnehin. */
+    if (!user.passwordHash) {
+      throw new UnauthorizedException({
+        code: ErrorCodes.PASSWORD_LOGIN_UNAVAILABLE,
+        message: 'Für dieses Konto ist kein Passwort gesetzt. Melden Sie sich per Anmeldelink an.',
       });
     }
 
@@ -560,17 +585,18 @@ export class AuthService {
       });
     }
 
-    // Validate current password
-    const isPasswordValid = await bcrypt.compare(
-      currentPassword,
-      user.passwordHash,
-    );
+    /* Wer noch keines hat, setzt hier sein erstes — es gibt kein altes zu
+       pruefen. Die angemeldete Sitzung ist der Nachweis, und in die kommt
+       nur, wer einen Anmeldelink aus dem eigenen Postfach geholt hat. */
+    if (user.passwordHash) {
+      const isPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
 
-    if (!isPasswordValid) {
-      throw new BadRequestException({
-        code: ErrorCodes.INVALID_CREDENTIALS,
-        message: 'Aktuelles Passwort ist falsch',
-      });
+      if (!isPasswordValid) {
+        throw new BadRequestException({
+          code: ErrorCodes.INVALID_CREDENTIALS,
+          message: 'Aktuelles Passwort ist falsch',
+        });
+      }
     }
 
     // Update password

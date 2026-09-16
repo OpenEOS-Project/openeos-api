@@ -19,6 +19,7 @@ export const ErrorCodes = {
   TOKEN_REVOKED: 'TOKEN_REVOKED',
   REFRESH_TOKEN_REVOKED: 'REFRESH_TOKEN_REVOKED',
   USER_EXISTS: 'USER_EXISTS',
+  PASSWORD_LOGIN_UNAVAILABLE: 'PASSWORD_LOGIN_UNAVAILABLE',
 
   // 2FA Errors
   TWO_FACTOR_REQUIRED: 'TWO_FACTOR_REQUIRED',
@@ -69,6 +70,7 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.CONFLICT]: 'Konflikt',
 
   [ErrorCodes.INVALID_CREDENTIALS]: 'Falsche E-Mail oder Passwort',
+  [ErrorCodes.PASSWORD_LOGIN_UNAVAILABLE]: 'Für dieses Konto ist kein Passwort gesetzt',
   [ErrorCodes.ACCOUNT_LOCKED]: 'Account gesperrt',
   [ErrorCodes.ACCOUNT_INACTIVE]: 'Account deaktiviert',
   [ErrorCodes.EMAIL_NOT_VERIFIED]: 'E-Mail nicht verifiziert',
