@@ -1,11 +1,23 @@
 import { IsEmail, IsIn, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export type ContactRequestType = 'demo' | 'contact' | 'hardware' | 'gateway';
+export type ContactRequestType =
+  | 'demo'
+  | 'contact'
+  | 'hardware'
+  | 'gateway'
+  /* Von der Website: Rueckmeldung und Funktionswunsch. Getrennt, weil
+     ein Wunsch anders gelesen wird als eine Stoerungsmeldung. */
+  | 'feedback'
+  | 'feature';
 
 export class CreateContactRequestDto {
-  @ApiProperty({ example: 'demo', enum: ['demo', 'contact', 'hardware', 'gateway'], description: 'Art der Anfrage' })
-  @IsIn(['demo', 'contact', 'hardware', 'gateway'])
+  @ApiProperty({
+    example: 'demo',
+    enum: ['demo', 'contact', 'hardware', 'gateway', 'feedback', 'feature'],
+    description: 'Art der Anfrage',
+  })
+  @IsIn(['demo', 'contact', 'hardware', 'gateway', 'feedback', 'feature'])
   type: ContactRequestType;
 
   @ApiProperty({ example: 'Max Mustermann', minLength: 2, maxLength: 100 })

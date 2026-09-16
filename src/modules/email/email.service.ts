@@ -346,7 +346,7 @@ export class EmailService {
 
   async sendAdminContactRequestNotification(options: {
     to: string;
-    type: 'demo' | 'contact' | 'hardware' | 'gateway';
+    type: 'demo' | 'contact' | 'hardware' | 'gateway' | 'feedback' | 'feature';
     name: string;
     email: string;
     organization?: string;
@@ -357,6 +357,8 @@ export class EmailService {
       contact: 'Kontaktanfrage',
       hardware: 'Hardware-Miete',
       gateway: 'Kassen-Gateway',
+      feedback: 'Rückmeldung',
+      feature: 'Funktionswunsch',
     };
     const typeLabel = typeLabels[options.type];
     const subject = `Neue ${typeLabel} über die Website`;

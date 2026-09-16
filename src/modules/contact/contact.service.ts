@@ -13,6 +13,8 @@ const TYPE_LABELS: Record<CreateContactRequestDto['type'], string> = {
   contact: 'Kontaktanfrage',
   hardware: 'Hardware-Miete',
   gateway: 'Kassen-Gateway',
+  feedback: 'Rückmeldung',
+  feature: 'Funktionswunsch',
 };
 
 /**
