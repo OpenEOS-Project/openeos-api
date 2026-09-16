@@ -57,6 +57,9 @@ export default () => ({
     user: process.env.EMAIL_USER || '',
     password: process.env.EMAIL_PASSWORD || '',
     from: process.env.EMAIL_FROM || 'noreply@openeos.de',
+    // Absendername. Konfigurierbar, damit Testsysteme als solche erkennbar
+    // sind — sonst sieht eine Mail von Staging aus wie eine echte.
+    fromName: process.env.EMAIL_FROM_NAME || 'OpenEOS',
     // Where "new registration" notifications go. Falls back to ADMIN_EMAIL
     // (already used for seeding) so a single env var can cover both.
     adminNotifyEmail: process.env.ADMIN_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || '',

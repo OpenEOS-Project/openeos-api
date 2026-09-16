@@ -21,7 +21,8 @@ export class EmailService {
   constructor(private readonly configService: ConfigService) {
     this.isEnabled = this.configService.get<boolean>('email.enabled') === true;
     const fromEmail = this.configService.get<string>('email.from') || 'noreply@openeos.de';
-    this.fromAddress = `OpenEOS <${fromEmail}>`;
+    const fromName = this.configService.get<string>('email.fromName') || 'OpenEOS';
+    this.fromAddress = `${fromName} <${fromEmail}>`;
     // Public app URL — used for verify links, registration confirmations, etc.
     // Fallback points at the hosted production frontend so a missing env var
     // doesn't leave helpers staring at `http://localhost:3000` links.
