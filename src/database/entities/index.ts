@@ -74,3 +74,4 @@ export * from './shift-registration.entity';
 export * from './shift-change-proposal.entity';
 export * from './helper-magic-link.entity';
 export * from './login-magic-link.entity';
+export * from './contact-request.entity';
