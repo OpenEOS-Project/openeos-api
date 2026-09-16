@@ -331,7 +331,7 @@ export class AuthService {
     if (!user.passwordHash) {
       throw new UnauthorizedException({
         code: ErrorCodes.PASSWORD_LOGIN_UNAVAILABLE,
-        message: 'Für dieses Konto ist kein Passwort gesetzt. Melden Sie sich per Anmeldelink an.',
+        message: 'Für dieses Konto ist kein Passwort gesetzt. Melde dich per Anmeldelink an.',
       });
     }
 
