@@ -26,6 +26,7 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
+import { TwoFactorService } from './two-factor.service';
 import {
   RegisterDto,
   ForgotPasswordDto,
@@ -43,6 +44,9 @@ const EMAIL_VERIFICATION_EXPIRY_HOURS = 24;
 /* Kurz gehalten: ein Postfach steht laenger offen als ein Browserfenster,
    und der Link ersetzt hier ein Passwort. */
 const MAGIC_LINK_EXPIRY_MINUTES = 15;
+/* Nur die Spanne zwischen Passwort und Code — wer laenger braucht, meldet
+   sich neu an. */
+const TWO_FACTOR_PENDING_EXPIRY = '10m';
 
 @Injectable()
 export class AuthService {
@@ -66,6 +70,7 @@ export class AuthService {
     private readonly dataSource: DataSource,
     private readonly emailService: EmailService,
     private readonly platformSettingsService: PlatformSettingsService,
+    private readonly twoFactorService: TwoFactorService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
   ) {}
@@ -696,6 +701,37 @@ export class AuthService {
     await this.userRepository.save(user);
 
     return user;
+  }
+
+  /**
+   * Ausweis fuer den zweiten Anmeldeschritt.
+   *
+   * Traegt `pending2fa` und wird deshalb ueberall abgewiesen ausser bei
+   * den 2FA-Endpunkten. Kurz gueltig, weil er nur eine Code-Eingabe
+   * ueberbruecken muss.
+   */
+  async issueTwoFactorToken(user: User): Promise<string> {
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      isSuperAdmin: user.isSuperAdmin,
+      pending2fa: true,
+    };
+
+    return this.jwtService.sign(payload, { expiresIn: TWO_FACTOR_PENDING_EXPIRY });
+  }
+
+  /**
+   * Braucht dieser Benutzer jetzt einen zweiten Faktor?
+   *
+   * Ein als vertrauenswuerdig markiertes Geraet ueberspringt ihn — dafuer
+   * ist die Markierung da.
+   */
+  async needsTwoFactor(user: User, deviceFingerprint?: string): Promise<boolean> {
+    if (!user.twoFactorEnabled) return false;
+    if (!deviceFingerprint) return true;
+
+    return !(await this.twoFactorService.isDeviceTrusted(user.id, deviceFingerprint));
   }
 
   private async generateTokens(user: User): Promise<{

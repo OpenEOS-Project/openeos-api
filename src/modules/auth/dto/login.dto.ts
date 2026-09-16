@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class LoginDto {
   @ApiProperty({ example: 'max@example.com', description: 'E-Mail-Adresse des Benutzers' })
@@ -10,4 +10,11 @@ export class LoginDto {
   @IsString()
   @MinLength(1, { message: 'Passwort ist erforderlich' })
   password: string;
+
+  @ApiPropertyOptional({
+    description: 'Geräte-Fingerabdruck — überspringt den zweiten Faktor auf bekannten Geräten',
+  })
+  @IsOptional()
+  @IsString()
+  deviceFingerprint?: string;
 }

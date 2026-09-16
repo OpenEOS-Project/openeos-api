@@ -44,8 +44,9 @@ import {
   RequestMagicLinkDto,
   VerifyMagicLinkDto,
 } from './dto';
-import { Public, CurrentUser } from '../../common/decorators';
+import { Public, CurrentUser, AllowPendingTwoFactor } from '../../common/decorators';
 import { User } from '../../database/entities';
+import { TwoFactorMethod } from '../../database/entities/user.entity';
 
 // Parses JWT_ACCESS_TOKEN_EXPIRATION-style durations ("30m", "7d", "45s",
 // "2h") into a millisecond cookie maxAge. Only the units actually used by
@@ -127,11 +128,31 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   @ApiResponse({ status: 423, description: 'Account locked' })
   async login(
-    @Body() _loginDto: LoginDto,
+    @Body() loginDto: LoginDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
     const user = request.user as User;
+
+    /* Zweiter Faktor vor der Sitzung, nicht danach. Frueher lieferte der
+       Login sofort volle Token und die Code-Abfrage kam obendrauf — wer
+       die API direkt ansprach, war mit dem Passwort allein drin. */
+    if (await this.authService.needsTwoFactor(user, loginDto.deviceFingerprint)) {
+      const twoFactorToken = await this.authService.issueTwoFactorToken(user);
+
+      // Beim Mail-Verfahren muss der Code erst unterwegs sein, bevor
+      // jemand danach gefragt wird.
+      if (user.twoFactorMethod === TwoFactorMethod.EMAIL) {
+        await this.twoFactorService.sendLoginOtp(user.id);
+      }
+
+      return {
+        twoFactorRequired: true,
+        twoFactorToken,
+        twoFactorMethod: user.twoFactorMethod,
+      };
+    }
+
     const result = await this.authService.login(user);
 
     // Set refresh token as httpOnly cookie
@@ -260,6 +281,20 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const user = await this.authService.consumeLoginMagicLink(dto.token);
+
+    // Ein Link ersetzt das Passwort, nicht den zweiten Faktor.
+    if (await this.authService.needsTwoFactor(user)) {
+      const twoFactorToken = await this.authService.issueTwoFactorToken(user);
+      if (user.twoFactorMethod === TwoFactorMethod.EMAIL) {
+        await this.twoFactorService.sendLoginOtp(user.id);
+      }
+      return {
+        twoFactorRequired: true,
+        twoFactorToken,
+        twoFactorMethod: user.twoFactorMethod,
+      };
+    }
+
     const result = await this.authService.login(user);
 
     // Gleiche Sitzungsbehandlung wie beim Passwort-Login: derselbe
@@ -396,18 +431,22 @@ export class AuthController {
     return this.twoFactorService.verifyEmailOtpSetup(user.id, dto.code);
   }
 
+  @AllowPendingTwoFactor()
   @Post('2fa/verify')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Verify 2FA code', description: 'Verify 2FA code during login' })
-  @ApiResponse({ status: 200, description: '2FA verified', type: MessageResponseDto })
-  @ApiResponse({ status: 400, description: 'Invalid code' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiOperation({
+    summary: 'Verify 2FA code',
+    description: 'Second login step: exchanges the pending token for a session.',
+  })
+  @ApiResponse({ status: 200, description: 'Login complete', type: LoginResponseDto })
+  @ApiResponse({ status: 401, description: 'Invalid code' })
   async verify2FA(
     @CurrentUser() user: User,
     @Body() dto: Verify2FADto,
     @Req() request: Request,
-  ): Promise<{ message: string }> {
+    @Res({ passthrough: true }) response: Response,
+  ) {
     const ip = request.ip || request.socket.remoteAddress;
     await this.twoFactorService.verify2FA(
       user.id,
@@ -421,7 +460,17 @@ export class AuthController {
         ip,
       },
     );
-    return { message: '2FA erfolgreich verifiziert' };
+
+    /* Erst hier entsteht die Sitzung. Der Ausweis aus Schritt eins taugte
+       nur fuer diesen Aufruf und ist mit der Antwort erledigt. */
+    const result = await this.authService.login(user);
+    this.setRefreshTokenCookie(response, result.refreshToken);
+    this.setAccessTokenCookie(response, result.accessToken);
+
+    return {
+      user: this.sanitizeUser(result.user),
+      accessToken: result.accessToken,
+    };
   }
 
   @Post('2fa/disable')
@@ -474,6 +523,7 @@ export class AuthController {
     return { message: 'Gerät wurde entfernt' };
   }
 
+  @AllowPendingTwoFactor()
   @Post('2fa/send-login-otp')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')

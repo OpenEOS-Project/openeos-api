@@ -15,6 +15,8 @@ function extractFromCookie(req: Request): string | null {
 }
 
 export interface JwtPayload {
+  /** Gesetzt zwischen Passwort und zweitem Faktor — kein voller Zugang. */
+  pending2fa?: boolean;
   sub: string;
   email: string;
   isSuperAdmin: boolean;
@@ -67,6 +69,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       role: uo.role,
     }));
     return Object.assign(user, {
+      pending2fa: payload.pending2fa === true,
       organizations,
       // Guards check `isSuperadmin` (lowercase a); the entity column is `isSuperAdmin`.
       isSuperadmin: user.isSuperAdmin,
