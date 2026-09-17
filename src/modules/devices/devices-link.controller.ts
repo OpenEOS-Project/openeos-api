@@ -20,8 +20,16 @@ export class DevicesLinkController {
   @Post('link')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Link a pending device to an organization',
-    description: 'Links a device (found by verification code) to an organization. Requires admin role in the target organization.',
+    summary: 'Step 3 — adopt a waiting device into an organisation',
+    description: [
+      'Finishes the pairing a device started with POST /devices/init. The',
+      'caller must be signed in and hold the devices permission in the target',
+      'organisation — the device itself never chooses where it belongs.',
+      '',
+      'On success the device becomes verified, its code is cleared, and its',
+      'next status poll tells it where to go. Type defaults are applied here,',
+      'so a display arrives already set to the customer view.',
+    ].join(' '),
   })
   async linkDevice(
     @Body() linkDto: LinkDeviceDto,

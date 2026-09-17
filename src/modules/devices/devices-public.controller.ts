@@ -35,7 +35,20 @@ export class DevicesPublicController {
   }
 
   @Post('init')
-  @ApiOperation({ summary: 'Initialize a new device (TV flow - no organization required)' })
+  @ApiOperation({
+    summary: 'Step 1 — register a device and get its pairing code',
+    description: [
+      'Start here for any client that cannot ask for credentials: a TV, a',
+      'tablet, an app. No organisation is needed and none is assigned yet.',
+      '',
+      'Returns a deviceToken (keep it, it is the long-lived credential) and',
+      'a six-digit verificationCode. Show the code to the user and poll',
+      'GET /devices/status with the token until it reports "verified".',
+      '',
+      'Someone signed in then links the code — see POST /devices/link.',
+      'Until then the device has no access to anything.',
+    ].join(' '),
+  })
   async initDevice(@Body() initDto: InitDeviceDto) {
     const result = await this.devicesService.initDevice(initDto);
     return {
@@ -44,7 +57,13 @@ export class DevicesPublicController {
   }
 
   @Get('lookup')
-  @ApiOperation({ summary: 'Lookup pending device by verification code' })
+  @ApiOperation({
+    summary: 'Step 2 — look up which device a code belongs to',
+    description:
+      'Public on purpose: it only reveals the suggested name and user agent ' +
+      'of a device that is already waiting, which whoever holds the code can ' +
+      'read off its screen anyway. Codes are unique among pending devices.',
+  })
   @ApiQuery({ name: 'code', description: '6-digit verification code', required: true })
   async lookupByCode(@Query('code') code: string) {
     if (!code || code.length !== 6) {
