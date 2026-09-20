@@ -2,7 +2,8 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { Public } from '../../common/decorators';
-import { CHANGELOG } from './changelog.data';
+import { CHANGELOG, RELEASES } from './changelog.data';
+import type { ChangelogEintragMitVersion } from './changelog.types';
 
 /**
  * Die Änderungsliste, öffentlich.
@@ -22,20 +23,30 @@ export class ChangelogController {
     description:
       'Entries are plain-language and bilingual. `since` returns only what is ' +
       'newer than that date — the signed-in app uses it to show a user what ' +
-      'arrived since their last visit.',
+      'arrived since their last visit. `latestVersion` is the release number ' +
+      'the website shows in its badge.',
   })
   @ApiQuery({ name: 'since', required: false, description: 'JJJJ-MM-TT' })
   list(@Query('since') since?: string) {
     /* Reiner Zeichenkettenvergleich: bei JJJJ-MM-TT entspricht die
        alphabetische Ordnung der zeitlichen, und ein ungueltiges Datum
        filtert damit nichts weg statt alles. */
-    const eintraege = since ? CHANGELOG.filter((e) => e.datum > since) : CHANGELOG;
+    const gefiltert = since ? CHANGELOG.filter((e) => e.datum > since) : CHANGELOG;
+
+    const eintraege: ChangelogEintragMitVersion[] = gefiltert.map((e) => ({
+      ...e,
+      version: RELEASES[e.datum] ?? null,
+    }));
+
+    const neuestesDatum = CHANGELOG[0]?.datum ?? null;
 
     return {
       data: {
         entries: eintraege,
         /** Neuester Stand insgesamt — der Client merkt sich diesen Wert. */
-        latest: CHANGELOG[0]?.datum ?? null,
+        latest: neuestesDatum,
+        /** Dieselbe Veroeffentlichung als Nummer, fuer das Badge der Website. */
+        latestVersion: neuestesDatum ? (RELEASES[neuestesDatum] ?? null) : null,
       },
     };
   }

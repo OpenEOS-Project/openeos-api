@@ -8,3 +8,12 @@ export interface ChangelogEintrag {
   titel: { de: string; en: string };
   text: { de: string; en: string };
 }
+
+/**
+ * Ein Eintrag, wie ihn die API herausgibt: mit der Version, in der er
+ * erschienen ist. Die steht nicht in den Daten selbst, sondern kommt aus
+ * der Zuordnung Datum -> Version.
+ */
+export interface ChangelogEintragMitVersion extends ChangelogEintrag {
+  version: string | null;
+}

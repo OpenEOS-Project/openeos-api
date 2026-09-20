@@ -112,3 +112,25 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
 ];
+
+/**
+ * Welche Version an welchem Tag erschienen ist.
+ *
+ * Getrennt von den Eintraegen gehalten: drei Neuerungen desselben Tages
+ * gehoeren zur selben Veroeffentlichung, und dreimal dieselbe Nummer
+ * abzutippen heisst, dass sie irgendwann auseinanderlaufen.
+ *
+ * Die Zahl steigt nur bei einer Veroeffentlichung. Die Build-Nummer der
+ * Oberflaeche (1.0.<Lauf>) taugt dafuer nicht: sie zaehlt auch nach einer
+ * reinen Fehlerkorrektur weiter, und dem Besucher der Website eine neue
+ * Version zu melden, die nichts Neues enthaelt, waere eine Luege.
+ *
+ * Neues Datum im Changelog -> hier eine Zeile ergaenzen, sonst steht der
+ * Eintrag ohne Version da.
+ */
+export const RELEASES: Record<string, string> = {
+  '2026-09-17': '1.3',
+  '2026-09-16': '1.2',
+  '2026-09-09': '1.1',
+  '2026-09-02': '1.0',
+};
