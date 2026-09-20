@@ -49,9 +49,11 @@ import { PfandTypesModule } from './modules/pfand-types';
 import { PlatformSettingsModule } from './modules/platform-settings';
 import { SupportModule } from './modules/support';
 import { ContactModule } from './modules/contact';
+import { ChangelogModule } from './modules/changelog';
 
 @Module({
   imports: [
+    ChangelogModule,
     // Sentry Error Tracking (must be first)
     SentryModule.forRoot(),
 

@@ -71,6 +71,14 @@ export class OnboardingPreferencesDto {
   @IsOptional()
   @IsBoolean()
   quickStartHidden?: boolean;
+
+  @ApiPropertyOptional({
+    example: '2026-09-17',
+    description: 'Neuester gesehener Changelog-Eintrag (JJJJ-MM-TT)',
+  })
+  @IsOptional()
+  @IsString()
+  lastSeenChangelog?: string;
 }
 
 export class UpdatePreferencesDto {

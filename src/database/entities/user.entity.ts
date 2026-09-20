@@ -43,6 +43,9 @@ export interface UserPreferences {
     tourVersion?: number;
     tourCompletedAt?: string;
     quickStartHidden?: boolean;
+    /** Datum des neuesten Changelog-Eintrags, den der Benutzer gesehen
+     *  hat (JJJJ-MM-TT). Alles Neuere zeigt das Fenster beim Anmelden. */
+    lastSeenChangelog?: string;
   };
 }
 
