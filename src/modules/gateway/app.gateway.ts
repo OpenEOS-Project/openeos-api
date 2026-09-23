@@ -45,9 +45,28 @@ interface AuthenticatedSocket extends Socket {
   };
 }
 
+/* Die Erlaubnisliste fuer Socket-Verbindungen.
+ *
+ * Hier stand ein Stern zusammen mit credentials: true. Diese Kombination
+ * ist im Browser ungueltig: eine Antwort mit "Access-Control-Allow-Origin: *"
+ * wird verworfen, sobald die Anfrage Anmeldedaten mitfuehrt. Die Folge war,
+ * dass sich ueberhaupt kein Browser verbinden konnte — Kassen und Anzeigen
+ * liefen ueber HTTP weiter und blieben dabei dauerhaft "offline", weil die
+ * Live-Verbindung nie zustande kam. Ein Client ausserhalb des Browsers
+ * (Drucker-Agent, Testskript) war nie betroffen, weshalb es lange niemandem
+ * auffiel.
+ *
+ * Dieselbe Quelle wie fuer HTTP, damit nicht zwei Listen auseinanderlaufen.
+ */
+const erlaubteUrspruenge = (process.env.CORS_ORIGINS ?? 'http://localhost:3001')
+  .split(',')
+  .map((eintrag) => eintrag.trim())
+  .filter(Boolean);
+
 @WebSocketGateway({
   cors: {
-    origin: '*', // Configure in production
+    // In der Entwicklung jeden Ursprung spiegeln — wie auf der HTTP-Seite.
+    origin: process.env.NODE_ENV !== 'production' ? true : erlaubteUrspruenge,
     credentials: true,
   },
   namespace: '/',
@@ -140,8 +159,13 @@ export class AppGateway
         }
       }
 
-      // No valid authentication
-      this.logger.warn(`Unauthenticated connection attempt: ${client.id}`);
+      /* Ohne Herkunft ist so eine Zeile wertlos: bei einem Kunden mit
+         vier Geraeten liess sich nicht sagen, welches abgewiesen wurde. */
+      const herkunft = client.handshake.headers.origin ?? 'ohne Origin';
+      const adresse = client.handshake.address;
+      this.logger.warn(
+        `Unauthenticated connection attempt: ${client.id} — Origin: ${herkunft}, IP: ${adresse}`,
+      );
       client.emit(GatewayEvents.ERROR, { message: 'Authentication required' });
       client.disconnect();
     } catch (error) {

@@ -99,7 +99,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
         Sentry.captureException(exception);
       });
     } else {
-      this.logger.warn(`[${requestId}] ${request.method} ${request.url} - ${status} - ${message}`);
+      /* Guards laufen vor dem Logging-Interceptor: bei 401/403 gibt es
+         deshalb keine zweite Zeile mit IP und Client, und die Anfrage-Nummer
+         ist "undefined". Ohne diese Angaben liess sich eine Schleife aus
+         tausenden 401 keinem Geraet zuordnen. */
+      const herkunft =
+        status === 401 || status === 403
+          ? ` - IP: ${request.ip} - UA: ${String(request.headers['user-agent'] ?? '').slice(0, 80)}`
+          : '';
+      this.logger.warn(
+        `[${requestId}] ${request.method} ${request.url} - ${status} - ${message}${herkunft}`,
+      );
       if (details && details.length > 0) {
         this.logger.warn(`[${requestId}] Validation details: ${JSON.stringify(details)}`);
       }
