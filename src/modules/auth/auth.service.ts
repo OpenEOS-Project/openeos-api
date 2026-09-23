@@ -12,6 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, IsNull } from 'typeorm';
 import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
+import { gesperrterTokenSchluessel } from './token-blocklist';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import {
@@ -451,7 +452,7 @@ export class AuthService {
     return tokens;
   }
 
-  async logout(userId: string, refreshToken?: string): Promise<void> {
+  async logout(userId: string, refreshToken?: string, accessToken?: string): Promise<void> {
     if (refreshToken) {
       // Hash the token to find it
       const tokenHash = this.hashToken(refreshToken);
@@ -471,11 +472,26 @@ export class AuthService {
         .execute();
     }
 
-    // Add access token to blacklist (using Redis cache)
-    // The blacklist entry will expire when the token expires
-    const accessTokenExpiry = this.configService.get<string>('jwt.expiresIn') || '30m';
-    const ttlSeconds = this.parseExpiryToSeconds(accessTokenExpiry);
-    await this.cacheManager.set(`blacklist:${userId}`, true, ttlSeconds * 1000);
+    /* Den vorgelegten Zugangstoken sperren — und nur diesen.
+       Vorher wurde unter `blacklist:<userId>` vermerkt, dass der Benutzer
+       sich abgemeldet hat. Das war doppelt falsch: gelesen wurde der
+       Eintrag nirgends, ein Token blieb nach dem Abmelden also bis zu
+       einer Stunde gueltig. Und haette man ihn gelesen, haette das
+       Abmelden an der Kasse zugleich jedes andere Geraet desselben
+       Kontos hinausgeworfen.
+
+       Der Eintrag laeuft ab, wenn der Token ohnehin abgelaufen waere —
+       danach lehnt ihn die Signaturpruefung von selbst ab. */
+    if (accessToken) {
+      const verbleibend = this.verbleibendeGueltigkeitMs(accessToken);
+      if (verbleibend > 0) {
+        await this.cacheManager.set(
+          gesperrterTokenSchluessel(accessToken),
+          true,
+          verbleibend,
+        );
+      }
+    }
 
     this.logger.log(`User logged out: ${userId}`);
   }
@@ -758,6 +774,23 @@ export class AuthService {
     if (!deviceFingerprint) return true;
 
     return !(await this.twoFactorService.isDeviceTrusted(user.id, deviceFingerprint));
+  }
+
+  /**
+   * Wie lange der Token noch gaelte, in Millisekunden.
+   *
+   * Aus dem Token selbst statt aus der Konfiguration: wird die Laufzeit
+   * umgestellt, tragen ausgegebene Token weiterhin ihr eigenes Ende, und
+   * ein zu kurz gesetzter Sperreintrag liesse sie wieder aufleben.
+   */
+  private verbleibendeGueltigkeitMs(accessToken: string): number {
+    try {
+      const { exp } = this.jwtService.decode(accessToken) as { exp?: number };
+      if (!exp) return 0;
+      return Math.max(0, exp * 1000 - Date.now());
+    } catch {
+      return 0;
+    }
   }
 
   private async generateTokens(user: User): Promise<{

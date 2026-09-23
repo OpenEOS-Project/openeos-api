@@ -10,7 +10,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { EventBillingService } from './event-billing.service';
 import { OrderInvoiceDto } from './dto';
 import { CurrentUser } from '../../common/decorators';
@@ -21,6 +21,25 @@ import { User } from '../../database/entities';
 @Controller('organizations/:organizationId')
 export class EventBillingController {
   constructor(private readonly eventBillingService: EventBillingService) {}
+
+  @Get('event-price-preview')
+  @ApiOperation({
+    summary: 'What an event over this period would cost, before creating it',
+    description:
+      'Same calculation as the real price, so the preview cannot disagree ' +
+      'with the invoice. Dates as YYYY-MM-DD; end defaults to start.',
+  })
+  @ApiQuery({ name: 'start', required: true, description: 'JJJJ-MM-TT' })
+  @ApiQuery({ name: 'end', required: false, description: 'JJJJ-MM-TT' })
+  async previewPrice(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Query('start') start: string,
+    @Query('end') end: string | undefined,
+    @CurrentUser() user: User,
+  ) {
+    const data = await this.eventBillingService.previewPrice(organizationId, start, end, user);
+    return { data };
+  }
 
   @Get('events/:eventId/billing')
   @ApiOperation({ summary: 'Preis, Rabatt und Freischaltungsstatus einer Veranstaltung' })

@@ -19,6 +19,10 @@ import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { OrderInvoiceDto } from './dto/event-billing.dto';
 
+/* hasBilledEventBefore schliesst die laufende Veranstaltung aus. Bei einer
+   Vorschau gibt es keine; diese Id trifft auf keine Zeile zu. */
+const NICHTS_AUSSCHLIESSEN = '00000000-0000-0000-0000-000000000000';
+
 /** Woher der gewaehrte Nachlass stammt — die Oberflaeche beschriftet ihn danach. */
 export type DiscountReason = 'first-event' | 'organization' | null;
 
@@ -32,6 +36,11 @@ export interface EventPrice {
   discountPercent: number;
   discountReason: DiscountReason;
   finalPrice: number;
+}
+
+/** Preisvorschau samt der Grenze, bis zu der sich kostenlos testen laesst. */
+export interface EventPricePreview extends EventPrice {
+  testEventMaxOrders: number;
 }
 
 export interface EventBillingInfo extends EventPrice {
@@ -167,6 +176,46 @@ export class EventBillingService {
   private async resolvePrice(organization: Organization, event: Event): Promise<EventPrice> {
     const isFirstBilledEvent = !(await this.hasBilledEventBefore(organization.id, event.id));
     return this.computePrice(organization, event, isFirstBilledEvent);
+  }
+
+  /**
+   * Was eine Veranstaltung mit diesem Zeitraum kosten wuerde — bevor es
+   * sie gibt.
+   *
+   * Der Preis stand bisher erst im Bezahldialog, also im letzten Schritt.
+   * Ein Kunde richtete zu viert einen ganzen Abend lang ein und bemerkte
+   * "fast durch Zufall", dass pro Tag gezahlt wird. Dieselbe Rechnung wie
+   * beim echten Preis, damit die Vorschau nicht etwas anderes sagt als
+   * die Rechnung.
+   *
+   * Ohne Veranstaltungs-Id zaehlt fuer den Erstveranstalter-Nachlass, ob
+   * die Organisation ueberhaupt schon einmal bezahlt hat.
+   */
+  async previewPrice(
+    organizationId: string,
+    startDate: string,
+    endDate: string | undefined,
+    user: User,
+  ): Promise<EventPricePreview> {
+    await this.organizationsService.checkPermission(organizationId, user, 'events');
+
+    const organization = await this.getOrganization(organizationId);
+    /* Die Rechnung braucht vom Ereignis nur den Zeitraum. Eine leere Id
+       schliesst nichts aus, weil es hier noch nichts auszuschliessen gibt. */
+    const entwurf = {
+      startDate: new Date(startDate),
+      endDate: endDate ? new Date(endDate) : new Date(startDate),
+    } as Event;
+
+    const istErste = !(await this.hasBilledEventBefore(organizationId, NICHTS_AUSSCHLIESSEN));
+
+    return {
+      ...this.computePrice(organization, entwurf, istErste),
+      /* Mitgeliefert, damit die Oberflaeche "kostenlos ausprobieren" mit
+         der tatsaechlichen Grenze beschriften kann statt mit einer
+         zweiten, irgendwann abweichenden 25. */
+      testEventMaxOrders: this.configService.get<number>('billing.testEventMaxOrders', 25),
+    };
   }
 
   async getBillingInfo(organizationId: string, eventId: string, user: User): Promise<EventBillingInfo> {

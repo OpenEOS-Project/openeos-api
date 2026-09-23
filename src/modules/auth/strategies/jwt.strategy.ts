@@ -1,4 +1,5 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -6,6 +7,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import type { Request } from 'express';
 import { Repository } from 'typeorm';
 import { User } from '../../../database/entities';
+import { gesperrterTokenSchluessel } from '../token-blocklist';
 
 // Falls back to the httpOnly `accessToken` cookie set by AuthController when
 // no Authorization header is present, so browser clients no longer need to
@@ -30,6 +32,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     configService: ConfigService,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
   ) {
     const secret = configService.get<string>('jwt.secret');
     if (!secret) {
@@ -42,10 +46,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       ]),
       ignoreExpiration: false,
       secretOrKey: secret,
+      /* Die Anfrage wird mitgereicht, weil die Sperrliste den Token
+         selbst braucht — aus den Claims allein laesst er sich nicht
+         rekonstruieren. */
+      passReqToCallback: true,
     });
   }
 
-  async validate(payload: JwtPayload): Promise<User & { organizations: { id: string; role: string }[]; isSuperadmin: boolean }> {
+  async validate(req: Request, payload: JwtPayload): Promise<User & { organizations: { id: string; role: string }[]; isSuperadmin: boolean }> {
+    /* Abgemeldete Token abweisen. Ohne diese Pruefung blieb ein Token nach
+       dem Abmelden bis zum Ablauf gueltig — die Sperre wurde zwar
+       geschrieben, aber nirgends gelesen. */
+    const token = ExtractJwt.fromAuthHeaderAsBearerToken()(req) ?? extractFromCookie(req);
+    if (token && (await this.cacheManager.get(gesperrterTokenSchluessel(token)))) {
+      throw new UnauthorizedException('Sitzung wurde beendet');
+    }
+
     const user = await this.userRepository.findOne({
       where: { id: payload.sub },
       relations: ['userOrganizations', 'userOrganizations.organization'],

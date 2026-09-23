@@ -222,7 +222,12 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const refreshToken = request.cookies?.refreshToken;
-    await this.authService.logout(user.id, refreshToken);
+    /* Derselbe Token, mit dem diese Anfrage hereinkam — genau der wird
+       gesperrt. Beide Quellen, weil Browser das Cookie schicken und
+       Geraete den Kopfzeileneintrag. */
+    const accessToken =
+      request.headers.authorization?.replace(/^Bearer /i, '') || request.cookies?.accessToken;
+    await this.authService.logout(user.id, refreshToken, accessToken);
 
     // Clear refresh token cookie
     response.clearCookie('refreshToken', {
