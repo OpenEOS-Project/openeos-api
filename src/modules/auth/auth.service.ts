@@ -801,6 +801,13 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       isSuperAdmin: user.isSuperAdmin,
+      /* Eine eigene Nummer je ausgegebenem Token.
+         Ohne sie enthielt die Nutzlast nichts Eindeutiges: zwei
+         Anmeldungen innerhalb derselben Sekunde ergaben zeichengleiche
+         Token, weil auch `iat` nur auf Sekunden genau ist. Zwei Geraete
+         teilten sich dann buchstaeblich denselben Ausweis — und das
+         Abmelden am einen sperrte das andere mit aus. */
+      jti: crypto.randomUUID(),
     };
 
     const accessToken = this.jwtService.sign(payload);

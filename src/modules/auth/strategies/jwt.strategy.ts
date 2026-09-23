@@ -17,6 +17,8 @@ function extractFromCookie(req: Request): string | null {
 }
 
 export interface JwtPayload {
+  /** Eindeutig je ausgegebenem Token — trennt zwei gleichzeitige Sitzungen. */
+  jti?: string;
   /** Gesetzt zwischen Passwort und zweitem Faktor — kein voller Zugang. */
   pending2fa?: boolean;
   sub: string;
