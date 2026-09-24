@@ -57,6 +57,11 @@ import { EventStatus } from '../../database/entities/event.entity';
 import { GatewayService } from '../gateway/gateway.service';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import {
+  redigiereAdminOrganisation,
+  redigiereAdminUser,
+  type RedigierterAdminUser,
+} from './admin-redaction';
+import {
   QueryOrganizationsDto,
   QueryUsersDto,
   QueryInvoicesAdminDto,
@@ -124,11 +129,13 @@ export class AdminService {
 
     const total = await queryBuilder.getCount();
 
-    const data = await queryBuilder
+    const rohdaten = await queryBuilder
       .orderBy('org.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
       .getMany();
+
+    const data = rohdaten.map(redigiereAdminOrganisation);
 
     return { data, total, page, limit };
   }
@@ -145,7 +152,7 @@ export class AdminService {
       });
     }
 
-    return org;
+    return redigiereAdminOrganisation(org);
   }
 
   async updateOrganization(
@@ -288,7 +295,7 @@ export class AdminService {
 
   async findAllUsers(
     queryDto: QueryUsersDto,
-  ): Promise<{ data: User[]; total: number; page: number; limit: number }> {
+  ): Promise<{ data: RedigierterAdminUser[]; total: number; page: number; limit: number }> {
     const { search, isLocked, page = 1, limit = 20 } = queryDto;
 
     const queryBuilder = this.userRepository.createQueryBuilder('user')
@@ -308,21 +315,18 @@ export class AdminService {
 
     const total = await queryBuilder.getCount();
 
-    const data = await queryBuilder
+    const rohdaten = await queryBuilder
       .orderBy('user.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
       .getMany();
 
-    // Remove sensitive fields
-    data.forEach((u) => {
-      delete (u as Partial<User>).passwordHash;
-    });
+    const data = rohdaten.map(redigiereAdminUser);
 
     return { data, total, page, limit };
   }
 
-  async getUser(userId: string): Promise<User> {
+  async getUser(userId: string): Promise<RedigierterAdminUser> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
       relations: ['userOrganizations', 'userOrganizations.organization'],
@@ -332,8 +336,7 @@ export class AdminService {
       throw new NotFoundException({ code: 'NOT_FOUND', message: 'Benutzer nicht gefunden' });
     }
 
-    delete (user as Partial<User>).passwordHash;
-    return user;
+    return redigiereAdminUser(user);
   }
 
   async unlockUser(
