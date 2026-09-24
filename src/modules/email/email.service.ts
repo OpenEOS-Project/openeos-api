@@ -1,4 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
+import {
+  absatz,
+  codeBlock,
+  datenblock,
+  ersatzlink,
+  escapeHtml,
+  escapeHtmlMitUmbruechen,
+  hinweis,
+  knopf,
+  rahmen,
+  stapeln,
+  ueberschrift,
+  zitat,
+} from './email-template';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
@@ -10,33 +24,7 @@ export interface SendEmailOptions {
   text?: string;
 }
 
-/**
- * Fremdtext fuer die Einbettung in HTML entschaerfen.
- *
- * Nachrichtentexte gehen woertlich in die Vorlagen; ohne das genuegt ein
- * spitzes Klammerpaar, um das Aussehen der Mail zu veraendern.
- */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
-/**
- * Wie escapeHtml, behaelt aber die Absaetze.
- *
- * Nachrichten werden mit Zeilenumbruechen geschrieben. In HTML gegossen
- * verschwinden sie, und aus einer gegliederten Antwort wird ein einziger
- * Block — gerade bei Anrede und Gruss faellt das unangenehm auf.
- */
-function escapeHtmlMitUmbruechen(text: string): string {
-  return escapeHtml(text)
-    // Mehrere Leerzeilen hintereinander als ein Absatz, nicht als Schlucht.
-    .replace(/(?:\r?\n){2,}/g, '<br /><br />')
-    .replace(/\r?\n/g, '<br />');
-}
 
 @Injectable()
 export class EmailService {
@@ -138,22 +126,23 @@ export class EmailService {
     verifyUrl: string;
   }): Promise<boolean> {
     const subject = 'Bitte bestätige deine E-Mail-Adresse';
-    const html = this.getBaseTemplate(`
-      <h1>Hallo ${options.firstName}!</h1>
-      <p>Vielen Dank für deine Registrierung bei OpenEOS. Bitte bestätige deine E-Mail-Adresse, indem du auf den folgenden Button klickst:</p>
-      <p style="text-align: center; margin: 30px 0;">
-        <a href="${options.verifyUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
-          E-Mail-Adresse bestätigen
-        </a>
-      </p>
-      <p style="color: #666; font-size: 14px;">
-        Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:<br>
-        <a href="${options.verifyUrl}" style="color: #2563eb;">${options.verifyUrl}</a>
-      </p>
-      <p style="color: #666; font-size: 14px;">
-        Der Link ist 24 Stunden gültig. Falls du dich nicht registriert hast, kannst du diese E-Mail ignorieren.
-      </p>
-    `);
+    const html = rahmen({
+      kontext: 'Konto aktivieren',
+      titel: 'OpenEOS — E-Mail bestätigen',
+      preheader: 'Ein Klick, und dein OpenEOS-Konto ist einsatzbereit. Der Link gilt 24 Stunden.',
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift(`Willkommen, ${options.firstName}.`) +
+          absatz('Bestätige deine Adresse, dann steht dein Konto bereit.'),
+        knopf(options.verifyUrl, 'E-Mail-Adresse bestätigen'),
+        ersatzlink(options.verifyUrl),
+        hinweis(
+          'Nicht angefordert?',
+          'Dann ignoriere diese Mail — ohne Bestätigung entsteht kein Konto. Der Link gilt 24 Stunden.',
+        ),
+      ),
+    });
 
     return this.sendEmail({ to: options.to, subject, html });
   }
@@ -164,22 +153,23 @@ export class EmailService {
     resetUrl: string;
   }): Promise<boolean> {
     const subject = 'Passwort zurücksetzen';
-    const html = this.getBaseTemplate(`
-      <h1>Hallo ${options.firstName}!</h1>
-      <p>Du hast angefordert, dein Passwort bei OpenEOS zurückzusetzen. Klicke auf den folgenden Button, um ein neues Passwort zu vergeben:</p>
-      <p style="text-align: center; margin: 30px 0;">
-        <a href="${options.resetUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
-          Neues Passwort vergeben
-        </a>
-      </p>
-      <p style="color: #666; font-size: 14px;">
-        Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:<br>
-        <a href="${options.resetUrl}" style="color: #2563eb;">${options.resetUrl}</a>
-      </p>
-      <p style="color: #666; font-size: 14px;">
-        Der Link ist 1 Stunde gültig. Falls du kein neues Passwort angefordert hast, kannst du diese E-Mail ignorieren — dein Passwort bleibt unverändert.
-      </p>
-    `);
+    const html = rahmen({
+      kontext: 'Passwort',
+      titel: 'OpenEOS — Passwort zurücksetzen',
+      preheader: 'Neues Passwort vergeben. Der Link gilt eine Stunde und funktioniert einmal.',
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Neues Passwort vergeben.') +
+          absatz(`Hallo ${options.firstName}, über diesen Link setzt du ein neues Passwort.`),
+        knopf(options.resetUrl, 'Neues Passwort vergeben'),
+        ersatzlink(options.resetUrl),
+        hinweis(
+          'Das warst du nicht?',
+          'Dann ignoriere diese Mail — dein bisheriges Passwort bleibt unverändert. Der Link gilt eine Stunde.',
+        ),
+      ),
+    });
 
     return this.sendEmail({ to: options.to, subject, html });
   }
@@ -197,25 +187,26 @@ export class EmailService {
     loginUrl: string;
     minutesValid: number;
   }): Promise<boolean> {
-    const subject = 'Ihr Anmeldelink für OpenEOS';
-    const html = this.getBaseTemplate(`
-      <h1>Hallo ${options.firstName}!</h1>
-      <p>Mit diesem Link meldest du dich ohne Passwort bei OpenEOS an:</p>
-      <p style="text-align: center; margin: 30px 0;">
-        <a href="${options.loginUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
-          Jetzt anmelden
-        </a>
-      </p>
-      <p style="color: #666; font-size: 14px;">
-        Falls der Button nicht funktioniert, kopiere diesen Link in deinen Browser:<br>
-        <a href="${options.loginUrl}" style="color: #2563eb;">${options.loginUrl}</a>
-      </p>
-      <p style="color: #666; font-size: 14px;">
-        Der Link gilt ${options.minutesValid} Minuten und nur ein einziges Mal.
-        Falls du dich nicht anmelden wolltest, ignoriere diese E-Mail —
-        ohne den Link passiert nichts.
-      </p>
-    `);
+    const subject = 'Dein Anmeldelink für OpenEOS';
+    const html = rahmen({
+      kontext: 'Anmeldung',
+      titel: 'OpenEOS — Dein Anmeldelink',
+      preheader: `Ein Klick und du bist drin — ohne Passwort. Der Link gilt ${options.minutesValid} Minuten.`,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Hier ist dein Anmeldelink.') +
+          absatz(
+            `Hallo ${options.firstName}, ein Klick und du bist im OpenEOS-Admin — ganz ohne Passwort. Der Link funktioniert einmal und gilt ${options.minutesValid} Minuten.`,
+          ),
+        knopf(options.loginUrl, 'Jetzt anmelden'),
+        ersatzlink(options.loginUrl),
+        hinweis(
+          'Das warst du nicht?',
+          'Dann ignoriere diese Mail — ohne Klick passiert nichts.',
+        ),
+      ),
+    });
 
     return this.sendEmail({ to: options.to, subject, html });
   }
@@ -234,18 +225,21 @@ export class EmailService {
       options.context === 'setup'
         ? 'Verwende den folgenden Code, um die E-Mail-Zwei-Faktor-Authentifizierung für dein Konto einzurichten:'
         : 'Verwende den folgenden Code, um dich bei OpenEOS anzumelden:';
-    const html = this.getBaseTemplate(`
-      <h1>Dein Bestätigungscode</h1>
-      <p>${intro}</p>
-      <p style="text-align: center; margin: 30px 0;">
-        <span style="display: inline-block; background: #f3f4f6; color: #111827; padding: 16px 28px; border-radius: 8px; font-size: 28px; font-weight: 700; letter-spacing: 6px;">
-          ${options.code}
-        </span>
-      </p>
-      <p style="color: #666; font-size: 14px;">
-        Der Code ist 5 Minuten gültig. Falls du diese Anfrage nicht ausgelöst hast, kannst du diese E-Mail ignorieren — niemand kann sich ohne diesen Code anmelden.
-      </p>
-    `);
+    const html = rahmen({
+      kontext: 'Bestätigungscode',
+      titel: 'OpenEOS — Bestätigungscode',
+      preheader: `Dein Code: ${options.code}. Gültig für 5 Minuten.`,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Dein Bestätigungscode.') + absatz(intro),
+        codeBlock(options.code),
+        hinweis(
+          'Nicht angefordert?',
+          'Dann ignoriere diese Mail. Ohne diesen Code kommt niemand hinein. Der Code gilt 5 Minuten.',
+        ),
+      ),
+    });
 
     return this.sendEmail({ to: options.to, subject, html });
   }
@@ -261,15 +255,22 @@ export class EmailService {
       dateStyle: 'medium',
       timeStyle: 'short',
     });
-    const html = this.getBaseTemplate(`
-      <h1>Neue Registrierung</h1>
-      <p>Es hat sich soeben ein neuer Benutzer bei OpenEOS registriert:</p>
-      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-        <tr><td style="padding: 6px 0; color: #666;">Name:</td><td style="padding: 6px 0;"><strong>${options.name}</strong></td></tr>
-        <tr><td style="padding: 6px 0; color: #666;">E-Mail:</td><td style="padding: 6px 0;"><strong>${options.email}</strong></td></tr>
-        <tr><td style="padding: 6px 0; color: #666;">Zeitpunkt:</td><td style="padding: 6px 0;"><strong>${timestamp}</strong></td></tr>
-      </table>
-    `);
+    const html = rahmen({
+      kontext: 'Neues Konto',
+      titel: 'OpenEOS — Neue Registrierung',
+      preheader: `${options.name} hat sich registriert.`,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Neue Registrierung.') +
+          absatz('Jemand hat sich gerade ein OpenEOS-Konto angelegt.'),
+        datenblock('Konto', [
+          ['Name', options.name],
+          ['E-Mail', options.email],
+          ['Zeitpunkt', timestamp],
+        ]),
+        knopf(`${this.appUrl}/admin/users`, 'Im Adminbereich ansehen'),
+      ),
+    });
 
     return this.sendEmail({ to: options.to, subject, html });
   }
@@ -285,28 +286,26 @@ export class EmailService {
       dateStyle: 'medium',
       timeStyle: 'short',
     });
-    const html = this.getBaseTemplate(`
-      <h1>Neue Organisation</h1>
-      <p>Es wurde soeben eine neue Organisation bei OpenEOS angelegt:</p>
-      <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-        <tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${options.organizationName}</strong></td></tr>
-        <tr><td style="padding: 6px 0; color: #666;">Erstellt von:</td><td style="padding: 6px 0;"><strong>${options.creatorEmail}</strong></td></tr>
-        <tr><td style="padding: 6px 0; color: #666;">Zeitpunkt:</td><td style="padding: 6px 0;"><strong>${timestamp}</strong></td></tr>
-      </table>
-    `);
+    const html = rahmen({
+      kontext: 'Neue Organisation',
+      titel: 'OpenEOS — Neue Organisation',
+      preheader: `${options.organizationName} wurde angelegt.`,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Neue Organisation.') +
+          absatz('Es wurde gerade eine Organisation angelegt.'),
+        datenblock('Organisation', [
+          ['Name', options.organizationName],
+          ['Erstellt von', options.creatorEmail],
+          ['Zeitpunkt', timestamp],
+        ]),
+        knopf(`${this.appUrl}/admin/organizations`, 'Im Adminbereich ansehen'),
+      ),
+    });
 
     return this.sendEmail({ to: options.to, subject, html });
   }
 
-  /**
-   * Meldung an die Betreiberadresse, dass eine Veranstaltung gekauft wurde.
-   *
-   * Zwei Wege fuehren hierher: Kauf auf Rechnung und Zahlung ueber Stripe.
-   * Sie unterscheiden sich nur in Betreff und einer Zeile, deshalb eine
-   * Vorlage mit Schalter statt zweier fast gleicher. Die Rechnungsadresse
-   * ist optional — bei Stripe erhebt sie der Zahlungsdienst selbst, und
-   * eine leere Zeile ist schlechter als gar keine.
-   */
   async sendAdminEventOrderedNotification(options: {
     to: string;
     organizationName: string;
@@ -798,53 +797,59 @@ export class EmailService {
     return this.sendEmail({ to: opts.email, subject: opts.subject, html });
   }
 
-  private getBaseTemplate(content: string): string {
-    // Always serve the logo from the public marketing site so the asset is
-    // reachable from any email client, regardless of how/where this API is
-    // deployed (otherwise a localhost APP_URL leaves a broken image).
-    const logoUrl = 'https://openeos.de/logo_dark_trans.png';
+  /**
+   * Übergangsweg für Mails, die noch altes Markup mitbringen.
+   *
+   * Die Vorlagen sind auf Bausteine umgestellt (siehe email-template.ts).
+   * Siebzehn Mails — überwiegend rund um Schichtpläne — reichen ihren
+   * Inhalt noch als HTML-Schnipsel herein. Statt sie aussehen zu lassen
+   * wie vorher, während der Rest neu aussieht, übersetzt diese Funktion
+   * die immer gleichen alten Muster auf die neue Typografie und setzt
+   * sie in den neuen Rahmen.
+   *
+   * Das ist ausdrücklich eine Brücke, keine Lösung: Wer eine dieser
+   * Mails anfasst, stellt sie bitte auf `rahmen()` und die Bausteine um
+   * und nimmt sie damit aus diesem Weg heraus.
+   */
+  private getBaseTemplate(content: string, kontext = 'Benachrichtigung'): string {
+    const angepasst = content
+      // Überschrift
+      .replace(
+        /<h1[^>]*>([\s\S]*?)<\/h1>/g,
+        '<h1 style="margin:0 0 12px;font-family:Arial, Helvetica, sans-serif;font-size:30px;line-height:1.1;font-weight:bold;letter-spacing:-0.9px;color:#14180f">$1</h1>',
+      )
+      // Der blaue Knopf aus der alten Vorlage
+      .replace(
+        /background:\s*#2563eb;\s*color:\s*white;\s*padding:[^;]+;\s*border-radius:[^;]+;\s*text-decoration:\s*none;\s*font-weight:\s*600;?/g,
+        'background:#14180f;color:#f5f2ea;padding:11px 18px;border-radius:6px;text-decoration:none;font-weight:bold;font-family:Arial, Helvetica, sans-serif;font-size:14px;display:inline-block',
+      )
+      // Links in der alten Akzentfarbe
+      .replace(/color:\s*#2563eb/g, 'color:#1e5433')
+      // Kleingedrucktes
+      .replace(
+        /<p style="color:\s*#666;\s*font-size:\s*14px;">/g,
+        '<p style="margin:0 0 12px;font-family:Arial, Helvetica, sans-serif;font-size:13px;line-height:1.6;color:#6b7068">',
+      )
+      // Fließtext ohne eigene Stile
+      .replace(
+        /<p>/g,
+        '<p style="margin:0 0 14px;font-family:Arial, Helvetica, sans-serif;font-size:16px;line-height:1.55;color:#6b7068">',
+      )
+      // Label-Spalten der alten Datentabellen
+      .replace(
+        /<td style="padding:\s*6px 0;\s*color:\s*#666;">/g,
+        '<td width="150" style="width:150px;padding:9px 12px 9px 0;font-family:\'Courier New\', Courier, monospace;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:#6b7068;border-bottom:1px solid #e3ded1">',
+      )
+      .replace(
+        /<td style="padding:\s*6px 0;">/g,
+        '<td style="padding:9px 0;font-family:Arial, Helvetica, sans-serif;font-size:15px;font-weight:bold;color:#14180f;border-bottom:1px solid #e3ded1">',
+      );
 
-    return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f5;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5;">
-    <tr>
-      <td align="center" style="padding: 40px 20px;">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width: 600px; width: 100%;">
-          <!-- Logo -->
-          <tr>
-            <td align="center" style="padding-bottom: 24px;">
-              <a href="${this.appUrl}" style="text-decoration: none;">
-                <img src="${logoUrl}" alt="OpenEOS" height="36" style="height: 36px; width: auto;" />
-              </a>
-            </td>
-          </tr>
-          <!-- Content Card -->
-          <tr>
-            <td style="background-color: #ffffff; border-radius: 12px; padding: 32px 40px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
-              ${content}
-            </td>
-          </tr>
-          <!-- Footer -->
-          <tr>
-            <td align="center" style="padding-top: 24px;">
-              <p style="color: #a1a1aa; font-size: 12px; margin: 0;">
-                Diese E-Mail wurde automatisch von OpenEOS gesendet.<br>
-                Bitte antworte nicht direkt auf diese E-Mail.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-    `.trim();
+    return rahmen({
+      kontext,
+      preheader: '',
+      appUrl: this.appUrl,
+      inhalt: angepasst,
+    });
   }
 }
