@@ -19,6 +19,14 @@ const PRAEFIX = 'oeos_';
  */
 const BENUTZT_VERMERK_INTERVALL_MS = 5 * 60 * 1000;
 
+/** Ein Token, wie ihn die Oberflaeche sehen darf. */
+export type OeffentlicherApiToken = Omit<ApiToken, 'tokenHash' | 'user'>;
+
+export function oeffentlich(eintrag: ApiToken): OeffentlicherApiToken {
+  const { tokenHash: _hash, user: _user, ...rest } = eintrag;
+  return rest;
+}
+
 export interface TokenPruefung {
   user: User;
   scopes: string[];
@@ -49,7 +57,7 @@ export class ApiTokensService {
     name: string;
     scopes: ApiScope[];
     expiresAt?: Date | null;
-  }): Promise<{ token: string; eintrag: ApiToken }> {
+  }): Promise<{ token: string; eintrag: OeffentlicherApiToken }> {
     const geheim = `${PRAEFIX}${crypto.randomBytes(32).toString('base64url')}`;
 
     const eintrag = await this.apiTokenRepository.save(
@@ -65,7 +73,7 @@ export class ApiTokensService {
 
     this.logger.log(`API-Token ausgestellt: ${eintrag.name} (${eintrag.tokenPrefix}…)`);
 
-    return { token: geheim, eintrag };
+    return { token: geheim, eintrag: oeffentlich(eintrag) };
   }
 
   /** Sieht der Wert überhaupt nach einem API-Token aus? */
@@ -109,15 +117,25 @@ export class ApiTokensService {
     }
   }
 
-  async liste(userId: string): Promise<ApiToken[]> {
-    return this.apiTokenRepository.find({
+  /**
+   * Die eigenen Tokens — ohne den Hash.
+   *
+   * Mit ihm liesse sich zwar nichts anmelden, er ist aber das Material,
+   * gegen das geprueft wird, und gehoert damit so wenig in eine Antwort
+   * wie ein Passwort-Hash. Positivliste aus demselben Grund wie bei den
+   * Admin-Listen: das naechste Feld soll nicht von allein hinausfallen.
+   */
+  async liste(userId: string): Promise<OeffentlicherApiToken[]> {
+    const eintraege = await this.apiTokenRepository.find({
       where: { userId },
       order: { createdAt: 'DESC' },
     });
+
+    return eintraege.map(oeffentlich);
   }
 
   /** Widerrufen statt löschen: die Spur, dass es ihn gab, bleibt. */
-  async widerrufe(userId: string, id: string): Promise<ApiToken> {
+  async widerrufe(userId: string, id: string): Promise<OeffentlicherApiToken> {
     const eintrag = await this.apiTokenRepository.findOne({ where: { id, userId } });
     if (!eintrag) {
       throw new NotFoundException({
@@ -127,6 +145,6 @@ export class ApiTokensService {
     }
 
     eintrag.revokedAt = eintrag.revokedAt ?? new Date();
-    return this.apiTokenRepository.save(eintrag);
+    return oeffentlich(await this.apiTokenRepository.save(eintrag));
   }
 }
