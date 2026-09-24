@@ -17,6 +17,8 @@ import {
 } from './config';
 import { JwtAuthGuard } from './common/guards';
 import { AuthModule } from './modules/auth';
+import { ApiTokensModule } from './modules/api-tokens/api-tokens.module';
+import { MonitoringModule } from './modules/monitoring/monitoring.module';
 import { UsersModule } from './modules/users';
 import { OrganizationsModule } from './modules/organizations';
 import { EventsModule } from './modules/events';
@@ -54,6 +56,9 @@ import { ChangelogModule } from './modules/changelog';
 @Module({
   imports: [
     ChangelogModule,
+
+    ApiTokensModule,
+    MonitoringModule,
     // Sentry Error Tracking (must be first)
     SentryModule.forRoot(),
 

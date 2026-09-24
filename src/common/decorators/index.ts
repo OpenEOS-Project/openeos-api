@@ -4,3 +4,4 @@ export * from './current-device.decorator';
 export * from './roles.decorator';
 export * from './public.decorator';
 export * from './allow-pending-two-factor.decorator';
+export * from './requires-scope.decorator';
