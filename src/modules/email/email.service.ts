@@ -10,6 +10,20 @@ export interface SendEmailOptions {
   text?: string;
 }
 
+/**
+ * Fremdtext fuer die Einbettung in HTML entschaerfen.
+ *
+ * Nachrichtentexte gehen woertlich in die Vorlagen; ohne das genuegt ein
+ * spitzes Klammerpaar, um das Aussehen der Mail zu veraendern.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -323,6 +337,39 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  /**
+   * Antwort des Supports an den Fragesteller.
+   *
+   * Bis hierher lief die Benachrichtigung nur in eine Richtung: wer eine
+   * Anfrage schrieb, loeste eine Mail an den Support aus — die Antwort
+   * darauf erreichte niemanden. Der Fragesteller sah sie nur, wenn er von
+   * sich aus den Chat oeffnete. Ein Kunde hat auf diese Weise zwei
+   * Antworten nie zu Gesicht bekommen.
+   *
+   * Bewusst nur ein Auszug und ein Link statt der ganzen Antwort: der
+   * Verlauf gehoert in den Chat, wo er vollstaendig steht und
+   * weitergeschrieben werden kann.
+   */
+  async sendSupportReplyNotification(options: {
+    to: string;
+    recipientName: string;
+    preview: string;
+  }): Promise<boolean> {
+    const subject = 'Antwort auf Ihre Support-Anfrage';
+    const html = this.getBaseTemplate(`
+      <h1>Wir haben geantwortet</h1>
+      <p>Hallo ${escapeHtml(options.recipientName)},</p>
+      <p>auf Ihre Support-Anfrage gibt es eine Antwort:</p>
+      <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333;">${escapeHtml(options.preview)}</p>
+      <p style="margin: 24px 0;">
+        <a href="${this.appUrl}/support" style="background: #111; color: #fff; padding: 10px 18px; border-radius: 6px; text-decoration: none;">Antwort im Support-Chat lesen</a>
+      </p>
+      <p style="color: #666; font-size: 14px;">Dort können Sie direkt zurückschreiben.</p>
+    `);
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   async sendAdminSupportMessageNotification(options: {
     to: string;
     organizationName: string;
@@ -337,7 +384,7 @@ export class EmailService {
         <tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${options.organizationName}</strong></td></tr>
         <tr><td style="padding: 6px 0; color: #666;">Von:</td><td style="padding: 6px 0;"><strong>${options.senderName}</strong></td></tr>
       </table>
-      <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333;">${options.preview}</p>
+      <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333;">${escapeHtml(options.preview)}</p>
       <p style="color: #666; font-size: 14px;">Antworten kannst du im Super-Admin-Bereich unter Support oder direkt im Telegram-Topic der Organisation.</p>
     `);
 

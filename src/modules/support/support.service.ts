@@ -41,6 +41,8 @@ export class SupportService {
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly telegramSupportService: TelegramSupportService,
     private readonly emailService: EmailService,
     private readonly platformSettingsService: PlatformSettingsService,
@@ -215,7 +217,65 @@ export class SupportService {
       );
     }
 
+    await this.benachrichtigeFragestellerUeberAntwort(organizationId, body);
+
     return this.mapMessage(message);
+  }
+
+  /**
+   * Den Fragesteller per E-Mail auf die Antwort hinweisen.
+   *
+   * Nur für die ERSTE ungelesene Antwort eines Schwungs — genau wie in der
+   * Gegenrichtung. Drei Nachrichten hintereinander sollen nicht drei Mails
+   * auslösen; wer die erste gelesen hat, sieht die übrigen ohnehin im Chat.
+   *
+   * Adressat ist, wer zuletzt geschrieben hat. Die Antwort geht an seine
+   * Frage, nicht an einen Verteiler — und die Organisation kann Mitglieder
+   * haben, die mit dem Vorgang nichts zu tun haben.
+   *
+   * Ein Fehlschlag darf die Antwort nicht verhindern: gespeichert ist sie,
+   * im Chat steht sie. Er wird aber protokolliert, damit ein stummer
+   * Ausfall nicht wieder monatelang unbemerkt bleibt.
+   */
+  private async benachrichtigeFragestellerUeberAntwort(
+    organizationId: string,
+    body: string,
+  ): Promise<void> {
+    try {
+      const ungelesen = await this.supportMessageRepository.count({
+        where: { organizationId, direction: 'outbound', readByUserAt: IsNull() },
+      });
+      if (ungelesen !== 1) return;
+
+      const letzteFrage = await this.supportMessageRepository.findOne({
+        where: { organizationId, direction: 'inbound' },
+        order: { createdAt: 'DESC' },
+      });
+      if (!letzteFrage?.userId) {
+        this.logger.warn(
+          `Antwort an Organisation ${organizationId} ohne Empfänger: keine Anfrage mit Benutzer gefunden.`,
+        );
+        return;
+      }
+
+      const empfaenger = await this.userRepository.findOne({ where: { id: letzteFrage.userId } });
+      if (!empfaenger) {
+        this.logger.warn(
+          `Antwort an Organisation ${organizationId}: Benutzer ${letzteFrage.userId} existiert nicht mehr.`,
+        );
+        return;
+      }
+
+      await this.emailService.sendSupportReplyNotification({
+        to: empfaenger.email,
+        recipientName: empfaenger.fullName,
+        preview: body.length > 300 ? `${body.slice(0, 300)}…` : body,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Antwort-Benachrichtigung an Organisation ${organizationId} fehlgeschlagen: ${(error as Error).message}`,
+      );
+    }
   }
 
   // === Shared helpers ===
