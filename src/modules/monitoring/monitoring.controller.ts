@@ -25,7 +25,10 @@ export class MonitoringController {
   @ApiOperation({
     summary: 'Platform counters for monitoring',
     description:
-      'Aggregates only — no names, no addresses. Shaped to stay stable, ' +
+      'Counters plus short lists of the newest events, each carrying an id ' +
+      'so a monitor can tell what it has already reported. Deliberately ' +
+      'sparse on people: surnames as an initial, no email addresses, ' +
+      'message previews cut at 80 characters. Shaped to stay stable, ' +
       'unlike the admin lists, which follow the UI.',
   })
   async metrics() {
