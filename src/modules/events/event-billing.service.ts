@@ -122,6 +122,10 @@ export class EventBillingService {
   private async hasBilledEventBefore(organizationId: string, currentEventId: string): Promise<boolean> {
     const count = await this.eventRepository
       .createQueryBuilder('event')
+      /* Auch geloeschte zaehlen. Sonst liesse sich der
+         Erstveranstalter-Nachlass beliebig oft holen, indem man die
+         bezahlte Veranstaltung hinterher loescht. */
+      .withDeleted()
       .where('event.organizationId = :organizationId', { organizationId })
       .andWhere('event.id != :currentEventId', { currentEventId })
       .andWhere('event.billingStatus IN (:...statuses)', { statuses: ['paid', 'invoice'] })

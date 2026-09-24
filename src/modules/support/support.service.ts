@@ -301,6 +301,9 @@ export class SupportService {
       .createQueryBuilder('event')
       .select('DISTINCT event.organizationId', 'organizationId')
       .where('event.organizationId IN (:...organizationIds)', { organizationIds })
+      /* Ebenfalls mit geloeschten: wer bezahlt hat, verliert den
+         bevorzugten Support nicht dadurch, dass er hinterher aufraeumt. */
+      .withDeleted()
       .andWhere('event.billingStatus IN (:...statuses)', { statuses: PRIORITY_EVENT_STATUSES })
       .andWhere('event.updatedAt > :since', { since })
       .getRawMany<{ organizationId: string }>();

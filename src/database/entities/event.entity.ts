@@ -1,5 +1,5 @@
 import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
-import { BaseEntity } from './base.entity';
+import { SoftDeleteEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { Category } from './category.entity';
 import { Product } from './product.entity';
@@ -78,7 +78,7 @@ export interface EventSettings {
 @Entity('events')
 @Index(['organizationId', 'createdAt'])
 @Index(['status'])
-export class Event extends BaseEntity {
+export class Event extends SoftDeleteEntity {
   @Column({ name: 'organization_id', type: 'uuid' })
   organizationId: string;
 
