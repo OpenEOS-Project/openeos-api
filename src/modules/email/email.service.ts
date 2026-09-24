@@ -32,7 +32,10 @@ function escapeHtml(text: string): string {
  * Block — gerade bei Anrede und Gruss faellt das unangenehm auf.
  */
 function escapeHtmlMitUmbruechen(text: string): string {
-  return escapeHtml(text).replace(/\r?\n/g, '<br />');
+  return escapeHtml(text)
+    // Mehrere Leerzeilen hintereinander als ein Absatz, nicht als Schlucht.
+    .replace(/(?:\r?\n){2,}/g, '<br /><br />')
+    .replace(/\r?\n/g, '<br />');
 }
 
 @Injectable()
