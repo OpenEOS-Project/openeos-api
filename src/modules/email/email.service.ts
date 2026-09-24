@@ -24,6 +24,17 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * Wie escapeHtml, behaelt aber die Absaetze.
+ *
+ * Nachrichten werden mit Zeilenumbruechen geschrieben. In HTML gegossen
+ * verschwinden sie, und aus einer gegliederten Antwort wird ein einziger
+ * Block — gerade bei Anrede und Gruss faellt das unangenehm auf.
+ */
+function escapeHtmlMitUmbruechen(text: string): string {
+  return escapeHtml(text).replace(/\r?\n/g, '<br />');
+}
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -360,7 +371,7 @@ export class EmailService {
       <h1>Wir haben geantwortet</h1>
       <p>Hallo ${escapeHtml(options.recipientName)},</p>
       <p>auf Ihre Support-Anfrage gibt es eine Antwort:</p>
-      <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333;">${escapeHtml(options.preview)}</p>
+      <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333;">${escapeHtmlMitUmbruechen(options.preview)}</p>
       <p style="margin: 24px 0;">
         <a href="${this.appUrl}/support" style="background: #111; color: #fff; padding: 10px 18px; border-radius: 6px; text-decoration: none;">Antwort im Support-Chat lesen</a>
       </p>
