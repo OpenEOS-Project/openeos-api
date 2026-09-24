@@ -37,6 +37,10 @@ export class SupportMessage {
   @Column({ name: 'read_by_user_at', type: 'timestamptz', nullable: true })
   readByUserAt: Date | null;
 
+  /** Wann wegen dieser Nachricht eine E-Mail hinausging. */
+  @Column({ name: 'notified_at', type: 'timestamptz', nullable: true })
+  notifiedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

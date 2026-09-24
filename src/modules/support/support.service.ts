@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { Event, Organization, SupportMessage, User, UserOrganization } from '../../database/entities';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { SendSupportMessageDto } from './dto';
@@ -217,7 +217,7 @@ export class SupportService {
       );
     }
 
-    await this.benachrichtigeFragestellerUeberAntwort(organizationId, body);
+    await this.benachrichtigeFragestellerUeberAntwort(organizationId, body, message.id);
 
     return this.mapMessage(message);
   }
@@ -240,12 +240,24 @@ export class SupportService {
   private async benachrichtigeFragestellerUeberAntwort(
     organizationId: string,
     body: string,
+    nachrichtId: string,
   ): Promise<void> {
     try {
-      const ungelesen = await this.supportMessageRepository.count({
-        where: { organizationId, direction: 'outbound', readByUserAt: IsNull() },
+      /* Nicht erneut anstupsen, solange ein bereits gemeldeter Hinweis
+         ungelesen herumliegt. Die erste Fassung zaehlte stattdessen die
+         ungelesenen Antworten und verschickte nur bei genau einer — das
+         ging schief, sobald jemand gelesen hatte und danach zwei
+         Antworten kamen: dann war die Zahl zwei und es ging gar nichts
+         mehr hinaus. */
+      const bereitsGemeldet = await this.supportMessageRepository.count({
+        where: {
+          organizationId,
+          direction: 'outbound',
+          readByUserAt: IsNull(),
+          notifiedAt: Not(IsNull()),
+        },
       });
-      if (ungelesen !== 1) return;
+      if (bereitsGemeldet > 0) return;
 
       const letzteFrage = await this.supportMessageRepository.findOne({
         where: { organizationId, direction: 'inbound' },
@@ -269,8 +281,12 @@ export class SupportService {
       await this.emailService.sendSupportReplyNotification({
         to: empfaenger.email,
         recipientName: empfaenger.fullName,
-        preview: body.length > 300 ? `${body.slice(0, 300)}…` : body,
+        preview: body.length > 600 ? `${body.slice(0, 600)}…` : body,
       });
+
+      /* Erst nach dem Versand vermerken: schlaegt er fehl, soll die
+         naechste Antwort es erneut versuchen duerfen. */
+      await this.supportMessageRepository.update({ id: nachrichtId }, { notifiedAt: new Date() });
     } catch (error) {
       this.logger.warn(
         `Antwort-Benachrichtigung an Organisation ${organizationId} fehlgeschlagen: ${(error as Error).message}`,
