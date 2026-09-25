@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 
 import {
   ContactRequest,
@@ -26,6 +26,17 @@ import {
 const BEZAHLT_ODER_RECHNUNG = ['paid', 'invoice'];
 
 /**
+ * Eine Zeile aus `getRawOne`. Postgres liefert COUNT (bigint) und SUM über
+ * numeric als Text, damit nichts an Genauigkeit verloren geht.
+ */
+type Zeile<K extends string> = Record<K, string | number | null>;
+
+/** Text oder Zahl aus der Datenbank als Zahl; fehlt der Wert, dann 0. */
+function zahl(wert: string | number | null | undefined): number {
+  return Number(wert ?? 0);
+}
+
+/**
  * Kennzahlen für die Überwachung.
  *
  * Bewusst ein eigener Endpunkt statt eines Verweises auf die
@@ -41,17 +52,20 @@ const BEZAHLT_ODER_RECHNUNG = ['paid', 'invoice'];
  */
 @Injectable()
 export class MonitoringService {
-  constructor(
-    @InjectRepository(Organization) private readonly organizations: Repository<Organization>,
-    @InjectRepository(User) private readonly users: Repository<User>,
-    @InjectRepository(Event) private readonly events: Repository<Event>,
-    @InjectRepository(Device) private readonly devices: Repository<Device>,
-    @InjectRepository(Order) private readonly orders: Repository<Order>,
-    @InjectRepository(ContactRequest) private readonly contactRequests: Repository<ContactRequest>,
-    @InjectRepository(SupportMessage) private readonly supportMessages: Repository<SupportMessage>,
-    @InjectRepository(RentalAssignment) private readonly rentals: Repository<RentalAssignment>,
-  ) {}
+  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
+  /**
+   * Alle Kennzahlen über EINE Verbindung, nacheinander.
+   *
+   * Früher liefen gut dreißig Abfragen per `Promise.all` nebeneinander.
+   * Jede wollte eine eigene Verbindung aus dem Pool, und weil der Monitor
+   * nur alle Viertelstunde fragt, war der Pool bis dahin leer gelaufen:
+   * Die meiste Zeit ging für den Aufbau von Verbindungen drauf, nicht für
+   * die Abfragen (die brauchen je 1–9 ms). Jetzt fasst je Tabelle eine
+   * Abfrage die Zahlen mit `FILTER (WHERE …)` zusammen, und alles läuft in
+   * einer lesenden Transaktion auf einer Verbindung. Die sieht zudem einen
+   * einzigen Stand der Datenbank, die Zahlen passen also zueinander.
+   */
   async kennzahlen(): Promise<Kennzahlen> {
     const monatsbeginn = new Date();
     monatsbeginn.setDate(1);
@@ -62,144 +76,218 @@ export class MonitoringService {
 
     const gestern = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    /* Alles nebeneinander: nacheinander waeren es zwei Dutzend Rundreisen
-       zur Datenbank fuer eine Antwort, die jemand im Minutentakt holt. */
-    const [
-      orgGesamt, orgNeu, orgLetzte,
-      nutzerGesamt, nutzerAktiv, nutzerNeu, nutzerLetzte,
-      eventGesamt, eventAktiv, eventTest, eventBezahlt, eventPending, eventRechnung, eventErlassen,
-      freischaltungen,
-      umsatzGesamt, umsatzHeute, umsatzMonat, mieteGesamt,
-      anfragenOffen, anfragenNeu, anfragenLetzte,
-      supportUngelesen, supportThreads, supportLetzte,
-      geraeteGesamt, geraeteFrei,
-      bestellGesamt, bestell24h,
-    ] = await Promise.all([
-      this.organizations.count(),
-      this.organizations.createQueryBuilder('o').where('o.createdAt >= :m', { m: monatsbeginn }).getCount(),
-      this.organizations.find({ order: { createdAt: 'DESC' }, take: LISTEN_LAENGE }),
+    return this.dataSource.transaction(async (m) => {
+      /* Muss vor der ersten Abfrage stehen. Eine Überwachung schreibt nicht. */
+      await m.query(
+        'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY',
+      );
+      return this.erheben(m, monatsbeginn, tagesbeginn, gestern);
+    });
+  }
 
-      this.users.count(),
-      this.users.count({ where: { isActive: true } }),
-      this.users.createQueryBuilder('u').where('u.createdAt >= :m', { m: monatsbeginn }).getCount(),
-      this.users.find({
-        order: { createdAt: 'DESC' },
-        take: LISTEN_LAENGE,
-        relations: ['userOrganizations', 'userOrganizations.organization'],
-      }),
+  private async erheben(
+    m: EntityManager,
+    monatsbeginn: Date,
+    tagesbeginn: Date,
+    gestern: Date,
+  ): Promise<Kennzahlen> {
+    /* Gelöschte Organisationen, Nutzer und Veranstaltungen (deleted_at)
+       blendet der QueryBuilder selbst aus — genau wie zuvor `count()`. */
+    const org = await m
+      .createQueryBuilder(Organization, 'o')
+      .select('COUNT(*)', 'gesamt')
+      .addSelect('COUNT(*) FILTER (WHERE o.createdAt >= :m)', 'neu')
+      .setParameters({ m: monatsbeginn })
+      .getRawOne<Zeile<'gesamt' | 'neu'>>();
+    const orgLetzte = await m.find(Organization, {
+      order: { createdAt: 'DESC' },
+      take: LISTEN_LAENGE,
+    });
 
-      this.events.count(),
-      this.events.count({ where: { status: 'active' as never } }),
-      this.events.count({ where: { status: 'test' as never } }),
-      this.events.count({ where: { billingStatus: 'paid' as never } }),
-      this.events.count({ where: { billingStatus: 'pending' as never } }),
-      this.events.count({ where: { billingStatus: 'invoice' as never } }),
-      this.events.count({ where: { billingStatus: 'waived' as never } }),
+    const nutzer = await m
+      .createQueryBuilder(User, 'u')
+      .select('COUNT(*)', 'gesamt')
+      .addSelect('COUNT(*) FILTER (WHERE u.isActive = true)', 'aktiv')
+      .addSelect('COUNT(*) FILTER (WHERE u.createdAt >= :m)', 'neu')
+      .setParameters({ m: monatsbeginn })
+      .getRawOne<Zeile<'gesamt' | 'aktiv' | 'neu'>>();
+    const nutzerLetzte = await m.find(User, {
+      order: { createdAt: 'DESC' },
+      take: LISTEN_LAENGE,
+      relations: ['userOrganizations', 'userOrganizations.organization'],
+    });
 
-      this.events
-        .createQueryBuilder('e')
-        .leftJoinAndSelect('e.organization', 'org')
-        .where('e.billingStatus IN (:...s)', { s: BEZAHLT_ODER_RECHNUNG })
-        /* Nach Bezahldatum, nicht nach Anlagedatum: gemeldet werden soll
-           die Freischaltung, und die passiert spaeter. */
-        .orderBy('e.paidAt', 'DESC', 'NULLS LAST')
-        .take(LISTEN_LAENGE)
-        .getMany(),
+    /* Zählungen und Umsatz in einem Durchgang. Umsatz = Summe der
+       tatsächlich berechneten Preise; „heute“ und „Monat“ nach Bezahldatum. */
+    const ev = await m
+      .createQueryBuilder(Event, 'e')
+      .select('COUNT(*)', 'gesamt')
+      .addSelect("COUNT(*) FILTER (WHERE e.status = 'active')", 'aktiv')
+      .addSelect("COUNT(*) FILTER (WHERE e.status = 'test')", 'test')
+      .addSelect("COUNT(*) FILTER (WHERE e.billingStatus = 'paid')", 'bezahlt')
+      .addSelect(
+        "COUNT(*) FILTER (WHERE e.billingStatus = 'pending')",
+        'pending',
+      )
+      .addSelect(
+        "COUNT(*) FILTER (WHERE e.billingStatus = 'invoice')",
+        'rechnung',
+      )
+      .addSelect(
+        "COUNT(*) FILTER (WHERE e.billingStatus = 'waived')",
+        'erlassen',
+      )
+      .addSelect(
+        'COALESCE(SUM(e.priceCharged) FILTER (WHERE e.billingStatus IN (:...s)), 0)',
+        'summe',
+      )
+      .addSelect(
+        'COALESCE(SUM(e.priceCharged) FILTER (WHERE e.billingStatus IN (:...s) AND e.paidAt >= :t), 0)',
+        'heute',
+      )
+      .addSelect(
+        'COALESCE(SUM(e.priceCharged) FILTER (WHERE e.billingStatus IN (:...s) AND e.paidAt >= :m), 0)',
+        'monat',
+      )
+      .setParameters({
+        s: BEZAHLT_ODER_RECHNUNG,
+        t: tagesbeginn,
+        m: monatsbeginn,
+      })
+      .getRawOne<
+        Zeile<
+          | 'gesamt'
+          | 'aktiv'
+          | 'test'
+          | 'bezahlt'
+          | 'pending'
+          | 'rechnung'
+          | 'erlassen'
+          | 'summe'
+          | 'heute'
+          | 'monat'
+        >
+      >();
 
-      this.summe(BEZAHLT_ODER_RECHNUNG),
-      this.summe(BEZAHLT_ODER_RECHNUNG, tagesbeginn),
-      this.summe(BEZAHLT_ODER_RECHNUNG, monatsbeginn),
-      this.rentals
-        .createQueryBuilder('r')
-        .select('COALESCE(SUM(r.totalAmount), 0)', 'summe')
-        .where("r.status IN ('confirmed','active','returned')")
-        .getRawOne<{ summe: string }>(),
+    const freischaltungen = await m
+      .createQueryBuilder(Event, 'e')
+      .leftJoinAndSelect('e.organization', 'org')
+      .where('e.billingStatus IN (:...s)', { s: BEZAHLT_ODER_RECHNUNG })
+      /* Nach Bezahldatum, nicht nach Anlagedatum: gemeldet werden soll
+         die Freischaltung, und die passiert spaeter. */
+      .orderBy('e.paidAt', 'DESC', 'NULLS LAST')
+      .take(LISTEN_LAENGE)
+      .getMany();
 
-      this.contactRequests.count({ where: { handledAt: IsNull() } }),
-      this.contactRequests.createQueryBuilder('c').where('c.createdAt >= :g', { g: gestern }).getCount(),
-      this.contactRequests.find({ order: { createdAt: 'DESC' }, take: LISTEN_LAENGE }),
+    const miete = await m
+      .createQueryBuilder(RentalAssignment, 'r')
+      .select('COALESCE(SUM(r.totalAmount), 0)', 'summe')
+      .where("r.status IN ('confirmed','active','returned')")
+      .getRawOne<Zeile<'summe'>>();
 
-      /* Direkt gezaehlt. Der Weg ueber den Support-Endpunkt wuerde die
-         Nachrichten dabei als gelesen markieren — eine Ueberwachung darf
-         den Zustand nicht veraendern, den sie beobachtet. */
-      this.supportMessages.count({ where: { direction: 'inbound', readByAdminAt: IsNull() } }),
-      this.supportMessages
-        .createQueryBuilder('m')
-        .select('COUNT(DISTINCT m.organizationId)', 'anzahl')
-        .where("m.direction = 'inbound' AND m.readByAdminAt IS NULL")
-        .getRawOne<{ anzahl: string }>(),
-      this.supportMessages.findOne({ where: { direction: 'inbound' }, order: { createdAt: 'DESC' } }),
+    const anfragen = await m
+      .createQueryBuilder(ContactRequest, 'c')
+      .select('COUNT(*) FILTER (WHERE c.handledAt IS NULL)', 'offen')
+      .addSelect('COUNT(*) FILTER (WHERE c.createdAt >= :g)', 'neu')
+      .setParameters({ g: gestern })
+      .getRawOne<Zeile<'offen' | 'neu'>>();
+    const anfragenLetzte = await m.find(ContactRequest, {
+      order: { createdAt: 'DESC' },
+      take: LISTEN_LAENGE,
+    });
 
-      this.devices.count(),
-      this.devices.count({ where: { status: 'verified' as never } }),
+    /* Direkt gezaehlt. Der Weg ueber den Support-Endpunkt wuerde die
+       Nachrichten dabei als gelesen markieren — eine Ueberwachung darf
+       den Zustand nicht veraendern, den sie beobachtet. */
+    const support = await m
+      .createQueryBuilder(SupportMessage, 'sm')
+      .select('COUNT(*) FILTER (WHERE sm.readByAdminAt IS NULL)', 'ungelesen')
+      .addSelect(
+        'COUNT(DISTINCT sm.organizationId) FILTER (WHERE sm.readByAdminAt IS NULL)',
+        'threads',
+      )
+      .addSelect('MAX(sm.createdAt)', 'letzte')
+      .where("sm.direction = 'inbound'")
+      .getRawOne<
+        Zeile<'ungelesen' | 'threads'> & { letzte: Date | string | null }
+      >();
 
-      this.orders.count(),
-      this.orders.createQueryBuilder('o').where('o.createdAt >= :g', { g: gestern }).getCount(),
-    ]);
+    const geraete = await m
+      .createQueryBuilder(Device, 'd')
+      .select('COUNT(*)', 'gesamt')
+      .addSelect("COUNT(*) FILTER (WHERE d.status = 'verified')", 'frei')
+      .getRawOne<Zeile<'gesamt' | 'frei'>>();
+
+    const bestellungen = await m
+      .createQueryBuilder(Order, 'b')
+      .select('COUNT(*)', 'gesamt')
+      .addSelect('COUNT(*) FILTER (WHERE b.createdAt >= :g)', 'neu')
+      .setParameters({ g: gestern })
+      .getRawOne<Zeile<'gesamt' | 'neu'>>();
+
+    const eventBezahlt = zahl(ev?.bezahlt);
+    const eventRechnung = zahl(ev?.rechnung);
 
     return {
       erhobenAm: new Date().toISOString(),
 
       organisationen: {
-        gesamt: orgGesamt,
-        neuImMonat: orgNeu,
-        letzte: orgLetzte.map(this.alsOrganisation),
+        gesamt: zahl(org?.gesamt),
+        neuImMonat: zahl(org?.neu),
+        letzte: orgLetzte.map((o) => this.alsOrganisation(o)),
       },
 
       nutzer: {
-        gesamt: nutzerGesamt,
-        aktiv: nutzerAktiv,
-        neuImMonat: nutzerNeu,
-        letzte: nutzerLetzte.map(this.alsNutzer),
+        gesamt: zahl(nutzer?.gesamt),
+        aktiv: zahl(nutzer?.aktiv),
+        neuImMonat: zahl(nutzer?.neu),
+        letzte: nutzerLetzte.map((u) => this.alsNutzer(u)),
       },
 
       veranstaltungen: {
-        gesamt: eventGesamt,
-        aktiv: eventAktiv,
-        imTest: eventTest,
+        gesamt: zahl(ev?.gesamt),
+        aktiv: zahl(ev?.aktiv),
+        imTest: zahl(ev?.test),
         bezahlt: eventBezahlt,
-        pending: eventPending,
+        pending: zahl(ev?.pending),
         aufRechnung: eventRechnung,
-        erlassen: eventErlassen,
-        letzteFreischaltungen: freischaltungen.map(this.alsFreischaltung),
+        erlassen: zahl(ev?.erlassen),
+        letzteFreischaltungen: freischaltungen.map((e) =>
+          this.alsFreischaltung(e),
+        ),
       },
 
       umsatz: {
         bezahlteVeranstaltungen: eventBezahlt + eventRechnung,
-        summeEur: umsatzGesamt,
-        heuteEur: umsatzHeute,
-        monatEur: umsatzMonat,
-        mieteEur: Number(mieteGesamt?.summe ?? 0),
+        summeEur: zahl(ev?.summe),
+        heuteEur: zahl(ev?.heute),
+        monatEur: zahl(ev?.monat),
+        mieteEur: zahl(miete?.summe),
       },
 
       kontaktanfragen: {
-        offen: anfragenOffen,
-        neu24h: anfragenNeu,
-        letzte: anfragenLetzte.map(this.alsKontaktanfrage),
+        offen: zahl(anfragen?.offen),
+        neu24h: zahl(anfragen?.neu),
+        letzte: anfragenLetzte.map((a) => this.alsKontaktanfrage(a)),
       },
 
       support: {
-        ungelesen: supportUngelesen,
-        threadsMitUngelesen: Number(supportThreads?.anzahl ?? 0),
-        letzteNachrichtAm: supportLetzte?.createdAt?.toISOString() ?? null,
+        ungelesen: zahl(support?.ungelesen),
+        threadsMitUngelesen: zahl(support?.threads),
+        letzteNachrichtAm: support?.letzte
+          ? new Date(support.letzte).toISOString()
+          : null,
       },
 
-      geraete: { gesamt: geraeteGesamt, freigegeben: geraeteFrei },
-      bestellungen: { gesamt: bestellGesamt, letzte24h: bestell24h },
+      geraete: {
+        gesamt: zahl(geraete?.gesamt),
+        freigegeben: zahl(geraete?.frei),
+      },
+      bestellungen: {
+        gesamt: zahl(bestellungen?.gesamt),
+        letzte24h: zahl(bestellungen?.neu),
+      },
     };
-  }
-
-  /** Summe der tatsächlich berechneten Preise, optional ab einem Zeitpunkt. */
-  private async summe(status: string[], ab?: Date): Promise<number> {
-    const abfrage = this.events
-      .createQueryBuilder('e')
-      .select('COALESCE(SUM(e.priceCharged), 0)', 'summe')
-      .where('e.billingStatus IN (:...s)', { s: status });
-
-    if (ab) abfrage.andWhere('e.paidAt >= :ab', { ab });
-
-    const zeile = await abfrage.getRawOne<{ summe: string }>();
-    return Number(zeile?.summe ?? 0);
   }
 
   private alsOrganisation(org: Organization): NeueOrganisation {
@@ -241,7 +329,10 @@ export class MonitoringService {
       typ: anfrage.type,
       name: anfrage.name,
       organisation: anfrage.organization ?? null,
-      vorschau: text.length > VORSCHAU_LAENGE ? `${text.slice(0, VORSCHAU_LAENGE)}…` : text,
+      vorschau:
+        text.length > VORSCHAU_LAENGE
+          ? `${text.slice(0, VORSCHAU_LAENGE)}…`
+          : text,
     };
   }
 }

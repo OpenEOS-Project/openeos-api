@@ -15,6 +15,7 @@ import {
   jwtConfig,
   validationSchema,
 } from './config';
+import type { PoolOptionen } from './config/database.config';
 import { JwtAuthGuard } from './common/guards';
 import { AuthModule } from './modules/auth';
 import { ApiTokensModule } from './modules/api-tokens/api-tokens.module';
@@ -87,7 +88,9 @@ import { ChangelogModule } from './modules/changelog';
         synchronize: configService.get<boolean>('database.synchronize'),
         logging: configService.get<boolean>('database.logging'),
         migrationsRun: configService.get<boolean>('database.migrationsRun'),
-        poolSize: 10,
+        // Pool-Groesse und Timeouts aus der Database-Config (per ENV
+        // einstellbar, siehe src/config/database.config.ts).
+        extra: configService.get<PoolOptionen>('database.extra'),
       }),
       inject: [ConfigService],
     }),
