@@ -6,8 +6,9 @@ import { ConfigService } from '@nestjs/config';
 
 import { Category, Device, Event, Order, Product, User } from '../../database/entities';
 import { DeviceStatus } from '../../database/entities/device.entity';
-import { EventStatus } from '../../database/entities/event.entity';
+import { EventStatus, isEventBillingUnlocked } from '../../database/entities/event.entity';
 import { OrganizationsService } from '../organizations/organizations.service';
+import { DeploymentService } from '../../common/services/deployment.service';
 
 /** Ein Schritt des Quick-Starts. */
 export interface OnboardingStep {
@@ -68,6 +69,7 @@ export class OnboardingService {
     private readonly orderRepository: Repository<Order>,
     private readonly organizationsService: OrganizationsService,
     private readonly configService: ConfigService,
+    private readonly deployment: DeploymentService,
   ) {}
 
   async getStatus(organizationId: string, user: User): Promise<OnboardingStatus> {
@@ -81,10 +83,14 @@ export class OnboardingService {
 
     /* Freigeschaltet zaehlt jede Veranstaltung, die bezahlt, auf Rechnung
        bestellt oder erlassen wurde — dieselben drei Zustaende, die auch
-       das Aktivieren erlaubt. */
-    const freigeschaltet = events.filter((e) =>
-      ['paid', 'invoice', 'waived'].includes(e.billingStatus),
-    );
+       das Aktivieren erlaubt.
+
+       Ohne Abrechnung gibt es diese Zustaende nicht: dort ist schlicht jede
+       aktive Veranstaltung freigeschaltet, sonst bliebe der Haken auf einer
+       laufenden Installation fuer immer leer. */
+    const freigeschaltet = this.deployment.billingEnabled
+      ? events.filter((e) => isEventBillingUnlocked(e.billingStatus))
+      : events.filter((e) => e.status === EventStatus.ACTIVE);
 
     /* Die juengste freigeschaltete Veranstaltung ist der Bezugspunkt; gibt
        es keine, die juengste ueberhaupt. Sonst zeigte die Checkliste die

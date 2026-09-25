@@ -14,9 +14,11 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { OrganizationGuard } from '../../common/guards/organization.guard';
 import { Role } from '../../common/constants/roles.enum';
 import type { Organization } from '../../database/entities';
+import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 
 @ApiTags('Invoices')
 @ApiBearerAuth('JWT-auth')
+@SaasOnly()
 @Controller('organizations/:organizationId/invoices')
 @UseGuards(OrganizationGuard, RolesGuard)
 export class InvoicesController {

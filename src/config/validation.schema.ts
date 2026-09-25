@@ -73,6 +73,10 @@ export const validationSchema = Joi.object({
   EMAIL_PASSWORD: Joi.string().allow('').default(''),
   EMAIL_FROM: Joi.string().default('noreply@openeos.de'),
 
+  // Betriebsart: 'saas' (gehostet, mehrmandantenfaehig, kostenpflichtig) oder
+  // 'selfhosted' (eigenstaendig, eine Organisation, kostenlos).
+  DEPLOYMENT_MODE: Joi.string().valid('saas', 'selfhosted').default('saas'),
+
   // Event billing (pay-per-event activation)
   STRIPE_SECRET_KEY: Joi.string().allow('').default(''),
   STRIPE_WEBHOOK_SECRET: Joi.string().allow('').default(''),

@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
-import { SetupService, SetupResult } from './setup.service';
+import { SetupService, SetupResult, SetupStatus } from './setup.service';
 import { SetupDto } from './dto';
 
 @ApiTags('Setup')
@@ -30,7 +30,7 @@ export class SetupController {
       },
     },
   })
-  async getSetupStatus(): Promise<{ required: boolean; reason?: string }> {
+  async getSetupStatus(): Promise<SetupStatus> {
     return this.setupService.isSetupRequired();
   }
 

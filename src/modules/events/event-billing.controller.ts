@@ -15,9 +15,11 @@ import { EventBillingService } from './event-billing.service';
 import { OrderInvoiceDto } from './dto';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
+import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 
 @ApiTags('Event Billing')
 @ApiBearerAuth('JWT-auth')
+@SaasOnly()
 @Controller('organizations/:organizationId')
 export class EventBillingController {
   constructor(private readonly eventBillingService: EventBillingService) {}

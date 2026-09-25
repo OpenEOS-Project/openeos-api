@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, IsNull } from 'typeorm';
 import * as crypto from 'crypto';
+import * as bcrypt from 'bcrypt';
 import {
   Organization,
   User,
@@ -28,8 +29,10 @@ import {
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { ConfigService } from '@nestjs/config';
+import { DeploymentService } from '../../common/services/deployment.service';
 
 const INVITATION_EXPIRY_DAYS = 7;
+const BCRYPT_ROUNDS = 12;
 
 @Injectable()
 export class OrganizationsService {
@@ -48,12 +51,15 @@ export class OrganizationsService {
     private readonly emailService: EmailService,
     private readonly platformSettingsService: PlatformSettingsService,
     private readonly configService: ConfigService,
+    private readonly deployment: DeploymentService,
   ) {}
 
   async create(
     createDto: CreateOrganizationDto,
     user: User,
   ): Promise<Organization> {
+    await this.assertAdditionalOrganizationAllowed();
+
     const slug = await this.generateSlug(createDto.name);
     const supportPin = this.generateSupportPin();
 
@@ -95,6 +101,77 @@ export class OrganizationsService {
       throw error;
     } finally {
       await queryRunner.release();
+    }
+  }
+
+  /**
+   * Legt beim Hinzufuegen eines Mitglieds das fehlende Konto gleich mit an.
+   *
+   * Nur eigenstaendig: im gehosteten Betrieb bleibt es bei "Benutzer nicht
+   * gefunden", dort fuehrt der Weg ueber Einladung oder Registrierung.
+   *
+   * Das Konto gilt sofort als bestaetigt. Das ist kein uebergangener
+   * Sicherheitsschritt: die Bestaetigungsmail beweist, dass der Anmeldende
+   * das Postfach besitzt — hier legt jemand mit Mitgliederrecht das Konto
+   * bewusst fuer eine bekannte Person an. Ohne das waere das neue Konto
+   * genau so ausgesperrt wie zuvor.
+   */
+  private async createMemberAccount(addMemberDto: AddMemberDto): Promise<User> {
+    const { email, firstName, lastName, password } = addMemberDto;
+
+    if (!this.deployment.isSelfHosted) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Benutzer nicht gefunden',
+      });
+    }
+
+    if (!password || !firstName || !lastName) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message:
+          'Zu dieser E-Mail-Adresse gibt es noch kein Konto. ' +
+          'Bitte Vorname, Nachname und ein Startpasswort angeben, um es anzulegen.',
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+
+    const user = this.userRepository.create({
+      email: email.toLowerCase(),
+      passwordHash,
+      firstName,
+      lastName,
+      isActive: true,
+      isSuperAdmin: false,
+      emailVerifiedAt: new Date(),
+    });
+
+    await this.userRepository.save(user);
+    this.logger.log(`Benutzerkonto ueber Mitgliederverwaltung angelegt: ${user.email}`);
+
+    return user;
+  }
+
+  /**
+   * Eine eigenstaendige Installation verwaltet genau eine Organisation.
+   *
+   * Die Pruefung sitzt im Service und nicht als `@SaasOnly()` am Endpunkt:
+   * das Anlegen der ersten Organisation muss moeglich bleiben, falls die
+   * Ersteinrichtung im Multi-Modus lief oder die Organisation geloescht
+   * wurde. Verboten ist nur die zweite.
+   */
+  private async assertAdditionalOrganizationAllowed(): Promise<void> {
+    if (this.deployment.multiTenant) return;
+
+    const bestehende = await this.organizationRepository.count();
+    if (bestehende > 0) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message:
+          'Diese Installation verwaltet genau eine Organisation. ' +
+          'Fuer weitere Organisationen wird der Mehrmandanten-Betrieb benoetigt.',
+      });
     }
   }
 
@@ -261,15 +338,12 @@ export class OrganizationsService {
     await this.checkPermission(organizationId, currentUser, 'members');
 
     // Find user by email
-    const user = await this.userRepository.findOne({
+    let user = await this.userRepository.findOne({
       where: { email: addMemberDto.email.toLowerCase() },
     });
 
     if (!user) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        message: 'Benutzer nicht gefunden',
-      });
+      user = await this.createMemberAccount(addMemberDto);
     }
 
     // Check if already a member

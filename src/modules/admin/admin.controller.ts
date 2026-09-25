@@ -37,6 +37,7 @@ import {
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../database/entities';
+import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 
 @ApiTags('Admin')
 @ApiBearerAuth('JWT-auth')
@@ -57,6 +58,7 @@ export class AdminController {
 
   // === Organizations ===
 
+  @SaasOnly()
   @Get('organizations')
   async findAllOrganizations(@Query() queryDto: QueryOrganizationsDto) {
     const result = await this.adminService.findAllOrganizations(queryDto);
@@ -71,12 +73,14 @@ export class AdminController {
     };
   }
 
+  @SaasOnly()
   @Get('organizations/:id')
   async getOrganization(@Param('id') id: string) {
     const org = await this.adminService.getOrganization(id);
     return { data: org };
   }
 
+  @SaasOnly()
   @Patch('organizations/:id')
   async updateOrganization(
     @Param('id') id: string,
@@ -89,6 +93,7 @@ export class AdminController {
     return { data: org };
   }
 
+  @SaasOnly()
   @Patch('organizations/:id/discount')
   async setDiscount(
     @Param('id') id: string,
@@ -101,6 +106,7 @@ export class AdminController {
     return { data: org };
   }
 
+  @SaasOnly()
   @Delete('organizations/:id/discount')
   async removeDiscount(
     @Param('id') id: string,
@@ -112,6 +118,7 @@ export class AdminController {
     return { data: org };
   }
 
+  @SaasOnly()
   @Post('organizations/:id/access')
   async accessWithPin(
     @Param('id') id: string,
@@ -124,6 +131,7 @@ export class AdminController {
     return { data: { success: true } };
   }
 
+  @SaasOnly()
   @Get('organizations/:id/impersonate')
   async impersonate(
     @Param('id') id: string,
@@ -170,6 +178,7 @@ export class AdminController {
 
   // === Invoices ===
 
+  @SaasOnly()
   @Get('invoices')
   async findAllInvoices(@Query() queryDto: QueryInvoicesAdminDto) {
     const result = await this.adminService.findAllInvoices(queryDto);
@@ -184,6 +193,7 @@ export class AdminController {
     };
   }
 
+  @SaasOnly()
   @Post('invoices/:id/mark-paid')
   async markInvoicePaid(
     @Param('id') id: string,
@@ -259,6 +269,7 @@ export class AdminController {
 
   // === Rental Hardware ===
 
+  @SaasOnly()
   @Get('rental-hardware')
   async findAllRentalHardware(@Query() queryDto: QueryRentalHardwareDto) {
     const result = await this.adminService.findAllRentalHardware(queryDto);
@@ -273,6 +284,7 @@ export class AdminController {
     };
   }
 
+  @SaasOnly()
   @Post('rental-hardware')
   async createRentalHardware(
     @Body() createDto: CreateRentalHardwareDto,
@@ -284,6 +296,7 @@ export class AdminController {
     return { data: hardware };
   }
 
+  @SaasOnly()
   @Patch('rental-hardware/:id')
   async updateRentalHardware(
     @Param('id') id: string,
@@ -293,6 +306,7 @@ export class AdminController {
     return { data: hardware };
   }
 
+  @SaasOnly()
   @Delete('rental-hardware/:id')
   async deleteRentalHardware(@Param('id') id: string) {
     await this.adminService.deleteRentalHardware(id);
@@ -301,6 +315,7 @@ export class AdminController {
 
   // === Rental Assignments ===
 
+  @SaasOnly()
   @Get('rental-assignments')
   async findAllRentalAssignments(@Query() queryDto: QueryRentalAssignmentsAdminDto) {
     const result = await this.adminService.findAllRentalAssignments(queryDto);
@@ -315,6 +330,7 @@ export class AdminController {
     };
   }
 
+  @SaasOnly()
   @Post('rental-assignments')
   async createRentalAssignment(
     @Body() createDto: CreateRentalAssignmentDto,
@@ -326,6 +342,7 @@ export class AdminController {
     return { data: assignment };
   }
 
+  @SaasOnly()
   @Post('rental-assignments/:id/activate')
   async activateRental(
     @Param('id') id: string,
@@ -337,6 +354,7 @@ export class AdminController {
     return { data: assignment };
   }
 
+  @SaasOnly()
   @Post('rental-assignments/:id/return')
   async returnRental(
     @Param('id') id: string,
@@ -356,6 +374,7 @@ export class AdminController {
     return { data: stats };
   }
 
+  @SaasOnly()
   @Get('stats/revenue')
   async getRevenueStats(
     @Query('startDate') startDate?: string,
@@ -383,30 +402,35 @@ export class AdminController {
 
   // === Subscription Config ===
 
+  @SaasOnly()
   @Get('subscription-config')
   async getSubscriptionConfig() {
     const config = await this.adminService.getSubscriptionConfig();
     return { data: config };
   }
 
+  @SaasOnly()
   @Get('subscription-configs')
   async getAllSubscriptionConfigs() {
     const configs = await this.adminService.getAllSubscriptionConfigs();
     return { data: configs };
   }
 
+  @SaasOnly()
   @Post('subscription-config')
   async createSubscriptionConfig(@Body() createDto: CreateSubscriptionConfigDto) {
     const config = await this.adminService.createSubscriptionConfig(createDto);
     return { data: config };
   }
 
+  @SaasOnly()
   @Patch('subscription-config')
   async upsertSubscriptionConfig(@Body() updateDto: UpdateSubscriptionConfigDto) {
     const config = await this.adminService.upsertSubscriptionConfig(updateDto);
     return { data: config };
   }
 
+  @SaasOnly()
   @Patch('subscription-config/:id')
   async updateSubscriptionConfig(
     @Param('id') id: string,
@@ -416,6 +440,7 @@ export class AdminController {
     return { data: config };
   }
 
+  @SaasOnly()
   @Delete('subscription-config/:id')
   async deleteSubscriptionConfig(@Param('id') id: string) {
     await this.adminService.deleteSubscriptionConfig(id);
