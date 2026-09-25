@@ -23,6 +23,12 @@ export const validationSchema = Joi.object({
   DATABASE_NAME: Joi.string().default('openeos'),
   DATABASE_SYNCHRONIZE: Joi.boolean().default(false),
   DATABASE_LOGGING: Joi.boolean().default(true),
+  // Verbindungspool. Voreinstellungen stehen in database.config.ts
+  // (POOL_VOREINSTELLUNG), hier wird nur geprueft, damit ein Tippfehler
+  // beim Start auffaellt statt still auf den Standard zurueckzufallen.
+  DATABASE_POOL_MAX: Joi.number().integer().min(1),
+  DATABASE_POOL_IDLE_TIMEOUT_MS: Joi.number().integer().min(1),
+  DATABASE_POOL_CONNECTION_TIMEOUT_MS: Joi.number().integer().min(1),
 
   // Redis
   REDIS_HOST: Joi.string().default('localhost'),
