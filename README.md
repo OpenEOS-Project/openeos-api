@@ -422,6 +422,9 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `DATABASE_NAME` | Datenbankname | openeos |
 | `DATABASE_USERNAME` | DB Benutzer | postgres |
 | `DATABASE_PASSWORD` | DB Passwort | - |
+| `DATABASE_POOL_MAX` | Max. connections in the pool | 10 |
+| `DATABASE_POOL_IDLE_TIMEOUT_MS` | Close an idle connection after (ms) | 600000 |
+| `DATABASE_POOL_CONNECTION_TIMEOUT_MS` | Give up waiting for a connection after (ms) | 5000 |
 | `REDIS_HOST` | Redis Host | localhost |
 | `REDIS_PORT` | Redis Port | 6379 |
 | `JWT_SECRET` | JWT Secret Key | - |
