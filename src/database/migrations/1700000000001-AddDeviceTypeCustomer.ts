@@ -4,7 +4,9 @@ export class AddDeviceTypeCustomer1700000000001 implements MigrationInterface {
   name = 'AddDeviceTypeCustomer1700000000001';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TYPE "device_type" ADD VALUE IF NOT EXISTS 'display_customer'`);
+    await queryRunner.query(
+      `ALTER TYPE "device_type" ADD VALUE IF NOT EXISTS 'display_customer'`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

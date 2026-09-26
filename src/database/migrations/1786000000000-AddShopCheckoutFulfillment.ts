@@ -25,8 +25,12 @@ export class AddShopCheckoutFulfillment1786000000000 implements MigrationInterfa
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "shop_checkouts" DROP COLUMN IF EXISTS "table_number"`);
-    await queryRunner.query(`ALTER TABLE "shop_checkouts" DROP COLUMN IF EXISTS "fulfillment_type"`);
+    await queryRunner.query(
+      `ALTER TABLE "shop_checkouts" DROP COLUMN IF EXISTS "table_number"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shop_checkouts" DROP COLUMN IF EXISTS "fulfillment_type"`,
+    );
     await queryRunner.query(`DROP TYPE IF EXISTS "shop_checkout_fulfillment"`);
   }
 }

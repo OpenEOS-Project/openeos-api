@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Event } from './event.entity';
 import { User } from './user.entity';
@@ -20,13 +27,26 @@ export class InventoryCount extends BaseEntity {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
-  @Column({ type: 'enum', enum: InventoryCountStatus, enumName: 'inventory_count_status', default: InventoryCountStatus.DRAFT })
+  @Column({
+    type: 'enum',
+    enum: InventoryCountStatus,
+    enumName: 'inventory_count_status',
+    default: InventoryCountStatus.DRAFT,
+  })
   status: InventoryCountStatus;
 
-  @Column({ name: 'started_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'started_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   startedAt: Date | null;
 
-  @Column({ name: 'completed_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'completed_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   completedAt: Date | null;
 
   @Column({ type: 'text', nullable: true })
@@ -39,15 +59,21 @@ export class InventoryCount extends BaseEntity {
   completedByUserId: string | null;
 
   // Relations
-  @ManyToOne(() => Event, (event) => event.inventoryCounts, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Event, (event) => event.inventoryCounts, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'event_id' })
   event: Event;
 
-  @ManyToOne(() => User, (user) => user.createdInventoryCounts, { onDelete: 'SET NULL' })
+  @ManyToOne(() => User, (user) => user.createdInventoryCounts, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'created_by_user_id' })
   createdByUser: User;
 
-  @ManyToOne(() => User, (user) => user.completedInventoryCounts, { onDelete: 'SET NULL' })
+  @ManyToOne(() => User, (user) => user.completedInventoryCounts, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'completed_by_user_id' })
   completedByUser: User | null;
 

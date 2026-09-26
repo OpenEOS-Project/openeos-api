@@ -33,7 +33,9 @@ export class OrderPrintService {
    * `is_test` is true (follow-up on the printer-agent side — the API has no
    * server-side template rendering step to inject the banner text into).
    */
-  private async isTestEvent(eventId: string | null | undefined): Promise<boolean> {
+  private async isTestEvent(
+    eventId: string | null | undefined,
+  ): Promise<boolean> {
     if (!eventId) return false;
     const event = await this.eventRepository.findOne({
       where: { id: eventId },
@@ -142,11 +144,12 @@ export class OrderPrintService {
       // Order ticket on order creation (always per_order)
       const orderTicket = orderFlow.orderTicketPrinting;
       if (orderTicket?.enabled) {
-        const { printerId } = await this.printRoutingService.resolveOrderPrinter({
-          organizationId,
-          orderDeviceId,
-          workflow: 'order_ticket',
-        });
+        const { printerId } =
+          await this.printRoutingService.resolveOrderPrinter({
+            organizationId,
+            orderDeviceId,
+            workflow: 'order_ticket',
+          });
         if (printerId) {
           await this.printJobsService.createFromWorkflow(
             organizationId,
@@ -235,11 +238,13 @@ export class OrderPrintService {
 
     if (mode === 'per_item') {
       for (const item of items) {
-        const { printerId } = await this.printRoutingService.resolveItemPrinter({
-          item,
-          orderDeviceId,
-          organizationId,
-        });
+        const { printerId } = await this.printRoutingService.resolveItemPrinter(
+          {
+            item,
+            orderDeviceId,
+            organizationId,
+          },
+        );
         const resolvedPrinterId = printerId ?? kitchen.orgFallbackPrinterId;
         if (!resolvedPrinterId) {
           this.logger.warn(
@@ -292,11 +297,13 @@ export class OrderPrintService {
       const buckets = new Map<string, Bucket>();
 
       for (const item of items) {
-        const { printerId } = await this.printRoutingService.resolveItemPrinter({
-          item,
-          orderDeviceId,
-          organizationId,
-        });
+        const { printerId } = await this.printRoutingService.resolveItemPrinter(
+          {
+            item,
+            orderDeviceId,
+            organizationId,
+          },
+        );
         const resolvedPrinterId = printerId ?? kitchen.orgFallbackPrinterId;
         if (!resolvedPrinterId) {
           this.logger.warn(
@@ -359,13 +366,15 @@ export class OrderPrintService {
    */
   private formatOptions(item: OrderItem): string[] {
     const selected =
-      (item.options as {
-        selected?: Array<{
-          option?: string;
-          excluded?: boolean;
-          priceModifier?: number;
-        }>;
-      } | null)?.selected ?? [];
+      (
+        item.options as {
+          selected?: Array<{
+            option?: string;
+            excluded?: boolean;
+            priceModifier?: number;
+          }>;
+        } | null
+      )?.selected ?? [];
     return selected
       .map((o) => {
         const name = o.option ?? '';
@@ -404,11 +413,12 @@ export class OrderPrintService {
       // order-ticket printing). An unset/null receiptPrinting means "off", so
       // deactivating it actually stops the receipt.
       if (receipt?.enabled && trigger === 'payment_received') {
-        const { printerId } = await this.printRoutingService.resolveOrderPrinter({
-          organizationId,
-          orderDeviceId,
-          workflow: 'receipt',
-        });
+        const { printerId } =
+          await this.printRoutingService.resolveOrderPrinter({
+            organizationId,
+            orderDeviceId,
+            workflow: 'receipt',
+          });
         if (printerId) {
           // Receipt template needs organization + monetary detail. Load org once.
           const org = await this.organizationRepository.findOne({
@@ -477,11 +487,9 @@ export class OrderPrintService {
 
   private async getOrderFlow(
     organizationId: string,
-  ): Promise<
-    NonNullable<
-      import('../../database/entities/organization.entity').OrganizationSettings['orderFlow']
-    > | null
-  > {
+  ): Promise<NonNullable<
+    import('../../database/entities/organization.entity').OrganizationSettings['orderFlow']
+  > | null> {
     const org = await this.organizationRepository.findOne({
       where: { id: organizationId },
       select: ['id', 'settings'],

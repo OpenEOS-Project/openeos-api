@@ -9,4 +9,5 @@ export const ALLOW_PENDING_TWO_FACTOR_KEY = 'allowPendingTwoFactor';
  * Standard ist damit die sichere Seite: ein neuer Endpunkt muss die
  * Ausnahme ausdruecklich wollen, nicht daran denken, sie auszuschliessen.
  */
-export const AllowPendingTwoFactor = () => SetMetadata(ALLOW_PENDING_TWO_FACTOR_KEY, true);
+export const AllowPendingTwoFactor = () =>
+  SetMetadata(ALLOW_PENDING_TWO_FACTOR_KEY, true);

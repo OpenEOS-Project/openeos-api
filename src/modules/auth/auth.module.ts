@@ -37,14 +37,21 @@ import {
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('jwt.secret'),
         signOptions: {
-          expiresIn: (configService.get<string>('jwt.expiresIn') || '30m') as `${number}${'s' | 'm' | 'h' | 'd'}`,
+          expiresIn: (configService.get<string>('jwt.expiresIn') ||
+            '30m') as `${number}${'s' | 'm' | 'h' | 'd'}`,
         },
       }),
       inject: [ConfigService],
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, TwoFactorService, EncryptionService, JwtStrategy, LocalStrategy],
+  providers: [
+    AuthService,
+    TwoFactorService,
+    EncryptionService,
+    JwtStrategy,
+    LocalStrategy,
+  ],
   exports: [AuthService, TwoFactorService, JwtModule],
 })
 export class AuthModule {}

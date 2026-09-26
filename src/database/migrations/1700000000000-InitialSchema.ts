@@ -195,7 +195,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_users_email" ON "users" ("email")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_users_email" ON "users" ("email")`,
+    );
 
     // organizations table
     await queryRunner.query(`
@@ -226,7 +228,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_organizations_slug" ON "organizations" ("slug")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_organizations_slug" ON "organizations" ("slug")`,
+    );
 
     // credit_packages table (no foreign keys)
     await queryRunner.query(`
@@ -251,8 +255,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_credit_packages_slug" ON "credit_packages" ("slug")`);
-    await queryRunner.query(`CREATE INDEX "IDX_credit_packages_sort_order" ON "credit_packages" ("sort_order")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_credit_packages_slug" ON "credit_packages" ("slug")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_credit_packages_sort_order" ON "credit_packages" ("sort_order")`,
+    );
 
     // rental_hardware table (no foreign keys)
     await queryRunner.query(`
@@ -274,8 +282,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_rental_hardware_serial_number" ON "rental_hardware" ("serial_number")`);
-    await queryRunner.query(`CREATE INDEX "IDX_rental_hardware_status" ON "rental_hardware" ("status")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_rental_hardware_serial_number" ON "rental_hardware" ("serial_number")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_rental_hardware_status" ON "rental_hardware" ("status")`,
+    );
 
     // subscription_config table (no foreign keys)
     await queryRunner.query(`
@@ -295,7 +307,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_subscription_config_is_active" ON "subscription_config" ("is_active")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_subscription_config_is_active" ON "subscription_config" ("is_active")`,
+    );
 
     // ========================================
     // 3. CREATE TABLES WITH FOREIGN KEYS TO BASE TABLES
@@ -318,8 +332,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_user_organizations_user_id" ON "user_organizations" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_user_organizations_organization_id" ON "user_organizations" ("organization_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_user_organizations_user_id" ON "user_organizations" ("user_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_user_organizations_organization_id" ON "user_organizations" ("organization_id")`,
+    );
 
     // refresh_tokens table (FK to users)
     await queryRunner.query(`
@@ -338,9 +356,15 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_refresh_tokens_user_id" ON "refresh_tokens" ("user_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_refresh_tokens_token_hash" ON "refresh_tokens" ("token_hash")`);
-    await queryRunner.query(`CREATE INDEX "IDX_refresh_tokens_expires_at" ON "refresh_tokens" ("expires_at")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_refresh_tokens_user_id" ON "refresh_tokens" ("user_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_refresh_tokens_token_hash" ON "refresh_tokens" ("token_hash")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_refresh_tokens_expires_at" ON "refresh_tokens" ("expires_at")`,
+    );
 
     // trusted_devices table (FK to users)
     await queryRunner.query(`
@@ -361,8 +385,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_trusted_devices_user_fingerprint" ON "trusted_devices" ("user_id", "device_fingerprint")`);
-    await queryRunner.query(`CREATE INDEX "IDX_trusted_devices_expires_at" ON "trusted_devices" ("expires_at")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_trusted_devices_user_fingerprint" ON "trusted_devices" ("user_id", "device_fingerprint")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_trusted_devices_expires_at" ON "trusted_devices" ("expires_at")`,
+    );
 
     // email_otps table (FK to users)
     await queryRunner.query(`
@@ -382,8 +410,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_email_otps_user_purpose" ON "email_otps" ("user_id", "purpose")`);
-    await queryRunner.query(`CREATE INDEX "IDX_email_otps_expires_at" ON "email_otps" ("expires_at")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_email_otps_user_purpose" ON "email_otps" ("user_id", "purpose")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_email_otps_expires_at" ON "email_otps" ("expires_at")`,
+    );
 
     // invitations table (FK to organizations and users)
     await queryRunner.query(`
@@ -405,8 +437,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_invitations_token" ON "invitations" ("token")`);
-    await queryRunner.query(`CREATE INDEX "IDX_invitations_organization_email" ON "invitations" ("organization_id", "email")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_invitations_token" ON "invitations" ("token")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_invitations_organization_email" ON "invitations" ("organization_id", "email")`,
+    );
 
     // devices table (FK to organizations and users)
     await queryRunner.query(`
@@ -434,7 +470,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_devices_organization_id" ON "devices" ("organization_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_devices_organization_id" ON "devices" ("organization_id")`,
+    );
 
     // printers table (FK to organizations)
     await queryRunner.query(`
@@ -456,7 +494,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_printers_organization_id" ON "printers" ("organization_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_printers_organization_id" ON "printers" ("organization_id")`,
+    );
 
     // print_templates table (FK to organizations)
     await queryRunner.query(`
@@ -474,7 +514,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_print_templates_organization_id" ON "print_templates" ("organization_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_print_templates_organization_id" ON "print_templates" ("organization_id")`,
+    );
 
     // workflows table (FK to organizations)
     await queryRunner.query(`
@@ -496,7 +538,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_workflows_organization_id" ON "workflows" ("organization_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_workflows_organization_id" ON "workflows" ("organization_id")`,
+    );
 
     // workflow_runs table (FK to workflows)
     await queryRunner.query(`
@@ -517,7 +561,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_workflow_runs_workflow_id" ON "workflow_runs" ("workflow_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_workflow_runs_workflow_id" ON "workflow_runs" ("workflow_id")`,
+    );
 
     // workflow_events table (FK to organizations)
     await queryRunner.query(`
@@ -534,7 +580,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_workflow_events_organization_processed" ON "workflow_events" ("organization_id", "processed")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_workflow_events_organization_processed" ON "workflow_events" ("organization_id", "processed")`,
+    );
 
     // invoices table (FK to organizations)
     await queryRunner.query(`
@@ -560,8 +608,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_invoices_organization_created" ON "invoices" ("organization_id", "created_at")`);
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_invoices_invoice_number" ON "invoices" ("invoice_number")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_invoices_organization_created" ON "invoices" ("organization_id", "created_at")`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_invoices_invoice_number" ON "invoices" ("invoice_number")`,
+    );
 
     // admin_audit_logs table (FK to users and organizations)
     await queryRunner.query(`
@@ -584,8 +636,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_admin_audit_logs_admin_created" ON "admin_audit_logs" ("admin_user_id", "created_at")`);
-    await queryRunner.query(`CREATE INDEX "IDX_admin_audit_logs_organization_created" ON "admin_audit_logs" ("organization_id", "created_at")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_admin_audit_logs_admin_created" ON "admin_audit_logs" ("admin_user_id", "created_at")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_admin_audit_logs_organization_created" ON "admin_audit_logs" ("organization_id", "created_at")`,
+    );
 
     // events table (FK to organizations, self-reference)
     await queryRunner.query(`
@@ -607,8 +663,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_events_organization_created" ON "events" ("organization_id", "created_at")`);
-    await queryRunner.query(`CREATE INDEX "IDX_events_status" ON "events" ("status")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_events_organization_created" ON "events" ("organization_id", "created_at")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_events_status" ON "events" ("status")`,
+    );
 
     // shift_plans table (FK to organizations and events)
     await queryRunner.query(`
@@ -629,9 +689,15 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_shift_plans_organization_created" ON "shift_plans" ("organization_id", "created_at")`);
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_shift_plans_public_slug" ON "shift_plans" ("public_slug")`);
-    await queryRunner.query(`CREATE INDEX "IDX_shift_plans_status" ON "shift_plans" ("status")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_plans_organization_created" ON "shift_plans" ("organization_id", "created_at")`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_shift_plans_public_slug" ON "shift_plans" ("public_slug")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_plans_status" ON "shift_plans" ("status")`,
+    );
 
     // shift_jobs table (FK to shift_plans)
     await queryRunner.query(`
@@ -649,7 +715,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_shift_jobs_shift_plan_sort" ON "shift_jobs" ("shift_plan_id", "sort_order")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_jobs_shift_plan_sort" ON "shift_jobs" ("shift_plan_id", "sort_order")`,
+    );
 
     // shifts table (FK to shift_jobs)
     await queryRunner.query(`
@@ -668,8 +736,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_shifts_shift_job_date" ON "shifts" ("shift_job_id", "date")`);
-    await queryRunner.query(`CREATE INDEX "IDX_shifts_date" ON "shifts" ("date")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shifts_shift_job_date" ON "shifts" ("shift_job_id", "date")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shifts_date" ON "shifts" ("date")`,
+    );
 
     // shift_registrations table (FK to shifts)
     await queryRunner.query(`
@@ -693,10 +765,18 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_shift_registrations_shift_status" ON "shift_registrations" ("shift_id", "status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_shift_registrations_email" ON "shift_registrations" ("email")`);
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_shift_registrations_verification_token" ON "shift_registrations" ("verification_token")`);
-    await queryRunner.query(`CREATE INDEX "IDX_shift_registrations_group_id" ON "shift_registrations" ("registration_group_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_registrations_shift_status" ON "shift_registrations" ("shift_id", "status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_registrations_email" ON "shift_registrations" ("email")`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_shift_registrations_verification_token" ON "shift_registrations" ("verification_token")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_registrations_group_id" ON "shift_registrations" ("registration_group_id")`,
+    );
 
     // categories table (FK to events, self-reference)
     await queryRunner.query(`
@@ -719,8 +799,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_categories_event_sort" ON "categories" ("event_id", "sort_order")`);
-    await queryRunner.query(`CREATE INDEX "IDX_categories_event_active" ON "categories" ("event_id", "is_active")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_categories_event_sort" ON "categories" ("event_id", "sort_order")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_categories_event_active" ON "categories" ("event_id", "is_active")`,
+    );
 
     // products table (FK to events and categories)
     await queryRunner.query(`
@@ -749,9 +833,15 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_products_event_active" ON "products" ("event_id", "is_active")`);
-    await queryRunner.query(`CREATE INDEX "IDX_products_event_category" ON "products" ("event_id", "category_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_products_category_id" ON "products" ("category_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_products_event_active" ON "products" ("event_id", "is_active")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_products_event_category" ON "products" ("event_id", "category_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_products_category_id" ON "products" ("category_id")`,
+    );
 
     // qr_codes table (FK to organizations and events)
     await queryRunner.query(`
@@ -774,8 +864,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_qr_codes_organization_code" ON "qr_codes" ("organization_id", "code")`);
-    await queryRunner.query(`CREATE INDEX "IDX_qr_codes_event_id" ON "qr_codes" ("event_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_qr_codes_organization_code" ON "qr_codes" ("organization_id", "code")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_qr_codes_event_id" ON "qr_codes" ("event_id")`,
+    );
 
     // online_order_sessions table (FK to organizations, events, qr_codes)
     await queryRunner.query(`
@@ -800,8 +894,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE UNIQUE INDEX "IDX_online_order_sessions_session_token" ON "online_order_sessions" ("session_token")`);
-    await queryRunner.query(`CREATE INDEX "IDX_online_order_sessions_organization_status" ON "online_order_sessions" ("organization_id", "status")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_online_order_sessions_session_token" ON "online_order_sessions" ("session_token")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_online_order_sessions_organization_status" ON "online_order_sessions" ("organization_id", "status")`,
+    );
 
     // orders table (FK to organizations, events, users, devices, online_order_sessions)
     await queryRunner.query(`
@@ -845,10 +943,18 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_orders_organization_created" ON "orders" ("organization_id", "created_at")`);
-    await queryRunner.query(`CREATE INDEX "IDX_orders_order_number" ON "orders" ("order_number")`);
-    await queryRunner.query(`CREATE INDEX "IDX_orders_event_daily" ON "orders" ("event_id", "daily_number")`);
-    await queryRunner.query(`CREATE INDEX "IDX_orders_status_payment" ON "orders" ("status", "payment_status")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_orders_organization_created" ON "orders" ("organization_id", "created_at")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_orders_order_number" ON "orders" ("order_number")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_orders_event_daily" ON "orders" ("event_id", "daily_number")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_orders_status_payment" ON "orders" ("status", "payment_status")`,
+    );
 
     // order_items table (FK to orders, products, categories)
     await queryRunner.query(`
@@ -882,9 +988,15 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_order_items_order_id" ON "order_items" ("order_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_order_items_order_status" ON "order_items" ("order_id", "status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_order_items_product_id" ON "order_items" ("product_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_order_items_order_id" ON "order_items" ("order_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_order_items_order_status" ON "order_items" ("order_id", "status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_order_items_product_id" ON "order_items" ("product_id")`,
+    );
 
     // payments table (FK to orders, users, devices)
     await queryRunner.query(`
@@ -908,7 +1020,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_payments_order_id" ON "payments" ("order_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_payments_order_id" ON "payments" ("order_id")`,
+    );
 
     // order_item_payments table (FK to payments, order_items)
     await queryRunner.query(`
@@ -926,8 +1040,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_order_item_payments_payment_id" ON "order_item_payments" ("payment_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_order_item_payments_order_item_id" ON "order_item_payments" ("order_item_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_order_item_payments_payment_id" ON "order_item_payments" ("payment_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_order_item_payments_order_item_id" ON "order_item_payments" ("order_item_id")`,
+    );
 
     // print_jobs table (FK to organizations, printers, print_templates, orders, order_items)
     await queryRunner.query(`
@@ -954,8 +1072,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_print_jobs_printer_status" ON "print_jobs" ("printer_id", "status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_print_jobs_organization_id" ON "print_jobs" ("organization_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_print_jobs_printer_status" ON "print_jobs" ("printer_id", "status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_print_jobs_organization_id" ON "print_jobs" ("organization_id")`,
+    );
 
     // stock_movements table (FK to events, products, users)
     await queryRunner.query(`
@@ -981,8 +1103,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_stock_movements_product_created" ON "stock_movements" ("product_id", "created_at")`);
-    await queryRunner.query(`CREATE INDEX "IDX_stock_movements_event_created" ON "stock_movements" ("event_id", "created_at")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_stock_movements_product_created" ON "stock_movements" ("product_id", "created_at")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_stock_movements_event_created" ON "stock_movements" ("event_id", "created_at")`,
+    );
 
     // inventory_counts table (FK to events, users)
     await queryRunner.query(`
@@ -1005,7 +1131,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_inventory_counts_event_id" ON "inventory_counts" ("event_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_inventory_counts_event_id" ON "inventory_counts" ("event_id")`,
+    );
 
     // inventory_count_items table (FK to inventory_counts, products, users)
     await queryRunner.query(`
@@ -1028,8 +1156,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_inventory_count_items_inventory_count_id" ON "inventory_count_items" ("inventory_count_id")`);
-    await queryRunner.query(`CREATE INDEX "IDX_inventory_count_items_product_id" ON "inventory_count_items" ("product_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_inventory_count_items_inventory_count_id" ON "inventory_count_items" ("inventory_count_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_inventory_count_items_product_id" ON "inventory_count_items" ("product_id")`,
+    );
 
     // credit_purchases table (FK to organizations, credit_packages, users, invoices)
     await queryRunner.query(`
@@ -1057,7 +1189,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_credit_purchases_organization_created" ON "credit_purchases" ("organization_id", "created_at")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_credit_purchases_organization_created" ON "credit_purchases" ("organization_id", "created_at")`,
+    );
 
     // event_licenses table (FK to organizations, events, users)
     await queryRunner.query(`
@@ -1079,8 +1213,12 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_event_licenses_organization_date" ON "event_licenses" ("organization_id", "license_date")`);
-    await queryRunner.query(`CREATE INDEX "IDX_event_licenses_event_id" ON "event_licenses" ("event_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_event_licenses_organization_date" ON "event_licenses" ("organization_id", "license_date")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_event_licenses_event_id" ON "event_licenses" ("event_id")`,
+    );
 
     // rental_assignments table (FK to rental_hardware, organizations, events, users, invoices)
     await queryRunner.query(`
@@ -1112,9 +1250,15 @@ export class InitialSchema1700000000000 implements MigrationInterface {
       )
     `);
 
-    await queryRunner.query(`CREATE INDEX "IDX_rental_assignments_hardware_status" ON "rental_assignments" ("rental_hardware_id", "status")`);
-    await queryRunner.query(`CREATE INDEX "IDX_rental_assignments_organization_start" ON "rental_assignments" ("organization_id", "start_date")`);
-    await queryRunner.query(`CREATE INDEX "IDX_rental_assignments_event_id" ON "rental_assignments" ("event_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_rental_assignments_hardware_status" ON "rental_assignments" ("rental_hardware_id", "status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_rental_assignments_organization_start" ON "rental_assignments" ("organization_id", "start_date")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_rental_assignments_event_id" ON "rental_assignments" ("event_id")`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
@@ -1178,7 +1322,9 @@ export class InitialSchema1700000000000 implements MigrationInterface {
     await queryRunner.query(`DROP TYPE IF EXISTS "inventory_count_status"`);
     await queryRunner.query(`DROP TYPE IF EXISTS "stock_movement_type"`);
     await queryRunner.query(`DROP TYPE IF EXISTS "workflow_run_status"`);
-    await queryRunner.query(`DROP TYPE IF EXISTS "online_order_session_status"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "online_order_session_status"`,
+    );
     await queryRunner.query(`DROP TYPE IF EXISTS "qr_code_type"`);
     await queryRunner.query(`DROP TYPE IF EXISTS "payment_transaction_status"`);
     await queryRunner.query(`DROP TYPE IF EXISTS "payment_method"`);

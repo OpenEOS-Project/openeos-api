@@ -32,10 +32,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     }
 
     const request = context.switchToHttp().getRequest();
-    const vorgelegt = (request.headers?.authorization as string | undefined)?.replace(
-      /^Bearer /i,
-      '',
-    );
+    const vorgelegt = (
+      request.headers?.authorization as string | undefined
+    )?.replace(/^Bearer /i, '');
 
     /* Ein API-Token statt eines Anmeldetokens. Die Unterscheidung faellt
        am Praefix, nicht am Ausprobieren: ein JWT durch die Token-Pruefung
@@ -69,10 +68,10 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       });
     }
 
-    const verlangt = this.reflector.getAllAndOverride<string>(REQUIRES_SCOPE_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const verlangt = this.reflector.getAllAndOverride<string>(
+      REQUIRES_SCOPE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     if (!verlangt) {
       throw new ForbiddenException({
@@ -118,10 +117,10 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const stehtAus = (user as { pending2fa?: boolean })?.pending2fa === true;
     if (stehtAus) {
       const erlaubt = context
-        ? this.reflector.getAllAndOverride<boolean>(ALLOW_PENDING_TWO_FACTOR_KEY, [
-            context.getHandler(),
-            context.getClass(),
-          ])
+        ? this.reflector.getAllAndOverride<boolean>(
+            ALLOW_PENDING_TWO_FACTOR_KEY,
+            [context.getHandler(), context.getClass()],
+          )
         : false;
       if (!erlaubt) {
         throw new UnauthorizedException({

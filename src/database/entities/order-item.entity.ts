@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Order } from './order.entity';
 import { Product } from './product.entity';
@@ -51,7 +58,13 @@ export class OrderItem extends BaseEntity {
   @Column({ name: 'unit_price', type: 'decimal', precision: 10, scale: 2 })
   unitPrice: number;
 
-  @Column({ name: 'options_price', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({
+    name: 'options_price',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
   optionsPrice: number;
 
   @Column({ name: 'tax_rate', type: 'decimal', precision: 5, scale: 2 })
@@ -63,7 +76,12 @@ export class OrderItem extends BaseEntity {
   @Column({ type: 'jsonb', default: { selected: [] } })
   options: OrderItemOptions;
 
-  @Column({ type: 'enum', enum: OrderItemStatus, enumName: 'order_item_status', default: OrderItemStatus.PENDING })
+  @Column({
+    type: 'enum',
+    enum: OrderItemStatus,
+    enumName: 'order_item_status',
+    default: OrderItemStatus.PENDING,
+  })
   status: OrderItemStatus;
 
   @Column({ type: 'text', nullable: true })
@@ -75,13 +93,25 @@ export class OrderItem extends BaseEntity {
   @Column({ name: 'paid_quantity', type: 'int', default: 0 })
   paidQuantity: number;
 
-  @Column({ name: 'prepared_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'prepared_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   preparedAt: Date | null;
 
-  @Column({ name: 'ready_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'ready_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   readyAt: Date | null;
 
-  @Column({ name: 'delivered_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'delivered_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   deliveredAt: Date | null;
 
   @Column({ name: 'sort_order', type: 'int', default: 0 })
@@ -95,7 +125,13 @@ export class OrderItem extends BaseEntity {
   pfandTypeId: string | null;
 
   /** Deposit charged per unit (snapshot). 0 when no Pfand or when refilling. */
-  @Column({ name: 'deposit_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({
+    name: 'deposit_amount',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
   depositAmount: number;
 
   /** True = "Nachfüllen": guest reuses their cup, so no new deposit is charged. */
@@ -107,7 +143,9 @@ export class OrderItem extends BaseEntity {
   @JoinColumn({ name: 'order_id' })
   order: Order;
 
-  @ManyToOne(() => Product, (product) => product.orderItems, { onDelete: 'SET NULL' })
+  @ManyToOne(() => Product, (product) => product.orderItems, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'product_id' })
   product: Product;
 

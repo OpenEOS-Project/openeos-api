@@ -9,13 +9,25 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Product, User, UserOrganization, StockMovement, Event, Category, PfandType } from '../../database/entities';
+import {
+  Product,
+  User,
+  UserOrganization,
+  StockMovement,
+  Event,
+  Category,
+  PfandType,
+} from '../../database/entities';
 import { Organization } from '../../database/entities/organization.entity';
 import { taxRatesFor } from '../../common/constants/tax-rates';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  createPaginatedResult,
+} from '../../common/dto/pagination.dto';
 import { CreateProductDto, UpdateProductDto, AdjustStockDto } from './dto';
 import { ImportProductsDto } from './dto/import-products.dto';
 import { parseProductCsv } from './product-csv';
@@ -49,7 +61,11 @@ export class ProductsService {
     createDto: CreateProductDto,
     user: User,
   ): Promise<Product> {
-    const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
+    const event = await this.getEventAndCheckPermission(
+      eventId,
+      user.id,
+      'products',
+    );
     await this.assertTaxRateAllowed(event.organizationId, createDto.taxRate);
 
     const product = this.productRepository.create({
@@ -96,7 +112,11 @@ export class ProductsService {
     return createPaginatedResult(items, total, page, limit);
   }
 
-  async findOne(eventId: string, productId: string, user: User): Promise<Product> {
+  async findOne(
+    eventId: string,
+    productId: string,
+    user: User,
+  ): Promise<Product> {
     await this.getEventAndCheckMembership(eventId, user.id);
 
     const product = await this.productRepository.findOne({
@@ -120,7 +140,11 @@ export class ProductsService {
     updateDto: UpdateProductDto,
     user: User,
   ): Promise<Product> {
-    const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
+    const event = await this.getEventAndCheckPermission(
+      eventId,
+      user.id,
+      'products',
+    );
     await this.assertTaxRateAllowed(event.organizationId, updateDto.taxRate);
 
     const product = await this.findOne(eventId, productId, user);
@@ -157,7 +181,11 @@ export class ProductsService {
     this.logger.log(`Product deleted: ${product.name} (${product.id})`);
 
     // Notify menu displays
-    this.gatewayService.notifyProductDeleted(event.organizationId, eventId, productId);
+    this.gatewayService.notifyProductDeleted(
+      event.organizationId,
+      eventId,
+      productId,
+    );
   }
 
   async updateAvailability(
@@ -172,7 +200,9 @@ export class ProductsService {
     product.isAvailable = isAvailable;
     await this.productRepository.save(product);
 
-    this.logger.log(`Product availability updated: ${product.name} - ${isAvailable}`);
+    this.logger.log(
+      `Product availability updated: ${product.name} - ${isAvailable}`,
+    );
 
     // Notify menu displays
     this.gatewayService.notifyProductUpdated(event.organizationId, eventId, {
@@ -220,12 +250,17 @@ export class ProductsService {
       quantityBefore: previousQuantity,
       quantityAfter: product.stockQuantity,
       reason: adjustDto.reason || 'Manuelle Anpassung',
-      type: adjustDto.quantity > 0 ? StockMovementType.ADJUSTMENT_PLUS : StockMovementType.ADJUSTMENT_MINUS,
+      type:
+        adjustDto.quantity > 0
+          ? StockMovementType.ADJUSTMENT_PLUS
+          : StockMovementType.ADJUSTMENT_MINUS,
       createdByUserId: user.id,
     });
     await this.stockMovementRepository.save(stockMovement);
 
-    this.logger.log(`Stock adjusted for product ${product.id}: ${adjustDto.quantity}`);
+    this.logger.log(
+      `Stock adjusted for product ${product.id}: ${adjustDto.quantity}`,
+    );
 
     // Notify menu displays about stock change
     const event = await this.getEvent(eventId);
@@ -283,7 +318,11 @@ export class ProductsService {
     newPfandTypes: Array<{ name: string; amount: number }>;
     fatalError: string | null;
   }> {
-    const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
+    const event = await this.getEventAndCheckPermission(
+      eventId,
+      user.id,
+      'products',
+    );
     const mode = dto.mode ?? 'skip';
     const dryRun = dto.dryRun ?? true;
 
@@ -300,10 +339,18 @@ export class ProductsService {
     }
 
     // Existing state for matching (case-insensitive by name).
-    const existingCategories = await this.categoryRepository.find({ where: { eventId } });
-    const categoryByName = new Map(existingCategories.map((c) => [c.name.trim().toLowerCase(), c]));
-    const existingProducts = await this.productRepository.find({ where: { eventId } });
-    const categoryNameById = new Map(existingCategories.map((c) => [c.id, c.name]));
+    const existingCategories = await this.categoryRepository.find({
+      where: { eventId },
+    });
+    const categoryByName = new Map(
+      existingCategories.map((c) => [c.name.trim().toLowerCase(), c]),
+    );
+    const existingProducts = await this.productRepository.find({
+      where: { eventId },
+    });
+    const categoryNameById = new Map(
+      existingCategories.map((c) => [c.id, c.name]),
+    );
     const productKey = (name: string, categoryName: string) =>
       `${name.trim().toLowerCase()}|${categoryName.trim().toLowerCase()}`;
     const productByKey = new Map(
@@ -316,7 +363,9 @@ export class ProductsService {
       where: { organizationId: event.organizationId },
     });
     const roundAmount = (a: number) => Math.round(a * 100) / 100;
-    const pfandByAmount = new Map(existingPfand.map((p) => [roundAmount(Number(p.amount)), p]));
+    const pfandByAmount = new Map(
+      existingPfand.map((p) => [roundAmount(Number(p.amount)), p]),
+    );
 
     // Collect new categories/pfand the import would introduce (preview + plan).
     const newCategoryNames: string[] = [];
@@ -346,7 +395,8 @@ export class ProductsService {
         }
         const existing = productByKey.get(productKey(row.name, row.category));
         if (existing) {
-          action = mode === 'skip' ? 'skip' : mode === 'update' ? 'update' : 'create';
+          action =
+            mode === 'skip' ? 'skip' : mode === 'update' ? 'update' : 'create';
           if (mode === 'skip') message = 'Existiert bereits';
         } else {
           action = 'create';
@@ -369,10 +419,15 @@ export class ProductsService {
     if (!dryRun && (summary.create > 0 || summary.update > 0)) {
       // 1. Create missing categories (sortOrder appended).
       let nextSort =
-        existingCategories.reduce((max, c) => Math.max(max, c.sortOrder), -1) + 1;
+        existingCategories.reduce((max, c) => Math.max(max, c.sortOrder), -1) +
+        1;
       for (const name of newCategoryNames) {
         const cat = await this.categoryRepository.save(
-          this.categoryRepository.create({ eventId, name, sortOrder: nextSort++ }),
+          this.categoryRepository.create({
+            eventId,
+            name,
+            sortOrder: nextSort++,
+          }),
         );
         categoryByName.set(name.trim().toLowerCase(), cat);
       }
@@ -398,7 +453,9 @@ export class ProductsService {
         const category = categoryByName.get(row.category.trim().toLowerCase());
         if (!category) continue; // defensive; should exist after step 1
         const pfandTypeId =
-          row.pfand !== null ? pfandByAmount.get(roundAmount(row.pfand))?.id ?? null : null;
+          row.pfand !== null
+            ? (pfandByAmount.get(roundAmount(row.pfand))?.id ?? null)
+            : null;
         const imageUrl = row.iconId ? `pos-icon:${row.iconId}` : null;
 
         if (action === 'create') {
@@ -433,7 +490,11 @@ export class ProductsService {
         }
       }
 
-      this.gatewayService.notifyMenuRefresh(event.organizationId, eventId, 'product-import');
+      this.gatewayService.notifyMenuRefresh(
+        event.organizationId,
+        eventId,
+        'product-import',
+      );
       this.logger.log(
         `Product import for event ${eventId}: +${summary.create} ~${summary.update} (by ${user.email})`,
       );
@@ -453,7 +514,10 @@ export class ProductsService {
         message,
       })),
       newCategories: newCategoryNames,
-      newPfandTypes: newPfandAmounts.map((amount) => ({ name: pfandName(amount), amount })),
+      newPfandTypes: newPfandAmounts.map((amount) => ({
+        name: pfandName(amount),
+        amount,
+      })),
       fatalError: null,
     };
   }
@@ -473,7 +537,10 @@ export class ProductsService {
     return event;
   }
 
-  private async getEventAndCheckMembership(eventId: string, userId: string): Promise<Event> {
+  private async getEventAndCheckMembership(
+    eventId: string,
+    userId: string,
+  ): Promise<Event> {
     const event = await this.getEvent(eventId);
 
     const membership = await this.userOrganizationRepository.findOne({
@@ -498,10 +565,15 @@ export class ProductsService {
    * sonst ueber die API 19 % an ein Produkt schreiben und haette einen
    * Satz im Bestand, den er nie erheben darf.
    */
-  private async assertTaxRateAllowed(organizationId: string, taxRate: number | undefined): Promise<void> {
+  private async assertTaxRateAllowed(
+    organizationId: string,
+    taxRate: number | undefined,
+  ): Promise<void> {
     if (taxRate === undefined) return;
 
-    const organization = await this.organizationRepository.findOne({ where: { id: organizationId } });
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
     const allowed = taxRatesFor(
       organization?.settings?.address?.country,
       organization?.settings?.vatExempt,
@@ -533,7 +605,10 @@ export class ProductsService {
       });
     }
 
-    if (membership.role !== OrganizationRole.ADMIN && !membership.permissions?.[permission]) {
+    if (
+      membership.role !== OrganizationRole.ADMIN &&
+      !membership.permissions?.[permission]
+    ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

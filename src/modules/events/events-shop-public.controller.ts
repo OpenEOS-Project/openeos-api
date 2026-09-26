@@ -25,7 +25,15 @@ import {
 import { Category } from '../../database/entities/category.entity';
 import { Product } from '../../database/entities/product.entity';
 
-const WEEKDAY_KEYS: ShopWeekday[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const WEEKDAY_KEYS: ShopWeekday[] = [
+  'sun',
+  'mon',
+  'tue',
+  'wed',
+  'thu',
+  'fri',
+  'sat',
+];
 
 function parseHHMM(value: string): number | null {
   const match = /^(\d{1,2}):(\d{2})$/.exec(value);
@@ -49,12 +57,17 @@ export function resolveShopHoursMode(
   hours: ShopOpeningHours | null | undefined,
 ): 'event' | 'weekly' {
   if (hoursMode) return hoursMode;
-  const hasWeeklyTable = hours ? WEEKDAY_KEYS.some((k) => hours[k] !== undefined) : false;
+  const hasWeeklyTable = hours
+    ? WEEKDAY_KEYS.some((k) => hours[k] !== undefined)
+    : false;
   return hasWeeklyTable ? 'weekly' : 'event';
 }
 
 /** Die konkreten Zeitfenster dieses Shops, unabhaengig vom gewaehlten Modus. */
-export function resolveShopWindows(event: Event, timeZone: string): ShopWindow[] {
+export function resolveShopWindows(
+  event: Event,
+  timeZone: string,
+): ShopWindow[] {
   const shop = event.settings?.shop;
   const hours = shop?.openingHours ?? null;
   if (resolveShopHoursMode(shop?.hoursMode, hours) === 'event') {
@@ -121,10 +134,13 @@ export class EventsShopPublicController {
   ) {}
 
   private async loadShopEvent(eventId: string): Promise<Event> {
-    const event = await this.eventRepository.findOne({ where: { id: eventId } });
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+    });
     const shopEnabled = event?.settings?.shop?.enabled === true;
     const isLive =
-      event?.status === EventStatus.ACTIVE || event?.status === EventStatus.TEST;
+      event?.status === EventStatus.ACTIVE ||
+      event?.status === EventStatus.TEST;
     if (!event || !shopEnabled || !isLive) {
       throw new NotFoundException({
         code: 'SHOP_NOT_FOUND',
@@ -135,26 +151,35 @@ export class EventsShopPublicController {
   }
 
   @Get(':eventId')
-  @ApiOperation({ summary: 'Get public shop info for an event (must have settings.shop.enabled)' })
+  @ApiOperation({
+    summary:
+      'Get public shop info for an event (must have settings.shop.enabled)',
+  })
   async getShop(@Param('eventId', ParseUUIDPipe) eventId: string) {
     const event = await this.loadShopEvent(eventId);
     const organization = await this.organizationRepository.findOne({
       where: { id: event.organizationId },
     });
     const currency =
-      (organization?.settings as { currency?: string } | null)?.currency || 'EUR';
+      (organization?.settings as { currency?: string } | null)?.currency ||
+      'EUR';
     const timezone = organization?.settings?.timezone || 'Europe/Berlin';
     const openingHours = event.settings?.shop?.openingHours ?? null;
-    const hoursMode = resolveShopHoursMode(event.settings?.shop?.hoursMode, openingHours);
+    const hoursMode = resolveShopHoursMode(
+      event.settings?.shop?.hoursMode,
+      openingHours,
+    );
     const windows = resolveShopWindows(event, timezone);
     const rawFee = event.settings?.shop?.serviceFee;
-    const serviceFee = typeof rawFee === 'number' && rawFee > 0 ? Number(rawFee.toFixed(2)) : 0;
+    const serviceFee =
+      typeof rawFee === 'number' && rawFee > 0 ? Number(rawFee.toFixed(2)) : 0;
     const testMode = event.status === EventStatus.TEST;
     const now = new Date();
     // Die Fenster tragen den Zeitraum bereits in sich — eine zusaetzliche
     // Pruefung gegen Start- und Enddatum waere dieselbe Aussage doppelt.
     const isOpenNow = testMode ? true : isWithinShopWindows(now, windows);
-    const nextOpening = windows.map((w) => w.start).find((iso) => new Date(iso) > now) ?? null;
+    const nextOpening =
+      windows.map((w) => w.start).find((iso) => new Date(iso) > now) ?? null;
 
     return {
       data: {

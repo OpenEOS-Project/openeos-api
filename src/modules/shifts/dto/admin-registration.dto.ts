@@ -1,4 +1,11 @@
-import { IsString, IsEmail, IsOptional, IsBoolean, IsUUID, MinLength } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsOptional,
+  IsBoolean,
+  IsUUID,
+  MinLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AdminCreateRegistrationDto {
@@ -7,7 +14,11 @@ export class AdminCreateRegistrationDto {
   @MinLength(2)
   name: string;
 
-  @ApiPropertyOptional({ description: 'Helper email — used for notifications. Optional when adding helpers manually.', example: 'max@example.com' })
+  @ApiPropertyOptional({
+    description:
+      'Helper email — used for notifications. Optional when adding helpers manually.',
+    example: 'max@example.com',
+  })
   @IsEmail()
   @IsOptional()
   email?: string;
@@ -17,7 +28,9 @@ export class AdminCreateRegistrationDto {
   @IsOptional()
   phone?: string;
 
-  @ApiPropertyOptional({ description: 'Helper-side notes (visible to admin too)' })
+  @ApiPropertyOptional({
+    description: 'Helper-side notes (visible to admin too)',
+  })
   @IsString()
   @IsOptional()
   notes?: string;
@@ -28,7 +41,8 @@ export class AdminCreateRegistrationDto {
   adminNotes?: string;
 
   @ApiPropertyOptional({
-    description: 'When true, send a confirmation email to the helper. Default false (silent admin add).',
+    description:
+      'When true, send a confirmation email to the helper. Default false (silent admin add).',
     default: false,
   })
   @IsBoolean()
@@ -72,7 +86,8 @@ export class AdminUpdateRegistrationDto {
   adminNotes?: string;
 
   @ApiPropertyOptional({
-    description: 'Move the registration to a different shift. The helper will be notified by default unless `notify` is false.',
+    description:
+      'Move the registration to a different shift. The helper will be notified by default unless `notify` is false.',
   })
   @IsUUID()
   @IsOptional()
@@ -86,7 +101,8 @@ export class AdminUpdateRegistrationDto {
   notifyMessage?: string;
 
   @ApiPropertyOptional({
-    description: 'When true and the shift is moved, send the helper an update email. Default true.',
+    description:
+      'When true and the shift is moved, send the helper an update email. Default true.',
     default: true,
   })
   @IsBoolean()

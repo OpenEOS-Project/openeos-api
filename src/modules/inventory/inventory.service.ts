@@ -15,9 +15,7 @@ import {
   Event,
   UserOrganization,
 } from '../../database/entities';
-import {
-  OrganizationRole,
-} from '../../database/entities/user-organization.entity';
+import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { InventoryCountStatus } from '../../database/entities/inventory-count.entity';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -57,7 +55,12 @@ export class InventoryService {
     eventId: string,
     queryDto: QueryInventoryCountsDto,
     userId: string,
-  ): Promise<{ data: InventoryCount[]; total: number; page: number; limit: number }> {
+  ): Promise<{
+    data: InventoryCount[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     await this.getEventAndCheckPermission(eventId, userId);
     const { status, page = 1, limit = 20 } = queryDto;
 
@@ -81,7 +84,11 @@ export class InventoryService {
     return { data, total, page, limit };
   }
 
-  async findOneCount(eventId: string, countId: string, userId: string): Promise<InventoryCount> {
+  async findOneCount(
+    eventId: string,
+    countId: string,
+    userId: string,
+  ): Promise<InventoryCount> {
     await this.getEventAndCheckPermission(eventId, userId);
     const count = await this.inventoryCountRepository.findOne({
       where: { id: countId, eventId },
@@ -155,7 +162,11 @@ export class InventoryService {
     return count;
   }
 
-  async deleteCount(eventId: string, countId: string, userId: string): Promise<void> {
+  async deleteCount(
+    eventId: string,
+    countId: string,
+    userId: string,
+  ): Promise<void> {
     await this.getEventAndCheckPermission(eventId, userId);
     const count = await this.findOneCountInternal(eventId, countId);
 
@@ -169,7 +180,11 @@ export class InventoryService {
     await this.inventoryCountRepository.remove(count);
   }
 
-  async startCount(eventId: string, countId: string, userId: string): Promise<InventoryCount> {
+  async startCount(
+    eventId: string,
+    countId: string,
+    userId: string,
+  ): Promise<InventoryCount> {
     await this.getEventAndCheckPermission(eventId, userId);
     const count = await this.findOneCountInternal(eventId, countId);
 
@@ -212,7 +227,9 @@ export class InventoryService {
     }
 
     // Check all items are counted
-    const uncounted = count.items.filter((item) => item.countedQuantity === null);
+    const uncounted = count.items.filter(
+      (item) => item.countedQuantity === null,
+    );
     if (uncounted.length > 0) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
@@ -243,7 +260,11 @@ export class InventoryService {
     return this.findOneCountInternal(eventId, countId);
   }
 
-  async cancelCount(eventId: string, countId: string, userId: string): Promise<InventoryCount> {
+  async cancelCount(
+    eventId: string,
+    countId: string,
+    userId: string,
+  ): Promise<InventoryCount> {
     await this.getEventAndCheckPermission(eventId, userId);
     const count = await this.findOneCountInternal(eventId, countId);
 
@@ -335,7 +356,11 @@ export class InventoryService {
     if (bulkDto.categoryId) {
       // Get all products in category
       products = await this.productRepository.find({
-        where: { eventId, categoryId: bulkDto.categoryId, trackInventory: true },
+        where: {
+          eventId,
+          categoryId: bulkDto.categoryId,
+          trackInventory: true,
+        },
       });
     } else if (bulkDto.productIds && bulkDto.productIds.length > 0) {
       products = await this.productRepository.find({
@@ -363,7 +388,9 @@ export class InventoryService {
       items.push(item);
     }
 
-    this.logger.log(`Added ${items.length} items to inventory count ${countId}`);
+    this.logger.log(
+      `Added ${items.length} items to inventory count ${countId}`,
+    );
 
     return items;
   }
@@ -413,9 +440,21 @@ export class InventoryService {
     eventId: string,
     queryDto: QueryStockMovementsDto,
     userId: string,
-  ): Promise<{ data: StockMovement[]; total: number; page: number; limit: number }> {
+  ): Promise<{
+    data: StockMovement[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     await this.getEventAndCheckPermission(eventId, userId);
-    const { productId, type, startDate, endDate, page = 1, limit = 20 } = queryDto;
+    const {
+      productId,
+      type,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 20,
+    } = queryDto;
 
     const queryBuilder = this.stockMovementRepository
       .createQueryBuilder('movement')
@@ -432,10 +471,13 @@ export class InventoryService {
     }
 
     if (startDate && endDate) {
-      queryBuilder.andWhere('movement.createdAt BETWEEN :startDate AND :endDate', {
-        startDate: new Date(startDate),
-        endDate: endOfDay(endDate),
-      });
+      queryBuilder.andWhere(
+        'movement.createdAt BETWEEN :startDate AND :endDate',
+        {
+          startDate: new Date(startDate),
+          endDate: endOfDay(endDate),
+        },
+      );
     }
 
     const total = await queryBuilder.getCount();
@@ -449,7 +491,11 @@ export class InventoryService {
     return { data, total, page, limit };
   }
 
-  async findOneMovement(eventId: string, movementId: string, userId: string): Promise<StockMovement> {
+  async findOneMovement(
+    eventId: string,
+    movementId: string,
+    userId: string,
+  ): Promise<StockMovement> {
     await this.getEventAndCheckPermission(eventId, userId);
     const movement = await this.stockMovementRepository.findOne({
       where: { id: movementId, eventId },
@@ -507,7 +553,10 @@ export class InventoryService {
     return event;
   }
 
-  private async findOneCountInternal(eventId: string, countId: string): Promise<InventoryCount> {
+  private async findOneCountInternal(
+    eventId: string,
+    countId: string,
+  ): Promise<InventoryCount> {
     const count = await this.inventoryCountRepository.findOne({
       where: { id: countId, eventId },
       relations: ['items', 'items.product', 'createdByUser', 'completedByUser'],

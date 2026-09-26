@@ -27,6 +27,8 @@ export class AddEventDeletedAt1809000000000 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP INDEX IF EXISTS idx_events_deleted_at`);
-    await queryRunner.query(`ALTER TABLE events DROP COLUMN IF EXISTS deleted_at`);
+    await queryRunner.query(
+      `ALTER TABLE events DROP COLUMN IF EXISTS deleted_at`,
+    );
   }
 }

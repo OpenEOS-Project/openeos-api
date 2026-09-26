@@ -1,4 +1,12 @@
-import { IsEmail, IsIn, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export type ContactRequestType =
@@ -36,7 +44,11 @@ export class CreateContactRequestDto {
   @MaxLength(200)
   organization?: string;
 
-  @ApiProperty({ example: 'Wir würden gerne eine Demo vereinbaren.', minLength: 10, maxLength: 3000 })
+  @ApiProperty({
+    example: 'Wir würden gerne eine Demo vereinbaren.',
+    minLength: 10,
+    maxLength: 3000,
+  })
   @IsString()
   @MinLength(10)
   @MaxLength(3000)
@@ -48,7 +60,10 @@ export class CreateContactRequestDto {
   @IsString()
   website?: string;
 
-  @ApiProperty({ example: 1735689600000, description: 'Zeitpunkt (epoch ms), zu dem das Formular geladen wurde' })
+  @ApiProperty({
+    example: 1735689600000,
+    description: 'Zeitpunkt (epoch ms), zu dem das Formular geladen wurde',
+  })
   @IsInt()
   startedAt: number;
 }

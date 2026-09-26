@@ -10,7 +10,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { QrCode, User, UserOrganization } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  createPaginatedResult,
+} from '../../common/dto/pagination.dto';
 import { CreateQrCodeDto, UpdateQrCodeDto, BulkCreateQrCodesDto } from './dto';
 
 @Injectable()
@@ -108,7 +112,11 @@ export class QrCodesService {
     return createPaginatedResult(items, total, page, limit);
   }
 
-  async findOne(organizationId: string, qrCodeId: string, user: User): Promise<QrCode> {
+  async findOne(
+    organizationId: string,
+    qrCodeId: string,
+    user: User,
+  ): Promise<QrCode> {
     await this.checkMembership(organizationId, user.id);
 
     const qrCode = await this.qrCodeRepository.findOne({
@@ -159,7 +167,11 @@ export class QrCodesService {
     return qrCode;
   }
 
-  async remove(organizationId: string, qrCodeId: string, user: User): Promise<void> {
+  async remove(
+    organizationId: string,
+    qrCodeId: string,
+    user: User,
+  ): Promise<void> {
     await this.checkPermission(organizationId, user.id, 'events');
 
     const qrCode = await this.findOne(organizationId, qrCodeId, user);
@@ -179,7 +191,8 @@ export class QrCodesService {
     const qrCode = await this.findOne(organizationId, qrCodeId, user);
 
     // Generate QR code URL
-    const baseUrl = process.env.ONLINE_ORDER_BASE_URL || 'https://order.openeos.de';
+    const baseUrl =
+      process.env.ONLINE_ORDER_BASE_URL || 'https://order.openeos.de';
     const qrUrl = `${baseUrl}/scan/${qrCode.code}`;
 
     // For now, return a simple SVG placeholder
@@ -217,7 +230,10 @@ export class QrCodesService {
     </svg>`;
   }
 
-  private async checkMembership(organizationId: string, userId: string): Promise<void> {
+  private async checkMembership(
+    organizationId: string,
+    userId: string,
+  ): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });
@@ -246,7 +262,10 @@ export class QrCodesService {
       });
     }
 
-    if (membership.role !== OrganizationRole.ADMIN && !membership.permissions?.[permission]) {
+    if (
+      membership.role !== OrganizationRole.ADMIN &&
+      !membership.permissions?.[permission]
+    ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

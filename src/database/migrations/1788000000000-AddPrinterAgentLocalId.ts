@@ -15,6 +15,8 @@ export class AddPrinterAgentLocalId1788000000000 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP INDEX IF EXISTS "idx_printers_device_local"`);
-    await queryRunner.query(`ALTER TABLE "printers" DROP COLUMN IF EXISTS "agent_local_id"`);
+    await queryRunner.query(
+      `ALTER TABLE "printers" DROP COLUMN IF EXISTS "agent_local_id"`,
+    );
   }
 }

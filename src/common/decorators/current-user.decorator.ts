@@ -18,7 +18,10 @@ export interface RequestUser extends Partial<User> {
 }
 
 export const CurrentUser = createParamDecorator(
-  (data: keyof RequestUser | undefined, ctx: ExecutionContext): RequestUser | unknown => {
+  (
+    data: keyof RequestUser | undefined,
+    ctx: ExecutionContext,
+  ): RequestUser | unknown => {
     const request = ctx.switchToHttp().getRequest();
     const user = request.user as RequestUser;
 

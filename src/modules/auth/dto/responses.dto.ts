@@ -46,12 +46,14 @@ export class RegisterResponseDto {
 
   @ApiProperty({
     example: true,
-    description: 'Immer true — die E-Mail-Adresse muss vor dem Login bestätigt werden',
+    description:
+      'Immer true — die E-Mail-Adresse muss vor dem Login bestätigt werden',
   })
   requiresEmailVerification: boolean;
 
   @ApiProperty({
-    example: 'Bitte bestätige deine E-Mail-Adresse. Wir haben dir einen Link geschickt.',
+    example:
+      'Bitte bestätige deine E-Mail-Adresse. Wir haben dir einen Link geschickt.',
   })
   message: string;
 }

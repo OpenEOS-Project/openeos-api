@@ -1,4 +1,11 @@
-import { IsString, IsEnum, IsOptional, IsNumber, Min, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsEnum,
+  IsOptional,
+  IsNumber,
+  Min,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class BroadcastMessageDto {
@@ -16,14 +23,15 @@ export class BroadcastMessageDto {
   @ApiProperty({
     description: 'Type of message',
     enum: ['info', 'warning', 'success', 'error'],
-    default: 'info'
+    default: 'info',
   })
   @IsEnum(['info', 'warning', 'success', 'error'])
   type: 'info' | 'warning' | 'success' | 'error' = 'info';
 
   @ApiPropertyOptional({
-    description: 'Duration to show the message in milliseconds. 0 = persistent until dismissed.',
-    default: 10000
+    description:
+      'Duration to show the message in milliseconds. 0 = persistent until dismissed.',
+    default: 10000,
   })
   @IsOptional()
   @IsNumber()

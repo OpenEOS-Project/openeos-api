@@ -14,73 +14,109 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProductDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID der Kategorie' })
+  @ApiProperty({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'ID der Kategorie',
+  })
   @IsString()
   @MinLength(1, { message: 'Ungültige Kategorie-ID' })
   categoryId: string;
 
-  @ApiProperty({ example: 'Wiener Schnitzel', description: 'Name des Produkts' })
+  @ApiProperty({
+    example: 'Wiener Schnitzel',
+    description: 'Name des Produkts',
+  })
   @IsString()
   @MinLength(2, { message: 'Name muss mindestens 2 Zeichen lang sein' })
   @MaxLength(255, { message: 'Name darf maximal 255 Zeichen lang sein' })
   name: string;
 
-  @ApiPropertyOptional({ example: 'Paniertes Kalbsschnitzel mit Kartoffelsalat', description: 'Beschreibung des Produkts' })
+  @ApiPropertyOptional({
+    example: 'Paniertes Kalbsschnitzel mit Kartoffelsalat',
+    description: 'Beschreibung des Produkts',
+  })
   @IsOptional()
   @IsString()
   description?: string;
 
-  @ApiProperty({ example: 12.50, description: 'Verkaufspreis in Euro' })
+  @ApiProperty({ example: 12.5, description: 'Verkaufspreis in Euro' })
   @IsNumber({}, { message: 'Preis muss eine Zahl sein' })
   @Min(0, { message: 'Preis darf nicht negativ sein' })
   price: number;
 
-  @ApiPropertyOptional({ example: 19, description: 'Umsatzsteuersatz in Prozent. 0 heißt steuerfrei.' })
+  @ApiPropertyOptional({
+    example: 19,
+    description: 'Umsatzsteuersatz in Prozent. 0 heißt steuerfrei.',
+  })
   @IsOptional()
   @IsNumber({}, { message: 'Steuersatz muss eine Zahl sein' })
   @Min(0, { message: 'Steuersatz darf nicht negativ sein' })
   @Max(100, { message: 'Steuersatz darf 100 nicht überschreiten' })
   taxRate?: number;
 
-  @ApiPropertyOptional({ example: 'https://example.com/images/schnitzel.jpg', description: 'URL des Produktbilds' })
+  @ApiPropertyOptional({
+    example: 'https://example.com/images/schnitzel.jpg',
+    description: 'URL des Produktbilds',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(500)
   imageUrl?: string;
 
-  @ApiPropertyOptional({ example: true, description: 'Gibt an, ob das Produkt aktiv ist' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Gibt an, ob das Produkt aktiv ist',
+  })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiPropertyOptional({ example: true, description: 'Gibt an, ob das Produkt verfügbar ist' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Gibt an, ob das Produkt verfügbar ist',
+  })
   @IsOptional()
   @IsBoolean()
   isAvailable?: boolean;
 
-  @ApiPropertyOptional({ example: false, description: 'Gibt an, ob der Lagerbestand verfolgt wird' })
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Gibt an, ob der Lagerbestand verfolgt wird',
+  })
   @IsOptional()
   @IsBoolean()
   trackInventory?: boolean;
 
-  @ApiPropertyOptional({ example: 50, description: 'Anfänglicher Lagerbestand' })
+  @ApiPropertyOptional({
+    example: 50,
+    description: 'Anfänglicher Lagerbestand',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
   stockQuantity?: number;
 
-  @ApiPropertyOptional({ example: 'Stück', description: 'Einheit für den Lagerbestand' })
+  @ApiPropertyOptional({
+    example: 'Stück',
+    description: 'Einheit für den Lagerbestand',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   stockUnit?: string;
 
-  @ApiPropertyOptional({ example: { sizes: ['S', 'M', 'L'], extras: ['Pommes', 'Salat'] }, description: 'Produktoptionen' })
+  @ApiPropertyOptional({
+    example: { sizes: ['S', 'M', 'L'], extras: ['Pommes', 'Salat'] },
+    description: 'Produktoptionen',
+  })
   @IsOptional()
   @IsObject()
   options?: Record<string, unknown>;
 
-  @ApiPropertyOptional({ example: { printToKitchen: true, copies: 1 }, description: 'Druckeinstellungen' })
+  @ApiPropertyOptional({
+    example: { printToKitchen: true, copies: 1 },
+    description: 'Druckeinstellungen',
+  })
   @IsOptional()
   @IsObject()
   printSettings?: Record<string, unknown>;
@@ -91,12 +127,19 @@ export class CreateProductDto {
   @Min(0)
   sortOrder?: number;
 
-  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID des Produktionsstandorts (überschreibt Kategorie-Einstellung)' })
+  @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description:
+      'ID des Produktionsstandorts (überschreibt Kategorie-Einstellung)',
+  })
   @IsOptional()
   @IsUUID('4', { message: 'Ungültige Produktionsstandort-ID' })
   productionStationId?: string;
 
-  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID des Pfand-Typs (optional)' })
+  @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'ID des Pfand-Typs (optional)',
+  })
   @IsOptional()
   @IsUUID('4', { message: 'Ungültige Pfand-Typ-ID' })
   pfandTypeId?: string | null;

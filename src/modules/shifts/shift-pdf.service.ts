@@ -73,7 +73,8 @@ export class ShiftPdfService {
   private drawPageHeader(doc: PDFKit.PDFDocument, plan: ShiftPlan): void {
     const left = doc.page.margins.left;
     const top = 16;
-    const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const width =
+      doc.page.width - doc.page.margins.left - doc.page.margins.right;
     const logoHeight = 18;
     let textStartX = left;
 
@@ -84,35 +85,58 @@ export class ShiftPdfService {
         // the aspect to land somewhere around 80pt for our wordmark logo.
         textStartX = left + 86;
       } catch (err) {
-        this.logger.warn(`Logo couldn't be embedded into PDF: ${(err as Error).message}`);
-        doc.font('Helvetica-Bold').fontSize(13).fillColor('#10b981')
+        this.logger.warn(
+          `Logo couldn't be embedded into PDF: ${(err as Error).message}`,
+        );
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(13)
+          .fillColor('#10b981')
           .text('OpenEOS', left, top + 2, { lineBreak: false });
         textStartX = left + doc.widthOfString('OpenEOS');
       }
     } else {
-      doc.font('Helvetica-Bold').fontSize(13).fillColor('#10b981')
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(13)
+        .fillColor('#10b981')
         .text('OpenEOS', left, top + 2, { lineBreak: false });
       textStartX = left + doc.widthOfString('OpenEOS');
     }
 
     // Plan name next to the logo
-    doc.font('Helvetica').fontSize(11).fillColor('#444')
+    doc
+      .font('Helvetica')
+      .fontSize(11)
+      .fillColor('#444')
       .text(`  ·  ${plan.name}`, textStartX, top + 4, { lineBreak: false });
 
     // Timestamp right-aligned on the same baseline. Pin Europe/Berlin so
     // the print reflects the user's local time even when the container
     // TZ env isn't set (defensive — the Dockerfile already sets it).
     const stamp = new Date().toLocaleString('de-DE', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
       timeZone: 'Europe/Berlin',
     });
-    doc.font('Helvetica').fontSize(9).fillColor('#999')
+    doc
+      .font('Helvetica')
+      .fontSize(9)
+      .fillColor('#999')
       .text(stamp, left, top + 4, { width, align: 'right' });
 
     // Thin separator under the header
-    doc.save().moveTo(left, top + 26).lineTo(left + width, top + 26)
-      .lineWidth(0.5).strokeColor('#d4d4d8').stroke().restore();
+    doc
+      .save()
+      .moveTo(left, top + 26)
+      .lineTo(left + width, top + 26)
+      .lineWidth(0.5)
+      .strokeColor('#d4d4d8')
+      .stroke()
+      .restore();
 
     // Move the content cursor below the header.
     doc.y = top + 36;
@@ -129,7 +153,10 @@ export class ShiftPdfService {
 
     // Collect every unique shift slot (date + startTime + endTime), sort
     // chronologically. These become the table columns.
-    const slotMap = new Map<string, { date: string; startTime: string; endTime: string }>();
+    const slotMap = new Map<
+      string,
+      { date: string; startTime: string; endTime: string }
+    >();
     for (const job of plan.jobs ?? []) {
       for (const shift of job.shifts ?? []) {
         const key = `${this.dateOnly(shift.date)}|${shift.startTime}|${shift.endTime}`;
@@ -143,20 +170,27 @@ export class ShiftPdfService {
       }
     }
     const slots = Array.from(slotMap.values()).sort(
-      (a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime),
+      (a, b) =>
+        a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime),
     );
 
     if (slots.length === 0 || (plan.jobs?.length ?? 0) === 0) {
-      doc.fontSize(11).font('Helvetica-Oblique').fillColor('#666')
+      doc
+        .fontSize(11)
+        .font('Helvetica-Oblique')
+        .fillColor('#666')
         .text('Keine Schichten oder Arbeiten vorhanden.');
       return;
     }
 
     // Sort jobs by sortOrder for stable rows.
-    const jobs = [...(plan.jobs ?? [])].sort((a, b) => a.sortOrder - b.sortOrder);
+    const jobs = [...(plan.jobs ?? [])].sort(
+      (a, b) => a.sortOrder - b.sortOrder,
+    );
 
     // Sizing — A4 landscape with 36pt margins ≈ 770pt usable width.
-    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const pageWidth =
+      doc.page.width - doc.page.margins.left - doc.page.margins.right;
     const jobColWidth = 110; // generous for typical job names
     const minSlotColWidth = 90;
     const maxSlotsPerPage = Math.max(
@@ -165,7 +199,11 @@ export class ShiftPdfService {
     );
 
     // Page the slot list so wide events still fit.
-    for (let pageStart = 0; pageStart < slots.length; pageStart += maxSlotsPerPage) {
+    for (
+      let pageStart = 0;
+      pageStart < slots.length;
+      pageStart += maxSlotsPerPage
+    ) {
       if (pageStart > 0) doc.addPage();
       const pageSlots = slots.slice(pageStart, pageStart + maxSlotsPerPage);
       const slotColWidth = (pageWidth - jobColWidth) / pageSlots.length;
@@ -199,36 +237,58 @@ export class ShiftPdfService {
       }
     }
 
-    doc.save().rect(left, y, jobColWidth + slots.length * slotColWidth, headerHeight)
-      .fill('#f4f4f5').restore().fillColor('#111');
+    doc
+      .save()
+      .rect(left, y, jobColWidth + slots.length * slotColWidth, headerHeight)
+      .fill('#f4f4f5')
+      .restore()
+      .fillColor('#111');
 
     // Job-column header
-    doc.fontSize(8).font('Helvetica-Bold')
+    doc
+      .fontSize(8)
+      .font('Helvetica-Bold')
       .text('Arbeit', left + 6, y + 6, { width: jobColWidth - 12 });
 
     // Date band
     for (const g of dateGroups) {
       const x = left + jobColWidth + g.spanStart * slotColWidth;
       const w = (g.spanEnd - g.spanStart + 1) * slotColWidth;
-      doc.fontSize(9).font('Helvetica-Bold').fillColor('#111')
-        .text(this.formatDateHuman(g.date), x + 4, y + 4, { width: w - 8, align: 'center' });
+      doc
+        .fontSize(9)
+        .font('Helvetica-Bold')
+        .fillColor('#111')
+        .text(this.formatDateHuman(g.date), x + 4, y + 4, {
+          width: w - 8,
+          align: 'center',
+        });
     }
 
     // Time row underneath the date band
     for (let i = 0; i < slots.length; i++) {
       const x = left + jobColWidth + i * slotColWidth;
-      doc.fontSize(8).font('Helvetica').fillColor('#444')
-        .text(
-          `${slots[i].startTime}–${slots[i].endTime}`,
-          x + 4, y + 22,
-          { width: slotColWidth - 8, align: 'center' },
-        );
+      doc
+        .fontSize(8)
+        .font('Helvetica')
+        .fillColor('#444')
+        .text(`${slots[i].startTime}–${slots[i].endTime}`, x + 4, y + 22, {
+          width: slotColWidth - 8,
+          align: 'center',
+        });
     }
 
     // Header bottom border
-    doc.save().moveTo(left, y + headerHeight)
-      .lineTo(left + jobColWidth + slots.length * slotColWidth, y + headerHeight)
-      .lineWidth(0.5).strokeColor('#bbb').stroke().restore();
+    doc
+      .save()
+      .moveTo(left, y + headerHeight)
+      .lineTo(
+        left + jobColWidth + slots.length * slotColWidth,
+        y + headerHeight,
+      )
+      .lineWidth(0.5)
+      .strokeColor('#bbb')
+      .stroke()
+      .restore();
 
     y += headerHeight;
 
@@ -256,20 +316,24 @@ export class ShiftPdfService {
           (r) => r.status === ShiftRegistrationStatus.CONFIRMED,
         );
         const isFull = confirmed.length >= shift.requiredWorkers;
-        const text = confirmed.length === 0
-          ? `(0/${shift.requiredWorkers})`
-          : `(${confirmed.length}/${shift.requiredWorkers})\n${confirmed.map((r) => r.name).join('\n')}`;
+        const text =
+          confirmed.length === 0
+            ? `(0/${shift.requiredWorkers})`
+            : `(${confirmed.length}/${shift.requiredWorkers})\n${confirmed.map((r) => r.name).join('\n')}`;
         cells.push({ text, isFull, hasShift: true });
       }
 
       doc.fontSize(8).font('Helvetica');
       let rowHeight = rowMinHeight;
       for (let i = 0; i < slots.length; i++) {
-        const h = doc.heightOfString(cells[i].text, { width: slotColWidth - 8 });
+        const h = doc.heightOfString(cells[i].text, {
+          width: slotColWidth - 8,
+        });
         if (h + 10 > rowHeight) rowHeight = h + 10;
       }
       // Job column height
-      const jobHeight = doc.heightOfString(job.name, { width: jobColWidth - 12 }) + 10;
+      const jobHeight =
+        doc.heightOfString(job.name, { width: jobColWidth - 12 }) + 10;
       if (jobHeight > rowHeight) rowHeight = jobHeight;
 
       // Page-break if this row wouldn't fit. addPage() triggers the
@@ -284,14 +348,26 @@ export class ShiftPdfService {
       }
 
       // Draw the row
-      doc.save().rect(left, y, jobColWidth + slots.length * slotColWidth, rowHeight)
-        .strokeColor('#e5e7eb').lineWidth(0.5).stroke().restore();
+      doc
+        .save()
+        .rect(left, y, jobColWidth + slots.length * slotColWidth, rowHeight)
+        .strokeColor('#e5e7eb')
+        .lineWidth(0.5)
+        .stroke()
+        .restore();
 
       // Job-color stripe
-      doc.save().rect(left, y, 4, rowHeight).fill(job.color || '#888').restore();
+      doc
+        .save()
+        .rect(left, y, 4, rowHeight)
+        .fill(job.color || '#888')
+        .restore();
 
       // Job name
-      doc.fillColor('#111').fontSize(9).font('Helvetica-Bold')
+      doc
+        .fillColor('#111')
+        .fontSize(9)
+        .font('Helvetica-Bold')
         .text(job.name, left + 10, y + 5, { width: jobColWidth - 14 });
 
       // Cells
@@ -301,13 +377,24 @@ export class ShiftPdfService {
         // Light-green wash for fully-booked shifts so the admin can see at
         // a glance which slots are already covered.
         if (cell.isFull) {
-          doc.save().rect(x + 0.5, y + 0.5, slotColWidth - 1, rowHeight - 1)
-            .fill('#d1fae5').restore();
+          doc
+            .save()
+            .rect(x + 0.5, y + 0.5, slotColWidth - 1, rowHeight - 1)
+            .fill('#d1fae5')
+            .restore();
         }
-        doc.save().moveTo(x, y).lineTo(x, y + rowHeight)
-          .strokeColor('#eef0f3').lineWidth(0.5).stroke().restore();
-        doc.fillColor(!cell.hasShift ? '#aaa' : cell.isFull ? '#065f46' : '#111')
-          .fontSize(8).font('Helvetica')
+        doc
+          .save()
+          .moveTo(x, y)
+          .lineTo(x, y + rowHeight)
+          .strokeColor('#eef0f3')
+          .lineWidth(0.5)
+          .stroke()
+          .restore();
+        doc
+          .fillColor(!cell.hasShift ? '#aaa' : cell.isFull ? '#065f46' : '#111')
+          .fontSize(8)
+          .font('Helvetica')
           .text(cell.text, x + 4, y + 5, { width: slotColWidth - 8 });
       }
 
@@ -324,9 +411,15 @@ export class ShiftPdfService {
   ): void {
     const left = doc.page.margins.left;
     const headerHeight = 36;
-    doc.save().rect(left, y, jobColWidth + slots.length * slotColWidth, headerHeight)
-      .fill('#f4f4f5').restore().fillColor('#111');
-    doc.fontSize(8).font('Helvetica-Bold')
+    doc
+      .save()
+      .rect(left, y, jobColWidth + slots.length * slotColWidth, headerHeight)
+      .fill('#f4f4f5')
+      .restore()
+      .fillColor('#111');
+    doc
+      .fontSize(8)
+      .font('Helvetica-Bold')
       .text('Arbeit', left + 6, y + 6, { width: jobColWidth - 12 });
     // Re-draw the date + time bands; the grouping logic from renderTable is
     // duplicated here, but on a continuation page so it's worth keeping
@@ -339,24 +432,43 @@ export class ShiftPdfService {
       if (groupDate && currentDate !== groupDate) {
         const x = left + jobColWidth + groupStart * slotColWidth;
         const w = (i - groupStart) * slotColWidth;
-        doc.fontSize(9).font('Helvetica-Bold').fillColor('#111')
-          .text(this.formatDateHuman(groupDate), x + 4, y + 4, { width: w - 8, align: 'center' });
+        doc
+          .fontSize(9)
+          .font('Helvetica-Bold')
+          .fillColor('#111')
+          .text(this.formatDateHuman(groupDate), x + 4, y + 4, {
+            width: w - 8,
+            align: 'center',
+          });
         groupDate = null;
       }
-      if (!groupDate && currentDate) { groupDate = currentDate; groupStart = i; }
+      if (!groupDate && currentDate) {
+        groupDate = currentDate;
+        groupStart = i;
+      }
     }
     for (let i = 0; i < slots.length; i++) {
       const x = left + jobColWidth + i * slotColWidth;
-      doc.fontSize(8).font('Helvetica').fillColor('#444')
-        .text(
-          `${slots[i].startTime}–${slots[i].endTime}`,
-          x + 4, y + 22,
-          { width: slotColWidth - 8, align: 'center' },
-        );
+      doc
+        .fontSize(8)
+        .font('Helvetica')
+        .fillColor('#444')
+        .text(`${slots[i].startTime}–${slots[i].endTime}`, x + 4, y + 22, {
+          width: slotColWidth - 8,
+          align: 'center',
+        });
     }
-    doc.save().moveTo(left, y + headerHeight)
-      .lineTo(left + jobColWidth + slots.length * slotColWidth, y + headerHeight)
-      .lineWidth(0.5).strokeColor('#bbb').stroke().restore();
+    doc
+      .save()
+      .moveTo(left, y + headerHeight)
+      .lineTo(
+        left + jobColWidth + slots.length * slotColWidth,
+        y + headerHeight,
+      )
+      .lineWidth(0.5)
+      .strokeColor('#bbb')
+      .stroke()
+      .restore();
   }
 
   // -----------------------------------------------------------------------
@@ -374,7 +486,10 @@ export class ShiftPdfService {
     const date = new Date(d);
     if (isNaN(date.getTime())) return d;
     return date.toLocaleDateString('de-DE', {
-      weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric',
+      weekday: 'short',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
     });
   }
 }

@@ -19,22 +19,36 @@ export class CreateCategoryDto {
   @MaxLength(255, { message: 'Name darf maximal 255 Zeichen lang sein' })
   name: string;
 
-  @ApiPropertyOptional({ example: 'Warme Hauptspeisen und Gerichte', description: 'Beschreibung der Kategorie' })
+  @ApiPropertyOptional({
+    example: 'Warme Hauptspeisen und Gerichte',
+    description: 'Beschreibung der Kategorie',
+  })
   @IsOptional()
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID der übergeordneten Kategorie' })
+  @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'ID der übergeordneten Kategorie',
+  })
   @IsOptional()
   @IsUUID('4', { message: 'Ungültige Parent-Kategorie-ID' })
   parentId?: string;
 
-  @ApiPropertyOptional({ example: '#FF5733', description: 'Farbcode der Kategorie (Hex-Format)' })
+  @ApiPropertyOptional({
+    example: '#FF5733',
+    description: 'Farbcode der Kategorie (Hex-Format)',
+  })
   @IsOptional()
-  @Matches(/^#[0-9A-Fa-f]{6}$/, { message: 'Ungültiges Farbformat (z.B. #FF5733)' })
+  @Matches(/^#[0-9A-Fa-f]{6}$/, {
+    message: 'Ungültiges Farbformat (z.B. #FF5733)',
+  })
   color?: string;
 
-  @ApiPropertyOptional({ example: 'restaurant', description: 'Icon-Name für die Kategorie' })
+  @ApiPropertyOptional({
+    example: 'restaurant',
+    description: 'Icon-Name für die Kategorie',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(50)
@@ -46,17 +60,26 @@ export class CreateCategoryDto {
   @Min(0)
   sortOrder?: number;
 
-  @ApiPropertyOptional({ example: true, description: 'Gibt an, ob die Kategorie aktiv ist' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Gibt an, ob die Kategorie aktiv ist',
+  })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiPropertyOptional({ example: { printToKitchen: true, printerIds: [] }, description: 'Druckeinstellungen für die Kategorie' })
+  @ApiPropertyOptional({
+    example: { printToKitchen: true, printerIds: [] },
+    description: 'Druckeinstellungen für die Kategorie',
+  })
   @IsOptional()
   @IsObject()
   printSettings?: Record<string, unknown>;
 
-  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID des Produktionsstandorts' })
+  @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'ID des Produktionsstandorts',
+  })
   @IsOptional()
   @IsUUID('4', { message: 'Ungültige Produktionsstandort-ID' })
   productionStationId?: string;

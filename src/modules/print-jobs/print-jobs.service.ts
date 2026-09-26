@@ -9,11 +9,20 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
-import { PrintJob, Printer, PrintTemplate, User, UserOrganization } from '../../database/entities';
+import {
+  PrintJob,
+  Printer,
+  PrintTemplate,
+  User,
+  UserOrganization,
+} from '../../database/entities';
 import { PrintJobStatus } from '../../database/entities/print-job.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
+import {
+  PaginatedResult,
+  createPaginatedResult,
+} from '../../common/dto/pagination.dto';
 import { CreatePrintJobDto, QueryPrintJobsDto } from './dto';
 import { GatewayService } from '../gateway/gateway.service';
 
@@ -82,7 +91,9 @@ export class PrintJobsService {
     });
 
     await this.printJobRepository.save(printJob);
-    this.logger.log(`Print job created: ${printJob.id} for printer ${printer.name}`);
+    this.logger.log(
+      `Print job created: ${printJob.id} for printer ${printer.name}`,
+    );
 
     // Resolve template name for the agent
     let templateName = 'receipt';
@@ -102,8 +113,8 @@ export class PrintJobsService {
       jobId: printJob.id,
       printerId: createDto.printerId,
       templateName,
-      copies: createDto.payload?.copies as number || 1,
-      payload: createDto.payload?.data as Record<string, unknown> || createDto.payload,
+      copies: (createDto.payload?.copies as number) || 1,
+      payload: createDto.payload?.data || createDto.payload,
     });
 
     return printJob;
@@ -154,28 +165,33 @@ export class PrintJobsService {
       .where('job.organizationId = :organizationId', { organizationId });
 
     if (query.printerId) {
-      queryBuilder.andWhere('job.printerId = :printerId', { printerId: query.printerId });
+      queryBuilder.andWhere('job.printerId = :printerId', {
+        printerId: query.printerId,
+      });
     }
 
     if (query.orderId) {
-      queryBuilder.andWhere('job.orderId = :orderId', { orderId: query.orderId });
+      queryBuilder.andWhere('job.orderId = :orderId', {
+        orderId: query.orderId,
+      });
     }
 
     if (query.status) {
       queryBuilder.andWhere('job.status = :status', { status: query.status });
     }
 
-    queryBuilder
-      .orderBy('job.createdAt', 'DESC')
-      .skip(skip)
-      .take(limit);
+    queryBuilder.orderBy('job.createdAt', 'DESC').skip(skip).take(limit);
 
     const [items, total] = await queryBuilder.getManyAndCount();
 
     return createPaginatedResult(items, total, page, limit);
   }
 
-  async findOne(organizationId: string, jobId: string, user: User): Promise<PrintJob> {
+  async findOne(
+    organizationId: string,
+    jobId: string,
+    user: User,
+  ): Promise<PrintJob> {
     await this.checkMembership(organizationId, user.id);
 
     const job = await this.printJobRepository.findOne({
@@ -193,7 +209,11 @@ export class PrintJobsService {
     return job;
   }
 
-  async retry(organizationId: string, jobId: string, user: User): Promise<PrintJob> {
+  async retry(
+    organizationId: string,
+    jobId: string,
+    user: User,
+  ): Promise<PrintJob> {
     await this.checkMembership(organizationId, user.id);
 
     const job = await this.findOne(organizationId, jobId, user);
@@ -235,14 +255,18 @@ export class PrintJobsService {
       jobId: job.id,
       printerId: job.printerId,
       templateName,
-      copies: job.payload?.copies as number || 1,
-      payload: job.payload?.data as Record<string, unknown> || job.payload,
+      copies: (job.payload?.copies as number) || 1,
+      payload: job.payload?.data || job.payload,
     });
 
     return job;
   }
 
-  async cancel(organizationId: string, jobId: string, user: User): Promise<PrintJob> {
+  async cancel(
+    organizationId: string,
+    jobId: string,
+    user: User,
+  ): Promise<PrintJob> {
     await this.checkPermission(organizationId, user.id, 'devices');
 
     const job = await this.findOne(organizationId, jobId, user);
@@ -308,7 +332,9 @@ export class PrintJobsService {
     });
 
     await this.printJobRepository.save(printJob);
-    this.logger.log(`Print job created from auto-print: ${printJob.id} for printer ${printer.name}`);
+    this.logger.log(
+      `Print job created from auto-print: ${printJob.id} for printer ${printer.name}`,
+    );
 
     // Resolve template name for the agent. Falls back to the workflow-specific
     // default (kitchen_ticket / order_ticket / receipt) when no custom
@@ -392,7 +418,7 @@ export class PrintJobsService {
       printerId: job.printerId,
       templateName: job.template?.type || 'receipt',
       copies: (job.payload?.copies as number) || 1,
-      payload: (job.payload?.data as Record<string, unknown>) || job.payload,
+      payload: job.payload?.data || job.payload,
     };
   }
 
@@ -433,7 +459,10 @@ export class PrintJobsService {
     return job;
   }
 
-  private async checkMembership(organizationId: string, userId: string): Promise<void> {
+  private async checkMembership(
+    organizationId: string,
+    userId: string,
+  ): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });
@@ -462,7 +491,10 @@ export class PrintJobsService {
       });
     }
 
-    if (membership.role !== OrganizationRole.ADMIN && !membership.permissions?.[permission]) {
+    if (
+      membership.role !== OrganizationRole.ADMIN &&
+      !membership.permissions?.[permission]
+    ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

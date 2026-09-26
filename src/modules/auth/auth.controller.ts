@@ -14,7 +14,12 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import type { Response, Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
@@ -44,7 +49,11 @@ import {
   RequestMagicLinkDto,
   VerifyMagicLinkDto,
 } from './dto';
-import { Public, CurrentUser, AllowPendingTwoFactor } from '../../common/decorators';
+import {
+  Public,
+  CurrentUser,
+  AllowPendingTwoFactor,
+} from '../../common/decorators';
 import { User } from '../../database/entities';
 import { TwoFactorMethod } from '../../database/entities/user.entity';
 
@@ -83,7 +92,11 @@ export class AuthController {
     description:
       'Creates an account. Without a password the account is used via login links, and one is sent straight away.',
   })
-  @ApiResponse({ status: 201, description: 'Registered; mail sent', type: RegisterResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Registered; mail sent',
+    type: RegisterResponseDto,
+  })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 409, description: 'Email already exists' })
   async register(@Body() registerDto: RegisterDto) {
@@ -104,8 +117,16 @@ export class AuthController {
   @Public()
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Verify email address', description: 'Verify a user\'s email using the token from the verification email' })
-  @ApiResponse({ status: 200, description: 'Email verified successfully', type: MessageResponseDto })
+  @ApiOperation({
+    summary: 'Verify email address',
+    description:
+      "Verify a user's email using the token from the verification email",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Email verified successfully',
+    type: MessageResponseDto,
+  })
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
   async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
     await this.authService.verifyEmail(verifyEmailDto.token);
@@ -118,13 +139,24 @@ export class AuthController {
   @Public()
   @Post('resend-verification')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Resend verification email', description: 'Resend the email verification link if the account exists and is unverified' })
-  @ApiResponse({ status: 200, description: 'Verification email sent if applicable', type: MessageResponseDto })
-  async resendVerification(@Body() resendVerificationDto: ResendVerificationDto) {
+  @ApiOperation({
+    summary: 'Resend verification email',
+    description:
+      'Resend the email verification link if the account exists and is unverified',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Verification email sent if applicable',
+    type: MessageResponseDto,
+  })
+  async resendVerification(
+    @Body() resendVerificationDto: ResendVerificationDto,
+  ) {
     await this.authService.resendVerificationEmail(resendVerificationDto.email);
 
     return {
-      message: 'Falls ein Konto mit dieser E-Mail existiert und noch nicht bestätigt wurde, wurde eine neue Bestätigungs-E-Mail gesendet',
+      message:
+        'Falls ein Konto mit dieser E-Mail existiert und noch nicht bestätigt wurde, wurde eine neue Bestätigungs-E-Mail gesendet',
     };
   }
 
@@ -132,8 +164,15 @@ export class AuthController {
   @UseGuards(AuthGuard('local'))
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login user', description: 'Authenticate user with email and password' })
-  @ApiResponse({ status: 200, description: 'Login successful', type: LoginResponseDto })
+  @ApiOperation({
+    summary: 'Login user',
+    description: 'Authenticate user with email and password',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Login successful',
+    type: LoginResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   @ApiResponse({ status: 423, description: 'Account locked' })
   async login(
@@ -146,7 +185,9 @@ export class AuthController {
     /* Zweiter Faktor vor der Sitzung, nicht danach. Frueher lieferte der
        Login sofort volle Token und die Code-Abfrage kam obendrauf — wer
        die API direkt ansprach, war mit dem Passwort allein drin. */
-    if (await this.authService.needsTwoFactor(user, loginDto.deviceFingerprint)) {
+    if (
+      await this.authService.needsTwoFactor(user, loginDto.deviceFingerprint)
+    ) {
       const twoFactorToken = await this.authService.issueTwoFactorToken(user);
 
       // Beim Mail-Verfahren muss der Code erst unterwegs sein, bevor
@@ -180,8 +221,15 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Refresh access token', description: 'Get a new access token using refresh token' })
-  @ApiResponse({ status: 200, description: 'New access token generated', type: RefreshResponseDto })
+  @ApiOperation({
+    summary: 'Refresh access token',
+    description: 'Get a new access token using refresh token',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'New access token generated',
+    type: RefreshResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
   async refresh(
     @Body() refreshTokenDto: RefreshTokenDto,
@@ -213,8 +261,15 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Logout user', description: 'Invalidate refresh token and clear cookie' })
-  @ApiResponse({ status: 200, description: 'Logout successful', type: MessageResponseDto })
+  @ApiOperation({
+    summary: 'Logout user',
+    description: 'Invalidate refresh token and clear cookie',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Logout successful',
+    type: MessageResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async logout(
     @CurrentUser() user: User,
@@ -226,7 +281,8 @@ export class AuthController {
        gesperrt. Beide Quellen, weil Browser das Cookie schicken und
        Geraete den Kopfzeileneintrag. */
     const accessToken =
-      request.headers.authorization?.replace(/^Bearer /i, '') || request.cookies?.accessToken;
+      request.headers.authorization?.replace(/^Bearer /i, '') ||
+      request.cookies?.accessToken;
     await this.authService.logout(user.id, refreshToken, accessToken);
 
     // Clear refresh token cookie
@@ -251,13 +307,21 @@ export class AuthController {
   @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Request password reset', description: 'Send password reset email if account exists' })
-  @ApiResponse({ status: 200, description: 'Reset email sent if account exists', type: MessageResponseDto })
+  @ApiOperation({
+    summary: 'Request password reset',
+    description: 'Send password reset email if account exists',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Reset email sent if account exists',
+    type: MessageResponseDto,
+  })
   async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
     await this.authService.forgotPassword(forgotPasswordDto);
 
     return {
-      message: 'Falls ein Konto mit dieser E-Mail existiert, wurde eine Anleitung zum Zurücksetzen des Passworts gesendet',
+      message:
+        'Falls ein Konto mit dieser E-Mail existiert, wurde eine Anleitung zum Zurücksetzen des Passworts gesendet',
     };
   }
 
@@ -267,17 +331,26 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Request a login link',
-    description: 'Sends a one-time login link if the account exists. Always returns 200.',
+    description:
+      'Sends a one-time login link if the account exists. Always returns 200.',
   })
-  @ApiResponse({ status: 200, description: 'Link sent if account exists', type: MessageResponseDto })
-  async requestMagicLink(@Body() dto: RequestMagicLinkDto, @Req() request: Request) {
+  @ApiResponse({
+    status: 200,
+    description: 'Link sent if account exists',
+    type: MessageResponseDto,
+  })
+  async requestMagicLink(
+    @Body() dto: RequestMagicLinkDto,
+    @Req() request: Request,
+  ) {
     const ip = request.ip || request.socket.remoteAddress;
     await this.authService.requestLoginMagicLink(dto.email, ip);
 
     // Immer dieselbe Antwort — sonst waere sie eine Auskunft darueber,
     // welche Adressen ein Konto haben.
     return {
-      message: 'Falls ein Konto mit dieser E-Mail existiert, wurde ein Anmeldelink gesendet',
+      message:
+        'Falls ein Konto mit dieser E-Mail existiert, wurde ein Anmeldelink gesendet',
     };
   }
 
@@ -288,7 +361,11 @@ export class AuthController {
     summary: 'Redeem a login link',
     description: 'Exchanges a one-time login token for a session.',
   })
-  @ApiResponse({ status: 200, description: 'Login successful', type: LoginResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Login successful',
+    type: LoginResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Invalid or expired link' })
   async verifyMagicLink(
     @Body() dto: VerifyMagicLinkDto,
@@ -325,8 +402,15 @@ export class AuthController {
   @Public()
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reset password', description: 'Reset password using token from email' })
-  @ApiResponse({ status: 200, description: 'Password reset successful', type: MessageResponseDto })
+  @ApiOperation({
+    summary: 'Reset password',
+    description: 'Reset password using token from email',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Password reset successful',
+    type: MessageResponseDto,
+  })
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
   async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
     await this.authService.resetPassword(resetPasswordDto);
@@ -339,8 +423,15 @@ export class AuthController {
   @Patch('change-password')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Change password', description: 'Change password for authenticated user' })
-  @ApiResponse({ status: 200, description: 'Password changed successfully', type: MessageResponseDto })
+  @ApiOperation({
+    summary: 'Change password',
+    description: 'Change password for authenticated user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Password changed successfully',
+    type: MessageResponseDto,
+  })
   @ApiResponse({ status: 400, description: 'Invalid current password' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async changePassword(
@@ -356,8 +447,15 @@ export class AuthController {
 
   @Get('me')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Get current user', description: 'Get profile of authenticated user' })
-  @ApiResponse({ status: 200, description: 'User profile', type: CurrentUserResponseDto })
+  @ApiOperation({
+    summary: 'Get current user',
+    description: 'Get profile of authenticated user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'User profile',
+    type: CurrentUserResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getCurrentUser(@CurrentUser() user: User) {
     const fullUser = await this.authService.getCurrentUser(user.id);
@@ -369,14 +467,20 @@ export class AuthController {
 
   @Get('me/invitations')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Get pending invitations', description: 'Get all pending organization invitations for the current user' })
+  @ApiOperation({
+    summary: 'Get pending invitations',
+    description:
+      'Get all pending organization invitations for the current user',
+  })
   @ApiResponse({ status: 200, description: 'List of pending invitations' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getPendingInvitations(@CurrentUser() user: User) {
     const invitations = await this.authService.getPendingInvitations(user.id);
 
     // Filter expired invitations
-    const validInvitations = invitations.filter(inv => inv.expiresAt > new Date());
+    const validInvitations = invitations.filter(
+      (inv) => inv.expiresAt > new Date(),
+    );
 
     return {
       data: validInvitations,
@@ -389,17 +493,33 @@ export class AuthController {
 
   @Get('2fa/status')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Get 2FA status', description: 'Get the current 2FA status for the user' })
-  @ApiResponse({ status: 200, description: '2FA status', type: TwoFactorStatusResponseDto })
+  @ApiOperation({
+    summary: 'Get 2FA status',
+    description: 'Get the current 2FA status for the user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '2FA status',
+    type: TwoFactorStatusResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async get2FAStatus(@CurrentUser() user: User): Promise<TwoFactorStatusResponseDto> {
+  async get2FAStatus(
+    @CurrentUser() user: User,
+  ): Promise<TwoFactorStatusResponseDto> {
     return this.twoFactorService.get2FAStatus(user.id);
   }
 
   @Post('2fa/setup/totp')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Start TOTP setup', description: 'Generate QR code and secret for TOTP authentication' })
-  @ApiResponse({ status: 201, description: 'TOTP setup data', type: TotpSetupResponseDto })
+  @ApiOperation({
+    summary: 'Start TOTP setup',
+    description: 'Generate QR code and secret for TOTP authentication',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'TOTP setup data',
+    type: TotpSetupResponseDto,
+  })
   @ApiResponse({ status: 400, description: '2FA already enabled' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async setupTotp(@CurrentUser() user: User): Promise<TotpSetupResponseDto> {
@@ -409,9 +529,19 @@ export class AuthController {
   @Post('2fa/setup/totp/verify')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Verify TOTP setup', description: 'Verify TOTP code and enable 2FA' })
-  @ApiResponse({ status: 200, description: 'Recovery codes', type: RecoveryCodesResponseDto })
-  @ApiResponse({ status: 400, description: 'Invalid code or 2FA already enabled' })
+  @ApiOperation({
+    summary: 'Verify TOTP setup',
+    description: 'Verify TOTP code and enable 2FA',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Recovery codes',
+    type: RecoveryCodesResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid code or 2FA already enabled',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async verifyTotpSetup(
     @CurrentUser() user: User,
@@ -422,8 +552,15 @@ export class AuthController {
 
   @Post('2fa/setup/email')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Start Email OTP setup', description: 'Send verification code to email for 2FA setup' })
-  @ApiResponse({ status: 201, description: 'OTP sent', type: MessageResponseDto })
+  @ApiOperation({
+    summary: 'Start Email OTP setup',
+    description: 'Send verification code to email for 2FA setup',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'OTP sent',
+    type: MessageResponseDto,
+  })
   @ApiResponse({ status: 400, description: '2FA already enabled' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async setupEmailOtp(@CurrentUser() user: User): Promise<{ message: string }> {
@@ -434,9 +571,19 @@ export class AuthController {
   @Post('2fa/setup/email/verify')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Verify Email OTP setup', description: 'Verify email code and enable 2FA' })
-  @ApiResponse({ status: 200, description: 'Recovery codes', type: RecoveryCodesResponseDto })
-  @ApiResponse({ status: 400, description: 'Invalid code or 2FA already enabled' })
+  @ApiOperation({
+    summary: 'Verify Email OTP setup',
+    description: 'Verify email code and enable 2FA',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Recovery codes',
+    type: RecoveryCodesResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid code or 2FA already enabled',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async verifyEmailOtpSetup(
     @CurrentUser() user: User,
@@ -451,9 +598,14 @@ export class AuthController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary: 'Verify 2FA code',
-    description: 'Second login step: exchanges the pending token for a session.',
+    description:
+      'Second login step: exchanges the pending token for a session.',
   })
-  @ApiResponse({ status: 200, description: 'Login complete', type: LoginResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Login complete',
+    type: LoginResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Invalid code' })
   async verify2FA(
     @CurrentUser() user: User,
@@ -490,9 +642,19 @@ export class AuthController {
   @Post('2fa/disable')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Disable 2FA', description: 'Disable 2FA for the user' })
-  @ApiResponse({ status: 200, description: '2FA disabled', type: MessageResponseDto })
-  @ApiResponse({ status: 400, description: '2FA not enabled or invalid password' })
+  @ApiOperation({
+    summary: 'Disable 2FA',
+    description: 'Disable 2FA for the user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '2FA disabled',
+    type: MessageResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: '2FA not enabled or invalid password',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async disable2FA(
     @CurrentUser() user: User,
@@ -504,18 +666,34 @@ export class AuthController {
 
   @Post('2fa/recovery/generate')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Generate new recovery codes', description: 'Generate new recovery codes (invalidates old ones)' })
-  @ApiResponse({ status: 201, description: 'New recovery codes', type: RecoveryCodesResponseDto })
+  @ApiOperation({
+    summary: 'Generate new recovery codes',
+    description: 'Generate new recovery codes (invalidates old ones)',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'New recovery codes',
+    type: RecoveryCodesResponseDto,
+  })
   @ApiResponse({ status: 400, description: '2FA not enabled' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async regenerateRecoveryCodes(@CurrentUser() user: User): Promise<RecoveryCodesResponseDto> {
+  async regenerateRecoveryCodes(
+    @CurrentUser() user: User,
+  ): Promise<RecoveryCodesResponseDto> {
     return this.twoFactorService.regenerateRecoveryCodes(user.id);
   }
 
   @Get('2fa/trusted-devices')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Get trusted devices', description: 'Get list of trusted devices for 2FA' })
-  @ApiResponse({ status: 200, description: 'List of trusted devices', type: [TrustedDeviceResponseDto] })
+  @ApiOperation({
+    summary: 'Get trusted devices',
+    description: 'Get list of trusted devices for 2FA',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of trusted devices',
+    type: [TrustedDeviceResponseDto],
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getTrustedDevices(@CurrentUser() user: User) {
     const devices = await this.twoFactorService.getTrustedDevices(user.id);
@@ -525,8 +703,15 @@ export class AuthController {
   @Delete('2fa/trusted-devices/:id')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Remove trusted device', description: 'Remove a trusted device' })
-  @ApiResponse({ status: 200, description: 'Device removed', type: MessageResponseDto })
+  @ApiOperation({
+    summary: 'Remove trusted device',
+    description: 'Remove a trusted device',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Device removed',
+    type: MessageResponseDto,
+  })
   @ApiResponse({ status: 400, description: 'Device not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async removeTrustedDevice(
@@ -541,8 +726,15 @@ export class AuthController {
   @Post('2fa/send-login-otp')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Send login OTP', description: 'Send OTP code to email for 2FA login' })
-  @ApiResponse({ status: 200, description: 'OTP sent', type: MessageResponseDto })
+  @ApiOperation({
+    summary: 'Send login OTP',
+    description: 'Send OTP code to email for 2FA login',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'OTP sent',
+    type: MessageResponseDto,
+  })
   @ApiResponse({ status: 400, description: 'Email 2FA not enabled' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async sendLoginOtp(@CurrentUser() user: User): Promise<{ message: string }> {
@@ -565,7 +757,8 @@ export class AuthController {
 
   private setAccessTokenCookie(response: Response, token: string): void {
     const isProduction = this.configService.get('nodeEnv') === 'production';
-    const expiration = this.configService.get<string>('jwt.accessTokenExpiration') || '30m';
+    const expiration =
+      this.configService.get<string>('jwt.accessTokenExpiration') || '30m';
 
     response.cookie('accessToken', token, {
       httpOnly: true,

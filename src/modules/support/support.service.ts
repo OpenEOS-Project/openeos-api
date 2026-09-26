@@ -1,7 +1,19 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
-import { Event, Organization, SupportMessage, User, UserOrganization } from '../../database/entities';
+import {
+  Event,
+  Organization,
+  SupportMessage,
+  User,
+  UserOrganization,
+} from '../../database/entities';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { SendSupportMessageDto } from './dto';
 import { SupportMessageDto, SupportThreadSummaryDto } from './support.types';
@@ -63,7 +75,10 @@ export class SupportService {
       { readByUserAt: new Date() },
     );
 
-    const messages = await this.findRecentMessages(organizationId, MEMBER_MESSAGE_LIMIT);
+    const messages = await this.findRecentMessages(
+      organizationId,
+      MEMBER_MESSAGE_LIMIT,
+    );
 
     return {
       prioritySupport: await this.isPrioritySupport(organization),
@@ -90,12 +105,13 @@ export class SupportService {
 
     try {
       const priority = await this.isPrioritySupport(organization);
-      const telegramMessageId = await this.telegramSupportService.notifyInboundMessage(
-        organization,
-        user.fullName,
-        body,
-        priority,
-      );
+      const telegramMessageId =
+        await this.telegramSupportService.notifyInboundMessage(
+          organization,
+          user.fullName,
+          body,
+          priority,
+        );
       if (telegramMessageId) {
         message.telegramMessageId = String(telegramMessageId);
         await this.supportMessageRepository.save(message);
@@ -110,10 +126,17 @@ export class SupportService {
     // solange der Admin nicht gelesen hat, lösen Folgenachrichten keine Mail aus.
     try {
       const unreadInbound = await this.supportMessageRepository.count({
-        where: { organizationId, direction: 'inbound', readByAdminAt: IsNull() },
+        where: {
+          organizationId,
+          direction: 'inbound',
+          readByAdminAt: IsNull(),
+        },
       });
       if (unreadInbound === 1) {
-        const notifyEmail = await this.platformSettingsService.resolveNotificationTarget('supportMessage');
+        const notifyEmail =
+          await this.platformSettingsService.resolveNotificationTarget(
+            'supportMessage',
+          );
         if (notifyEmail) {
           await this.emailService.sendAdminSupportMessageNotification({
             to: notifyEmail,
@@ -136,7 +159,8 @@ export class SupportService {
   // === Super-Admin ===
 
   async getThreadsForAdmin(): Promise<SupportThreadSummaryDto[]> {
-    const rows: SupportThreadRow[] = await this.supportMessageRepository.manager.query(`
+    const rows: SupportThreadRow[] = await this.supportMessageRepository.manager
+      .query(`
       SELECT
         sm.organization_id AS "organizationId",
         o.name AS "organizationName",
@@ -158,12 +182,16 @@ export class SupportService {
       ) unread ON true
     `);
 
-    const priorityOrgIds = await this.getPriorityOrgIds(rows.map((row) => row.organizationId));
+    const priorityOrgIds = await this.getPriorityOrgIds(
+      rows.map((row) => row.organizationId),
+    );
 
     const threads = rows.map((row) => ({
       organizationId: row.organizationId,
       organizationName: row.organizationName,
-      prioritySupport: row.prioritySupportFlag === true || priorityOrgIds.has(row.organizationId),
+      prioritySupport:
+        row.prioritySupportFlag === true ||
+        priorityOrgIds.has(row.organizationId),
       lastMessageAt: row.lastMessageAt,
       lastMessagePreview: row.lastMessagePreview.slice(0, PREVIEW_LENGTH),
       unreadCount: Number(row.unreadCount),
@@ -173,13 +201,18 @@ export class SupportService {
       if (a.prioritySupport !== b.prioritySupport) {
         return a.prioritySupport ? -1 : 1;
       }
-      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+      return (
+        new Date(b.lastMessageAt).getTime() -
+        new Date(a.lastMessageAt).getTime()
+      );
     });
 
     return threads;
   }
 
-  async getMessagesForAdmin(organizationId: string): Promise<SupportMessageDto[]> {
+  async getMessagesForAdmin(
+    organizationId: string,
+  ): Promise<SupportMessageDto[]> {
     await this.getOrganizationOrFail(organizationId);
 
     await this.supportMessageRepository.update(
@@ -187,12 +220,18 @@ export class SupportService {
       { readByAdminAt: new Date() },
     );
 
-    const messages = await this.findRecentMessages(organizationId, ADMIN_MESSAGE_LIMIT);
+    const messages = await this.findRecentMessages(
+      organizationId,
+      ADMIN_MESSAGE_LIMIT,
+    );
 
     return messages.map((message) => this.mapMessage(message));
   }
 
-  async postAdminMessage(organizationId: string, dto: SendSupportMessageDto): Promise<SupportMessageDto> {
+  async postAdminMessage(
+    organizationId: string,
+    dto: SendSupportMessageDto,
+  ): Promise<SupportMessageDto> {
     const organization = await this.getOrganizationOrFail(organizationId);
     const body = this.assertNonEmptyBody(dto.body);
 
@@ -206,7 +245,12 @@ export class SupportService {
 
     try {
       const priority = await this.isPrioritySupport(organization);
-      const telegramMessageId = await this.telegramSupportService.mirrorAdminReply(organization, body, priority);
+      const telegramMessageId =
+        await this.telegramSupportService.mirrorAdminReply(
+          organization,
+          body,
+          priority,
+        );
       if (telegramMessageId) {
         message.telegramMessageId = String(telegramMessageId);
         await this.supportMessageRepository.save(message);
@@ -217,7 +261,11 @@ export class SupportService {
       );
     }
 
-    await this.benachrichtigeFragestellerUeberAntwort(organizationId, body, message.id);
+    await this.benachrichtigeFragestellerUeberAntwort(
+      organizationId,
+      body,
+      message.id,
+    );
 
     return this.mapMessage(message);
   }
@@ -270,7 +318,9 @@ export class SupportService {
         return;
       }
 
-      const empfaenger = await this.userRepository.findOne({ where: { id: letzteFrage.userId } });
+      const empfaenger = await this.userRepository.findOne({
+        where: { id: letzteFrage.userId },
+      });
       if (!empfaenger) {
         this.logger.warn(
           `Antwort an Organisation ${organizationId}: Benutzer ${letzteFrage.userId} existiert nicht mehr.`,
@@ -286,7 +336,10 @@ export class SupportService {
 
       /* Erst nach dem Versand vermerken: schlaegt er fehl, soll die
          naechste Antwort es erneut versuchen duerfen. */
-      await this.supportMessageRepository.update({ id: nachrichtId }, { notifiedAt: new Date() });
+      await this.supportMessageRepository.update(
+        { id: nachrichtId },
+        { notifiedAt: new Date() },
+      );
     } catch (error) {
       this.logger.warn(
         `Antwort-Benachrichtigung an Organisation ${organizationId} fehlgeschlagen: ${(error as Error).message}`,
@@ -307,7 +360,9 @@ export class SupportService {
     return priorityOrgIds.has(organization.id);
   }
 
-  private async getPriorityOrgIds(organizationIds: string[]): Promise<Set<string>> {
+  private async getPriorityOrgIds(
+    organizationIds: string[],
+  ): Promise<Set<string>> {
     if (!organizationIds.length) return new Set();
 
     const since = new Date();
@@ -316,18 +371,25 @@ export class SupportService {
     const rows = await this.eventRepository
       .createQueryBuilder('event')
       .select('DISTINCT event.organizationId', 'organizationId')
-      .where('event.organizationId IN (:...organizationIds)', { organizationIds })
+      .where('event.organizationId IN (:...organizationIds)', {
+        organizationIds,
+      })
       /* Ebenfalls mit geloeschten: wer bezahlt hat, verliert den
          bevorzugten Support nicht dadurch, dass er hinterher aufraeumt. */
       .withDeleted()
-      .andWhere('event.billingStatus IN (:...statuses)', { statuses: PRIORITY_EVENT_STATUSES })
+      .andWhere('event.billingStatus IN (:...statuses)', {
+        statuses: PRIORITY_EVENT_STATUSES,
+      })
       .andWhere('event.updatedAt > :since', { since })
       .getRawMany<{ organizationId: string }>();
 
     return new Set(rows.map((row) => row.organizationId));
   }
 
-  private async findRecentMessages(organizationId: string, limit: number): Promise<SupportMessage[]> {
+  private async findRecentMessages(
+    organizationId: string,
+    limit: number,
+  ): Promise<SupportMessage[]> {
     const recent = await this.supportMessageRepository.find({
       where: { organizationId },
       relations: ['user'],
@@ -338,11 +400,14 @@ export class SupportService {
     return recent.reverse();
   }
 
-  private mapMessage(message: SupportMessage, senderNameOverride?: string): SupportMessageDto {
+  private mapMessage(
+    message: SupportMessage,
+    senderNameOverride?: string,
+  ): SupportMessageDto {
     const senderName =
       message.direction === 'outbound'
         ? 'OpenEOS Support'
-        : senderNameOverride ?? message.user?.fullName ?? 'Unbekannt';
+        : (senderNameOverride ?? message.user?.fullName ?? 'Unbekannt');
 
     return {
       id: message.id,
@@ -364,8 +429,12 @@ export class SupportService {
     return body;
   }
 
-  private async getOrganizationOrFail(organizationId: string): Promise<Organization> {
-    const organization = await this.organizationRepository.findOne({ where: { id: organizationId } });
+  private async getOrganizationOrFail(
+    organizationId: string,
+  ): Promise<Organization> {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
     if (!organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
@@ -375,7 +444,10 @@ export class SupportService {
     return organization;
   }
 
-  private async checkMembership(organizationId: string, userId: string): Promise<UserOrganization> {
+  private async checkMembership(
+    organizationId: string,
+    userId: string,
+  ): Promise<UserOrganization> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });

@@ -20,7 +20,9 @@ import { User } from '../../database/entities';
 @ApiBearerAuth('JWT-auth')
 @Controller('events/:eventId/production-stations')
 export class ProductionStationsController {
-  constructor(private readonly productionStationsService: ProductionStationsService) {}
+  constructor(
+    private readonly productionStationsService: ProductionStationsService,
+  ) {}
 
   @Post()
   async create(
@@ -28,7 +30,11 @@ export class ProductionStationsController {
     @Body() createDto: CreateProductionStationDto,
     @CurrentUser() user: User,
   ) {
-    const station = await this.productionStationsService.create(eventId, createDto, user);
+    const station = await this.productionStationsService.create(
+      eventId,
+      createDto,
+      user,
+    );
     return { data: station };
   }
 
@@ -37,7 +43,10 @@ export class ProductionStationsController {
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser() user: User,
   ) {
-    const stations = await this.productionStationsService.findAll(eventId, user);
+    const stations = await this.productionStationsService.findAll(
+      eventId,
+      user,
+    );
     return { data: stations };
   }
 
@@ -47,7 +56,11 @@ export class ProductionStationsController {
     @Param('stationId', ParseUUIDPipe) stationId: string,
     @CurrentUser() user: User,
   ) {
-    const station = await this.productionStationsService.findOne(eventId, stationId, user);
+    const station = await this.productionStationsService.findOne(
+      eventId,
+      stationId,
+      user,
+    );
     return { data: station };
   }
 
@@ -58,7 +71,12 @@ export class ProductionStationsController {
     @Body() updateDto: UpdateProductionStationDto,
     @CurrentUser() user: User,
   ) {
-    const station = await this.productionStationsService.update(eventId, stationId, updateDto, user);
+    const station = await this.productionStationsService.update(
+      eventId,
+      stationId,
+      updateDto,
+      user,
+    );
     return { data: station };
   }
 

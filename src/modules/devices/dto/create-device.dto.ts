@@ -19,7 +19,10 @@ export class CreateDeviceDto {
   @IsEnum(DeviceType)
   type: DeviceType;
 
-  @ApiPropertyOptional({ example: { theme: 'dark', language: 'de' }, description: 'Geräteeinstellungen' })
+  @ApiPropertyOptional({
+    example: { theme: 'dark', language: 'de' },
+    description: 'Geräteeinstellungen',
+  })
   @IsOptional()
   @IsObject()
   settings?: DeviceSettings;

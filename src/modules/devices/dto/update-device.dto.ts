@@ -7,7 +7,10 @@ import {
   IsObject,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { DeviceType, type DeviceSettings } from '../../../database/entities/device.entity';
+import {
+  DeviceType,
+  type DeviceSettings,
+} from '../../../database/entities/device.entity';
 
 export class UpdateDeviceDto {
   @ApiPropertyOptional({ example: 'Kasse 1', description: 'Name des Geräts' })
@@ -25,12 +28,18 @@ export class UpdateDeviceDto {
   @IsEnum(DeviceType)
   type?: DeviceType;
 
-  @ApiPropertyOptional({ example: true, description: 'Gibt an, ob das Gerät aktiv ist' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Gibt an, ob das Gerät aktiv ist',
+  })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiPropertyOptional({ example: { theme: 'dark', language: 'de' }, description: 'Geräteeinstellungen' })
+  @ApiPropertyOptional({
+    example: { theme: 'dark', language: 'de' },
+    description: 'Geräteeinstellungen',
+  })
   @IsOptional()
   @IsObject()
   settings?: DeviceSettings;

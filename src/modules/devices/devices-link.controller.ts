@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Post,
-  Body,
-  HttpCode,
-  HttpStatus,
-} from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { DevicesService } from './devices.service';
 import { CurrentUser } from '../../common/decorators';
@@ -31,10 +25,7 @@ export class DevicesLinkController {
       'so a display arrives already set to the customer view.',
     ].join(' '),
   })
-  async linkDevice(
-    @Body() linkDto: LinkDeviceDto,
-    @CurrentUser() user: User,
-  ) {
+  async linkDevice(@Body() linkDto: LinkDeviceDto, @CurrentUser() user: User) {
     const device = await this.devicesService.linkDevice(linkDto, user);
     return {
       data: {

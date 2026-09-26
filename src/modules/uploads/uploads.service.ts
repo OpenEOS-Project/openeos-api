@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
@@ -42,7 +38,8 @@ export class UploadsService {
   ];
 
   constructor(private readonly configService: ConfigService) {
-    this.uploadDir = this.configService.get<string>('UPLOAD_DIR') || './uploads';
+    this.uploadDir =
+      this.configService.get<string>('UPLOAD_DIR') || './uploads';
   }
 
   async uploadImage(
@@ -90,7 +87,12 @@ export class UploadsService {
     category?: UploadCategory,
   ): Promise<void> {
     const categoryDir = category || 'general';
-    const filePath = path.join(this.uploadDir, organizationId, categoryDir, filename);
+    const filePath = path.join(
+      this.uploadDir,
+      organizationId,
+      categoryDir,
+      filename,
+    );
 
     try {
       await fs.access(filePath);
@@ -107,7 +109,12 @@ export class UploadsService {
     category?: string,
   ): Promise<string | null> {
     const categoryDir = category || 'general';
-    const filePath = path.join(this.uploadDir, organizationId, categoryDir, filename);
+    const filePath = path.join(
+      this.uploadDir,
+      organizationId,
+      categoryDir,
+      filename,
+    );
 
     try {
       await fs.access(filePath);

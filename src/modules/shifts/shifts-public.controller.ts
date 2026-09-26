@@ -52,14 +52,15 @@ export class ShiftsPublicController {
           color: job.color,
           shifts: job.shifts
             .sort((a, b) => {
-              const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
+              const dateCompare =
+                new Date(a.date).getTime() - new Date(b.date).getTime();
               if (dateCompare !== 0) return dateCompare;
               return a.startTime.localeCompare(b.startTime);
             })
             .map((shift) => {
-              const confirmedCount = shift.registrations?.filter(
-                (r) => r.status === 'confirmed',
-              ).length || 0;
+              const confirmedCount =
+                shift.registrations?.filter((r) => r.status === 'confirmed')
+                  .length || 0;
 
               return {
                 id: shift.id,
@@ -68,7 +69,10 @@ export class ShiftsPublicController {
                 endTime: shift.endTime,
                 requiredWorkers: shift.requiredWorkers,
                 confirmedCount,
-                availableSpots: Math.max(0, shift.requiredWorkers - confirmedCount),
+                availableSpots: Math.max(
+                  0,
+                  shift.requiredWorkers - confirmedCount,
+                ),
                 isFull: confirmedCount >= shift.requiredWorkers,
                 // Public-facing notes the admin can attach to a shift, e.g.
                 // 'bitte schwarze Hose tragen'. Only sent when set.
@@ -121,7 +125,9 @@ export class ShiftsPublicController {
   }
 
   @Post('proposal/:token')
-  @ApiOperation({ summary: 'Helper responds to a shift-move proposal (accept | decline)' })
+  @ApiOperation({
+    summary: 'Helper responds to a shift-move proposal (accept | decline)',
+  })
   async respondToProposal(
     @Param('token') token: string,
     @Body() body: { action: 'accept' | 'decline' },
@@ -129,7 +135,10 @@ export class ShiftsPublicController {
     if (body?.action !== 'accept' && body?.action !== 'decline') {
       return { data: { success: false, message: 'Ungültige Aktion' } };
     }
-    const result = await this.shiftsService.respondToShiftProposal(token, body.action);
+    const result = await this.shiftsService.respondToShiftProposal(
+      token,
+      body.action,
+    );
     return {
       data: {
         success: true,
@@ -146,7 +155,10 @@ export class ShiftsPublicController {
   // ============ Helper magic-link self-service ============
 
   @Post(':slug/request-magic-link')
-  @ApiOperation({ summary: 'Send helper a magic link to manage their shifts (no enumeration: always 200)' })
+  @ApiOperation({
+    summary:
+      'Send helper a magic link to manage their shifts (no enumeration: always 200)',
+  })
   async requestMagicLink(
     @Param('slug') slug: string,
     @Body() body: { email: string },
@@ -155,15 +167,31 @@ export class ShiftsPublicController {
   ) {
     let baseUrl = origin;
     if (!baseUrl && referer) {
-      try { baseUrl = new URL(referer).origin; } catch { /* noop */ }
+      try {
+        baseUrl = new URL(referer).origin;
+      } catch {
+        /* noop */
+      }
     }
-    await this.shiftsService.requestHelperMagicLink(slug, body?.email ?? '', baseUrl);
+    await this.shiftsService.requestHelperMagicLink(
+      slug,
+      body?.email ?? '',
+      baseUrl,
+    );
     // Always return success so an attacker can't probe which emails exist.
-    return { data: { success: true, message: 'Falls eine Anmeldung mit dieser E-Mail existiert, wurde ein Link verschickt.' } };
+    return {
+      data: {
+        success: true,
+        message:
+          'Falls eine Anmeldung mit dieser E-Mail existiert, wurde ein Link verschickt.',
+      },
+    };
   }
 
   @Get('manage/:token')
-  @ApiOperation({ summary: 'Open the helper-manage session (token-bound, 24h)' })
+  @ApiOperation({
+    summary: 'Open the helper-manage session (token-bound, 24h)',
+  })
   async openHelperManage(@Param('token') token: string) {
     const data = await this.shiftsService.getHelperManageData(token);
     const plan = data.plan;
@@ -174,7 +202,10 @@ export class ShiftsPublicController {
           id: plan.id,
           name: plan.name,
           description: plan.description,
-          organization: { name: plan.organization?.name || '', logoUrl: plan.organization?.logoUrl || null },
+          organization: {
+            name: plan.organization?.name || '',
+            logoUrl: plan.organization?.logoUrl || null,
+          },
           jobs: plan.jobs
             .sort((a, b) => a.sortOrder - b.sortOrder)
             .map((job) => ({
@@ -183,9 +214,15 @@ export class ShiftsPublicController {
               description: job.description,
               color: job.color,
               shifts: job.shifts
-                .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || a.startTime.localeCompare(b.startTime))
+                .sort(
+                  (a, b) =>
+                    new Date(a.date).getTime() - new Date(b.date).getTime() ||
+                    a.startTime.localeCompare(b.startTime),
+                )
                 .map((shift) => {
-                  const confirmedCount = shift.registrations?.filter((r) => r.status === 'confirmed').length || 0;
+                  const confirmedCount =
+                    shift.registrations?.filter((r) => r.status === 'confirmed')
+                      .length || 0;
                   return {
                     id: shift.id,
                     date: shift.date,
@@ -193,7 +230,10 @@ export class ShiftsPublicController {
                     endTime: shift.endTime,
                     requiredWorkers: shift.requiredWorkers,
                     confirmedCount,
-                    availableSpots: Math.max(0, shift.requiredWorkers - confirmedCount),
+                    availableSpots: Math.max(
+                      0,
+                      shift.requiredWorkers - confirmedCount,
+                    ),
                     isFull: confirmedCount >= shift.requiredWorkers,
                     notes: shift.notes || null,
                   };
@@ -215,17 +255,24 @@ export class ShiftsPublicController {
   }
 
   @Post('manage/:token/shift')
-  @ApiOperation({ summary: 'Helper adds a shift to their signup via magic link' })
+  @ApiOperation({
+    summary: 'Helper adds a shift to their signup via magic link',
+  })
   async addShiftViaMagicLink(
     @Param('token') token: string,
     @Body() body: { shiftId: string },
   ) {
-    const reg = await this.shiftsService.addShiftViaMagicLink(token, body.shiftId);
+    const reg = await this.shiftsService.addShiftViaMagicLink(
+      token,
+      body.shiftId,
+    );
     return { data: { id: reg.id, shiftId: reg.shiftId } };
   }
 
   @Delete('manage/:token/shift/:registrationId')
-  @ApiOperation({ summary: 'Helper removes one of their shifts via magic link' })
+  @ApiOperation({
+    summary: 'Helper removes one of their shifts via magic link',
+  })
   async removeShiftViaMagicLink(
     @Param('token') token: string,
     @Param('registrationId') registrationId: string,

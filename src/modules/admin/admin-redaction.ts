@@ -59,7 +59,9 @@ export function redigiereAdminUser(user: User): RedigierterAdminUser {
  * abgleichen lässt, welcher Schlüssel hinterlegt ist — dafür genügen sie,
  * zum Bezahlen nicht.
  */
-export function redigiereAdminOrganisation(organization: Organization): Organization {
+export function redigiereAdminOrganisation(
+  organization: Organization,
+): Organization {
   const maskieren = (wert?: string) => (wert ? `****${wert.slice(-4)}` : wert);
 
   const einstellungen = { ...(organization.settings ?? {}) };

@@ -1,7 +1,4 @@
-import {
-  Controller,
-  Get,
-} from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -14,7 +11,10 @@ interface HealthCheck {
   timestamp: string;
   uptime: number;
   version: string;
-  checks?: Record<string, { status: 'ok' | 'error'; message?: string; latency?: number }>;
+  checks?: Record<
+    string,
+    { status: 'ok' | 'error'; message?: string; latency?: number }
+  >;
 }
 
 // Injected by the GitHub Action as build number (e.g. "1.0.123"); falls back
@@ -46,7 +46,10 @@ export class HealthController {
   @Public()
   @Get('ready')
   async readiness(): Promise<HealthCheck> {
-    const checks: Record<string, { status: 'ok' | 'error'; message?: string; latency?: number }> = {};
+    const checks: Record<
+      string,
+      { status: 'ok' | 'error'; message?: string; latency?: number }
+    > = {};
 
     // Database check
     const dbStart = Date.now();
@@ -56,7 +59,8 @@ export class HealthController {
     } catch (error) {
       checks.database = {
         status: 'error',
-        message: error instanceof Error ? error.message : 'Database connection failed',
+        message:
+          error instanceof Error ? error.message : 'Database connection failed',
       };
     }
 
@@ -73,7 +77,8 @@ export class HealthController {
     } catch (error) {
       checks.redis = {
         status: 'error',
-        message: error instanceof Error ? error.message : 'Redis connection failed',
+        message:
+          error instanceof Error ? error.message : 'Redis connection failed',
       };
     }
 
@@ -101,7 +106,9 @@ export class HealthController {
 
   @Public()
   @Get('detailed')
-  async detailed(): Promise<HealthCheck & { memory: NodeJS.MemoryUsage; version: string }> {
+  async detailed(): Promise<
+    HealthCheck & { memory: NodeJS.MemoryUsage; version: string }
+  > {
     const readinessCheck = await this.readiness();
 
     return {

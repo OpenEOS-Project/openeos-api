@@ -17,6 +17,10 @@ export abstract class BaseEntity {
 }
 
 export abstract class SoftDeleteEntity extends BaseEntity {
-  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamp with time zone', nullable: true })
+  @DeleteDateColumn({
+    name: 'deleted_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   deletedAt: Date | null;
 }

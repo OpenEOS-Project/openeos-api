@@ -28,17 +28,35 @@ export class AdminEventsService {
     private readonly eventRepository: Repository<Event>,
   ) {}
 
-  async findAllEvents(
-    queryDto: QueryAdminEventsDto,
-  ): Promise<{ data: AdminEventListItem[]; total: number; page: number; limit: number }> {
-    const { search, status, from, to, invoiced, page = 1, limit = 20 } = queryDto;
+  async findAllEvents(queryDto: QueryAdminEventsDto): Promise<{
+    data: AdminEventListItem[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const {
+      search,
+      status,
+      from,
+      to,
+      invoiced,
+      page = 1,
+      limit = 20,
+    } = queryDto;
 
     const qb = this.eventRepository
       .createQueryBuilder('event')
       .leftJoin('event.organization', 'org')
       .addSelect('org.name', 'org_name')
-      .leftJoin('event.orders', 'order', 'order.status = :completedStatus', { completedStatus: 'completed' })
-      .leftJoin('order.payments', 'payment', 'payment.status = :capturedStatus', { capturedStatus: 'captured' })
+      .leftJoin('event.orders', 'order', 'order.status = :completedStatus', {
+        completedStatus: 'completed',
+      })
+      .leftJoin(
+        'order.payments',
+        'payment',
+        'payment.status = :capturedStatus',
+        { capturedStatus: 'captured' },
+      )
       .select([
         'event.id',
         'event.name',
@@ -58,7 +76,9 @@ export class AdminEventsService {
       .addGroupBy('org.name');
 
     if (search) {
-      qb.andWhere('(event.name ILIKE :search OR org.name ILIKE :search)', { search: `%${search}%` });
+      qb.andWhere('(event.name ILIKE :search OR org.name ILIKE :search)', {
+        search: `%${search}%`,
+      });
     }
 
     if (status) {
@@ -109,12 +129,28 @@ export class AdminEventsService {
     return { data, total, page, limit };
   }
 
-  async getEvent(eventId: string): Promise<AdminEventListItem & { orders: { id: string; orderNumber: string; status: string; totalAmount: number }[] }> {
+  async getEvent(eventId: string): Promise<
+    AdminEventListItem & {
+      orders: {
+        id: string;
+        orderNumber: string;
+        status: string;
+        totalAmount: number;
+      }[];
+    }
+  > {
     const qb = this.eventRepository
       .createQueryBuilder('event')
       .leftJoin('event.organization', 'org')
-      .leftJoin('event.orders', 'order', 'order.status = :completedStatus', { completedStatus: 'completed' })
-      .leftJoin('order.payments', 'payment', 'payment.status = :capturedStatus', { capturedStatus: 'captured' })
+      .leftJoin('event.orders', 'order', 'order.status = :completedStatus', {
+        completedStatus: 'completed',
+      })
+      .leftJoin(
+        'order.payments',
+        'payment',
+        'payment.status = :capturedStatus',
+        { capturedStatus: 'captured' },
+      )
       .select([
         'event.id',
         'event.name',
@@ -137,14 +173,22 @@ export class AdminEventsService {
     const raw = await qb.getRawOne();
 
     if (!raw) {
-      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Event nicht gefunden' });
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Event nicht gefunden',
+      });
     }
 
     // Load orders summary separately (all orders, not just completed)
     const ordersRaw = await this.eventRepository
       .createQueryBuilder('event')
       .leftJoin('event.orders', 'order')
-      .leftJoin('order.payments', 'payment', 'payment.status = :capturedStatus', { capturedStatus: 'captured' })
+      .leftJoin(
+        'order.payments',
+        'payment',
+        'payment.status = :capturedStatus',
+        { capturedStatus: 'captured' },
+      )
       .select('order.id', 'id')
       .addSelect('order.orderNumber', 'orderNumber')
       .addSelect('order.status', 'status')
@@ -180,11 +224,20 @@ export class AdminEventsService {
     };
   }
 
-  async markInvoiced(eventId: string, adminUserId: string, dto: MarkInvoicedDto): Promise<Event> {
-    const event = await this.eventRepository.findOne({ where: { id: eventId } });
+  async markInvoiced(
+    eventId: string,
+    adminUserId: string,
+    dto: MarkInvoicedDto,
+  ): Promise<Event> {
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+    });
 
     if (!event) {
-      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Event nicht gefunden' });
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Event nicht gefunden',
+      });
     }
 
     event.invoicedAt = new Date();
@@ -196,10 +249,15 @@ export class AdminEventsService {
   }
 
   async waive(eventId: string): Promise<Event> {
-    const event = await this.eventRepository.findOne({ where: { id: eventId } });
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+    });
 
     if (!event) {
-      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Event nicht gefunden' });
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Event nicht gefunden',
+      });
     }
 
     event.billingStatus = 'waived';
@@ -208,10 +266,15 @@ export class AdminEventsService {
   }
 
   async unmarkInvoiced(eventId: string): Promise<Event> {
-    const event = await this.eventRepository.findOne({ where: { id: eventId } });
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+    });
 
     if (!event) {
-      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Event nicht gefunden' });
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Event nicht gefunden',
+      });
     }
 
     event.invoicedAt = null;

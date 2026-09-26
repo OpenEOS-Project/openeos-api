@@ -7,7 +7,13 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ProductionStation, User, UserOrganization, Event, Printer } from '../../database/entities';
+import {
+  ProductionStation,
+  User,
+  UserOrganization,
+  Event,
+  Printer,
+} from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { CreateProductionStationDto, UpdateProductionStationDto } from './dto';
@@ -32,7 +38,11 @@ export class ProductionStationsService {
     createDto: CreateProductionStationDto,
     user: User,
   ): Promise<ProductionStation> {
-    const event = await this.getEventAndCheckPermission(eventId, user.id, 'events');
+    const event = await this.getEventAndCheckPermission(
+      eventId,
+      user.id,
+      'events',
+    );
 
     // Validate printer belongs to same organization
     if (createDto.printerId) {
@@ -52,7 +62,9 @@ export class ProductionStationsService {
     });
 
     await this.productionStationRepository.save(station);
-    this.logger.log(`Production station created: ${station.name} (${station.id})`);
+    this.logger.log(
+      `Production station created: ${station.name} (${station.id})`,
+    );
 
     return station;
   }
@@ -67,7 +79,11 @@ export class ProductionStationsService {
     });
   }
 
-  async findOne(eventId: string, stationId: string, user: User): Promise<ProductionStation> {
+  async findOne(
+    eventId: string,
+    stationId: string,
+    user: User,
+  ): Promise<ProductionStation> {
     await this.getEventAndCheckMembership(eventId, user.id);
 
     const station = await this.productionStationRepository.findOne({
@@ -91,7 +107,11 @@ export class ProductionStationsService {
     updateDto: UpdateProductionStationDto,
     user: User,
   ): Promise<ProductionStation> {
-    const event = await this.getEventAndCheckPermission(eventId, user.id, 'events');
+    const event = await this.getEventAndCheckPermission(
+      eventId,
+      user.id,
+      'events',
+    );
 
     const station = await this.findOne(eventId, stationId, user);
 
@@ -114,7 +134,9 @@ export class ProductionStationsService {
     Object.assign(station, updateDto);
     await this.productionStationRepository.save(station);
 
-    this.logger.log(`Production station updated: ${station.name} (${station.id})`);
+    this.logger.log(
+      `Production station updated: ${station.name} (${station.id})`,
+    );
 
     return this.findOne(eventId, stationId, user);
   }
@@ -126,12 +148,17 @@ export class ProductionStationsService {
 
     await this.productionStationRepository.remove(station);
 
-    this.logger.log(`Production station deleted: ${station.name} (${station.id})`);
+    this.logger.log(
+      `Production station deleted: ${station.name} (${station.id})`,
+    );
   }
 
   // Private helpers
 
-  private async validatePrinter(organizationId: string, printerId: string): Promise<void> {
+  private async validatePrinter(
+    organizationId: string,
+    printerId: string,
+  ): Promise<void> {
     const printer = await this.printerRepository.findOne({
       where: { id: printerId, organizationId },
     });
@@ -139,12 +166,16 @@ export class ProductionStationsService {
     if (!printer) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Drucker nicht gefunden oder gehört nicht zur selben Organisation',
+        message:
+          'Drucker nicht gefunden oder gehört nicht zur selben Organisation',
       });
     }
   }
 
-  private async validateHandoffStation(eventId: string, handoffStationId: string): Promise<void> {
+  private async validateHandoffStation(
+    eventId: string,
+    handoffStationId: string,
+  ): Promise<void> {
     const target = await this.productionStationRepository.findOne({
       where: { id: handoffStationId, eventId },
     });
@@ -152,7 +183,8 @@ export class ProductionStationsService {
     if (!target) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Übergabe-Standort nicht gefunden oder gehört nicht zum selben Event',
+        message:
+          'Übergabe-Standort nicht gefunden oder gehört nicht zum selben Event',
       });
     }
   }
@@ -172,7 +204,10 @@ export class ProductionStationsService {
     return event;
   }
 
-  private async getEventAndCheckMembership(eventId: string, userId: string): Promise<Event> {
+  private async getEventAndCheckMembership(
+    eventId: string,
+    userId: string,
+  ): Promise<Event> {
     const event = await this.getEvent(eventId);
 
     const membership = await this.userOrganizationRepository.findOne({
@@ -207,7 +242,10 @@ export class ProductionStationsService {
       });
     }
 
-    if (membership.role !== OrganizationRole.ADMIN && !membership.permissions?.[permission]) {
+    if (
+      membership.role !== OrganizationRole.ADMIN &&
+      !membership.permissions?.[permission]
+    ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

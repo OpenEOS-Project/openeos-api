@@ -10,9 +10,12 @@ import { registerDecorator, ValidationOptions } from 'class-validator';
  * Use this instead of @IsUUID() when the value may come from seed data
  * or PostgreSQL gen_random_uuid() which always produces valid v4 UUIDs.
  */
-const UUID_LOOSE_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_LOOSE_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function IsUUIDLoose(validationOptions?: ValidationOptions): PropertyDecorator {
+export function IsUUIDLoose(
+  validationOptions?: ValidationOptions,
+): PropertyDecorator {
   return function (object: object, propertyName: string | symbol) {
     registerDecorator({
       name: 'isUUIDLoose',

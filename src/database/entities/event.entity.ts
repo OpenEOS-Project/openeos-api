@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { SoftDeleteEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { Category } from './category.entity';
@@ -17,7 +24,12 @@ export enum EventStatus {
   TEST = 'test',
 }
 
-export type EventBillingStatus = 'none' | 'pending' | 'paid' | 'invoice' | 'waived';
+export type EventBillingStatus =
+  | 'none'
+  | 'pending'
+  | 'paid'
+  | 'invoice'
+  | 'waived';
 
 /**
  * Abrechnungszustaende, in denen eine Veranstaltung als freigeschaltet gilt
@@ -38,7 +50,10 @@ export const EVENT_UNLOCKED_BILLING_STATUSES: readonly EventBillingStatus[] = [
  * gestellt wurde). Schmaler als die Liste oben: eine erlassene Veranstaltung
  * ist freigeschaltet, aber nicht bezahlt.
  */
-export const EVENT_PAID_BILLING_STATUSES: readonly EventBillingStatus[] = ['paid', 'invoice'];
+export const EVENT_PAID_BILLING_STATUSES: readonly EventBillingStatus[] = [
+  'paid',
+  'invoice',
+];
 
 export function isEventBillingUnlocked(status: EventBillingStatus): boolean {
   return EVENT_UNLOCKED_BILLING_STATUSES.includes(status);
@@ -51,7 +66,9 @@ export interface ShopTimeWindow {
   end: string; // 'HH:mm'
 }
 
-export type ShopOpeningHours = Partial<Record<ShopWeekday, ShopTimeWindow | null>>;
+export type ShopOpeningHours = Partial<
+  Record<ShopWeekday, ShopTimeWindow | null>
+>;
 
 /**
  * Ein Oeffnungstag des Shops. Nur Tage, an denen geoeffnet ist, stehen in
@@ -116,19 +133,36 @@ export class Event extends SoftDeleteEntity {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  @Column({ name: 'start_date', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'start_date',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   startDate: Date | null;
 
-  @Column({ name: 'end_date', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'end_date',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   endDate: Date | null;
 
-  @Column({ type: 'enum', enum: EventStatus, enumName: 'event_status', default: EventStatus.INACTIVE })
+  @Column({
+    type: 'enum',
+    enum: EventStatus,
+    enumName: 'event_status',
+    default: EventStatus.INACTIVE,
+  })
   status: EventStatus;
 
   @Column({ type: 'jsonb', default: {} })
   settings: EventSettings;
 
-  @Column({ name: 'invoiced_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'invoiced_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   invoicedAt: Date | null;
 
   @Column({ name: 'invoiced_by', type: 'uuid', nullable: true })
@@ -138,16 +172,32 @@ export class Event extends SoftDeleteEntity {
   invoiceNote: string | null;
 
   // Event billing (pay-per-event activation)
-  @Column({ name: 'billing_status', type: 'varchar', length: 20, default: 'none' })
+  @Column({
+    name: 'billing_status',
+    type: 'varchar',
+    length: 20,
+    default: 'none',
+  })
   billingStatus: EventBillingStatus;
 
   @Column({ name: 'paid_at', type: 'timestamp with time zone', nullable: true })
   paidAt: Date | null;
 
-  @Column({ name: 'stripe_checkout_session_id', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'stripe_checkout_session_id',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   stripeCheckoutSessionId: string | null;
 
-  @Column({ name: 'price_charged', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({
+    name: 'price_charged',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
   priceCharged: number | null;
 
   // Relations
@@ -189,7 +239,9 @@ export class Event extends SoftDeleteEntity {
   // Helper methods
   get durationInDays(): number | null {
     if (!this.startDate || !this.endDate) return null;
-    const diffTime = Math.abs(this.endDate.getTime() - this.startDate.getTime());
+    const diffTime = Math.abs(
+      this.endDate.getTime() - this.startDate.getTime(),
+    );
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   }
 

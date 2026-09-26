@@ -1,4 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  Index,
+} from 'typeorm';
 
 export type ContactRequestKind =
   | 'demo'
@@ -45,10 +51,18 @@ export class ContactRequest {
   message: string;
 
   /** Ob die Benachrichtigung rausging — sonst bleibt unklar, ob jemand sie gesehen hat. */
-  @Column({ name: 'notified_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'notified_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   notifiedAt: Date | null;
 
   /** Erledigt-Haken fuer die Durchsicht. */
-  @Column({ name: 'handled_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'handled_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   handledAt: Date | null;
 }

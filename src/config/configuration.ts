@@ -27,13 +27,17 @@ export default () => ({
   },
 
   jwt: {
-    secret: process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
+    secret:
+      process.env.JWT_SECRET ||
+      'your-super-secret-jwt-key-change-in-production',
     accessTokenExpiration: process.env.JWT_ACCESS_TOKEN_EXPIRATION || '30m',
     refreshTokenExpiration: process.env.JWT_REFRESH_TOKEN_EXPIRATION || '7d',
   },
 
   cors: {
-    origins: (process.env.CORS_ORIGINS || 'http://localhost:3001,http://localhost:3002').split(','),
+    origins: (
+      process.env.CORS_ORIGINS || 'http://localhost:3001,http://localhost:3002'
+    ).split(','),
   },
 
   throttle: {
@@ -69,7 +73,8 @@ export default () => ({
     fromName: process.env.EMAIL_FROM_NAME || 'OpenEOS',
     // Where "new registration" notifications go. Falls back to ADMIN_EMAIL
     // (already used for seeding) so a single env var can cover both.
-    adminNotifyEmail: process.env.ADMIN_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || '',
+    adminNotifyEmail:
+      process.env.ADMIN_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || '',
   },
 
   deployment: {
@@ -89,7 +94,9 @@ export default () => ({
     // entsprechend ein Vielfaches davon.
     eventPriceEur: parseFloat(process.env.EVENT_PRICE_EUR || '25'),
     // Nachlass auf die erste abgerechnete Veranstaltung einer Organisation.
-    firstEventDiscountPercent: parseFloat(process.env.FIRST_EVENT_DISCOUNT_PERCENT || '20'),
+    firstEventDiscountPercent: parseFloat(
+      process.env.FIRST_EVENT_DISCOUNT_PERCENT || '20',
+    ),
     // Im Self-Hosted-Betrieb gibt es keinen Testmodus-Deckel: die Begrenzung
     // existiert nur, um die bezahlte Freischaltung durchzusetzen, und die gibt
     // es dort nicht. Hier statt an den drei Pruefstellen zu entscheiden — alle

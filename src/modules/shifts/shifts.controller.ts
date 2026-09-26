@@ -59,7 +59,9 @@ export class ShiftsController {
   }
 
   @Get()
-  async findAllPlans(@Param('organizationId', ParseUUIDPipe) organizationId: string) {
+  async findAllPlans(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+  ) {
     const plans = await this.shiftsService.findAllPlans(organizationId);
     return { data: plans };
   }
@@ -79,7 +81,11 @@ export class ShiftsController {
     @Param('planId', ParseUUIDPipe) planId: string,
     @Body() dto: UpdateShiftPlanDto,
   ) {
-    const plan = await this.shiftsService.updatePlan(organizationId, planId, dto);
+    const plan = await this.shiftsService.updatePlan(
+      organizationId,
+      planId,
+      dto,
+    );
     return { data: plan };
   }
 
@@ -178,7 +184,11 @@ export class ShiftsController {
     @Param('jobId', ParseUUIDPipe) jobId: string,
     @Body() dto: CreateShiftDto,
   ) {
-    const shift = await this.shiftsService.createShift(organizationId, jobId, dto);
+    const shift = await this.shiftsService.createShift(
+      organizationId,
+      jobId,
+      dto,
+    );
     return { data: shift };
   }
 
@@ -188,7 +198,11 @@ export class ShiftsController {
     @Param('jobId', ParseUUIDPipe) jobId: string,
     @Body() dto: { shifts: CreateShiftDto[] },
   ) {
-    const shifts = await this.shiftsService.createShiftsBulk(organizationId, jobId, dto.shifts);
+    const shifts = await this.shiftsService.createShiftsBulk(
+      organizationId,
+      jobId,
+      dto.shifts,
+    );
     return { data: shifts };
   }
 
@@ -197,7 +211,10 @@ export class ShiftsController {
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('jobId', ParseUUIDPipe) jobId: string,
   ) {
-    const shifts = await this.shiftsService.findAllShifts(organizationId, jobId);
+    const shifts = await this.shiftsService.findAllShifts(
+      organizationId,
+      jobId,
+    );
     return { data: shifts };
   }
 
@@ -207,7 +224,11 @@ export class ShiftsController {
     @Param('shiftId', ParseUUIDPipe) shiftId: string,
     @Body() dto: UpdateShiftDto,
   ) {
-    const shift = await this.shiftsService.updateShift(organizationId, shiftId, dto);
+    const shift = await this.shiftsService.updateShift(
+      organizationId,
+      shiftId,
+      dto,
+    );
     return { data: shift };
   }
 
@@ -227,7 +248,10 @@ export class ShiftsController {
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('planId', ParseUUIDPipe) planId: string,
   ) {
-    const registrations = await this.shiftsService.findAllRegistrations(organizationId, planId);
+    const registrations = await this.shiftsService.findAllRegistrations(
+      organizationId,
+      planId,
+    );
     return { data: registrations };
   }
 
@@ -271,7 +295,12 @@ export class ShiftsController {
     @Body() dto: SendMessageDto,
     @CurrentUser() user: User,
   ) {
-    await this.shiftsService.sendMessage(organizationId, registrationId, user, dto.message);
+    await this.shiftsService.sendMessage(
+      organizationId,
+      registrationId,
+      user,
+      dto.message,
+    );
   }
 
   @Post(':planId/broadcast')
@@ -308,7 +337,10 @@ export class ShiftsController {
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('registrationId', ParseUUIDPipe) registrationId: string,
   ) {
-    await this.shiftsService.removeSingleRegistration(organizationId, registrationId);
+    await this.shiftsService.removeSingleRegistration(
+      organizationId,
+      registrationId,
+    );
   }
 
   @Post('registrations/:registrationId/mark-verified')
@@ -373,7 +405,10 @@ export class ShiftsController {
     @Param('registrationGroupId', ParseUUIDPipe) registrationGroupId: string,
     @Body()
     body: {
-      ops: Array<{ type: 'add'; shiftId: string } | { type: 'remove'; registrationId: string }>;
+      ops: Array<
+        | { type: 'add'; shiftId: string }
+        | { type: 'remove'; registrationId: string }
+      >;
       message?: string;
     },
     @Headers('origin') origin?: string,
@@ -381,7 +416,11 @@ export class ShiftsController {
   ) {
     let baseUrl = origin;
     if (!baseUrl && referer) {
-      try { baseUrl = new URL(referer).origin; } catch { /* noop */ }
+      try {
+        baseUrl = new URL(referer).origin;
+      } catch {
+        /* noop */
+      }
     }
     const proposal = await this.shiftsService.proposeRegistrationChanges(
       organizationId,

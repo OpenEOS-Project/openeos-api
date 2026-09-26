@@ -59,7 +59,9 @@ export class AdminAuditLog extends BaseEntity {
   userAgent: string | null;
 
   // Relations
-  @ManyToOne(() => User, (user) => user.adminAuditLogs, { onDelete: 'SET NULL' })
+  @ManyToOne(() => User, (user) => user.adminAuditLogs, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'admin_user_id' })
   adminUser: User;
 

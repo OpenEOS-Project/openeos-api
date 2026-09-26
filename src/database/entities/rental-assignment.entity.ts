@@ -28,7 +28,12 @@ export class RentalAssignment extends BaseEntity {
   @Column({ name: 'event_id', type: 'uuid', nullable: true })
   eventId: string | null;
 
-  @Column({ type: 'enum', enum: RentalAssignmentStatus, enumName: 'rental_assignment_status', default: RentalAssignmentStatus.PENDING })
+  @Column({
+    type: 'enum',
+    enum: RentalAssignmentStatus,
+    enumName: 'rental_assignment_status',
+    default: RentalAssignmentStatus.PENDING,
+  })
   status: RentalAssignmentStatus;
 
   @Column({ name: 'start_date', type: 'date' })
@@ -52,28 +57,46 @@ export class RentalAssignment extends BaseEntity {
   @Column({ name: 'assigned_by_user_id', type: 'uuid' })
   assignedByUserId: string;
 
-  @Column({ name: 'confirmed_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'confirmed_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   confirmedAt: Date | null;
 
-  @Column({ name: 'pickup_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'pickup_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   pickupAt: Date | null;
 
-  @Column({ name: 'returned_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'returned_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   returnedAt: Date | null;
 
   @Column({ name: 'invoice_id', type: 'uuid', nullable: true })
   invoiceId: string | null;
 
   // Relations
-  @ManyToOne(() => RentalHardware, (hardware) => hardware.assignments, { onDelete: 'CASCADE' })
+  @ManyToOne(() => RentalHardware, (hardware) => hardware.assignments, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'rental_hardware_id' })
   rentalHardware: RentalHardware;
 
-  @ManyToOne(() => Organization, (org) => org.rentalAssignments, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Organization, (org) => org.rentalAssignments, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'organization_id' })
   organization: Organization;
 
-  @ManyToOne(() => Event, (event) => event.rentalAssignments, { onDelete: 'SET NULL' })
+  @ManyToOne(() => Event, (event) => event.rentalAssignments, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'event_id' })
   event: Event | null;
 

@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Device } from './device.entity';
 import { RentalAssignment } from './rental-assignment.entity';
@@ -31,7 +38,11 @@ export interface RentalHardwareConfig {
 @Index(['serialNumber'], { unique: true })
 @Index(['status'])
 export class RentalHardware extends BaseEntity {
-  @Column({ type: 'enum', enum: RentalHardwareType, enumName: 'rental_hardware_type' })
+  @Column({
+    type: 'enum',
+    enum: RentalHardwareType,
+    enumName: 'rental_hardware_type',
+  })
   type: RentalHardwareType;
 
   @Column({ type: 'varchar', length: 255 })
@@ -49,7 +60,12 @@ export class RentalHardware extends BaseEntity {
   @Column({ name: 'daily_rate', type: 'decimal', precision: 10, scale: 2 })
   dailyRate: number;
 
-  @Column({ type: 'enum', enum: RentalHardwareStatus, enumName: 'rental_hardware_status', default: RentalHardwareStatus.AVAILABLE })
+  @Column({
+    type: 'enum',
+    enum: RentalHardwareStatus,
+    enumName: 'rental_hardware_status',
+    default: RentalHardwareStatus.AVAILABLE,
+  })
   status: RentalHardwareStatus;
 
   @Column({ name: 'hardware_config', type: 'jsonb', default: {} })

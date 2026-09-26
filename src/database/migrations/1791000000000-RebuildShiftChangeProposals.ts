@@ -8,8 +8,12 @@ export class RebuildShiftChangeProposals1791000000000 implements MigrationInterf
     // proper proposal table that supports an arbitrary list of add+remove ops
     // — the admin now edits the helper's whole group in one go and may want
     // to propose multiple changes at once.
-    await queryRunner.query(`DROP INDEX IF EXISTS "idx_shift_registrations_proposed_token"`);
-    await queryRunner.query(`ALTER TABLE "shift_registrations" DROP CONSTRAINT IF EXISTS "fk_shift_registrations_proposed_shift"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "idx_shift_registrations_proposed_token"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_registrations" DROP CONSTRAINT IF EXISTS "fk_shift_registrations_proposed_shift"`,
+    );
     await queryRunner.query(`
       ALTER TABLE "shift_registrations"
         DROP COLUMN IF EXISTS "proposed_token",
@@ -57,7 +61,9 @@ export class RebuildShiftChangeProposals1791000000000 implements MigrationInterf
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP TABLE IF EXISTS "shift_change_proposals"`);
-    await queryRunner.query(`DROP TYPE IF EXISTS "shift_change_proposal_status"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "shift_change_proposal_status"`,
+    );
     await queryRunner.query(`
       ALTER TABLE "shift_registrations"
         ADD COLUMN IF NOT EXISTS "proposed_shift_id" uuid NULL,

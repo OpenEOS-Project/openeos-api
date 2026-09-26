@@ -30,7 +30,11 @@ export class EventsController {
     @Body() createDto: CreateEventDto,
     @CurrentUser() user: User,
   ) {
-    const event = await this.eventsService.create(organizationId, createDto, user);
+    const event = await this.eventsService.create(
+      organizationId,
+      createDto,
+      user,
+    );
     return { data: event };
   }
 
@@ -44,12 +48,18 @@ export class EventsController {
   }
 
   @Get('active')
-  @ApiOperation({ summary: 'Liefert das aktuell aktive oder im Test-Modus befindliche Event der Organisation (oder null)' })
+  @ApiOperation({
+    summary:
+      'Liefert das aktuell aktive oder im Test-Modus befindliche Event der Organisation (oder null)',
+  })
   async findActive(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @CurrentUser() user: User,
   ) {
-    const event = await this.eventsService.getActiveOrTestForUser(organizationId, user);
+    const event = await this.eventsService.getActiveOrTestForUser(
+      organizationId,
+      user,
+    );
     return { data: event };
   }
 
@@ -59,7 +69,11 @@ export class EventsController {
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser() user: User,
   ) {
-    const event = await this.eventsService.findOne(organizationId, eventId, user);
+    const event = await this.eventsService.findOne(
+      organizationId,
+      eventId,
+      user,
+    );
     return { data: event };
   }
 
@@ -70,7 +84,12 @@ export class EventsController {
     @Body() updateDto: UpdateEventDto,
     @CurrentUser() user: User,
   ) {
-    const event = await this.eventsService.update(organizationId, eventId, updateDto, user);
+    const event = await this.eventsService.update(
+      organizationId,
+      eventId,
+      updateDto,
+      user,
+    );
     return { data: event };
   }
 
@@ -86,13 +105,20 @@ export class EventsController {
 
   // Event Lifecycle
   @Post(':eventId/activate')
-  @ApiOperation({ summary: 'Aktiviert ein Event (deaktiviert das aktuell aktive Event der Organisation)' })
+  @ApiOperation({
+    summary:
+      'Aktiviert ein Event (deaktiviert das aktuell aktive Event der Organisation)',
+  })
   async activate(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser() user: User,
   ) {
-    const event = await this.eventsService.activate(organizationId, eventId, user);
+    const event = await this.eventsService.activate(
+      organizationId,
+      eventId,
+      user,
+    );
     return { data: event };
   }
 
@@ -103,24 +129,37 @@ export class EventsController {
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser() user: User,
   ) {
-    const event = await this.eventsService.deactivate(organizationId, eventId, user);
+    const event = await this.eventsService.deactivate(
+      organizationId,
+      eventId,
+      user,
+    );
     return { data: event };
   }
 
   @Post(':eventId/test')
-  @ApiOperation({ summary: 'Setzt ein Event in den Test-Modus (Bestellungen werden als Test markiert)' })
+  @ApiOperation({
+    summary:
+      'Setzt ein Event in den Test-Modus (Bestellungen werden als Test markiert)',
+  })
   async setTestMode(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser() user: User,
   ) {
-    const event = await this.eventsService.setTestMode(organizationId, eventId, user);
+    const event = await this.eventsService.setTestMode(
+      organizationId,
+      eventId,
+      user,
+    );
     return { data: event };
   }
 
   // Copy products from another event
   @Post(':eventId/copy-from/:sourceEventId')
-  @ApiOperation({ summary: 'Kopiert Kategorien und Produkte von einem anderen Event' })
+  @ApiOperation({
+    summary: 'Kopiert Kategorien und Produkte von einem anderen Event',
+  })
   async copyFromEvent(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('eventId', ParseUUIDPipe) eventId: string,

@@ -18,7 +18,9 @@ export class SetupController {
 
   @Public()
   @Get('status')
-  @ApiOperation({ summary: 'Prüft ob die erstmalige Einrichtung erforderlich ist' })
+  @ApiOperation({
+    summary: 'Prüft ob die erstmalige Einrichtung erforderlich ist',
+  })
   @ApiResponse({
     status: 200,
     description: 'Setup-Status',
@@ -39,14 +41,18 @@ export class SetupController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Führt die erstmalige Einrichtung durch',
-    description: 'Zwei Modi verfügbar: "single" für Einzelbetrieb (Admin + Organisation mit unbegrenzten Credits), "multi" für Multi-Mandanten/SaaS (Super-Admin ohne Organisation)',
+    description:
+      'Zwei Modi verfügbar: "single" für Einzelbetrieb (Admin + Organisation mit unbegrenzten Credits), "multi" für Multi-Mandanten/SaaS (Super-Admin ohne Organisation)',
   })
   @ApiResponse({
     status: 201,
     description: 'Einrichtung erfolgreich',
   })
   @ApiResponse({ status: 400, description: 'Validierungsfehler' })
-  @ApiResponse({ status: 409, description: 'Einrichtung bereits abgeschlossen' })
+  @ApiResponse({
+    status: 409,
+    description: 'Einrichtung bereits abgeschlossen',
+  })
   async performSetup(@Body() setupDto: SetupDto): Promise<{
     message: string;
     mode: string;

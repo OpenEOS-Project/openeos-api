@@ -9,7 +9,10 @@ import {
 } from 'class-validator';
 
 export class RegisterDto {
-  @ApiProperty({ example: 'max@example.com', description: 'E-Mail-Adresse des Benutzers' })
+  @ApiProperty({
+    example: 'max@example.com',
+    description: 'E-Mail-Adresse des Benutzers',
+  })
   @IsEmail({}, { message: 'Ungültige E-Mail-Adresse' })
   email: string;
 
@@ -25,17 +28,28 @@ export class RegisterDto {
   @MinLength(8, { message: 'Passwort muss mindestens 8 Zeichen lang sein' })
   @MaxLength(72, { message: 'Passwort darf maximal 72 Zeichen lang sein' })
   @Matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, {
-    message: 'Passwort muss mindestens einen Großbuchstaben, einen Kleinbuchstaben und eine Zahl enthalten',
+    message:
+      'Passwort muss mindestens einen Großbuchstaben, einen Kleinbuchstaben und eine Zahl enthalten',
   })
   password?: string;
 
-  @ApiProperty({ example: 'Max', description: 'Vorname des Benutzers', minLength: 2, maxLength: 100 })
+  @ApiProperty({
+    example: 'Max',
+    description: 'Vorname des Benutzers',
+    minLength: 2,
+    maxLength: 100,
+  })
   @IsString()
   @MinLength(2, { message: 'Vorname muss mindestens 2 Zeichen lang sein' })
   @MaxLength(100, { message: 'Vorname darf maximal 100 Zeichen lang sein' })
   firstName: string;
 
-  @ApiProperty({ example: 'Mustermann', description: 'Nachname des Benutzers', minLength: 2, maxLength: 100 })
+  @ApiProperty({
+    example: 'Mustermann',
+    description: 'Nachname des Benutzers',
+    minLength: 2,
+    maxLength: 100,
+  })
   @IsString()
   @MinLength(2, { message: 'Nachname muss mindestens 2 Zeichen lang sein' })
   @MaxLength(100, { message: 'Nachname darf maximal 100 Zeichen lang sein' })
@@ -48,7 +62,11 @@ export class RegisterDto {
     maxLength: 200,
   })
   @IsString()
-  @MinLength(2, { message: 'Organisationsname muss mindestens 2 Zeichen lang sein' })
-  @MaxLength(200, { message: 'Organisationsname darf maximal 200 Zeichen lang sein' })
+  @MinLength(2, {
+    message: 'Organisationsname muss mindestens 2 Zeichen lang sein',
+  })
+  @MaxLength(200, {
+    message: 'Organisationsname darf maximal 200 Zeichen lang sein',
+  })
   organizationName: string;
 }

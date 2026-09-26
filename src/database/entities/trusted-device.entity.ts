@@ -24,7 +24,11 @@ export class TrustedDevice extends BaseEntity {
   @Column({ name: 'ip_address', type: 'varchar', length: 45, nullable: true })
   ipAddress: string | null;
 
-  @Column({ name: 'last_used_at', type: 'timestamp with time zone', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({
+    name: 'last_used_at',
+    type: 'timestamp with time zone',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
   lastUsedAt: Date;
 
   @Column({ name: 'expires_at', type: 'timestamp with time zone' })

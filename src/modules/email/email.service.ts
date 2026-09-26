@@ -24,8 +24,6 @@ export interface SendEmailOptions {
   text?: string;
 }
 
-
-
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -36,18 +34,23 @@ export class EmailService {
 
   constructor(private readonly configService: ConfigService) {
     this.isEnabled = this.configService.get<boolean>('email.enabled') === true;
-    const fromEmail = this.configService.get<string>('email.from') || 'noreply@openeos.de';
-    const fromName = this.configService.get<string>('email.fromName') || 'OpenEOS';
+    const fromEmail =
+      this.configService.get<string>('email.from') || 'noreply@openeos.de';
+    const fromName =
+      this.configService.get<string>('email.fromName') || 'OpenEOS';
     this.fromAddress = `${fromName} <${fromEmail}>`;
     // Public app URL — used for verify links, registration confirmations, etc.
     // Fallback points at the hosted production frontend so a missing env var
     // doesn't leave helpers staring at `http://localhost:3000` links.
-    this.appUrl = this.configService.get<string>('APP_URL') || 'https://app.openeos.de';
+    this.appUrl =
+      this.configService.get<string>('APP_URL') || 'https://app.openeos.de';
 
     if (this.isEnabled) {
       this.initializeTransporter();
     } else {
-      this.logger.warn('Email service is disabled. Set EMAIL_ENABLED=true to enable.');
+      this.logger.warn(
+        'Email service is disabled. Set EMAIL_ENABLED=true to enable.',
+      );
     }
   }
 
@@ -58,7 +61,9 @@ export class EmailService {
     const pass = this.configService.get<string>('email.password');
 
     if (!host || !user || !pass) {
-      this.logger.error('Email configuration incomplete. Check EMAIL_HOST, EMAIL_USER, EMAIL_PASSWORD.');
+      this.logger.error(
+        'Email configuration incomplete. Check EMAIL_HOST, EMAIL_USER, EMAIL_PASSWORD.',
+      );
       return;
     }
 
@@ -75,7 +80,9 @@ export class EmailService {
     // Verify connection on startup
     this.transporter.verify((error) => {
       if (error) {
-        this.logger.error(`Email transporter verification failed: ${error.message}`);
+        this.logger.error(
+          `Email transporter verification failed: ${error.message}`,
+        );
       } else {
         this.logger.log('Email transporter is ready');
       }
@@ -84,8 +91,12 @@ export class EmailService {
 
   async sendEmail(options: SendEmailOptions): Promise<boolean> {
     if (!this.isEnabled) {
-      this.logger.debug(`[DEV] Would send email to ${options.to}: ${options.subject}`);
-      this.logger.debug(`[DEV] Content: ${options.text || options.html.substring(0, 200)}...`);
+      this.logger.debug(
+        `[DEV] Would send email to ${options.to}: ${options.subject}`,
+      );
+      this.logger.debug(
+        `[DEV] Content: ${options.text || options.html.substring(0, 200)}...`,
+      );
       return true;
     }
 
@@ -106,7 +117,9 @@ export class EmailService {
       this.logger.log(`Email sent to ${options.to}: ${info.messageId}`);
       return true;
     } catch (error) {
-      this.logger.error(`Failed to send email to ${options.to}: ${error.message}`);
+      this.logger.error(
+        `Failed to send email to ${options.to}: ${error.message}`,
+      );
       return false;
     }
   }
@@ -129,7 +142,8 @@ export class EmailService {
     const html = rahmen({
       kontext: 'Konto aktivieren',
       titel: 'OpenEOS — E-Mail bestätigen',
-      preheader: 'Ein Klick, und dein OpenEOS-Konto ist einsatzbereit. Der Link gilt 24 Stunden.',
+      preheader:
+        'Ein Klick, und dein OpenEOS-Konto ist einsatzbereit. Der Link gilt 24 Stunden.',
       empfaenger: options.to,
       appUrl: this.appUrl,
       inhalt: stapeln(
@@ -156,12 +170,15 @@ export class EmailService {
     const html = rahmen({
       kontext: 'Passwort',
       titel: 'OpenEOS — Passwort zurücksetzen',
-      preheader: 'Neues Passwort vergeben. Der Link gilt eine Stunde und funktioniert einmal.',
+      preheader:
+        'Neues Passwort vergeben. Der Link gilt eine Stunde und funktioniert einmal.',
       empfaenger: options.to,
       appUrl: this.appUrl,
       inhalt: stapeln(
         ueberschrift('Neues Passwort vergeben.') +
-          absatz(`Hallo ${options.firstName}, über diesen Link setzt du ein neues Passwort.`),
+          absatz(
+            `Hallo ${options.firstName}, über diesen Link setzt du ein neues Passwort.`,
+          ),
         knopf(options.resetUrl, 'Neues Passwort vergeben'),
         ersatzlink(options.resetUrl),
         hinweis(
@@ -313,7 +330,14 @@ export class EmailService {
     eventDate: Date | null;
     priceCharged: number;
     paymentMethod: 'invoice' | 'stripe';
-    billingAddress?: { name?: string; company?: string; street: string; zip: string; city: string; country: string };
+    billingAddress?: {
+      name?: string;
+      company?: string;
+      street: string;
+      zip: string;
+      city: string;
+      country: string;
+    };
   }): Promise<boolean> {
     const perRechnung = options.paymentMethod === 'invoice';
     const subject = perRechnung
@@ -328,7 +352,13 @@ export class EmailService {
     const priceLabel = `${options.priceCharged.toFixed(2).replace('.', ',')} €`;
     const addr = options.billingAddress;
     const addressLine = addr
-      ? [addr.company, addr.name, addr.street, `${addr.zip} ${addr.city}`, addr.country]
+      ? [
+          addr.company,
+          addr.name,
+          addr.street,
+          `${addr.zip} ${addr.city}`,
+          addr.country,
+        ]
           .filter((teil) => teil && teil.trim())
           .join(', ')
       : '';
@@ -811,7 +841,10 @@ export class EmailService {
    * Mails anfasst, stellt sie bitte auf `rahmen()` und die Bausteine um
    * und nimmt sie damit aus diesem Weg heraus.
    */
-  private getBaseTemplate(content: string, kontext = 'Benachrichtigung'): string {
+  private getBaseTemplate(
+    content: string,
+    kontext = 'Benachrichtigung',
+  ): string {
     const angepasst = content
       // Überschrift
       .replace(

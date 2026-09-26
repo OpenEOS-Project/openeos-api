@@ -18,7 +18,11 @@ export class EmailOtp extends BaseEntity {
   @Column({ name: 'code_hash', type: 'varchar', length: 255 })
   codeHash: string;
 
-  @Column({ type: 'enum', enum: EmailOtpPurpose, enumName: 'email_otp_purpose' })
+  @Column({
+    type: 'enum',
+    enum: EmailOtpPurpose,
+    enumName: 'email_otp_purpose',
+  })
   purpose: EmailOtpPurpose;
 
   @Column({ name: 'attempts', type: 'int', default: 0 })

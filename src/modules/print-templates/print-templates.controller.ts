@@ -58,7 +58,12 @@ export class PrintTemplatesController {
     @Body() updateDto: UpdatePrintTemplateDto,
     @CurrentUser() user: User,
   ) {
-    return this.printTemplatesService.update(organizationId, templateId, updateDto, user);
+    return this.printTemplatesService.update(
+      organizationId,
+      templateId,
+      updateDto,
+      user,
+    );
   }
 
   @Delete(':templateId')

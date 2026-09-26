@@ -8,10 +8,19 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Category, User, UserOrganization, Event } from '../../database/entities';
+import {
+  Category,
+  User,
+  UserOrganization,
+  Event,
+} from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { CreateCategoryDto, UpdateCategoryDto, ReorderCategoriesDto } from './dto';
+import {
+  CreateCategoryDto,
+  UpdateCategoryDto,
+  ReorderCategoriesDto,
+} from './dto';
 import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
@@ -34,7 +43,11 @@ export class CategoriesService {
     createDto: CreateCategoryDto,
     user: User,
   ): Promise<Category> {
-    const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
+    const event = await this.getEventAndCheckPermission(
+      eventId,
+      user.id,
+      'products',
+    );
 
     const category = this.categoryRepository.create({
       eventId: event.id,
@@ -65,7 +78,11 @@ export class CategoriesService {
     });
   }
 
-  async findOne(eventId: string, categoryId: string, user: User): Promise<Category> {
+  async findOne(
+    eventId: string,
+    categoryId: string,
+    user: User,
+  ): Promise<Category> {
     await this.getEventAndCheckMembership(eventId, user.id);
 
     const category = await this.categoryRepository.findOne({
@@ -89,7 +106,11 @@ export class CategoriesService {
     updateDto: UpdateCategoryDto,
     user: User,
   ): Promise<Category> {
-    const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
+    const event = await this.getEventAndCheckPermission(
+      eventId,
+      user.id,
+      'products',
+    );
 
     const category = await this.findOne(eventId, categoryId, user);
     Object.assign(category, updateDto);
@@ -117,7 +138,11 @@ export class CategoriesService {
     this.logger.log(`Category deleted: ${category.name} (${category.id})`);
 
     // Notify menu displays
-    this.gatewayService.notifyCategoryDeleted(event.organizationId, eventId, categoryId);
+    this.gatewayService.notifyCategoryDeleted(
+      event.organizationId,
+      eventId,
+      categoryId,
+    );
   }
 
   async reorder(
@@ -125,7 +150,11 @@ export class CategoriesService {
     reorderDto: ReorderCategoriesDto,
     user: User,
   ): Promise<void> {
-    const event = await this.getEventAndCheckPermission(eventId, user.id, 'products');
+    const event = await this.getEventAndCheckPermission(
+      eventId,
+      user.id,
+      'products',
+    );
 
     for (let i = 0; i < reorderDto.categoryIds.length; i++) {
       await this.categoryRepository.update(
@@ -137,7 +166,11 @@ export class CategoriesService {
     this.logger.log(`Categories reordered for event ${eventId}`);
 
     // Notify menu displays to refresh
-    this.gatewayService.notifyMenuRefresh(event.organizationId, eventId, 'reorder');
+    this.gatewayService.notifyMenuRefresh(
+      event.organizationId,
+      eventId,
+      'reorder',
+    );
   }
 
   private async getEvent(eventId: string): Promise<Event> {
@@ -155,7 +188,10 @@ export class CategoriesService {
     return event;
   }
 
-  private async getEventAndCheckMembership(eventId: string, userId: string): Promise<Event> {
+  private async getEventAndCheckMembership(
+    eventId: string,
+    userId: string,
+  ): Promise<Event> {
     const event = await this.getEvent(eventId);
 
     const membership = await this.userOrganizationRepository.findOne({
@@ -190,7 +226,10 @@ export class CategoriesService {
       });
     }
 
-    if (membership.role !== OrganizationRole.ADMIN && !membership.permissions?.[permission]) {
+    if (
+      membership.role !== OrganizationRole.ADMIN &&
+      !membership.permissions?.[permission]
+    ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         message: 'Keine ausreichenden Berechtigungen',

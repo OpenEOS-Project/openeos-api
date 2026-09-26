@@ -58,7 +58,12 @@ export class PrintersController {
     @Body() updateDto: UpdatePrinterDto,
     @CurrentUser() user: User,
   ) {
-    return this.printersService.update(organizationId, printerId, updateDto, user);
+    return this.printersService.update(
+      organizationId,
+      printerId,
+      updateDto,
+      user,
+    );
   }
 
   @Delete(':printerId')

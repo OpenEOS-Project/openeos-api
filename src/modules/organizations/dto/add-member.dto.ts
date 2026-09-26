@@ -13,15 +13,25 @@ import { OrganizationRole } from '../../../database/entities/user-organization.e
 import type { OrganizationPermissions } from '../../../database/entities/user-organization.entity';
 
 export class AddMemberDto {
-  @ApiProperty({ example: 'max.mustermann@example.com', description: 'E-Mail-Adresse des neuen Mitglieds' })
+  @ApiProperty({
+    example: 'max.mustermann@example.com',
+    description: 'E-Mail-Adresse des neuen Mitglieds',
+  })
   @IsEmail({}, { message: 'Ungültige E-Mail-Adresse' })
   email: string;
 
-  @ApiProperty({ example: 'member', description: 'Rolle des Mitglieds in der Organisation', enum: OrganizationRole })
+  @ApiProperty({
+    example: 'member',
+    description: 'Rolle des Mitglieds in der Organisation',
+    enum: OrganizationRole,
+  })
   @IsEnum(OrganizationRole, { message: 'Ungültige Rolle' })
   role: OrganizationRole;
 
-  @ApiPropertyOptional({ example: { products: true, events: false }, description: 'Modulberechtigungen (bei role=member)' })
+  @ApiPropertyOptional({
+    example: { products: true, events: false },
+    description: 'Modulberechtigungen (bei role=member)',
+  })
   @IsOptional()
   @IsObject()
   permissions?: OrganizationPermissions;
@@ -34,7 +44,8 @@ export class AddMemberDto {
 
   @ApiPropertyOptional({
     example: 'Max',
-    description: 'Vorname — nur beim Anlegen eines neuen Kontos (eigenstaendige Installation)',
+    description:
+      'Vorname — nur beim Anlegen eines neuen Kontos (eigenstaendige Installation)',
   })
   @IsOptional()
   @IsString()
@@ -44,7 +55,8 @@ export class AddMemberDto {
 
   @ApiPropertyOptional({
     example: 'Mustermann',
-    description: 'Nachname — nur beim Anlegen eines neuen Kontos (eigenstaendige Installation)',
+    description:
+      'Nachname — nur beim Anlegen eines neuen Kontos (eigenstaendige Installation)',
   })
   @IsOptional()
   @IsString()
@@ -72,12 +84,19 @@ export class AddMemberDto {
 }
 
 export class UpdateMemberDto {
-  @ApiPropertyOptional({ example: 'admin', description: 'Rolle des Mitglieds in der Organisation', enum: OrganizationRole })
+  @ApiPropertyOptional({
+    example: 'admin',
+    description: 'Rolle des Mitglieds in der Organisation',
+    enum: OrganizationRole,
+  })
   @IsOptional()
   @IsEnum(OrganizationRole, { message: 'Ungültige Rolle' })
   role?: OrganizationRole;
 
-  @ApiPropertyOptional({ example: { products: true, events: true }, description: 'Modulberechtigungen (bei role=member)' })
+  @ApiPropertyOptional({
+    example: { products: true, events: true },
+    description: 'Modulberechtigungen (bei role=member)',
+  })
   @IsOptional()
   @IsObject()
   permissions?: OrganizationPermissions;

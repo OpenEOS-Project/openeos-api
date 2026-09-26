@@ -38,7 +38,12 @@ export class PrintJob extends BaseEntity {
   @Column({ name: 'order_item_id', type: 'uuid', nullable: true })
   orderItemId: string | null;
 
-  @Column({ type: 'enum', enum: PrintJobStatus, enumName: 'print_job_status', default: PrintJobStatus.QUEUED })
+  @Column({
+    type: 'enum',
+    enum: PrintJobStatus,
+    enumName: 'print_job_status',
+    default: PrintJobStatus.QUEUED,
+  })
   status: PrintJobStatus;
 
   @Column({ type: 'jsonb', default: {} })
@@ -50,7 +55,11 @@ export class PrintJob extends BaseEntity {
   @Column({ type: 'int', default: 0 })
   attempts: number;
 
-  @Column({ name: 'printed_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'printed_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   printedAt: Date | null;
 
   // Relations
@@ -58,11 +67,15 @@ export class PrintJob extends BaseEntity {
   @JoinColumn({ name: 'organization_id' })
   organization: Organization;
 
-  @ManyToOne(() => Printer, (printer) => printer.printJobs, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Printer, (printer) => printer.printJobs, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'printer_id' })
   printer: Printer;
 
-  @ManyToOne(() => PrintTemplate, (template) => template.printJobs, { onDelete: 'SET NULL' })
+  @ManyToOne(() => PrintTemplate, (template) => template.printJobs, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'template_id' })
   template: PrintTemplate | null;
 
@@ -70,7 +83,9 @@ export class PrintJob extends BaseEntity {
   @JoinColumn({ name: 'order_id' })
   order: Order | null;
 
-  @ManyToOne(() => OrderItem, (item) => item.printJobs, { onDelete: 'SET NULL' })
+  @ManyToOne(() => OrderItem, (item) => item.printJobs, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'order_item_id' })
   orderItem: OrderItem | null;
 }

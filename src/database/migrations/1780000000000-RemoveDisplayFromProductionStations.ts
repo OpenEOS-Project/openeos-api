@@ -5,12 +5,20 @@ export class RemoveDisplayFromProductionStations1780000000000 implements Migrati
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Drop foreign key constraints first
-    await queryRunner.query(`ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_display_device"`);
-    await queryRunner.query(`ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_handoff_station"`);
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_display_device"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_handoff_station"`,
+    );
 
     // Drop columns
-    await queryRunner.query(`ALTER TABLE "production_stations" DROP COLUMN IF EXISTS "display_device_id"`);
-    await queryRunner.query(`ALTER TABLE "production_stations" DROP COLUMN IF EXISTS "handoff_station_id"`);
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP COLUMN IF EXISTS "display_device_id"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP COLUMN IF EXISTS "handoff_station_id"`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

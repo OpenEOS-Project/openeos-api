@@ -51,7 +51,8 @@ export class AdminController {
   ) {}
 
   private getClientInfo(req: Request): { ip: string; userAgent?: string } {
-    const ip = (req as { ip?: string }).ip || req.socket?.remoteAddress || '0.0.0.0';
+    const ip =
+      (req as { ip?: string }).ip || req.socket?.remoteAddress || '0.0.0.0';
     const userAgent = req.headers['user-agent'];
     return { ip, userAgent };
   }
@@ -89,7 +90,13 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const org = await this.adminService.updateOrganization(id, updateDto, user.id, ip, userAgent);
+    const org = await this.adminService.updateOrganization(
+      id,
+      updateDto,
+      user.id,
+      ip,
+      userAgent,
+    );
     return { data: org };
   }
 
@@ -102,7 +109,13 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const org = await this.adminService.setDiscount(id, discountDto, user.id, ip, userAgent);
+    const org = await this.adminService.setDiscount(
+      id,
+      discountDto,
+      user.id,
+      ip,
+      userAgent,
+    );
     return { data: org };
   }
 
@@ -114,7 +127,12 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const org = await this.adminService.removeDiscount(id, user.id, ip, userAgent);
+    const org = await this.adminService.removeDiscount(
+      id,
+      user.id,
+      ip,
+      userAgent,
+    );
     return { data: org };
   }
 
@@ -127,7 +145,13 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    await this.adminService.accessOrganizationWithPin(id, accessDto, user.id, ip, userAgent);
+    await this.adminService.accessOrganizationWithPin(
+      id,
+      accessDto,
+      user.id,
+      ip,
+      userAgent,
+    );
     return { data: { success: true } };
   }
 
@@ -139,7 +163,12 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const token = await this.adminService.impersonateOrganization(id, user.id, ip, userAgent);
+    const token = await this.adminService.impersonateOrganization(
+      id,
+      user.id,
+      ip,
+      userAgent,
+    );
     return { data: { impersonateToken: token } };
   }
 
@@ -172,7 +201,12 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const unlocked = await this.adminService.unlockUser(id, user.id, ip, userAgent);
+    const unlocked = await this.adminService.unlockUser(
+      id,
+      user.id,
+      ip,
+      userAgent,
+    );
     return { data: unlocked };
   }
 
@@ -201,7 +235,12 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const invoice = await this.adminService.markInvoicePaid(id, user.id, ip, userAgent);
+    const invoice = await this.adminService.markInvoicePaid(
+      id,
+      user.id,
+      ip,
+      userAgent,
+    );
     return { data: invoice };
   }
 
@@ -212,7 +251,10 @@ export class AdminController {
     @Query('type') type?: string,
     @Query('unassigned') unassigned?: string,
   ) {
-    const devices = await this.adminService.findAllDevices({ type, unassigned: unassigned === 'true' });
+    const devices = await this.adminService.findAllDevices({
+      type,
+      unassigned: unassigned === 'true',
+    });
     return { data: devices };
   }
 
@@ -237,7 +279,12 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const printer = await this.adminService.assignPrinterDevice(dto, user, ip, userAgent);
+    const printer = await this.adminService.assignPrinterDevice(
+      dto,
+      user,
+      ip,
+      userAgent,
+    );
     return { data: printer };
   }
 
@@ -292,7 +339,12 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const hardware = await this.adminService.createRentalHardware(createDto, user.id, ip, userAgent);
+    const hardware = await this.adminService.createRentalHardware(
+      createDto,
+      user.id,
+      ip,
+      userAgent,
+    );
     return { data: hardware };
   }
 
@@ -302,7 +354,10 @@ export class AdminController {
     @Param('id') id: string,
     @Body() updateDto: UpdateRentalHardwareDto,
   ) {
-    const hardware = await this.adminService.updateRentalHardware(id, updateDto);
+    const hardware = await this.adminService.updateRentalHardware(
+      id,
+      updateDto,
+    );
     return { data: hardware };
   }
 
@@ -317,7 +372,9 @@ export class AdminController {
 
   @SaasOnly()
   @Get('rental-assignments')
-  async findAllRentalAssignments(@Query() queryDto: QueryRentalAssignmentsAdminDto) {
+  async findAllRentalAssignments(
+    @Query() queryDto: QueryRentalAssignmentsAdminDto,
+  ) {
     const result = await this.adminService.findAllRentalAssignments(queryDto);
     return {
       data: result.data,
@@ -338,7 +395,12 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const assignment = await this.adminService.createRentalAssignment(createDto, user.id, ip, userAgent);
+    const assignment = await this.adminService.createRentalAssignment(
+      createDto,
+      user.id,
+      ip,
+      userAgent,
+    );
     return { data: assignment };
   }
 
@@ -350,7 +412,12 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const assignment = await this.adminService.activateRental(id, user.id, ip, userAgent);
+    const assignment = await this.adminService.activateRental(
+      id,
+      user.id,
+      ip,
+      userAgent,
+    );
     return { data: assignment };
   }
 
@@ -362,7 +429,12 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const assignment = await this.adminService.returnRental(id, user.id, ip, userAgent);
+    const assignment = await this.adminService.returnRental(
+      id,
+      user.id,
+      ip,
+      userAgent,
+    );
     return { data: assignment };
   }
 
@@ -418,14 +490,18 @@ export class AdminController {
 
   @SaasOnly()
   @Post('subscription-config')
-  async createSubscriptionConfig(@Body() createDto: CreateSubscriptionConfigDto) {
+  async createSubscriptionConfig(
+    @Body() createDto: CreateSubscriptionConfigDto,
+  ) {
     const config = await this.adminService.createSubscriptionConfig(createDto);
     return { data: config };
   }
 
   @SaasOnly()
   @Patch('subscription-config')
-  async upsertSubscriptionConfig(@Body() updateDto: UpdateSubscriptionConfigDto) {
+  async upsertSubscriptionConfig(
+    @Body() updateDto: UpdateSubscriptionConfigDto,
+  ) {
     const config = await this.adminService.upsertSubscriptionConfig(updateDto);
     return { data: config };
   }
@@ -436,7 +512,10 @@ export class AdminController {
     @Param('id') id: string,
     @Body() updateDto: UpdateSubscriptionConfigDto,
   ) {
-    const config = await this.adminService.updateSubscriptionConfig(id, updateDto);
+    const config = await this.adminService.updateSubscriptionConfig(
+      id,
+      updateDto,
+    );
     return { data: config };
   }
 
@@ -456,9 +535,11 @@ export class AdminController {
   }
 
   @Patch('settings/notifications')
-  async updateNotificationSettings(@Body() updateDto: UpdateNotificationSettingsDto) {
-    const data = await this.platformSettingsService.updateNotificationSettings(updateDto);
+  async updateNotificationSettings(
+    @Body() updateDto: UpdateNotificationSettingsDto,
+  ) {
+    const data =
+      await this.platformSettingsService.updateNotificationSettings(updateDto);
     return { data };
   }
-
 }

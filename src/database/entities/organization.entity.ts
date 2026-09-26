@@ -217,17 +217,32 @@ export class Organization extends SoftDeleteEntity {
   subscriptionCurrentPeriodEnd: Date | null;
 
   // Event billing (pay-per-event activation)
-  @Column({ name: 'billing_mode', type: 'varchar', length: 20, default: 'prepaid' })
+  @Column({
+    name: 'billing_mode',
+    type: 'varchar',
+    length: 20,
+    default: 'prepaid',
+  })
   billingMode: OrganizationBillingMode;
 
-  @Column({ name: 'event_price_override', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({
+    name: 'event_price_override',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
   eventPriceOverride: number | null;
 
   // Support Chat
   @Column({ name: 'priority_support', type: 'boolean', default: false })
   prioritySupport: boolean;
 
-  @Column({ name: 'support_telegram_topic_id', type: 'integer', nullable: true })
+  @Column({
+    name: 'support_telegram_topic_id',
+    type: 'integer',
+    nullable: true,
+  })
   supportTelegramTopicId: number | null;
 
   // Relations

@@ -45,7 +45,10 @@ export class UsersController {
 
   @Patch('me')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Update profile', description: 'Update the current user profile' })
+  @ApiOperation({
+    summary: 'Update profile',
+    description: 'Update the current user profile',
+  })
   @ApiResponse({ status: 200, description: 'Profile updated successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async updateProfile(
@@ -60,7 +63,10 @@ export class UsersController {
   @ApiBearerAuth('JWT-auth')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload avatar', description: 'Upload a new avatar image' })
+  @ApiOperation({
+    summary: 'Upload avatar',
+    description: 'Upload a new avatar image',
+  })
   @ApiBody({
     schema: {
       type: 'object',
@@ -92,7 +98,11 @@ export class UsersController {
     if (user.avatarUrl) {
       const previousFilename = user.avatarUrl.split('/').pop();
       if (previousFilename) {
-        await this.uploadsService.deleteImage(user.id, previousFilename, UploadCategory.USER);
+        await this.uploadsService.deleteImage(
+          user.id,
+          previousFilename,
+          UploadCategory.USER,
+        );
       }
     }
     const uploaded = await this.uploadsService.uploadImage(
@@ -100,21 +110,31 @@ export class UsersController {
       user.id,
       UploadCategory.USER,
     );
-    const updatedUser = await this.usersService.updateAvatar(user.id, uploaded.url);
+    const updatedUser = await this.usersService.updateAvatar(
+      user.id,
+      uploaded.url,
+    );
     return { data: this.sanitizeUser(updatedUser) };
   }
 
   @Delete('me/avatar')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Delete avatar', description: 'Remove the current avatar' })
+  @ApiOperation({
+    summary: 'Delete avatar',
+    description: 'Remove the current avatar',
+  })
   @ApiResponse({ status: 200, description: 'Avatar deleted successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async deleteAvatar(@CurrentUser() user: User) {
     if (user.avatarUrl) {
       const filename = user.avatarUrl.split('/').pop();
       if (filename) {
-        await this.uploadsService.deleteImage(user.id, filename, UploadCategory.USER);
+        await this.uploadsService.deleteImage(
+          user.id,
+          filename,
+          UploadCategory.USER,
+        );
       }
     }
     const updatedUser = await this.usersService.deleteAvatar(user.id);
@@ -123,22 +143,33 @@ export class UsersController {
 
   @Post('me/email/change')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Request email change', description: 'Request a verification email to change email address' })
+  @ApiOperation({
+    summary: 'Request email change',
+    description: 'Request a verification email to change email address',
+  })
   @ApiResponse({ status: 201, description: 'Verification email sent' })
-  @ApiResponse({ status: 400, description: 'Invalid password or email already in use' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid password or email already in use',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async requestEmailChange(
     @CurrentUser() user: User,
     @Body() dto: RequestEmailChangeDto,
   ) {
     await this.usersService.requestEmailChange(user.id, dto);
-    return { message: 'Bestätigungslink wurde an die neue E-Mail-Adresse gesendet' };
+    return {
+      message: 'Bestätigungslink wurde an die neue E-Mail-Adresse gesendet',
+    };
   }
 
   @Post('me/email/verify')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Verify email change', description: 'Verify and complete email change' })
+  @ApiOperation({
+    summary: 'Verify email change',
+    description: 'Verify and complete email change',
+  })
   @ApiResponse({ status: 200, description: 'Email changed successfully' })
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
@@ -152,7 +183,10 @@ export class UsersController {
 
   @Get('me/preferences')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Get preferences', description: 'Get user preferences' })
+  @ApiOperation({
+    summary: 'Get preferences',
+    description: 'Get user preferences',
+  })
   @ApiResponse({ status: 200, description: 'User preferences' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getPreferences(@CurrentUser() user: User) {
@@ -162,7 +196,10 @@ export class UsersController {
 
   @Patch('me/preferences')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Update preferences', description: 'Update user preferences' })
+  @ApiOperation({
+    summary: 'Update preferences',
+    description: 'Update user preferences',
+  })
   @ApiResponse({ status: 200, description: 'Preferences updated successfully' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async updatePreferences(
@@ -175,7 +212,10 @@ export class UsersController {
 
   @Get('me/sessions')
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Get active sessions', description: 'Get list of active sessions/devices' })
+  @ApiOperation({
+    summary: 'Get active sessions',
+    description: 'Get list of active sessions/devices',
+  })
   @ApiResponse({ status: 200, description: 'List of sessions' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getSessions(@CurrentUser() user: User) {
@@ -199,7 +239,10 @@ export class UsersController {
   @Delete('me/sessions/:id')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Revoke session', description: 'Revoke a specific session' })
+  @ApiOperation({
+    summary: 'Revoke session',
+    description: 'Revoke a specific session',
+  })
   @ApiResponse({ status: 200, description: 'Session revoked' })
   @ApiResponse({ status: 400, description: 'Session not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
@@ -214,7 +257,10 @@ export class UsersController {
   @Delete('me/sessions')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Revoke all other sessions', description: 'Revoke all sessions except the current one' })
+  @ApiOperation({
+    summary: 'Revoke all other sessions',
+    description: 'Revoke all sessions except the current one',
+  })
   @ApiResponse({ status: 200, description: 'Sessions revoked' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async revokeAllOtherSessions(@CurrentUser() user: User) {

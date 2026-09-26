@@ -62,7 +62,12 @@ export class DevicesController {
     @Body() updateDto: UpdateDeviceDto,
     @CurrentUser() user: User,
   ) {
-    return this.devicesService.update(organizationId, deviceId, updateDto, user);
+    return this.devicesService.update(
+      organizationId,
+      deviceId,
+      updateDto,
+      user,
+    );
   }
 
   @Delete(':deviceId')
@@ -93,7 +98,13 @@ export class DevicesController {
     @Body() verifyDto: VerifyDeviceDto,
     @CurrentUser() user: User,
   ) {
-    return this.devicesService.verifyDevice(organizationId, deviceId, verifyDto.code, user, verifyDto.type);
+    return this.devicesService.verifyDevice(
+      organizationId,
+      deviceId,
+      verifyDto.code,
+      user,
+      verifyDto.type,
+    );
   }
 
   @Post(':deviceId/block')
@@ -130,7 +141,8 @@ export class DevicesController {
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @CurrentUser() _user: User,
   ) {
-    const onlineIds = await this.gatewayService.getOnlineDeviceIds(organizationId);
+    const onlineIds =
+      await this.gatewayService.getOnlineDeviceIds(organizationId);
     return { data: onlineIds };
   }
 }

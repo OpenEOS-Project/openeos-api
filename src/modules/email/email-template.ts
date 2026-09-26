@@ -26,7 +26,7 @@ const FARBE = {
   leise: '#a8ad9f',
 } as const;
 
-const SANS = "Arial, Helvetica, sans-serif";
+const SANS = 'Arial, Helvetica, sans-serif';
 const MONO = "'Courier New', Courier, monospace";
 
 /** Fremdtext für HTML entschärfen. */
@@ -205,8 +205,12 @@ ${empfaengerZeile}
 }
 
 /** Mehrere Bausteine mit passendem Abstand untereinander setzen. */
-export function stapeln(...bloecke: (string | null | undefined | false)[]): string {
+export function stapeln(
+  ...bloecke: (string | null | undefined | false)[]
+): string {
   return bloecke
     .filter((b): b is string => !!b)
-    .join('\n<div style="height:22px;line-height:22px;font-size:0">&nbsp;</div>\n');
+    .join(
+      '\n<div style="height:22px;line-height:22px;font-size:0">&nbsp;</div>\n',
+    );
 }

@@ -20,11 +20,15 @@ export class OrderItemPayment extends BaseEntity {
   amount: number;
 
   // Relations
-  @ManyToOne(() => Payment, (payment) => payment.itemPayments, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Payment, (payment) => payment.itemPayments, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'payment_id' })
   payment: Payment;
 
-  @ManyToOne(() => OrderItem, (item) => item.itemPayments, { onDelete: 'CASCADE' })
+  @ManyToOne(() => OrderItem, (item) => item.itemPayments, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'order_item_id' })
   orderItem: OrderItem;
 }

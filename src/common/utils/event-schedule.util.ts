@@ -83,7 +83,13 @@ function toWallClock(date: Date, timeZone: string): WallClock {
  * Stunde nicht.
  */
 function fromWallClock(wall: WallClock, timeZone: string): Date {
-  const target = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute);
+  const target = Date.UTC(
+    wall.year,
+    wall.month - 1,
+    wall.day,
+    wall.hour,
+    wall.minute,
+  );
   let guess = target;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -134,7 +140,10 @@ export function toDateKey(date: Date | string, timeZone: string): string {
 function dateKeyToDayNumber(dateKey: string): number | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
   if (!match) return null;
-  return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / MS_PER_DAY;
+  return (
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) /
+    MS_PER_DAY
+  );
 }
 
 function parseHHMM(value: string): { hour: number; minute: number } | null {
@@ -211,9 +220,13 @@ export function dayWindowsToAbsolute(
     const until = parseHHMM(day.end);
     if (dayNo === null || !from || !until) continue;
 
-    const overnight = until.hour * 60 + until.minute <= from.hour * 60 + from.minute;
+    const overnight =
+      until.hour * 60 + until.minute <= from.hour * 60 + from.minute;
     windows.push({
-      start: fromWallClock(dayToWallClock(dayNo, from.hour, from.minute), timeZone).toISOString(),
+      start: fromWallClock(
+        dayToWallClock(dayNo, from.hour, from.minute),
+        timeZone,
+      ).toISOString(),
       end: fromWallClock(
         dayToWallClock(dayNo + (overnight ? 1 : 0), until.hour, until.minute),
         timeZone,
@@ -240,7 +253,10 @@ export function deriveShopWindows(
   const end = endDate ? toDate(endDate) : start;
 
   const startWall = toWallClock(start, timeZone);
-  const endWall = toWallClock(Number.isNaN(end.getTime()) ? start : end, timeZone);
+  const endWall = toWallClock(
+    Number.isNaN(end.getTime()) ? start : end,
+    timeZone,
+  );
 
   return dayWindowsToAbsolute(
     listEventDayKeys(startDate, endDate, timeZone).map((date) => ({
@@ -253,7 +269,10 @@ export function deriveShopWindows(
 }
 
 /** Faellt der Zeitpunkt in eines der Fenster? Ende exklusiv. */
-export function isWithinShopWindows(now: Date, windows: ShopWindow[] | null | undefined): boolean {
+export function isWithinShopWindows(
+  now: Date,
+  windows: ShopWindow[] | null | undefined,
+): boolean {
   if (!windows || windows.length === 0) return false;
   const at = now.getTime();
   return windows.some((w) => {

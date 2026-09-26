@@ -37,13 +37,24 @@ export class Invoice extends BaseEntity {
   @Column({ name: 'invoice_number', type: 'varchar', length: 50, unique: true })
   invoiceNumber: string;
 
-  @Column({ type: 'enum', enum: InvoiceStatus, enumName: 'invoice_status', default: InvoiceStatus.DRAFT })
+  @Column({
+    type: 'enum',
+    enum: InvoiceStatus,
+    enumName: 'invoice_status',
+    default: InvoiceStatus.DRAFT,
+  })
   status: InvoiceStatus;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   subtotal: number;
 
-  @Column({ name: 'tax_rate', type: 'decimal', precision: 5, scale: 2, default: 19.0 })
+  @Column({
+    name: 'tax_rate',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    default: 19.0,
+  })
   taxRate: number;
 
   @Column({ name: 'tax_amount', type: 'decimal', precision: 10, scale: 2 })

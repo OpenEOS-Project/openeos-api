@@ -12,6 +12,8 @@ export class AddJobRequiredWorkers1789000000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "shift_jobs" DROP COLUMN IF EXISTS "required_workers"`);
+    await queryRunner.query(
+      `ALTER TABLE "shift_jobs" DROP COLUMN IF EXISTS "required_workers"`,
+    );
   }
 }

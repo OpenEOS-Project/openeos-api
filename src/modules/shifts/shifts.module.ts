@@ -5,10 +5,26 @@ import { ShiftsPublicController } from './shifts-public.controller';
 import { ShiftsService } from './shifts.service';
 import { ShiftReminderService } from './shift-reminder.service';
 import { ShiftPdfService } from './shift-pdf.service';
-import { ShiftPlan, ShiftJob, Shift, ShiftRegistration, ShiftChangeProposal, HelperMagicLink } from '../../database/entities';
+import {
+  ShiftPlan,
+  ShiftJob,
+  Shift,
+  ShiftRegistration,
+  ShiftChangeProposal,
+  HelperMagicLink,
+} from '../../database/entities';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ShiftPlan, ShiftJob, Shift, ShiftRegistration, ShiftChangeProposal, HelperMagicLink])],
+  imports: [
+    TypeOrmModule.forFeature([
+      ShiftPlan,
+      ShiftJob,
+      Shift,
+      ShiftRegistration,
+      ShiftChangeProposal,
+      HelperMagicLink,
+    ]),
+  ],
   controllers: [ShiftsController, ShiftsPublicController],
   providers: [ShiftsService, ShiftReminderService, ShiftPdfService],
   exports: [ShiftsService],

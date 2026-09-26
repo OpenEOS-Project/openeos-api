@@ -52,7 +52,10 @@ export class PlatformSettingsService {
 
     return {
       email: value.email ?? DEFAULT_NOTIFICATION_SETTINGS.email,
-      notifyOn: { ...DEFAULT_NOTIFICATION_SETTINGS.notifyOn, ...value.notifyOn },
+      notifyOn: {
+        ...DEFAULT_NOTIFICATION_SETTINGS.notifyOn,
+        ...value.notifyOn,
+      },
     };
   }
 
@@ -86,13 +89,17 @@ export class PlatformSettingsService {
    * Resolution order: configured settings email → ADMIN_NOTIFY_EMAIL →
    * ADMIN_EMAIL (both already folded into `email.adminNotifyEmail`).
    */
-  async resolveNotificationTarget(type: keyof AdminNotifyOnSettings): Promise<string | null> {
+  async resolveNotificationTarget(
+    type: keyof AdminNotifyOnSettings,
+  ): Promise<string | null> {
     const settings = await this.getNotificationSettings();
     if (!settings.notifyOn[type]) {
       return null;
     }
 
-    const fallbackEmail = this.configService.get<string>('email.adminNotifyEmail');
+    const fallbackEmail = this.configService.get<string>(
+      'email.adminNotifyEmail',
+    );
     const email = settings.email || fallbackEmail || null;
 
     return email || null;
@@ -103,7 +110,9 @@ export class PlatformSettingsService {
    * polling cursor) that don't warrant their own typed getter/setter pair.
    */
   async getValue<T>(key: string): Promise<T | null> {
-    const row = await this.platformSettingRepository.findOne({ where: { key } });
+    const row = await this.platformSettingRepository.findOne({
+      where: { key },
+    });
     if (!row) {
       return null;
     }

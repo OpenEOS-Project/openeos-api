@@ -15,7 +15,8 @@ export class LoggingInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest();
     const { method, url, body } = request;
-    const requestId = request.headers['x-request-id'] || this.generateRequestId();
+    const requestId =
+      request.headers['x-request-id'] || this.generateRequestId();
     const userAgent = request.headers['user-agent'] || 'unknown';
     const ip = request.ip;
 
@@ -29,8 +30,14 @@ export class LoggingInterceptor implements NestInterceptor {
       `[${requestId}] ${method} ${url} - IP: ${ip} - UA: ${userAgent.substring(0, 50)}`,
     );
 
-    if (process.env.NODE_ENV === 'development' && body && Object.keys(body).length > 0) {
-      this.logger.debug(`[${requestId}] Body: ${JSON.stringify(body).substring(0, 500)}`);
+    if (
+      process.env.NODE_ENV === 'development' &&
+      body &&
+      Object.keys(body).length > 0
+    ) {
+      this.logger.debug(
+        `[${requestId}] Body: ${JSON.stringify(body).substring(0, 500)}`,
+      );
     }
 
     return next.handle().pipe(
@@ -38,7 +45,9 @@ export class LoggingInterceptor implements NestInterceptor {
         next: () => {
           const statusCode = response.statusCode;
           const duration = Date.now() - now;
-          this.logger.log(`[${requestId}] ${method} ${url} - ${statusCode} - ${duration}ms`);
+          this.logger.log(
+            `[${requestId}] ${method} ${url} - ${statusCode} - ${duration}ms`,
+          );
         },
         error: (error) => {
           const statusCode = error.status || 500;

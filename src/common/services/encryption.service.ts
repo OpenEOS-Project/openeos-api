@@ -12,17 +12,21 @@ export class EncryptionService {
   private readonly key: Buffer;
 
   constructor(private readonly configService: ConfigService) {
-    let encryptionKey = this.configService.get<string>('TWO_FACTOR_ENCRYPTION_KEY');
+    let encryptionKey = this.configService.get<string>(
+      'TWO_FACTOR_ENCRYPTION_KEY',
+    );
 
     if (!encryptionKey) {
       const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
       if (nodeEnv === 'production') {
-        throw new Error('TWO_FACTOR_ENCRYPTION_KEY environment variable is not set');
+        throw new Error(
+          'TWO_FACTOR_ENCRYPTION_KEY environment variable is not set',
+        );
       }
 
       // Use a default key for development only
       this.logger.warn(
-        'TWO_FACTOR_ENCRYPTION_KEY not set - using development default. DO NOT USE IN PRODUCTION!'
+        'TWO_FACTOR_ENCRYPTION_KEY not set - using development default. DO NOT USE IN PRODUCTION!',
       );
       encryptionKey = 'openeos-dev-2fa-encryption-key-32bytes!';
     }
@@ -62,7 +66,10 @@ export class EncryptionService {
 
     // Extract IV, AuthTag, and Ciphertext
     const iv = combined.subarray(0, this.ivLength);
-    const authTag = combined.subarray(this.ivLength, this.ivLength + this.authTagLength);
+    const authTag = combined.subarray(
+      this.ivLength,
+      this.ivLength + this.authTagLength,
+    );
     const ciphertext = combined.subarray(this.ivLength + this.authTagLength);
 
     const decipher = crypto.createDecipheriv(this.algorithm, this.key, iv);
@@ -101,8 +108,14 @@ export class EncryptionService {
    */
   hashCode(code: string): string {
     // For OTP codes, use SHA-256 with a pepper
-    const pepper = this.configService.get<string>('TWO_FACTOR_ENCRYPTION_KEY', '');
-    return crypto.createHash('sha256').update(code + pepper).digest('hex');
+    const pepper = this.configService.get<string>(
+      'TWO_FACTOR_ENCRYPTION_KEY',
+      '',
+    );
+    return crypto
+      .createHash('sha256')
+      .update(code + pepper)
+      .digest('hex');
   }
 
   /**
@@ -112,7 +125,7 @@ export class EncryptionService {
     const computedHash = this.hashCode(code);
     return crypto.timingSafeEqual(
       Buffer.from(computedHash, 'hex'),
-      Buffer.from(hash, 'hex')
+      Buffer.from(hash, 'hex'),
     );
   }
 }

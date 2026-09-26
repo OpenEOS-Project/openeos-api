@@ -11,7 +11,11 @@ import cookieParser from 'cookie-parser';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters';
-import { TransformInterceptor, LoggingInterceptor, SentryContextInterceptor } from './common/interceptors';
+import {
+  TransformInterceptor,
+  LoggingInterceptor,
+  SentryContextInterceptor,
+} from './common/interceptors';
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 
 async function bootstrap() {
@@ -19,7 +23,9 @@ async function bootstrap() {
   // rawBody: der Stripe-Webhook prueft seine Signatur gegen den unveraenderten
   // Rohtext. Nach dem JSON-Parser laesst sich der nicht mehr rekonstruieren —
   // schon eine andere Schluesselreihenfolge macht die Signatur ungueltig.
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
   const configService = app.get(ConfigService);
 
   // Socket.io over Redis pub/sub — required so websocket broadcasts and
@@ -51,7 +57,9 @@ async function bootstrap() {
 
   // CORS
   const isDev = process.env.NODE_ENV !== 'production';
-  const corsOriginsConfig = configService.get<string | string[]>('cors.origins');
+  const corsOriginsConfig = configService.get<string | string[]>(
+    'cors.origins',
+  );
   let corsOrigins: string[];
   if (Array.isArray(corsOriginsConfig)) {
     corsOrigins = corsOriginsConfig;
@@ -172,7 +180,9 @@ async function bootstrap() {
       },
     });
 
-    logger.log(`Swagger documentation available at: http://localhost:${configService.get<number>('port') || 3000}/docs`);
+    logger.log(
+      `Swagger documentation available at: http://localhost:${configService.get<number>('port') || 3000}/docs`,
+    );
   }
 
   // Start Server

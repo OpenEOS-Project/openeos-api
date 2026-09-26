@@ -43,7 +43,11 @@ export class ShiftRegistration extends BaseEntity {
   })
   status: ShiftRegistrationStatus;
 
-  @Column({ name: 'email_verified_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'email_verified_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   emailVerifiedAt: Date | null;
 
   @Column({ name: 'verification_token', type: 'varchar', length: 64 })
@@ -52,7 +56,11 @@ export class ShiftRegistration extends BaseEntity {
   @Column({ name: 'admin_notes', type: 'text', nullable: true })
   adminNotes: string | null;
 
-  @Column({ name: 'reminder_sent_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'reminder_sent_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   reminderSentAt: Date | null;
 
   // How many verification reminders has this row received? The cron stops
@@ -60,11 +68,17 @@ export class ShiftRegistration extends BaseEntity {
   @Column({ name: 'verification_reminder_count', type: 'int', default: 0 })
   verificationReminderCount: number;
 
-  @Column({ name: 'last_verification_reminder_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'last_verification_reminder_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   lastVerificationReminderAt: Date | null;
 
   // Relations
-  @ManyToOne(() => Shift, (shift) => shift.registrations, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Shift, (shift) => shift.registrations, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'shift_id' })
   shift: Shift;
 

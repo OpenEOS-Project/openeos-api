@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { SupportService } from './support.service';
 import { SendSupportMessageDto } from './dto';
@@ -18,7 +26,9 @@ export class SupportAdminController {
   }
 
   @Get(':organizationId/messages')
-  async getMessages(@Param('organizationId', ParseUUIDPipe) organizationId: string) {
+  async getMessages(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+  ) {
     const data = await this.supportService.getMessagesForAdmin(organizationId);
     return { data };
   }
@@ -28,7 +38,10 @@ export class SupportAdminController {
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() dto: SendSupportMessageDto,
   ) {
-    const data = await this.supportService.postAdminMessage(organizationId, dto);
+    const data = await this.supportService.postAdminMessage(
+      organizationId,
+      dto,
+    );
     return { data };
   }
 }

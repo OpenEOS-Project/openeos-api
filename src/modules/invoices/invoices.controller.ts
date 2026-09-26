@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
 import { QueryInvoicesDto } from './dto';
@@ -30,7 +24,10 @@ export class InvoicesController {
     @CurrentOrganization() organization: Organization,
     @Query() queryDto: QueryInvoicesDto,
   ) {
-    const result = await this.invoicesService.findAll(organization.id, queryDto);
+    const result = await this.invoicesService.findAll(
+      organization.id,
+      queryDto,
+    );
     return {
       data: result.data,
       meta: {
@@ -60,7 +57,10 @@ export class InvoicesController {
     @CurrentOrganization() organization: Organization,
     @Param('id') id: string,
   ) {
-    const pdfUrl = await this.invoicesService.generatePdfUrl(organization.id, id);
+    const pdfUrl = await this.invoicesService.generatePdfUrl(
+      organization.id,
+      id,
+    );
     return {
       data: { pdfUrl },
     };

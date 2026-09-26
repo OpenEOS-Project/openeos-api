@@ -31,7 +31,9 @@ export class ChangelogController {
     /* Reiner Zeichenkettenvergleich: bei JJJJ-MM-TT entspricht die
        alphabetische Ordnung der zeitlichen, und ein ungueltiges Datum
        filtert damit nichts weg statt alles. */
-    const gefiltert = since ? CHANGELOG.filter((e) => e.datum > since) : CHANGELOG;
+    const gefiltert = since
+      ? CHANGELOG.filter((e) => e.datum > since)
+      : CHANGELOG;
 
     const eintraege: ChangelogEintragMitVersion[] = gefiltert.map((e) => ({
       ...e,

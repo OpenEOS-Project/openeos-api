@@ -34,8 +34,12 @@ export class AddShiftProposalFields1790000000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX IF EXISTS "idx_shift_registrations_proposed_token"`);
-    await queryRunner.query(`ALTER TABLE "shift_registrations" DROP CONSTRAINT IF EXISTS "fk_shift_registrations_proposed_shift"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "idx_shift_registrations_proposed_token"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_registrations" DROP CONSTRAINT IF EXISTS "fk_shift_registrations_proposed_shift"`,
+    );
     await queryRunner.query(`
       ALTER TABLE "shift_registrations"
         DROP COLUMN IF EXISTS "proposed_token",

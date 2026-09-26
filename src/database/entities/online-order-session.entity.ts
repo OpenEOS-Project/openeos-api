@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { Event } from './event.entity';
@@ -46,10 +53,20 @@ export class OnlineOrderSession extends BaseEntity {
   @Column({ name: 'table_number', type: 'varchar', length: 20, nullable: true })
   tableNumber: string | null;
 
-  @Column({ name: 'customer_name', type: 'varchar', length: 100, nullable: true })
+  @Column({
+    name: 'customer_name',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
   customerName: string | null;
 
-  @Column({ type: 'enum', enum: OnlineOrderSessionStatus, enumName: 'online_order_session_status', default: OnlineOrderSessionStatus.ACTIVE })
+  @Column({
+    type: 'enum',
+    enum: OnlineOrderSessionStatus,
+    enumName: 'online_order_session_status',
+    default: OnlineOrderSessionStatus.ACTIVE,
+  })
   status: OnlineOrderSessionStatus;
 
   @Column({ type: 'jsonb', default: { items: [], updatedAt: '' } })
@@ -63,7 +80,9 @@ export class OnlineOrderSession extends BaseEntity {
   @JoinColumn({ name: 'organization_id' })
   organization: Organization;
 
-  @ManyToOne(() => Event, (event) => event.onlineOrderSessions, { onDelete: 'SET NULL' })
+  @ManyToOne(() => Event, (event) => event.onlineOrderSessions, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'event_id' })
   event: Event | null;
 

@@ -1,4 +1,7 @@
-import type { ProductOptions, ProductOptionGroup } from '../../database/entities/product.entity';
+import type {
+  ProductOptions,
+  ProductOptionGroup,
+} from '../../database/entities/product.entity';
 
 /**
  * Parsed representation of one CSV product row, before category/pfand
@@ -177,7 +180,7 @@ function parseExtras(cell: string): ProductOptionGroup | null {
     .map((entry) => {
       const m = entry.match(/^(.*?)(?:\s*\+\s*([0-9.,]+))?\s*$/);
       const name = (m?.[1] ?? entry).trim();
-      const priceModifier = m?.[2] ? parseNumber(m[2]) ?? 0 : 0;
+      const priceModifier = m?.[2] ? (parseNumber(m[2]) ?? 0) : 0;
       return { name, priceModifier };
     })
     .filter((o) => o.name.length > 0);
@@ -205,7 +208,9 @@ export function parseProductCsv(csv: string): CsvParseResult {
     return { rows: [], fatalError: 'Die Datei enthält keine Daten.' };
   }
 
-  const header = raw[0].map((h) => HEADER_ALIASES[h.trim().toLowerCase()] ?? '');
+  const header = raw[0].map(
+    (h) => HEADER_ALIASES[h.trim().toLowerCase()] ?? '',
+  );
   if (!header.includes('name') || !header.includes('price')) {
     return {
       rows: [],
@@ -240,7 +245,8 @@ export function parseProductCsv(csv: string): CsvParseResult {
     else if (!category) error = 'Kategorie fehlt';
     else if (price === null) error = 'Ungültiger oder fehlender Preis';
     else if (price < 0) error = 'Preis darf nicht negativ sein';
-    else if (pfand !== null && pfand < 0) error = 'Pfand darf nicht negativ sein';
+    else if (pfand !== null && pfand < 0)
+      error = 'Pfand darf nicht negativ sein';
 
     rows.push({
       line,

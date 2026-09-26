@@ -14,8 +14,14 @@ export interface Response<T> {
 }
 
 @Injectable()
-export class TransformInterceptor<T> implements NestInterceptor<T, Response<T>> {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<Response<T>> {
+export class TransformInterceptor<T> implements NestInterceptor<
+  T,
+  Response<T>
+> {
+  intercept(
+    context: ExecutionContext,
+    next: CallHandler,
+  ): Observable<Response<T>> {
     return next.handle().pipe(
       map((data) => {
         // Streamable file responses (PDF export etc.) must NOT be wrapped —
@@ -26,7 +32,10 @@ export class TransformInterceptor<T> implements NestInterceptor<T, Response<T>> 
           return data;
         }
         // Buffers + Node streams: ditto.
-        if (Buffer.isBuffer(data) || (data && typeof (data as { pipe?: unknown })?.pipe === 'function')) {
+        if (
+          Buffer.isBuffer(data) ||
+          (data && typeof (data as { pipe?: unknown })?.pipe === 'function')
+        ) {
           return data;
         }
 
