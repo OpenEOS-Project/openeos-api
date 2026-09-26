@@ -46,11 +46,13 @@ jobs:
       - name: Test
         run: pnpm test
 
-      # `pnpm lint` isn't gated here yet: the repo currently has ~2,500
-      # pre-existing lint findings (mostly Prettier formatting), so turning
-      # this on today would make every run red for reasons unrelated to the
-      # change being tested. Needs a dedicated `eslint --fix` pass across the
-      # repo first — see the audit report — then this step can be added.
+      - name: Lint
+        run: pnpm lint
+
+      # Der `eslint --fix`-Lauf, den der frühere Kommentar hier gefordert
+      # hat, ist erfolgt: rund 2250 Befunde bereinigt. Was blieb, ist
+      # Typschuld (`no-unsafe-*`) und steht als Warnung in eslint.config.mjs
+      # — dort steht auch, warum.
 
   build-and-push:
     needs: test
