@@ -7,7 +7,12 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Event } from '../../database/entities/event.entity';
+import {
+  Event,
+  EVENT_PAID_BILLING_STATUSES,
+  EVENT_UNLOCKED_BILLING_STATUSES,
+  isEventBillingUnlocked,
+} from '../../database/entities/event.entity';
 import { Organization, BillingAddress } from '../../database/entities/organization.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { User } from '../../database/entities';
@@ -128,7 +133,7 @@ export class EventBillingService {
       .withDeleted()
       .where('event.organizationId = :organizationId', { organizationId })
       .andWhere('event.id != :currentEventId', { currentEventId })
-      .andWhere('event.billingStatus IN (:...statuses)', { statuses: ['paid', 'invoice'] })
+      .andWhere('event.billingStatus IN (:...statuses)', { statuses: [...EVENT_PAID_BILLING_STATUSES] })
       .getCount();
     return count > 0;
   }
@@ -251,7 +256,7 @@ export class EventBillingService {
     const event = await this.getEventInOrg(organizationId, eventId);
     const organization = await this.getOrganization(organizationId);
 
-    if (['paid', 'invoice', 'waived'].includes(event.billingStatus)) {
+    if (isEventBillingUnlocked(event.billingStatus)) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         message: 'Veranstaltung ist bereits freigeschaltet',
@@ -348,7 +353,7 @@ export class EventBillingService {
     const event = await this.getEventInOrg(organizationId, eventId);
     const organization = await this.getOrganization(organizationId);
 
-    if (['paid', 'invoice', 'waived'].includes(event.billingStatus)) {
+    if (isEventBillingUnlocked(event.billingStatus)) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         message: 'Veranstaltung ist bereits freigeschaltet',
@@ -427,7 +432,7 @@ export class EventBillingService {
       return null;
     }
 
-    if (['paid', 'invoice', 'waived'].includes(event.billingStatus)) {
+    if (isEventBillingUnlocked(event.billingStatus)) {
       return event;
     }
 
@@ -440,7 +445,7 @@ export class EventBillingService {
        schickten eine Mail. So gewinnt genau einer die Zeile, und nur wer
        sie gewonnen hat, benachrichtigt. */
     const ergebnis = await this.eventRepository.update(
-      { id: event.id, billingStatus: Not(In(['paid', 'invoice', 'waived'])) },
+      { id: event.id, billingStatus: Not(In([...EVENT_UNLOCKED_BILLING_STATUSES])) },
       {
         billingStatus: 'paid',
         paidAt: bezahltAm,

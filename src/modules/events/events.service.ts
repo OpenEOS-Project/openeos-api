@@ -19,7 +19,12 @@ import {
   Order,
   OrderItem,
 } from '../../database/entities';
-import { EventStatus } from '../../database/entities/event.entity';
+import {
+  EventStatus,
+  EVENT_PAID_BILLING_STATUSES,
+  isEventBillingUnlocked,
+} from '../../database/entities/event.entity';
+import { DeploymentService } from '../../common/services/deployment.service';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
@@ -48,6 +53,7 @@ export class EventsService {
     private readonly orderItemRepository: Repository<OrderItem>,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
+    private readonly deployment: DeploymentService,
   ) {}
 
   private emitStatusChanged(event: Event): void {
@@ -86,7 +92,9 @@ export class EventsService {
     nextStart: Date | null,
     nextEnd: Date | null,
   ): Promise<void> {
-    if (!['paid', 'invoice'].includes(event.billingStatus)) return;
+    // Ohne Abrechnung gibt es keine bezahlte Dauer, die sich ausdehnen liesse.
+    if (!this.deployment.billingEnabled) return;
+    if (!EVENT_PAID_BILLING_STATUSES.includes(event.billingStatus)) return;
 
     const organization = await this.organizationRepository.findOne({ where: { id: event.organizationId } });
     const timezone = organization?.settings?.timezone || 'Europe/Berlin';
@@ -245,7 +253,11 @@ export class EventsService {
       });
     }
 
-    if (!['paid', 'invoice', 'waived'].includes(event.billingStatus)) {
+    // Im Self-Hosted-Betrieb gibt es keine kostenpflichtige Freischaltung,
+    // also auch nichts zu pruefen. Der Zustand `billingStatus` bleibt dort
+    // auf 'none' stehen — bewusst nicht auf 'waived' gesetzt: "erlassen"
+    // hiesse, es haette etwas gekostet.
+    if (this.deployment.billingEnabled && !isEventBillingUnlocked(event.billingStatus)) {
       throw new BadRequestException({
         code: ErrorCodes.EVENT_NOT_PAID,
         message: 'Veranstaltung ist noch nicht freigeschaltet — bitte zuerst kostenpflichtig bestellen',

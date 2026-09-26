@@ -3,3 +3,4 @@ export * from './device-auth.guard';
 export * from './roles.guard';
 export * from './organization.guard';
 export * from './super-admin.guard';
+export * from './deployment-mode.guard';

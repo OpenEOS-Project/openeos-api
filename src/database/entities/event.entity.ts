@@ -19,6 +19,31 @@ export enum EventStatus {
 
 export type EventBillingStatus = 'none' | 'pending' | 'paid' | 'invoice' | 'waived';
 
+/**
+ * Abrechnungszustaende, in denen eine Veranstaltung als freigeschaltet gilt
+ * und aktiviert werden darf.
+ *
+ * Bewusst als eine Konstante statt als wiederholtes Array-Literal: die Liste
+ * wurde an sieben Stellen in vier Dateien dupliziert, und eine Aenderung, die
+ * nur einen Teil davon trifft, faellt erst im Betrieb auf.
+ */
+export const EVENT_UNLOCKED_BILLING_STATUSES: readonly EventBillingStatus[] = [
+  'paid',
+  'invoice',
+  'waived',
+];
+
+/**
+ * Zustaende, fuer die tatsaechlich Geld geflossen ist (bzw. eine Rechnung
+ * gestellt wurde). Schmaler als die Liste oben: eine erlassene Veranstaltung
+ * ist freigeschaltet, aber nicht bezahlt.
+ */
+export const EVENT_PAID_BILLING_STATUSES: readonly EventBillingStatus[] = ['paid', 'invoice'];
+
+export function isEventBillingUnlocked(status: EventBillingStatus): boolean {
+  return EVENT_UNLOCKED_BILLING_STATUSES.includes(status);
+}
+
 export type ShopWeekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
 export interface ShopTimeWindow {

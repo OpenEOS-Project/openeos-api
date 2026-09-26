@@ -35,6 +35,7 @@ import {
   ChangePasswordDto,
 } from './dto';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { DeploymentService } from '../../common/services/deployment.service';
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCK_DURATION_MINUTES = 15;
@@ -74,6 +75,7 @@ export class AuthService {
     private readonly twoFactorService: TwoFactorService,
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
+    private readonly deployment: DeploymentService,
   ) {}
 
   async getPendingInvitations(userId: string): Promise<Invitation[]> {
@@ -98,6 +100,20 @@ export class AuthService {
     magicLinkSent: boolean;
   }> {
     const { email, password, firstName, lastName, organizationName } = registerDto;
+
+    /* Eigenstaendig gibt es keine Selbstregistrierung.
+       Zwei Gruende: sie legt jedes Mal eine weitere Organisation an, und sie
+       setzt einen funktionierenden Mailversand voraus — ohne den bliebe das
+       neue Konto unbestaetigt und damit dauerhaft ausgesperrt. Benutzer legt
+       dort die Administration an (POST /users), mit sofort gueltigem Konto. */
+    if (this.deployment.isSelfHosted) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message:
+          'Selbstregistrierung ist in dieser Installation nicht moeglich. ' +
+          'Bitte wenden Sie sich an die Administration.',
+      });
+    }
 
     // Check if user already exists
     const existingUser = await this.userRepository.findOne({

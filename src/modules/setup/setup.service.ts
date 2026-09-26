@@ -14,8 +14,21 @@ import {
 } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { SetupDto, SetupMode } from './dto';
+import { DeploymentService } from '../../common/services/deployment.service';
+import type { DeploymentMode } from '../../config/configuration';
 
 const BCRYPT_ROUNDS = 12;
+
+export interface SetupStatus {
+  required: boolean;
+  reason?: string;
+  /** Betriebsart dieser Installation — steuert, was die Oberflaeche zeigt. */
+  deployment: {
+    mode: DeploymentMode;
+    billingEnabled: boolean;
+    multiTenant: boolean;
+  };
+}
 
 export interface SetupResult {
   mode: SetupMode;
@@ -45,19 +58,30 @@ export class SetupService {
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     private readonly dataSource: DataSource,
+    private readonly deployment: DeploymentService,
   ) {}
 
-  async isSetupRequired(): Promise<{ required: boolean; reason?: string }> {
+  async isSetupRequired(): Promise<SetupStatus> {
+    /* Die Betriebsart haengt mit an dieser Antwort, weil sie die erste
+       Anfrage der Oberflaeche ueberhaupt ist — ein eigener Endpunkt waere ein
+       zweiter Rundlauf, bevor irgendetwas angezeigt werden kann. */
+    const deployment = {
+      mode: this.deployment.mode,
+      billingEnabled: this.deployment.billingEnabled,
+      multiTenant: this.deployment.multiTenant,
+    };
+
     const userCount = await this.userRepository.count();
 
     if (userCount === 0) {
       return {
         required: true,
         reason: 'Keine Benutzer vorhanden. Erstmalige Einrichtung erforderlich.',
+        deployment,
       };
     }
 
-    return { required: false };
+    return { required: false, deployment };
   }
 
   async performSetup(setupDto: SetupDto): Promise<SetupResult> {
@@ -70,15 +94,22 @@ export class SetupService {
       });
     }
 
+    /* Eine eigenstaendige Installation kennt nur den Einzelbetrieb. Die Wahl
+       im Assistenten zu belassen hiesse, jemandem einen Multi-Mandanten-
+       Aufbau anzubieten, den der Rest der Installation anschliessend
+       verweigert — die Betriebsart steht in der Umgebung fest, nicht im
+       Formular. */
+    const mode = this.deployment.isSelfHosted ? SetupMode.SINGLE : setupDto.mode;
+
     // Validate organizationName for single mode
-    if (setupDto.mode === SetupMode.SINGLE && !setupDto.organizationName) {
+    if (mode === SetupMode.SINGLE && !setupDto.organizationName) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
         message: 'Organisationsname ist bei Single-Modus erforderlich',
       });
     }
 
-    if (setupDto.mode === SetupMode.SINGLE) {
+    if (mode === SetupMode.SINGLE) {
       return this.performSingleTenantSetup(setupDto);
     } else {
       return this.performMultiTenantSetup(setupDto);
@@ -93,7 +124,17 @@ export class SetupService {
     await queryRunner.startTransaction();
 
     try {
-      // 1. Create admin user (NOT super admin)
+      /* 1. Admin anlegen.
+
+         Im gehosteten Betrieb ist das bewusst KEIN Super-Admin: dort gibt es
+         eine Betreiberrolle ueber den Mandanten, und ein Kunde gehoert nicht
+         hinein.
+
+         Eigenstaendig gibt es diese Trennung nicht — es gibt niemanden
+         "darueber". Ohne Super-Admin-Recht kaeme man an Geraeteverwaltung,
+         Druckerzuordnung, Benutzerentsperrung und Protokoll gar nicht heran:
+         die haengen alle am SuperAdminGuard. Die rein kommerziellen
+         Endpunkte dahinter sind per @SaasOnly() ohnehin abgeschaltet. */
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const user = this.userRepository.create({
         email: email.toLowerCase(),
@@ -101,12 +142,12 @@ export class SetupService {
         firstName,
         lastName,
         isActive: true,
-        isSuperAdmin: false,
+        isSuperAdmin: this.deployment.isSelfHosted,
         emailVerifiedAt: new Date(),
       });
       await queryRunner.manager.save(user);
 
-      // 2. Create organization with unlimited credits
+      // 2. Organisation anlegen
       const slug = await this.generateOrganizationSlug(organizationName!, queryRunner.manager);
       const supportPin = this.generateSupportPin();
 
@@ -137,7 +178,7 @@ export class SetupService {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
-          isSuperAdmin: false,
+          isSuperAdmin: user.isSuperAdmin,
         },
         organization: {
           id: organization.id,

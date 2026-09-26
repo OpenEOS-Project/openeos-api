@@ -1,3 +1,10 @@
+export type DeploymentMode = 'saas' | 'selfhosted';
+
+const DEPLOYMENT_MODE: DeploymentMode =
+  process.env.DEPLOYMENT_MODE === 'selfhosted' ? 'selfhosted' : 'saas';
+
+const IS_SELF_HOSTED = DEPLOYMENT_MODE === 'selfhosted';
+
 export default () => ({
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3000', 10),
@@ -65,13 +72,31 @@ export default () => ({
     adminNotifyEmail: process.env.ADMIN_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || '',
   },
 
+  deployment: {
+    // 'saas'       — die gehostete Mehrmandanten-Installation (Standard).
+    // 'selfhosted' — eine eigenstaendige Installation: kostenlos, genau eine
+    //                Organisation, keine Abrechnung, kein Stripe.
+    //
+    // Der Standard ist bewusst 'saas': eine bestehende Installation ohne
+    // gesetzte Variable verhaelt sich unveraendert.
+    mode: DEPLOYMENT_MODE,
+    billingEnabled: !IS_SELF_HOSTED,
+    multiTenant: !IS_SELF_HOSTED,
+  },
+
   billing: {
     // Preis je Veranstaltungstag. Eine mehrtaegige Veranstaltung kostet
     // entsprechend ein Vielfaches davon.
     eventPriceEur: parseFloat(process.env.EVENT_PRICE_EUR || '25'),
     // Nachlass auf die erste abgerechnete Veranstaltung einer Organisation.
     firstEventDiscountPercent: parseFloat(process.env.FIRST_EVENT_DISCOUNT_PERCENT || '20'),
-    testEventMaxOrders: parseInt(process.env.TEST_EVENT_MAX_ORDERS || '25', 10),
+    // Im Self-Hosted-Betrieb gibt es keinen Testmodus-Deckel: die Begrenzung
+    // existiert nur, um die bezahlte Freischaltung durchzusetzen, und die gibt
+    // es dort nicht. Hier statt an den drei Pruefstellen zu entscheiden — alle
+    // lesen denselben Wert, damit bleibt die Sonderregel an einer Stelle.
+    testEventMaxOrders: IS_SELF_HOSTED
+      ? Number.MAX_SAFE_INTEGER
+      : parseInt(process.env.TEST_EVENT_MAX_ORDERS || '25', 10),
     openRegisterApiKey: process.env.OPENREGISTER_API_KEY || '',
   },
 

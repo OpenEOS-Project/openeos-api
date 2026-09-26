@@ -4,8 +4,10 @@ import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
 import { ContactService } from './contact.service';
 import { CreateContactRequestDto } from './dto';
+import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 
 @ApiTags('Contact')
+@SaasOnly()
 @Controller('public/contact')
 @Public()
 export class ContactController {

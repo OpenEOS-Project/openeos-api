@@ -15,9 +15,11 @@ import { QueryAdminEventsDto, MarkInvoicedDto } from './dto/admin-events.dto';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../database/entities';
+import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 
 @ApiTags('Admin')
 @ApiBearerAuth('JWT-auth')
+@SaasOnly()
 @Controller('admin/events')
 @UseGuards(SuperAdminGuard)
 export class AdminEventsController {

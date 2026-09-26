@@ -16,7 +16,8 @@ import {
   validationSchema,
 } from './config';
 import type { PoolOptions } from './config/database.config';
-import { JwtAuthGuard } from './common/guards';
+import { JwtAuthGuard, DeploymentModeGuard } from './common/guards';
+import { CommonModule } from './common/common.module';
 import { AuthModule } from './modules/auth';
 import { ApiTokensModule } from './modules/api-tokens/api-tokens.module';
 import { MonitoringModule } from './modules/monitoring/monitoring.module';
@@ -72,6 +73,9 @@ import { ChangelogModule } from './modules/changelog';
         abortEarly: false,
       },
     }),
+
+    // Querschnittsdienste (global): Betriebsart u. a.
+    CommonModule,
 
     // Database
     TypeOrmModule.forRootAsync({
@@ -177,6 +181,12 @@ import { ChangelogModule } from './modules/changelog';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    // Blendet die Endpunkte des gehosteten Angebots aus, wenn diese
+    // Installation eigenstaendig laeuft (DEPLOYMENT_MODE=selfhosted).
+    {
+      provide: APP_GUARD,
+      useClass: DeploymentModeGuard,
     },
   ],
 })

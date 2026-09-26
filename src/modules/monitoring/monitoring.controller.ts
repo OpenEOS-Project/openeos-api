@@ -5,6 +5,7 @@ import { MonitoringService } from './monitoring.service';
 import { RequiresScope } from '../../common/decorators';
 import { API_SCOPES } from '../api-tokens/api-scopes';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
+import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 
 /**
  * Kennzahlen für die Überwachung.
@@ -15,6 +16,7 @@ import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
  */
 @ApiTags('Monitoring')
 @ApiBearerAuth('JWT-auth')
+@SaasOnly()
 @Controller('monitoring')
 @UseGuards(SuperAdminGuard)
 export class MonitoringController {

@@ -13,6 +13,7 @@ import type { Request } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { EventBillingService } from './event-billing.service';
 import { StripeService } from '../stripe/stripe.service';
+import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 
 /**
  * Stripes Rueckmeldung zu bezahlten Freischaltungen.
@@ -25,6 +26,7 @@ import { StripeService } from '../stripe/stripe.service';
  * uns. Was ihn schuetzt, ist ausschliesslich die Signaturpruefung.
  */
 @ApiExcludeController()
+@SaasOnly()
 @Controller('public/stripe')
 @Public()
 export class StripeWebhookController {
