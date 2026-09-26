@@ -24,12 +24,12 @@ import {
 } from './monitoring.types';
 
 /* ------------------------------------------------------------------ */
-/* Ohne Datenbank: Ablauf und Umwandlung der Rohwerte                  */
+/* Without a database: control flow and conversion of raw values       */
 /* ------------------------------------------------------------------ */
 
-describe('MonitoringService (ohne Datenbank)', () => {
-  /** Ein QueryBuilder, der jede Kette mitmacht und `roh` zurückgibt. */
-  function builder(roh: Record<string, unknown> | undefined) {
+describe('MonitoringService (without database)', () => {
+  /** A QueryBuilder that accepts any chain and resolves to `raw`. */
+  function builder(raw: Record<string, unknown> | undefined) {
     const qb: Record<string, jest.Mock> = {};
     for (const name of [
       'select',
@@ -43,72 +43,70 @@ describe('MonitoringService (ohne Datenbank)', () => {
     ]) {
       qb[name] = jest.fn(() => qb);
     }
-    qb.getRawOne = jest.fn(() => Promise.resolve(roh));
+    qb.getRawOne = jest.fn(() => Promise.resolve(raw));
     qb.getMany = jest.fn(() => Promise.resolve([]));
     return qb;
   }
 
-  function aufbauen(
-    rohwerte: Map<unknown, Record<string, unknown> | undefined>,
-  ) {
-    const abfragen: string[] = [];
+  function setup(rawValues: Map<unknown, Record<string, unknown> | undefined>) {
+    const queries: string[] = [];
     const manager = {
       query: jest.fn((sql: string) => {
-        abfragen.push(sql);
+        queries.push(sql);
         return Promise.resolve([]);
       }),
       find: jest.fn(() => Promise.resolve([])),
       createQueryBuilder: jest.fn((entity: unknown) =>
-        builder(rohwerte.get(entity)),
+        builder(rawValues.get(entity)),
       ),
     };
     const dataSource = {
-      transaction: jest.fn((arbeit: (m: EntityManager) => Promise<unknown>) =>
-        arbeit(manager as unknown as EntityManager),
+      transaction: jest.fn((work: (m: EntityManager) => Promise<unknown>) =>
+        work(manager as unknown as EntityManager),
       ),
     };
     const service = new MonitoringService(dataSource as unknown as DataSource);
-    return { service, dataSource, manager, abfragen };
+    return { service, dataSource, manager, queries };
   }
 
-  it('erhebt alles in genau einer lesenden Transaktion', async () => {
-    const { service, dataSource, manager, abfragen } = aufbauen(new Map());
+  it('collects everything in exactly one read-only transaction', async () => {
+    const { service, dataSource, manager, queries } = setup(new Map());
     await service.kennzahlen();
 
     expect(dataSource.transaction).toHaveBeenCalledTimes(1);
-    expect(abfragen[0]).toBe(
+    expect(queries[0]).toBe(
       'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY',
     );
-    // 8 Aggregat-Abfragen + Freischaltungen + 3 Listen = 12 statt vorher 29.
+    // 8 aggregate queries + activations + 3 lists = 12 instead of 29 before.
     expect(manager.createQueryBuilder).toHaveBeenCalledTimes(9);
     expect(manager.find).toHaveBeenCalledTimes(3);
   });
 
-  it('wandelt Postgres-Text (bigint/numeric) in Zahlen und fehlende Werte in 0', async () => {
-    const { service } = aufbauen(
+  it('converts Postgres text (bigint/numeric) to numbers and missing values to 0', async () => {
+    const { service } = setup(
       new Map<unknown, Record<string, unknown> | undefined>([
-        [Organization, { gesamt: '12', neu: '3' }],
-        [User, { gesamt: '40', aktiv: '38', neu: '0' }],
+        [Organization, { total: '12', recent: '3' }],
+        [User, { total: '40', active: '38', recent: '0' }],
         [
           Event,
           {
-            gesamt: '9',
-            aktiv: '2',
+            total: '9',
+            active: '2',
             test: '1',
-            bezahlt: '4',
+            paid: '4',
             pending: '1',
-            rechnung: '2',
-            erlassen: '1',
-            summe: '150.50',
-            heute: '0',
-            monat: '25.00',
+            invoice: '2',
+            waived: '1',
+            revenue_total: '150.50',
+            revenue_today: '0',
+            revenue_month: '25.00',
           },
         ],
-        [RentalAssignment, { summe: '99.90' }],
+        [RentalAssignment, { revenue_total: '99.90' }],
         [ContactRequest, undefined],
-        [SupportMessage, { ungelesen: '0', threads: '0', letzte: null }],
-        [Device, { gesamt: '5', frei: '4' }],
-        [Order, { gesamt: '1000', neu: '17' }],
+        [SupportMessage, { unread: '0', threads: '0', latest: null }],
+        [Device, { total: '5', verified: '4' }],
+        [Order, { total: '1000', recent: '17' }],
       ]),
     );
 
@@ -120,6 +118,16 @@ describe('MonitoringService (ohne Datenbank)', () => {
       aktiv: 38,
       neuImMonat: 0,
       letzte: [],
+    });
+    expect(k.veranstaltungen).toEqual({
+      gesamt: 9,
+      aktiv: 2,
+      imTest: 1,
+      bezahlt: 4,
+      pending: 1,
+      aufRechnung: 2,
+      erlassen: 1,
+      letzteFreischaltungen: [],
     });
     expect(k.umsatz).toEqual({
       bezahlteVeranstaltungen: 6,
@@ -140,22 +148,22 @@ describe('MonitoringService (ohne Datenbank)', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Mit Datenbank: alte und neue Umsetzung liefern dieselben Bytes      */
+/* With a database: old and new implementation return the same bytes  */
 /* ------------------------------------------------------------------ */
 
 /**
- * Läuft nur, wenn eine Wegwerf-Datenbank angegeben ist, z. B.
+ * Only runs when a throwaway database is given, e.g.
  *
  *   MONITORING_TEST_DATABASE_URL=postgres://openeos@127.0.0.1:5432/openeos_test pnpm test
  *
- * Der Test legt das Schema per Migration an und LEERT die beteiligten
- * Tabellen. Deshalb muss der Datenbankname auf `_test` enden.
+ * The test creates the schema via migrations and TRUNCATES the tables
+ * involved. That is why the database name must end in `_test`.
  */
 const TEST_DB = process.env.MONITORING_TEST_DATABASE_URL;
-const mitDatenbank = TEST_DB ? describe : describe.skip;
+const describeWithDb = TEST_DB ? describe : describe.skip;
 
-mitDatenbank(
-  'MonitoringService gegen Postgres: Antwort wie vor dem Umbau',
+describeWithDb(
+  'MonitoringService against Postgres: response identical to before the refactor',
   () => {
     let ds: DataSource;
 
@@ -163,7 +171,7 @@ mitDatenbank(
       const name = new URL(TEST_DB!).pathname.replace(/^\//, '');
       if (!name.endsWith('_test')) {
         throw new Error(
-          `Datenbank "${name}" endet nicht auf _test — Abbruch, der Test leert Tabellen.`,
+          `Database "${name}" does not end in _test — aborting, the test truncates tables.`,
         );
       }
       ds = new DataSource({
@@ -181,50 +189,50 @@ mitDatenbank(
       await ds?.destroy();
     });
 
-    async function leeren(): Promise<void> {
+    async function truncate(): Promise<void> {
       await ds.query(`TRUNCATE rental_assignments, rental_hardware, support_messages,
       contact_requests, orders, devices, events, user_organizations, users,
       organizations CASCADE`);
     }
 
-    function ohneZeitstempel(k: Kennzahlen): string {
-      return JSON.stringify({ ...k, erhobenAm: '<zeit>' });
+    function withoutTimestamp(k: Kennzahlen): string {
+      return JSON.stringify({ ...k, erhobenAm: '<time>' });
     }
 
-    async function vergleichen(): Promise<{
-      alt: Kennzahlen;
-      neu: Kennzahlen;
+    async function compare(): Promise<{
+      before: Kennzahlen;
+      after: Kennzahlen;
     }> {
-      const alt = await kennzahlenVorDemUmbau(ds);
-      const neu = await new MonitoringService(ds).kennzahlen();
-      expect(ohneZeitstempel(neu)).toBe(ohneZeitstempel(alt));
-      return { alt, neu };
+      const before = await metricsBeforeRefactor(ds);
+      const after = await new MonitoringService(ds).kennzahlen();
+      expect(withoutTimestamp(after)).toBe(withoutTimestamp(before));
+      return { before, after };
     }
 
-    it('leere Datenbank', async () => {
-      await leeren();
-      const { neu } = await vergleichen();
-      expect(neu.support.letzteNachrichtAm).toBeNull();
-      expect(neu.umsatz.summeEur).toBe(0);
-      expect(neu.umsatz.mieteEur).toBe(0);
+    it('empty database', async () => {
+      await truncate();
+      const { after } = await compare();
+      expect(after.support.letzteNachrichtAm).toBeNull();
+      expect(after.umsatz.summeEur).toBe(0);
+      expect(after.umsatz.mieteEur).toBe(0);
     });
 
-    it('gemischte Daten mit Randfällen', async () => {
-      await leeren();
-      await befuellen(ds);
-      const { neu } = await vergleichen();
+    it('mixed data with edge cases', async () => {
+      await truncate();
+      await seed(ds);
+      const { after } = await compare();
 
-      /* Die Testdaten sind so gebaut, dass diese Werte feststehen — damit
-       der Vergleich nicht zwei gleich falsche Umsetzungen durchlässt. */
-      expect(neu.organisationen.gesamt).toBe(13);
-      expect(neu.organisationen.neuImMonat).toBe(7);
-      expect(neu.organisationen.letzte).toHaveLength(LISTEN_LAENGE);
-      expect(neu.nutzer).toMatchObject({
+      /* The fixtures are built so these values are fixed — so the
+       comparison cannot pass two implementations that are equally wrong. */
+      expect(after.organisationen.gesamt).toBe(13);
+      expect(after.organisationen.neuImMonat).toBe(7);
+      expect(after.organisationen.letzte).toHaveLength(LISTEN_LAENGE);
+      expect(after.nutzer).toMatchObject({
         gesamt: 13,
         aktiv: 11,
         neuImMonat: 7,
       });
-      expect(neu.veranstaltungen).toMatchObject({
+      expect(after.veranstaltungen).toMatchObject({
         gesamt: 11,
         aktiv: 3,
         imTest: 2,
@@ -233,85 +241,81 @@ mitDatenbank(
         aufRechnung: 2,
         erlassen: 1,
       });
-      const tagesbeginn = new Date();
-      tagesbeginn.setHours(0, 0, 0, 0);
-      const monatsbeginn = new Date(tagesbeginn);
-      monatsbeginn.setDate(1);
-      /* Am 1. und 2. eines Monats kann die Monatsmitte heute sein; dann
-       zählt die zweite Veranstaltung (40 €) auch zu „heute“. */
-      const mitte =
-        monatsbeginn.getTime() + (Date.now() - monatsbeginn.getTime()) / 2;
-      const heuteErwartet = 25 + (mitte - 20 >= tagesbeginn.getTime() ? 40 : 0);
-      expect(neu.umsatz).toEqual({
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      const monthStart = new Date(dayStart);
+      monthStart.setDate(1);
+      /* On the 1st and 2nd of a month the mid-month point can fall on
+       today; then the second event (40 €) also counts as "today". */
+      const midMonth =
+        monthStart.getTime() + (Date.now() - monthStart.getTime()) / 2;
+      const expectedToday = 25 + (midMonth - 20 >= dayStart.getTime() ? 40 : 0);
+      expect(after.umsatz).toEqual({
         bezahlteVeranstaltungen: 6,
         summeEur: 145.5,
-        heuteEur: heuteErwartet,
+        heuteEur: expectedToday,
         monatEur: 65,
         mieteEur: 135.5,
       });
-      expect(neu.kontaktanfragen).toMatchObject({ offen: 8, neu24h: 5 });
-      expect(neu.kontaktanfragen.letzte[0].vorschau).toHaveLength(
+      expect(after.kontaktanfragen).toMatchObject({ offen: 8, neu24h: 5 });
+      expect(after.kontaktanfragen.letzte[0].vorschau).toHaveLength(
         VORSCHAU_LAENGE + 1,
       );
-      expect(neu.support).toMatchObject({
+      expect(after.support).toMatchObject({
         ungelesen: 3,
         threadsMitUngelesen: 2,
       });
-      expect(neu.support.letzteNachrichtAm).not.toBeNull();
-      expect(neu.geraete).toEqual({ gesamt: 3, freigegeben: 2 });
-      expect(neu.bestellungen).toEqual({ gesamt: 5, letzte24h: 3 });
+      expect(after.support.letzteNachrichtAm).not.toBeNull();
+      expect(after.geraete).toEqual({ gesamt: 3, freigegeben: 2 });
+      expect(after.bestellungen).toEqual({ gesamt: 5, letzte24h: 3 });
     });
   },
 );
 
 /* ------------------------------------------------------------------ */
-/* Testdaten                                                           */
+/* Fixtures                                                            */
 /* ------------------------------------------------------------------ */
 
-async function befuellen(ds: DataSource): Promise<void> {
-  const jetzt = Date.now();
-  const monatsbeginn = new Date();
-  monatsbeginn.setDate(1);
-  monatsbeginn.setHours(0, 0, 0, 0);
-  const tagesbeginn = new Date();
-  tagesbeginn.setHours(0, 0, 0, 0);
+async function seed(ds: DataSource): Promise<void> {
+  const now = Date.now();
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
 
-  /* Zeitpunkte, die unabhängig von der Uhrzeit des Testlaufs sicher
-     innerhalb bzw. außerhalb der Fenster liegen. Der Versatz `i` hält
-     die Reihenfolge eindeutig. */
-  const imMonat = (i: number) =>
-    new Date(
-      monatsbeginn.getTime() + (jetzt - monatsbeginn.getTime()) / 2 - i * 10,
-    );
-  const heute = (i: number) =>
-    new Date(
-      tagesbeginn.getTime() + (jetzt - tagesbeginn.getTime()) / 2 - i * 10,
-    );
-  const vorMonat = (i: number) =>
-    new Date(monatsbeginn.getTime() - (i + 1) * 86_400_000);
-  const vorStunden = (h: number) => new Date(jetzt - h * 3_600_000);
+  /* Timestamps that are safely inside or outside the windows regardless
+     of the time of day the test runs. The offset `i` keeps the order
+     unambiguous. */
+  const thisMonth = (i: number) =>
+    new Date(monthStart.getTime() + (now - monthStart.getTime()) / 2 - i * 10);
+  const today = (i: number) =>
+    new Date(dayStart.getTime() + (now - dayStart.getTime()) / 2 - i * 10);
+  const beforeThisMonth = (i: number) =>
+    new Date(monthStart.getTime() - (i + 1) * 86_400_000);
+  const hoursAgo = (h: number) => new Date(now - h * 3_600_000);
 
-  // Organisationen: 14 angelegt, eine davon gelöscht → 13; 7 neu im Monat.
+  // Organizations: 14 created, one of them deleted → 13; 7 new this month.
   const orgs: string[] = [];
   for (let i = 0; i < 14; i++) {
     const id = randomUUID();
     orgs.push(id);
-    const erstellt = i < 8 ? imMonat(i) : vorMonat(i);
+    const createdAt = i < 8 ? thisMonth(i) : beforeThisMonth(i);
     await ds.query(
       `INSERT INTO organizations (id, name, slug, support_pin, created_at, billing_mode, deleted_at)
        VALUES ($1, $2, $3, '123456', $4, $5, $6)`,
       [
         id,
-        `Verein ${i}`,
-        `verein-${i}`,
-        erstellt,
+        `Club ${i}`,
+        `club-${i}`,
+        createdAt,
         i % 3 === 0 ? 'invoice' : 'prepaid',
-        i === 0 ? imMonat(0) : null,
+        i === 0 ? thisMonth(0) : null,
       ],
     );
   }
 
-  // Nutzer: 14 angelegt, einer gelöscht → 13; 2 inaktiv; 7 neu im Monat.
+  // Users: 14 created, one deleted → 13; 2 inactive; 7 new this month.
   for (let i = 0; i < 14; i++) {
     const id = randomUUID();
     await ds.query(
@@ -319,13 +323,13 @@ async function befuellen(ds: DataSource): Promise<void> {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         id,
-        `n${i}@beispiel.test`,
-        `Vorname${i}`,
-        i === 3 ? '' : `Nachname${i}`,
+        `u${i}@example.test`,
+        `First${i}`,
+        i === 3 ? '' : `Last${i}`,
         i !== 4 && i !== 9,
-        i % 2 ? imMonat(i) : null,
-        i < 8 ? imMonat(i + 20) : vorMonat(i),
-        i === 1 ? imMonat(1) : null,
+        i % 2 ? thisMonth(i) : null,
+        i < 8 ? thisMonth(i + 20) : beforeThisMonth(i),
+        i === 1 ? thisMonth(1) : null,
       ],
     );
     if (i % 4 !== 2) {
@@ -336,78 +340,78 @@ async function befuellen(ds: DataSource): Promise<void> {
     }
   }
 
-  // Veranstaltungen: [status, billing, paidAt, preis, gelöscht]
+  // Events: [status, billing, paidAt, price, deleted]
   const events: [string, string, Date | null, string | null, boolean][] = [
-    ['active', 'paid', heute(1), '25.00', false], // heute + Monat
-    ['active', 'paid', imMonat(2), '40.00', false], // Monat
-    ['inactive', 'paid', vorMonat(1), '20.50', false],
-    ['test', 'paid', null, null, false], // bezahlt ohne Preis/Datum
-    ['active', 'invoice', vorMonat(3), '60.00', false],
+    ['active', 'paid', today(1), '25.00', false], // today + month
+    ['active', 'paid', thisMonth(2), '40.00', false], // month
+    ['inactive', 'paid', beforeThisMonth(1), '20.50', false],
+    ['test', 'paid', null, null, false], // paid without price/date
+    ['active', 'invoice', beforeThisMonth(3), '60.00', false],
     ['inactive', 'invoice', null, null, false],
     ['test', 'pending', null, null, false],
-    ['inactive', 'waived', imMonat(5), '0.00', false],
+    ['inactive', 'waived', thisMonth(5), '0.00', false],
     ['inactive', 'none', null, null, false],
     ['draft', 'none', null, null, false],
     ['completed', 'none', null, null, false],
-    ['active', 'paid', heute(2), '999.00', true], // gelöscht: zählt nirgends
+    ['active', 'paid', today(2), '999.00', true], // deleted: counts nowhere
   ];
   for (const [
     i,
-    [status, billing, paidAt, preis, geloescht],
+    [status, billing, paidAt, price, deleted],
   ] of events.entries()) {
     await ds.query(
       `INSERT INTO events (organization_id, name, status, billing_status, paid_at, price_charged, created_at, deleted_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
-        // Je eine Organisation: höchstens eine aktive/Test-Veranstaltung je
-        // Organisation (Index events_one_active_per_org).
+        // One organization each: at most one active/test event per
+        // organization (index events_one_active_per_org).
         orgs[i + 1],
-        `Fest ${i}`,
+        `Festival ${i}`,
         status,
         billing,
         paidAt,
-        preis,
-        imMonat(i),
-        geloescht ? imMonat(0) : null,
+        price,
+        thisMonth(i),
+        deleted ? thisMonth(0) : null,
       ],
     );
   }
 
-  // Geräte: 3, davon 2 freigegeben.
+  // Devices: 3, 2 of them verified.
   for (const [i, status] of ['verified', 'verified', 'pending'].entries()) {
     await ds.query(
       `INSERT INTO devices (name, type, device_token, status) VALUES ($1, 'pos', $2, $3)`,
-      [`Kasse ${i}`, `tok-${randomUUID()}`, status],
+      [`Till ${i}`, `tok-${randomUUID()}`, status],
     );
   }
 
-  // Bestellungen: 5, davon 3 in den letzten 24 h.
+  // Orders: 5, 3 of them in the last 24 h.
   for (const [i, h] of [1, 2, 23, 25, 48].entries()) {
     await ds.query(
       `INSERT INTO orders (organization_id, order_number, daily_number, created_at) VALUES ($1, $2, $3, $4)`,
-      [orgs[1], `B-${i}`, i + 1, vorStunden(h)],
+      [orgs[1], `B-${i}`, i + 1, hoursAgo(h)],
     );
   }
 
-  // Kontaktanfragen: 12; 8 offen; 5 in den letzten 24 h; eine lange Nachricht.
+  // Contact requests: 12; 8 open; 5 in the last 24 h; one long message.
   for (let i = 0; i < 12; i++) {
     await ds.query(
       `INSERT INTO contact_requests (type, name, email, organization, message, handled_at, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         i % 2 ? 'demo' : 'contact',
-        `Anfrage ${i}`,
-        `k${i}@beispiel.test`,
-        i % 3 ? `Firma ${i}` : null,
-        i === 0 ? 'x'.repeat(VORSCHAU_LAENGE + 40) : `Kurz ${i}`,
-        i % 3 === 2 ? vorStunden(1) : null,
-        vorStunden(i < 5 ? i + 0.5 : 30 + i),
+        `Request ${i}`,
+        `c${i}@example.test`,
+        i % 3 ? `Company ${i}` : null,
+        i === 0 ? 'x'.repeat(VORSCHAU_LAENGE + 40) : `Short ${i}`,
+        i % 3 === 2 ? hoursAgo(1) : null,
+        hoursAgo(i < 5 ? i + 0.5 : 30 + i),
       ],
     );
   }
 
-  // Support: eingehend ungelesen (2 Orgs, 3 Nachrichten), gelesen, ausgehend.
-  // Die jüngste eingehende hat Mikrosekunden — prüft die Rundung aufs ms.
+  // Support: inbound unread (2 orgs, 3 messages), read, outbound.
+  // The newest inbound one has microseconds — checks rounding to ms.
   const support: [string, string, boolean, string][] = [
     [orgs[1], 'inbound', false, "now() - interval '3 hours'"],
     [orgs[1], 'inbound', false, "now() - interval '2 hours'"],
@@ -420,52 +424,52 @@ async function befuellen(ds: DataSource): Promise<void> {
     [orgs[3], 'inbound', true, "now() - interval '5 hours'"],
     [orgs[4], 'outbound', false, "now() - interval '1 minute'"],
   ];
-  for (const [org, richtung, gelesen, zeit] of support) {
+  for (const [org, direction, read, time] of support) {
     await ds.query(
       `INSERT INTO support_messages (organization_id, direction, body, read_by_admin_at, created_at)
-       VALUES ($1, $2, 'Hallo', ${gelesen ? 'now()' : 'NULL'}, ${zeit})`,
-      [org, richtung],
+       VALUES ($1, $2, 'Hello', ${read ? 'now()' : 'NULL'}, ${time})`,
+      [org, direction],
     );
   }
 
-  // Miete: zählt confirmed/active/returned → 50 + 35.50 + 50 = 135.50.
-  const [nutzer] = await ds.query<{ id: string }[]>(
+  // Rentals: confirmed/active/returned count → 50 + 35.50 + 50 = 135.50.
+  const [user] = await ds.query<{ id: string }[]>(
     `SELECT id FROM users LIMIT 1`,
   );
   const hw = randomUUID();
   await ds.query(
     `INSERT INTO rental_hardware (id, type, name, serial_number, daily_rate)
-     VALUES ($1, 'printer', 'Drucker', 'SN-1', 10)`,
+     VALUES ($1, 'printer', 'Printer', 'SN-1', 10)`,
     [hw],
   );
-  const mieten: [string, string][] = [
+  const rentals: [string, string][] = [
     ['confirmed', '50.00'],
     ['active', '35.50'],
     ['returned', '50.00'],
     ['pending', '70.00'],
     ['cancelled', '80.00'],
   ];
-  for (const [status, betrag] of mieten) {
+  for (const [status, amount] of rentals) {
     await ds.query(
       `INSERT INTO rental_assignments (rental_hardware_id, organization_id, status, start_date,
          end_date, daily_rate, total_days, total_amount, assigned_by_user_id)
        VALUES ($1, $2, $3, CURRENT_DATE, CURRENT_DATE, 10, 1, $4, $5)`,
-      [hw, orgs[1], status, betrag, nutzer.id],
+      [hw, orgs[1], status, amount, user.id],
     );
   }
 }
 
 /* ------------------------------------------------------------------ */
-/* Referenz: die Umsetzung vor dem Umbau, unverändert übernommen       */
+/* Reference: the implementation before the refactor, kept as-is       */
 /* ------------------------------------------------------------------ */
 
 /**
- * Stand vor dem Umbau (29 Abfragen per `Promise.all`), nur von
- * Repository-Injektion auf `ds.getRepository` umgestellt. Dient allein
- * dem Vergleich; die Abbildungen (`als…`) nutzt sie aus dem Service, weil
- * die sich nicht geändert haben.
+ * State before the refactor (29 queries via `Promise.all`), only switched
+ * from repository injection to `ds.getRepository`. Used solely for the
+ * comparison; it takes the mappers (`to…`) from the service because those
+ * did not change.
  */
-async function kennzahlenVorDemUmbau(ds: DataSource): Promise<Kennzahlen> {
+async function metricsBeforeRefactor(ds: DataSource): Promise<Kennzahlen> {
   const organizations = ds.getRepository(Organization);
   const users = ds.getRepository(User);
   const events = ds.getRepository(Event);
@@ -474,68 +478,68 @@ async function kennzahlenVorDemUmbau(ds: DataSource): Promise<Kennzahlen> {
   const contactRequests = ds.getRepository(ContactRequest);
   const supportMessages = ds.getRepository(SupportMessage);
   const rentals = ds.getRepository(RentalAssignment);
-  const BEZAHLT_ODER_RECHNUNG = ['paid', 'invoice'];
-  /* Die Abbildungen sind private Methoden des Service; für den Vergleich
-     werden sie mit ihrer Signatur hervorgeholt, nicht nachgebaut. */
-  const als = new MonitoringService(ds) as unknown as {
-    alsOrganisation(o: Organization): NeueOrganisation;
-    alsNutzer(u: User): NeuerNutzer;
-    alsFreischaltung(e: Event): Freischaltung;
-    alsKontaktanfrage(a: ContactRequest): Kontaktanfrage;
+  const PAID_OR_INVOICED = ['paid', 'invoice'];
+  /* The mappers are private methods of the service; for the comparison
+     they are pulled out with their signature, not re-implemented. */
+  const map = new MonitoringService(ds) as unknown as {
+    toOrganization(o: Organization): NeueOrganisation;
+    toUser(u: User): NeuerNutzer;
+    toActivation(e: Event): Freischaltung;
+    toContactRequest(a: ContactRequest): Kontaktanfrage;
   };
 
-  const summe = async (status: string[], ab?: Date): Promise<number> => {
-    const abfrage = events
+  const revenue = async (status: string[], since?: Date): Promise<number> => {
+    const query = events
       .createQueryBuilder('e')
-      .select('COALESCE(SUM(e.priceCharged), 0)', 'summe')
+      .select('COALESCE(SUM(e.priceCharged), 0)', 'total')
       .where('e.billingStatus IN (:...s)', { s: status });
-    if (ab) abfrage.andWhere('e.paidAt >= :ab', { ab });
-    const zeile = await abfrage.getRawOne<{ summe: string }>();
-    return Number(zeile?.summe ?? 0);
+    if (since) query.andWhere('e.paidAt >= :since', { since });
+    const row = await query.getRawOne<{ total: string }>();
+    return Number(row?.total ?? 0);
   };
 
-  const monatsbeginn = new Date();
-  monatsbeginn.setDate(1);
-  monatsbeginn.setHours(0, 0, 0, 0);
-  const tagesbeginn = new Date();
-  tagesbeginn.setHours(0, 0, 0, 0);
-  const gestern = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   const [
-    orgGesamt,
-    orgNeu,
-    orgLetzte,
-    nutzerGesamt,
-    nutzerAktiv,
-    nutzerNeu,
-    nutzerLetzte,
-    eventGesamt,
-    eventAktiv,
+    orgTotal,
+    orgRecent,
+    orgLatest,
+    userTotal,
+    userActive,
+    userRecent,
+    userLatest,
+    eventTotal,
+    eventActive,
     eventTest,
-    eventBezahlt,
+    eventPaid,
     eventPending,
-    eventRechnung,
-    eventErlassen,
-    freischaltungen,
-    umsatzGesamt,
-    umsatzHeute,
-    umsatzMonat,
-    mieteGesamt,
-    anfragenOffen,
-    anfragenNeu,
-    anfragenLetzte,
-    supportUngelesen,
+    eventInvoiced,
+    eventWaived,
+    activations,
+    revenueTotal,
+    revenueToday,
+    revenueMonth,
+    rentalTotal,
+    contactsOpen,
+    contactsRecent,
+    contactsLatest,
+    supportUnread,
     supportThreads,
-    supportLetzte,
-    geraeteGesamt,
-    geraeteFrei,
-    bestellGesamt,
-    bestell24h,
+    supportLatest,
+    deviceTotal,
+    deviceVerified,
+    orderTotal,
+    orders24h,
   ] = await Promise.all([
     organizations.count(),
     organizations
       .createQueryBuilder('o')
-      .where('o.createdAt >= :m', { m: monatsbeginn })
+      .where('o.createdAt >= :m', { m: monthStart })
       .getCount(),
     organizations.find({ order: { createdAt: 'DESC' }, take: LISTEN_LAENGE }),
 
@@ -543,7 +547,7 @@ async function kennzahlenVorDemUmbau(ds: DataSource): Promise<Kennzahlen> {
     users.count({ where: { isActive: true } }),
     users
       .createQueryBuilder('u')
-      .where('u.createdAt >= :m', { m: monatsbeginn })
+      .where('u.createdAt >= :m', { m: monthStart })
       .getCount(),
     users.find({
       order: { createdAt: 'DESC' },
@@ -562,24 +566,24 @@ async function kennzahlenVorDemUmbau(ds: DataSource): Promise<Kennzahlen> {
     events
       .createQueryBuilder('e')
       .leftJoinAndSelect('e.organization', 'org')
-      .where('e.billingStatus IN (:...s)', { s: BEZAHLT_ODER_RECHNUNG })
+      .where('e.billingStatus IN (:...s)', { s: PAID_OR_INVOICED })
       .orderBy('e.paidAt', 'DESC', 'NULLS LAST')
       .take(LISTEN_LAENGE)
       .getMany(),
 
-    summe(BEZAHLT_ODER_RECHNUNG),
-    summe(BEZAHLT_ODER_RECHNUNG, tagesbeginn),
-    summe(BEZAHLT_ODER_RECHNUNG, monatsbeginn),
+    revenue(PAID_OR_INVOICED),
+    revenue(PAID_OR_INVOICED, dayStart),
+    revenue(PAID_OR_INVOICED, monthStart),
     rentals
       .createQueryBuilder('r')
-      .select('COALESCE(SUM(r.totalAmount), 0)', 'summe')
+      .select('COALESCE(SUM(r.totalAmount), 0)', 'total')
       .where("r.status IN ('confirmed','active','returned')")
-      .getRawOne<{ summe: string }>(),
+      .getRawOne<{ total: string }>(),
 
     contactRequests.count({ where: { handledAt: IsNull() } }),
     contactRequests
       .createQueryBuilder('c')
-      .where('c.createdAt >= :g', { g: gestern })
+      .where('c.createdAt >= :g', { g: since24h })
       .getCount(),
     contactRequests.find({ order: { createdAt: 'DESC' }, take: LISTEN_LAENGE }),
 
@@ -588,9 +592,9 @@ async function kennzahlenVorDemUmbau(ds: DataSource): Promise<Kennzahlen> {
     }),
     supportMessages
       .createQueryBuilder('m')
-      .select('COUNT(DISTINCT m.organizationId)', 'anzahl')
+      .select('COUNT(DISTINCT m.organizationId)', 'count')
       .where("m.direction = 'inbound' AND m.readByAdminAt IS NULL")
-      .getRawOne<{ anzahl: string }>(),
+      .getRawOne<{ count: string }>(),
     supportMessages.findOne({
       where: { direction: 'inbound' },
       order: { createdAt: 'DESC' },
@@ -602,53 +606,51 @@ async function kennzahlenVorDemUmbau(ds: DataSource): Promise<Kennzahlen> {
     orders.count(),
     orders
       .createQueryBuilder('o')
-      .where('o.createdAt >= :g', { g: gestern })
+      .where('o.createdAt >= :g', { g: since24h })
       .getCount(),
   ]);
 
   return {
     erhobenAm: new Date().toISOString(),
     organisationen: {
-      gesamt: orgGesamt,
-      neuImMonat: orgNeu,
-      letzte: orgLetzte.map((o) => als.alsOrganisation(o)),
+      gesamt: orgTotal,
+      neuImMonat: orgRecent,
+      letzte: orgLatest.map((o) => map.toOrganization(o)),
     },
     nutzer: {
-      gesamt: nutzerGesamt,
-      aktiv: nutzerAktiv,
-      neuImMonat: nutzerNeu,
-      letzte: nutzerLetzte.map((u) => als.alsNutzer(u)),
+      gesamt: userTotal,
+      aktiv: userActive,
+      neuImMonat: userRecent,
+      letzte: userLatest.map((u) => map.toUser(u)),
     },
     veranstaltungen: {
-      gesamt: eventGesamt,
-      aktiv: eventAktiv,
+      gesamt: eventTotal,
+      aktiv: eventActive,
       imTest: eventTest,
-      bezahlt: eventBezahlt,
+      bezahlt: eventPaid,
       pending: eventPending,
-      aufRechnung: eventRechnung,
-      erlassen: eventErlassen,
-      letzteFreischaltungen: freischaltungen.map((e) =>
-        als.alsFreischaltung(e),
-      ),
+      aufRechnung: eventInvoiced,
+      erlassen: eventWaived,
+      letzteFreischaltungen: activations.map((e) => map.toActivation(e)),
     },
     umsatz: {
-      bezahlteVeranstaltungen: eventBezahlt + eventRechnung,
-      summeEur: umsatzGesamt,
-      heuteEur: umsatzHeute,
-      monatEur: umsatzMonat,
-      mieteEur: Number(mieteGesamt?.summe ?? 0),
+      bezahlteVeranstaltungen: eventPaid + eventInvoiced,
+      summeEur: revenueTotal,
+      heuteEur: revenueToday,
+      monatEur: revenueMonth,
+      mieteEur: Number(rentalTotal?.total ?? 0),
     },
     kontaktanfragen: {
-      offen: anfragenOffen,
-      neu24h: anfragenNeu,
-      letzte: anfragenLetzte.map((a) => als.alsKontaktanfrage(a)),
+      offen: contactsOpen,
+      neu24h: contactsRecent,
+      letzte: contactsLatest.map((a) => map.toContactRequest(a)),
     },
     support: {
-      ungelesen: supportUngelesen,
-      threadsMitUngelesen: Number(supportThreads?.anzahl ?? 0),
-      letzteNachrichtAm: supportLetzte?.createdAt?.toISOString() ?? null,
+      ungelesen: supportUnread,
+      threadsMitUngelesen: Number(supportThreads?.count ?? 0),
+      letzteNachrichtAm: supportLatest?.createdAt?.toISOString() ?? null,
     },
-    geraete: { gesamt: geraeteGesamt, freigegeben: geraeteFrei },
-    bestellungen: { gesamt: bestellGesamt, letzte24h: bestell24h },
+    geraete: { gesamt: deviceTotal, freigegeben: deviceVerified },
+    bestellungen: { gesamt: orderTotal, letzte24h: orders24h },
   };
 }

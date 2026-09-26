@@ -22,275 +22,269 @@ import {
   type NeuerNutzer,
 } from './monitoring.types';
 
-/** Bezahlzustände, bei denen tatsächlich Geld geflossen ist oder fließt. */
-const BEZAHLT_ODER_RECHNUNG = ['paid', 'invoice'];
+/** Billing states where money has actually been paid or is being paid. */
+const PAID_OR_INVOICED = ['paid', 'invoice'];
 
 /**
- * Eine Zeile aus `getRawOne`. Postgres liefert COUNT (bigint) und SUM über
- * numeric als Text, damit nichts an Genauigkeit verloren geht.
+ * A row returned by `getRawOne`. Postgres returns COUNT (bigint) and SUM
+ * over numeric as text so that no precision is lost.
  */
-type Zeile<K extends string> = Record<K, string | number | null>;
+type Row<K extends string> = Record<K, string | number | null>;
 
-/** Text oder Zahl aus der Datenbank als Zahl; fehlt der Wert, dann 0. */
-function zahl(wert: string | number | null | undefined): number {
-  return Number(wert ?? 0);
+/** Text or number from the database as a number; missing value becomes 0. */
+function toNumber(value: string | number | null | undefined): number {
+  return Number(value ?? 0);
 }
 
 /**
- * Kennzahlen für die Überwachung.
+ * Metrics for monitoring.
  *
- * Bewusst ein eigener Endpunkt statt eines Verweises auf die
- * Admin-Listen: Wer alle fünf Minuten fragt, soll nicht durch
- * Nutzerseiten blättern, und die Listen sind auf die Oberfläche
- * zugeschnitten — sie ändern ihre Form, sobald sich die Oberfläche
- * ändert.
+ * Deliberately a dedicated endpoint instead of pointing at the admin
+ * lists: a caller that polls every few minutes should not have to page
+ * through user pages, and the lists are shaped for the UI — they change
+ * their form whenever the UI changes.
  *
- * Neben den Summen stehen kurze Listen der jüngsten Vorgänge. Eine Summe
- * allein sagt nur, DASS sich etwas geändert hat; wer melden will, was
- * passiert ist, braucht den einzelnen Vorgang und eine `id`, an der er
- * erkennt, ob er ihn schon kennt.
+ * Next to the totals there are short lists of the most recent records. A
+ * total alone only tells you THAT something changed; to report what
+ * happened, a caller needs the individual record and an `id` to tell
+ * whether it has already seen it.
  */
 @Injectable()
 export class MonitoringService {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   /**
-   * Alle Kennzahlen über EINE Verbindung, nacheinander.
+   * Collects all metrics over ONE connection, sequentially.
    *
-   * Früher liefen gut dreißig Abfragen per `Promise.all` nebeneinander.
-   * Jede wollte eine eigene Verbindung aus dem Pool, und weil der Monitor
-   * nur alle Viertelstunde fragt, war der Pool bis dahin leer gelaufen:
-   * Die meiste Zeit ging für den Aufbau von Verbindungen drauf, nicht für
-   * die Abfragen (die brauchen je 1–9 ms). Jetzt fasst je Tabelle eine
-   * Abfrage die Zahlen mit `FILTER (WHERE …)` zusammen, und alles läuft in
-   * einer lesenden Transaktion auf einer Verbindung. Die sieht zudem einen
-   * einzigen Stand der Datenbank, die Zahlen passen also zueinander.
+   * Previously some thirty queries ran side by side via `Promise.all`.
+   * Each of them wanted its own connection from the pool, and because the
+   * monitor only polls every fifteen minutes, the pool had drained by
+   * then: most of the time went into opening connections, not into the
+   * queries (which take 1–9 ms each). Now one query per table combines
+   * the numbers with `FILTER (WHERE …)`, and everything runs in a single
+   * read-only transaction on one connection. That transaction also sees a
+   * single snapshot of the database, so the numbers are consistent with
+   * each other.
    */
   async kennzahlen(): Promise<Kennzahlen> {
-    const monatsbeginn = new Date();
-    monatsbeginn.setDate(1);
-    monatsbeginn.setHours(0, 0, 0, 0);
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
 
-    const tagesbeginn = new Date();
-    tagesbeginn.setHours(0, 0, 0, 0);
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
 
-    const gestern = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
     return this.dataSource.transaction(async (m) => {
-      /* Muss vor der ersten Abfrage stehen. Eine Überwachung schreibt nicht. */
+      /* Must come before the first query. Monitoring never writes. */
       await m.query(
         'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY',
       );
-      return this.erheben(m, monatsbeginn, tagesbeginn, gestern);
+      return this.collect(m, monthStart, dayStart, since24h);
     });
   }
 
-  private async erheben(
+  private async collect(
     m: EntityManager,
-    monatsbeginn: Date,
-    tagesbeginn: Date,
-    gestern: Date,
+    monthStart: Date,
+    dayStart: Date,
+    since24h: Date,
   ): Promise<Kennzahlen> {
-    /* Gelöschte Organisationen, Nutzer und Veranstaltungen (deleted_at)
-       blendet der QueryBuilder selbst aus — genau wie zuvor `count()`. */
-    const org = await m
+    /* Soft-deleted organizations, users and events (deleted_at) are
+       filtered out by the QueryBuilder itself — just like `count()` did. */
+    const orgs = await m
       .createQueryBuilder(Organization, 'o')
-      .select('COUNT(*)', 'gesamt')
-      .addSelect('COUNT(*) FILTER (WHERE o.createdAt >= :m)', 'neu')
-      .setParameters({ m: monatsbeginn })
-      .getRawOne<Zeile<'gesamt' | 'neu'>>();
-    const orgLetzte = await m.find(Organization, {
+      .select('COUNT(*)', 'total')
+      .addSelect('COUNT(*) FILTER (WHERE o.createdAt >= :m)', 'recent')
+      .setParameters({ m: monthStart })
+      .getRawOne<Row<'total' | 'recent'>>();
+    const latestOrgs = await m.find(Organization, {
       order: { createdAt: 'DESC' },
       take: LISTEN_LAENGE,
     });
 
-    const nutzer = await m
+    const users = await m
       .createQueryBuilder(User, 'u')
-      .select('COUNT(*)', 'gesamt')
-      .addSelect('COUNT(*) FILTER (WHERE u.isActive = true)', 'aktiv')
-      .addSelect('COUNT(*) FILTER (WHERE u.createdAt >= :m)', 'neu')
-      .setParameters({ m: monatsbeginn })
-      .getRawOne<Zeile<'gesamt' | 'aktiv' | 'neu'>>();
-    const nutzerLetzte = await m.find(User, {
+      .select('COUNT(*)', 'total')
+      .addSelect('COUNT(*) FILTER (WHERE u.isActive = true)', 'active')
+      .addSelect('COUNT(*) FILTER (WHERE u.createdAt >= :m)', 'recent')
+      .setParameters({ m: monthStart })
+      .getRawOne<Row<'total' | 'active' | 'recent'>>();
+    const latestUsers = await m.find(User, {
       order: { createdAt: 'DESC' },
       take: LISTEN_LAENGE,
       relations: ['userOrganizations', 'userOrganizations.organization'],
     });
 
-    /* Zählungen und Umsatz in einem Durchgang. Umsatz = Summe der
-       tatsächlich berechneten Preise; „heute“ und „Monat“ nach Bezahldatum. */
+    /* Counts and revenue in one pass. Revenue = sum of the prices actually
+       charged; "today" and "month" are based on the payment date. */
     const ev = await m
       .createQueryBuilder(Event, 'e')
-      .select('COUNT(*)', 'gesamt')
-      .addSelect("COUNT(*) FILTER (WHERE e.status = 'active')", 'aktiv')
+      .select('COUNT(*)', 'total')
+      .addSelect("COUNT(*) FILTER (WHERE e.status = 'active')", 'active')
       .addSelect("COUNT(*) FILTER (WHERE e.status = 'test')", 'test')
-      .addSelect("COUNT(*) FILTER (WHERE e.billingStatus = 'paid')", 'bezahlt')
+      .addSelect("COUNT(*) FILTER (WHERE e.billingStatus = 'paid')", 'paid')
       .addSelect(
         "COUNT(*) FILTER (WHERE e.billingStatus = 'pending')",
         'pending',
       )
       .addSelect(
         "COUNT(*) FILTER (WHERE e.billingStatus = 'invoice')",
-        'rechnung',
+        'invoice',
       )
-      .addSelect(
-        "COUNT(*) FILTER (WHERE e.billingStatus = 'waived')",
-        'erlassen',
-      )
+      .addSelect("COUNT(*) FILTER (WHERE e.billingStatus = 'waived')", 'waived')
       .addSelect(
         'COALESCE(SUM(e.priceCharged) FILTER (WHERE e.billingStatus IN (:...s)), 0)',
-        'summe',
+        'revenue_total',
       )
       .addSelect(
         'COALESCE(SUM(e.priceCharged) FILTER (WHERE e.billingStatus IN (:...s) AND e.paidAt >= :t), 0)',
-        'heute',
+        'revenue_today',
       )
       .addSelect(
         'COALESCE(SUM(e.priceCharged) FILTER (WHERE e.billingStatus IN (:...s) AND e.paidAt >= :m), 0)',
-        'monat',
+        'revenue_month',
       )
       .setParameters({
-        s: BEZAHLT_ODER_RECHNUNG,
-        t: tagesbeginn,
-        m: monatsbeginn,
+        s: PAID_OR_INVOICED,
+        t: dayStart,
+        m: monthStart,
       })
       .getRawOne<
-        Zeile<
-          | 'gesamt'
-          | 'aktiv'
+        Row<
+          | 'total'
+          | 'active'
           | 'test'
-          | 'bezahlt'
+          | 'paid'
           | 'pending'
-          | 'rechnung'
-          | 'erlassen'
-          | 'summe'
-          | 'heute'
-          | 'monat'
+          | 'invoice'
+          | 'waived'
+          | 'revenue_total'
+          | 'revenue_today'
+          | 'revenue_month'
         >
       >();
 
-    const freischaltungen = await m
+    const activations = await m
       .createQueryBuilder(Event, 'e')
       .leftJoinAndSelect('e.organization', 'org')
-      .where('e.billingStatus IN (:...s)', { s: BEZAHLT_ODER_RECHNUNG })
-      /* Nach Bezahldatum, nicht nach Anlagedatum: gemeldet werden soll
-         die Freischaltung, und die passiert spaeter. */
+      .where('e.billingStatus IN (:...s)', { s: PAID_OR_INVOICED })
+      /* By payment date, not creation date: what should be reported is
+         the activation, and that happens later. */
       .orderBy('e.paidAt', 'DESC', 'NULLS LAST')
       .take(LISTEN_LAENGE)
       .getMany();
 
-    const miete = await m
+    const rentals = await m
       .createQueryBuilder(RentalAssignment, 'r')
-      .select('COALESCE(SUM(r.totalAmount), 0)', 'summe')
+      .select('COALESCE(SUM(r.totalAmount), 0)', 'revenue_total')
       .where("r.status IN ('confirmed','active','returned')")
-      .getRawOne<Zeile<'summe'>>();
+      .getRawOne<Row<'revenue_total'>>();
 
-    const anfragen = await m
+    const contacts = await m
       .createQueryBuilder(ContactRequest, 'c')
-      .select('COUNT(*) FILTER (WHERE c.handledAt IS NULL)', 'offen')
-      .addSelect('COUNT(*) FILTER (WHERE c.createdAt >= :g)', 'neu')
-      .setParameters({ g: gestern })
-      .getRawOne<Zeile<'offen' | 'neu'>>();
-    const anfragenLetzte = await m.find(ContactRequest, {
+      .select('COUNT(*) FILTER (WHERE c.handledAt IS NULL)', 'open')
+      .addSelect('COUNT(*) FILTER (WHERE c.createdAt >= :g)', 'recent')
+      .setParameters({ g: since24h })
+      .getRawOne<Row<'open' | 'recent'>>();
+    const latestContacts = await m.find(ContactRequest, {
       order: { createdAt: 'DESC' },
       take: LISTEN_LAENGE,
     });
 
-    /* Direkt gezaehlt. Der Weg ueber den Support-Endpunkt wuerde die
-       Nachrichten dabei als gelesen markieren — eine Ueberwachung darf
-       den Zustand nicht veraendern, den sie beobachtet. */
+    /* Counted directly. Going through the support endpoint would mark the
+       messages as read — monitoring must not change the state it observes. */
     const support = await m
       .createQueryBuilder(SupportMessage, 'sm')
-      .select('COUNT(*) FILTER (WHERE sm.readByAdminAt IS NULL)', 'ungelesen')
+      .select('COUNT(*) FILTER (WHERE sm.readByAdminAt IS NULL)', 'unread')
       .addSelect(
         'COUNT(DISTINCT sm.organizationId) FILTER (WHERE sm.readByAdminAt IS NULL)',
         'threads',
       )
-      .addSelect('MAX(sm.createdAt)', 'letzte')
+      .addSelect('MAX(sm.createdAt)', 'latest')
       .where("sm.direction = 'inbound'")
       .getRawOne<
-        Zeile<'ungelesen' | 'threads'> & { letzte: Date | string | null }
+        Row<'unread' | 'threads'> & { latest: Date | string | null }
       >();
 
-    const geraete = await m
+    const devices = await m
       .createQueryBuilder(Device, 'd')
-      .select('COUNT(*)', 'gesamt')
-      .addSelect("COUNT(*) FILTER (WHERE d.status = 'verified')", 'frei')
-      .getRawOne<Zeile<'gesamt' | 'frei'>>();
+      .select('COUNT(*)', 'total')
+      .addSelect("COUNT(*) FILTER (WHERE d.status = 'verified')", 'verified')
+      .getRawOne<Row<'total' | 'verified'>>();
 
-    const bestellungen = await m
+    const orders = await m
       .createQueryBuilder(Order, 'b')
-      .select('COUNT(*)', 'gesamt')
-      .addSelect('COUNT(*) FILTER (WHERE b.createdAt >= :g)', 'neu')
-      .setParameters({ g: gestern })
-      .getRawOne<Zeile<'gesamt' | 'neu'>>();
+      .select('COUNT(*)', 'total')
+      .addSelect('COUNT(*) FILTER (WHERE b.createdAt >= :g)', 'recent')
+      .setParameters({ g: since24h })
+      .getRawOne<Row<'total' | 'recent'>>();
 
-    const eventBezahlt = zahl(ev?.bezahlt);
-    const eventRechnung = zahl(ev?.rechnung);
+    const eventsPaid = toNumber(ev?.paid);
+    const eventsInvoiced = toNumber(ev?.invoice);
 
     return {
       erhobenAm: new Date().toISOString(),
 
       organisationen: {
-        gesamt: zahl(org?.gesamt),
-        neuImMonat: zahl(org?.neu),
-        letzte: orgLetzte.map((o) => this.alsOrganisation(o)),
+        gesamt: toNumber(orgs?.total),
+        neuImMonat: toNumber(orgs?.recent),
+        letzte: latestOrgs.map((o) => this.toOrganization(o)),
       },
 
       nutzer: {
-        gesamt: zahl(nutzer?.gesamt),
-        aktiv: zahl(nutzer?.aktiv),
-        neuImMonat: zahl(nutzer?.neu),
-        letzte: nutzerLetzte.map((u) => this.alsNutzer(u)),
+        gesamt: toNumber(users?.total),
+        aktiv: toNumber(users?.active),
+        neuImMonat: toNumber(users?.recent),
+        letzte: latestUsers.map((u) => this.toUser(u)),
       },
 
       veranstaltungen: {
-        gesamt: zahl(ev?.gesamt),
-        aktiv: zahl(ev?.aktiv),
-        imTest: zahl(ev?.test),
-        bezahlt: eventBezahlt,
-        pending: zahl(ev?.pending),
-        aufRechnung: eventRechnung,
-        erlassen: zahl(ev?.erlassen),
-        letzteFreischaltungen: freischaltungen.map((e) =>
-          this.alsFreischaltung(e),
-        ),
+        gesamt: toNumber(ev?.total),
+        aktiv: toNumber(ev?.active),
+        imTest: toNumber(ev?.test),
+        bezahlt: eventsPaid,
+        pending: toNumber(ev?.pending),
+        aufRechnung: eventsInvoiced,
+        erlassen: toNumber(ev?.waived),
+        letzteFreischaltungen: activations.map((e) => this.toActivation(e)),
       },
 
       umsatz: {
-        bezahlteVeranstaltungen: eventBezahlt + eventRechnung,
-        summeEur: zahl(ev?.summe),
-        heuteEur: zahl(ev?.heute),
-        monatEur: zahl(ev?.monat),
-        mieteEur: zahl(miete?.summe),
+        bezahlteVeranstaltungen: eventsPaid + eventsInvoiced,
+        summeEur: toNumber(ev?.revenue_total),
+        heuteEur: toNumber(ev?.revenue_today),
+        monatEur: toNumber(ev?.revenue_month),
+        mieteEur: toNumber(rentals?.revenue_total),
       },
 
       kontaktanfragen: {
-        offen: zahl(anfragen?.offen),
-        neu24h: zahl(anfragen?.neu),
-        letzte: anfragenLetzte.map((a) => this.alsKontaktanfrage(a)),
+        offen: toNumber(contacts?.open),
+        neu24h: toNumber(contacts?.recent),
+        letzte: latestContacts.map((a) => this.toContactRequest(a)),
       },
 
       support: {
-        ungelesen: zahl(support?.ungelesen),
-        threadsMitUngelesen: zahl(support?.threads),
-        letzteNachrichtAm: support?.letzte
-          ? new Date(support.letzte).toISOString()
+        ungelesen: toNumber(support?.unread),
+        threadsMitUngelesen: toNumber(support?.threads),
+        letzteNachrichtAm: support?.latest
+          ? new Date(support.latest).toISOString()
           : null,
       },
 
       geraete: {
-        gesamt: zahl(geraete?.gesamt),
-        freigegeben: zahl(geraete?.frei),
+        gesamt: toNumber(devices?.total),
+        freigegeben: toNumber(devices?.verified),
       },
       bestellungen: {
-        gesamt: zahl(bestellungen?.gesamt),
-        letzte24h: zahl(bestellungen?.neu),
+        gesamt: toNumber(orders?.total),
+        letzte24h: toNumber(orders?.recent),
       },
     };
   }
 
-  private alsOrganisation(org: Organization): NeueOrganisation {
+  private toOrganization(org: Organization): NeueOrganisation {
     return {
       id: org.id,
       name: org.name,
@@ -299,7 +293,7 @@ export class MonitoringService {
     };
   }
 
-  private alsNutzer(user: User): NeuerNutzer {
+  private toUser(user: User): NeuerNutzer {
     return {
       id: user.id,
       erstelltAm: user.createdAt.toISOString(),
@@ -310,7 +304,7 @@ export class MonitoringService {
     };
   }
 
-  private alsFreischaltung(event: Event): Freischaltung {
+  private toActivation(event: Event): Freischaltung {
     return {
       id: event.id,
       name: event.name,
@@ -321,14 +315,14 @@ export class MonitoringService {
     };
   }
 
-  private alsKontaktanfrage(anfrage: ContactRequest): Kontaktanfrage {
-    const text = anfrage.message ?? '';
+  private toContactRequest(request: ContactRequest): Kontaktanfrage {
+    const text = request.message ?? '';
     return {
-      id: anfrage.id,
-      erstelltAm: anfrage.createdAt.toISOString(),
-      typ: anfrage.type,
-      name: anfrage.name,
-      organisation: anfrage.organization ?? null,
+      id: request.id,
+      erstelltAm: request.createdAt.toISOString(),
+      typ: request.type,
+      name: request.name,
+      organisation: request.organization ?? null,
       vorschau:
         text.length > VORSCHAU_LAENGE
           ? `${text.slice(0, VORSCHAU_LAENGE)}…`

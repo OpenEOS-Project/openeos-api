@@ -2,54 +2,52 @@ import { registerAs } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 
 /**
- * Voreinstellungen für den Verbindungspool (node-postgres).
+ * Defaults for the connection pool (node-postgres).
  *
- * - max 10: So viele Verbindungen hielt die API schon bisher höchstens
- *   (`poolSize: 10`), am Lastprofil ändert sich also nichts. Die
- *   Datenbank erlaubt 100 (Postgres-Standard `max_connections`); selbst
- *   wenn Produktion und Staging dieselbe Instanz nutzten, blieben 80 frei
- *   für Migrationen, psql und Wartung.
- * - idle 10 min: Freie Verbindungen bleiben erhalten, statt nach den
- *   10 s des pg-Standards geschlossen und beim nächsten Aufruf für je
- *   rund 70 ms neu aufgebaut zu werden.
- * - connect 5 s: Bisher gab es keine Grenze. Ist der Pool erschöpft oder
- *   die Datenbank weg, wartete eine Anfrage beliebig lange. Jetzt kommt
- *   nach 5 s ein Fehler. Das reicht, um kurze Lastspitzen in der
- *   Warteschlange abzufangen.
+ * - max 10: the API already held at most this many connections before
+ *   (`poolSize: 10`), so the load profile does not change. The database
+ *   allows 100 (Postgres default `max_connections`); even if production
+ *   and staging shared one instance, 80 would remain free for
+ *   migrations, psql and maintenance.
+ * - idle 10 min: idle connections are kept instead of being closed after
+ *   the 10 s pg default and re-opened on the next call at roughly 70 ms
+ *   each.
+ * - connect 5 s: previously there was no limit. With an exhausted pool
+ *   or an unreachable database, a request waited indefinitely. Now it
+ *   fails after 5 s, which is still enough to queue through short load
+ *   spikes.
  *
- * Jeder Wert lässt sich per ENV überschreiben (siehe `.env.example`).
+ * Every value can be overridden via ENV (see `.env.example`).
  */
-export const POOL_VOREINSTELLUNG = {
+export const POOL_DEFAULTS = {
   max: 10,
   idleTimeoutMillis: 10 * 60 * 1000,
   connectionTimeoutMillis: 5000,
 } as const;
 
-export interface PoolOptionen {
+export interface PoolOptions {
   max: number;
   idleTimeoutMillis: number;
   connectionTimeoutMillis: number;
 }
 
-function ganzzahl(wert: string | undefined, voreinstellung: number): number {
-  if (wert === undefined || wert.trim() === '') return voreinstellung;
-  const zahl = Number(wert);
-  return Number.isInteger(zahl) && zahl > 0 ? zahl : voreinstellung;
+function positiveInteger(value: string | undefined, fallback: number): number {
+  if (value === undefined || value.trim() === '') return fallback;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/** Pool-Optionen aus der Umgebung; ungültige oder fehlende Werte → Voreinstellung. */
-export function poolOptionen(
-  env: NodeJS.ProcessEnv = process.env,
-): PoolOptionen {
+/** Pool options from the environment; invalid or missing values fall back to the defaults. */
+export function poolOptions(env: NodeJS.ProcessEnv = process.env): PoolOptions {
   return {
-    max: ganzzahl(env.DATABASE_POOL_MAX, POOL_VOREINSTELLUNG.max),
-    idleTimeoutMillis: ganzzahl(
+    max: positiveInteger(env.DATABASE_POOL_MAX, POOL_DEFAULTS.max),
+    idleTimeoutMillis: positiveInteger(
       env.DATABASE_POOL_IDLE_TIMEOUT_MS,
-      POOL_VOREINSTELLUNG.idleTimeoutMillis,
+      POOL_DEFAULTS.idleTimeoutMillis,
     ),
-    connectionTimeoutMillis: ganzzahl(
+    connectionTimeoutMillis: positiveInteger(
       env.DATABASE_POOL_CONNECTION_TIMEOUT_MS,
-      POOL_VOREINSTELLUNG.connectionTimeoutMillis,
+      POOL_DEFAULTS.connectionTimeoutMillis,
     ),
   };
 }
@@ -68,8 +66,8 @@ export default registerAs(
     synchronize: process.env.DATABASE_SYNCHRONIZE === 'true',
     logging: process.env.DATABASE_LOGGING === 'true',
     migrationsRun: process.env.DATABASE_MIGRATIONS_RUN === 'true',
-    /* Geht unverändert an den pg-Pool. `max` steht nur hier, nicht
-       zusätzlich als TypeORM-`poolSize` — `extra` gewänne ohnehin. */
-    extra: poolOptionen(),
+    /* Passed unchanged to the pg pool. `max` lives only here, not also as
+       TypeORM `poolSize` — `extra` would win anyway. */
+    extra: poolOptions(),
   }),
 );
