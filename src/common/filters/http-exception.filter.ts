@@ -84,7 +84,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     // Log error
-    if (status >= 500) {
+    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
         `[${requestId}] ${request.method} ${request.url} - ${status} - ${message}`,
         exception instanceof Error ? exception.stack : undefined,
@@ -111,7 +111,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
          ist "undefined". Ohne diese Angaben liess sich eine Schleife aus
          tausenden 401 keinem Geraet zuordnen. */
       const herkunft =
-        status === 401 || status === 403
+        status === HttpStatus.UNAUTHORIZED || status === HttpStatus.FORBIDDEN
           ? ` - IP: ${request.ip} - UA: ${String(request.headers['user-agent'] ?? '').slice(0, 80)}`
           : '';
       this.logger.warn(

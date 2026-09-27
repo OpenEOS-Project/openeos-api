@@ -2,7 +2,7 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 import { Logger } from '@nestjs/common';
-import type { ServerOptions } from 'socket.io';
+import type { Server, ServerOptions } from 'socket.io';
 
 /**
  * Socket.io adapter backed by Redis pub/sub so broadcasts, rooms and
@@ -25,10 +25,10 @@ export class RedisIoAdapter extends IoAdapter {
     const pubClient = createClient({ url });
     const subClient = pubClient.duplicate();
 
-    pubClient.on('error', (err) =>
+    pubClient.on('error', (err: Error) =>
       this.logger.error(`Redis pub client: ${err.message}`),
     );
-    subClient.on('error', (err) =>
+    subClient.on('error', (err: Error) =>
       this.logger.error(`Redis sub client: ${err.message}`),
     );
 
@@ -37,8 +37,9 @@ export class RedisIoAdapter extends IoAdapter {
     this.logger.log(`Socket.io Redis adapter connected (${host}:${port})`);
   }
 
-  createIOServer(port: number, options?: ServerOptions) {
-    const server = super.createIOServer(port, options);
+  createIOServer(port: number, options?: ServerOptions): Server {
+    // IoAdapter liefert den Server untypisiert (`any`) — hier wird er es.
+    const server = super.createIOServer(port, options) as Server;
     server.adapter(this.adapterConstructor);
     return server;
   }

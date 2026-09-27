@@ -6,11 +6,12 @@ import {
 } from '@nestjs/common';
 import { RequestUser } from '../decorators/current-user.decorator';
 import { ErrorCodes } from '../constants/error-codes';
+import type { AppRequest } from '../types/request.types';
 
 @Injectable()
 export class OrganizationGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<AppRequest>();
     const user = request.user as RequestUser;
 
     if (!user) {
@@ -48,19 +49,13 @@ export class OrganizationGuard implements CanActivate {
     return true;
   }
 
-  private getOrganizationId(
-    request: Request & {
-      params?: Record<string, string>;
-      body?: Record<string, unknown>;
-      query?: Record<string, string>;
-      headers: Record<string, string>;
-    },
-  ): string | undefined {
+  private getOrganizationId(request: AppRequest): string | undefined {
+    const body = request.body as Record<string, unknown> | undefined;
     return (
-      request.headers['x-organization-id'] ||
+      (request.headers['x-organization-id'] as string | undefined) ||
       request.params?.organizationId ||
-      (request.body?.organizationId as string) ||
-      request.query?.organizationId
+      (body?.organizationId as string) ||
+      (request.query?.organizationId as string | undefined)
     );
   }
 }
