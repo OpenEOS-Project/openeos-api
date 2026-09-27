@@ -45,7 +45,17 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-return': 'warn',
       '@typescript-eslint/no-unsafe-call': 'warn',
       '@typescript-eslint/no-unsafe-enum-comparison': 'warn',
-      '@typescript-eslint/no-unused-vars': 'warn',
+      /* Ein fuehrender Unterstrich markiert Absicht: Parameter, die eine
+         Schnittstelle vorgibt (`down(_queryRunner)`), und Felder, die per
+         Rest-Destrukturierung bewusst weggelassen werden. */
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+        },
+      ],
 
       /* Die letzten zwoelf Befunde. Jeder einzelne waere zu beheben, aber
          sie sitzen verstreut in Code, dessen Verhalten sich dabei aendern

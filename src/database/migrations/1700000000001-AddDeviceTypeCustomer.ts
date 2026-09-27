@@ -9,7 +9,7 @@ export class AddDeviceTypeCustomer1700000000001 implements MigrationInterface {
     );
   }
 
-  public async down(queryRunner: QueryRunner): Promise<void> {
+  public async down(_queryRunner: QueryRunner): Promise<void> {
     // Note: PostgreSQL doesn't support removing enum values directly
     // The value will remain in the enum but won't be used
   }

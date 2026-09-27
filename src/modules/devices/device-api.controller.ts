@@ -54,7 +54,6 @@ import {
 } from '../../database/entities/payment.entity';
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { DeviceSettings } from '../../database/entities/device.entity';
 import { CreateOrderDto } from '../orders/dto';
 import { CreatePaymentDto } from '../payments/dto';
 import { SumUpApiService } from '../sumup/sumup-api.service';

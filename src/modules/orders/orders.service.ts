@@ -12,7 +12,6 @@ import { ConfigService } from '@nestjs/config';
 import {
   Repository,
   Between,
-  LessThanOrEqual,
   MoreThanOrEqual,
   SelectQueryBuilder,
 } from 'typeorm';
@@ -37,7 +36,6 @@ import {
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import { EventStatus } from '../../database/entities/event.entity';
-import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 import {
@@ -1108,7 +1106,6 @@ export class OrdersService {
     order: Order,
     item: OrderItem,
   ): Promise<Order> {
-    const previousStatus = item.status;
     item.status = OrderItemStatus.READY;
     item.readyAt = new Date();
     await this.orderItemRepository.save(item);

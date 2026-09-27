@@ -9,7 +9,7 @@ export class DropWorkflowTables1774000000000 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE IF EXISTS "workflow" CASCADE`);
   }
 
-  public async down(queryRunner: QueryRunner): Promise<void> {
+  public async down(_queryRunner: QueryRunner): Promise<void> {
     // Workflow tables are not recreated — the feature has been removed.
     // If you need to revert, restore from a backup.
   }

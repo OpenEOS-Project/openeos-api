@@ -8,7 +8,7 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
-import { Logger, UseGuards } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Server, Socket } from 'socket.io';
@@ -20,7 +20,6 @@ import { GatewayEvents } from './dto';
 import type {
   JoinRoomPayload,
   LeaveRoomPayload,
-  DeviceHeartbeatEvent,
   PrinterHeartbeatEvent,
   PrinterJobCompleteEvent,
   PrinterJobFailedEvent,
@@ -89,7 +88,7 @@ export class AppGateway
     private readonly userOrganizationRepository: Repository<UserOrganization>,
   ) {}
 
-  afterInit(server: Server) {
+  afterInit(_server: Server) {
     this.logger.log('WebSocket Gateway initialized');
   }
 

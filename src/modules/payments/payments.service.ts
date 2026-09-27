@@ -21,7 +21,6 @@ import {
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
 import { PaymentStatus } from '../../database/entities/order.entity';
-import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import {
   PaginatedResult,

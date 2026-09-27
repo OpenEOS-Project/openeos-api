@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -703,8 +702,8 @@ export class ShiftsService {
   async approveRegistration(
     organizationId: string,
     registrationId: string,
-    user: User,
-    message?: string,
+    _user: User,
+    _message?: string,
   ): Promise<ShiftRegistration> {
     const reg = await this.findRegistrationWithAccess(
       organizationId,

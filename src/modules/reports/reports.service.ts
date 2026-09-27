@@ -1,7 +1,7 @@
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
+import { Repository, MoreThanOrEqual } from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -20,7 +20,7 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { OrderStatus } from '../../database/entities/order.entity';
 import { DeviceType } from '../../database/entities/device.entity';
 import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
-import { QueryReportsDto, ReportGroupBy, ReportExportFormat } from './dto';
+import { QueryReportsDto, ReportExportFormat } from './dto';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { endOfDay } from '../../common/utils/date-range.util';
 

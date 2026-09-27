@@ -11,7 +11,6 @@ import {
   rahmen,
   stapeln,
   ueberschrift,
-  zitat,
 } from './email-template';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';

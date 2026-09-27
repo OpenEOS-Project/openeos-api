@@ -27,7 +27,6 @@ import {
   CreateRentalHardwareDto,
   UpdateRentalHardwareDto,
   CreateRentalAssignmentDto,
-  UpdateRentalAssignmentDto,
   UpdateOrganizationAdminDto,
   CreateSubscriptionConfigDto,
   UpdateSubscriptionConfigDto,

@@ -21,7 +21,7 @@ export class ExtendPaymentMethods1778000000000 implements MigrationInterface {
     }
   }
 
-  public async down(queryRunner: QueryRunner): Promise<void> {
+  public async down(_queryRunner: QueryRunner): Promise<void> {
     // Enum values cannot be removed in PostgreSQL
   }
 }
