@@ -11,7 +11,7 @@ import {
 import { Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Server, Socket } from 'socket.io';
+import { Server, Socket, type DefaultEventsMap } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserOrganization } from '../../database/entities';
@@ -32,7 +32,29 @@ import { PrintersService } from '../printers/printers.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { PrintJobStatus } from '../../database/entities/print-job.entity';
 
-interface AuthenticatedSocket extends Socket {
+/**
+ * Was ein Socket in `socket.data` traegt. Dieses Feld teilt der
+ * Redis-Adapter replikaweit (fetchSockets), darauf beruht die Anwesenheit.
+ */
+interface SocketData {
+  deviceId?: string;
+  organizationId?: string;
+  deviceType?: string;
+}
+
+type GatewayServer = Server<
+  DefaultEventsMap,
+  DefaultEventsMap,
+  DefaultEventsMap,
+  SocketData
+>;
+
+interface AuthenticatedSocket extends Socket<
+  DefaultEventsMap,
+  DefaultEventsMap,
+  DefaultEventsMap,
+  SocketData
+> {
   user?: {
     id: string;
     email: string;
@@ -74,7 +96,7 @@ export class AppGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
-  server: Server;
+  server: GatewayServer;
 
   private readonly logger = new Logger(AppGateway.name);
 
@@ -113,8 +135,9 @@ export class AppGateway
       }
 
       // Try device token authentication
+      // `auth` ist frei belegbares JSON des Clients, daher ungetypt.
       const deviceToken =
-        client.handshake.auth?.deviceToken ||
+        (client.handshake.auth?.deviceToken as string | undefined) ||
         client.handshake.query?.deviceToken;
 
       if (deviceToken) {
@@ -139,14 +162,18 @@ export class AppGateway
 
           // Global per-device room: presence lookups and cross-replica
           // room operations (reassign/disconnect) target this room.
-          client.join(`device:${device.id}`);
+          // join()/leave() sind nur dem Typ nach asynchron (Adapter-Vertrag);
+          // die Adapter hier fuehren sie lokal sofort aus — daher `void`.
+          void client.join(`device:${device.id}`);
 
           if (hasOrg) {
             // Auto-join organization room
-            client.join(`org:${device.organizationId}`);
+            void client.join(`org:${device.organizationId}`);
 
             // Join device-specific room for targeted settings/config updates
-            client.join(`org:${device.organizationId}:device:${device.id}`);
+            void client.join(
+              `org:${device.organizationId}:device:${device.id}`,
+            );
           }
 
           // Update last seen
@@ -176,7 +203,7 @@ export class AppGateway
       client.emit(GatewayEvents.ERROR, { message: 'Authentication required' });
       client.disconnect();
     } catch (error) {
-      this.logger.error(`Connection error: ${error.message}`);
+      this.logger.error(`Connection error: ${(error as Error).message}`);
       client.disconnect();
     }
   }
@@ -234,7 +261,7 @@ export class AppGateway
       ? `org:${payload.organizationId}:event:${payload.eventId}`
       : `org:${payload.organizationId}`;
 
-    client.join(roomName);
+    void client.join(roomName);
     this.logger.debug(`Client ${client.id} joined room: ${roomName}`);
 
     return { success: true, room: roomName };
@@ -253,7 +280,7 @@ export class AppGateway
       ? `org:${payload.organizationId}:event:${payload.eventId}`
       : `org:${payload.organizationId}`;
 
-    client.leave(roomName);
+    void client.leave(roomName);
     this.logger.debug(`Client ${client.id} left room: ${roomName}`);
 
     return { success: true };
@@ -303,7 +330,7 @@ export class AppGateway
       client.device.organizationId,
       payload.posDeviceId,
     );
-    client.join(room);
+    void client.join(room);
     this.logger.debug(`Device ${client.device.id} watches POS cart: ${room}`);
 
     // Ask the POS to re-broadcast its current cart so the display is not
@@ -330,7 +357,7 @@ export class AppGateway
       return { error: 'posDeviceId required' };
     }
 
-    client.leave(
+    void client.leave(
       this.posCartRoom(client.device.organizationId, payload.posDeviceId),
     );
     return { success: true };
@@ -405,7 +432,7 @@ export class AppGateway
       return { success: true };
     } catch (error) {
       this.logger.error(
-        `Failed to update job ${payload.jobId}: ${error.message}`,
+        `Failed to update job ${payload.jobId}: ${(error as Error).message}`,
       );
       return { error: 'Failed to update job status' };
     }
@@ -452,7 +479,7 @@ export class AppGateway
       return { success: true };
     } catch (error) {
       this.logger.error(
-        `Failed to update job ${payload.jobId}: ${error.message}`,
+        `Failed to update job ${payload.jobId}: ${(error as Error).message}`,
       );
       return { error: 'Failed to update job status' };
     }
@@ -520,7 +547,7 @@ export class AppGateway
       .fetchSockets();
     const ids = new Set<string>();
     for (const socket of sockets) {
-      const deviceId = socket.data?.deviceId as string | undefined;
+      const deviceId = socket.data?.deviceId;
       if (deviceId) ids.add(deviceId);
     }
     return [...ids];
@@ -530,7 +557,7 @@ export class AppGateway
     const sockets = await this.server.fetchSockets();
     const ids = new Set<string>();
     for (const socket of sockets) {
-      const deviceId = socket.data?.deviceId as string | undefined;
+      const deviceId = socket.data?.deviceId;
       if (deviceId) ids.add(deviceId);
     }
     return [...ids];
@@ -598,7 +625,9 @@ export class AppGateway
       return authHeader.substring(7);
     }
     return (
-      client.handshake.auth?.token || client.handshake.query?.token || null
+      (client.handshake.auth?.token as string | undefined) ||
+      (client.handshake.query?.token as string | undefined) ||
+      null
     );
   }
 
