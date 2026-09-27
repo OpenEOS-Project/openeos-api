@@ -4,6 +4,7 @@ import {
   IsBoolean,
   Length,
   Matches,
+  MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -66,12 +67,17 @@ export class Verify2FADto {
 
 export class Disable2FADto {
   @ApiProperty({
-    example: 'MySecurePassword123!',
-    description: 'Aktuelles Passwort zur Bestätigung',
+    example: '123456',
+    description:
+      'Aktueller Code des zweiten Faktors (Authenticator-App bzw. E-Mail-Code) oder ein Wiederherstellungscode',
   })
   @IsString()
-  password: string;
+  @MinLength(6)
+  code: string;
 }
+
+/** Neue Wiederherstellungscodes gibt es nur gegen einen gueltigen Code. */
+export class RegenerateRecoveryCodesDto extends Disable2FADto {}
 
 // Response DTOs
 export class TotpSetupResponseDto {

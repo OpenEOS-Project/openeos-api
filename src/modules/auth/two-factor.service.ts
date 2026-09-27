@@ -240,34 +240,7 @@ export class TwoFactorService {
       });
     }
 
-    let isValid = false;
-
-    // Try TOTP verification first
-    if (
-      user.twoFactorMethod === TwoFactorMethod.TOTP &&
-      user.twoFactorSecretEncrypted
-    ) {
-      const secret = this.encryptionService.decrypt(
-        user.twoFactorSecretEncrypted,
-      );
-      isValid = OTPAuth.authenticator.verify({ token: code, secret });
-    }
-    // Try Email OTP
-    else if (user.twoFactorMethod === TwoFactorMethod.EMAIL) {
-      try {
-        await this.verifyEmailOtp(user, code, EmailOtpPurpose.TWO_FACTOR_LOGIN);
-        isValid = true;
-      } catch {
-        isValid = false;
-      }
-    }
-
-    // If not valid, try recovery code
-    if (!isValid) {
-      isValid = await this.verifyRecoveryCode(user, code);
-    }
-
-    if (!isValid) {
+    if (!(await this.isValidSecondFactor(user, code))) {
       throw new UnauthorizedException({
         code: ErrorCodes.INVALID_2FA_CODE,
         message: 'Ungültiger Verifizierungscode',
@@ -308,7 +281,7 @@ export class TwoFactorService {
   /**
    * Disable 2FA
    */
-  async disable2FA(userId: string, password: string): Promise<void> {
+  async disable2FA(userId: string, code: string): Promise<void> {
     const user = await this.userRepository.findOneOrFail({
       where: { id: userId },
     });
@@ -320,8 +293,23 @@ export class TwoFactorService {
       });
     }
 
-    // Verify password (this should be done at controller level with bcrypt)
-    // For now, we assume password is already verified
+    /* Abschalten verlangt einen gueltigen Code des zweiten Faktors.
+
+       Frueher nahm dieser Weg ein Passwort entgegen und pruefte es nicht —
+       der Kommentar hier verwies auf den Controller, der es auch nicht tat.
+       Wer eine angemeldete Sitzung in die Hand bekam, etwa ein offenes
+       Dashboard am Vereins-Laptop, konnte die 2FA damit abschalten.
+
+       Der Code statt des Passworts, weil er genau das belegt, worum es geht:
+       den Besitz des Faktors, der abgeschaltet werden soll. Und weil es
+       Konten ohne Passwort gibt (Anmeldung per Link), fuer die eine
+       Passwortpruefung gar nicht moeglich waere. */
+    if (!(await this.isValidSecondFactor(user, code))) {
+      throw new UnauthorizedException({
+        code: ErrorCodes.INVALID_2FA_CODE,
+        message: 'Ungültiger Verifizierungscode',
+      });
+    }
 
     // Clear 2FA data
     user.twoFactorEnabled = false;
@@ -358,7 +346,10 @@ export class TwoFactorService {
   /**
    * Generate new recovery codes
    */
-  async regenerateRecoveryCodes(userId: string): Promise<RecoveryCodesResult> {
+  async regenerateRecoveryCodes(
+    userId: string,
+    code: string,
+  ): Promise<RecoveryCodesResult> {
     const user = await this.userRepository.findOneOrFail({
       where: { id: userId },
     });
@@ -367,6 +358,16 @@ export class TwoFactorService {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         message: '2FA ist nicht aktiviert',
+      });
+    }
+
+    /* Neue Wiederherstellungscodes sind ein dauerhafter Ersatz fuer den
+       zweiten Faktor — und die Antwort liefert sie im Klartext aus. Ohne
+       Pruefung bekam sie jeder, der eine angemeldete Sitzung hielt. */
+    if (!(await this.isValidSecondFactor(user, code))) {
+      throw new UnauthorizedException({
+        code: ErrorCodes.INVALID_2FA_CODE,
+        message: 'Ungültiger Verifizierungscode',
       });
     }
 
@@ -475,6 +476,47 @@ export class TwoFactorService {
         `Failed to send 2FA email OTP to ${user.email} (purpose: ${purpose})`,
       );
     }
+  }
+
+  /**
+   * Prueft einen Code gegen den eingerichteten zweiten Faktor: TOTP bzw.
+   * E-Mail-Code je nach Methode, ersatzweise einen Wiederherstellungscode.
+   *
+   * Gemeinsam genutzt von der Anmeldung und vom Abschalten der 2FA, damit
+   * beide Wege dieselben Codes akzeptieren.
+   */
+  private async isValidSecondFactor(
+    user: User,
+    code: string,
+  ): Promise<boolean> {
+    let isValid = false;
+
+    // Try TOTP verification first
+    if (
+      user.twoFactorMethod === TwoFactorMethod.TOTP &&
+      user.twoFactorSecretEncrypted
+    ) {
+      const secret = this.encryptionService.decrypt(
+        user.twoFactorSecretEncrypted,
+      );
+      isValid = OTPAuth.authenticator.verify({ token: code, secret });
+    }
+    // Try Email OTP
+    else if (user.twoFactorMethod === TwoFactorMethod.EMAIL) {
+      try {
+        await this.verifyEmailOtp(user, code, EmailOtpPurpose.TWO_FACTOR_LOGIN);
+        isValid = true;
+      } catch {
+        isValid = false;
+      }
+    }
+
+    // If not valid, try recovery code
+    if (!isValid) {
+      isValid = await this.verifyRecoveryCode(user, code);
+    }
+
+    return isValid;
   }
 
   private async verifyEmailOtp(

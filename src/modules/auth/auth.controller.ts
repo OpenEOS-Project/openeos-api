@@ -42,6 +42,7 @@ import {
   VerifyEmailOtpSetupDto,
   Verify2FADto,
   Disable2FADto,
+  RegenerateRecoveryCodesDto,
   TotpSetupResponseDto,
   RecoveryCodesResponseDto,
   TwoFactorStatusResponseDto,
@@ -653,14 +654,17 @@ export class AuthController {
   })
   @ApiResponse({
     status: 400,
-    description: '2FA not enabled or invalid password',
+    description: '2FA not enabled',
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized or invalid second-factor code',
+  })
   async disable2FA(
     @CurrentUser() user: User,
     @Body() dto: Disable2FADto,
   ): Promise<{ message: string }> {
-    await this.twoFactorService.disable2FA(user.id, dto.password);
+    await this.twoFactorService.disable2FA(user.id, dto.code);
     return { message: '2FA wurde deaktiviert' };
   }
 
@@ -676,11 +680,15 @@ export class AuthController {
     type: RecoveryCodesResponseDto,
   })
   @ApiResponse({ status: 400, description: '2FA not enabled' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized or invalid second-factor code',
+  })
   async regenerateRecoveryCodes(
     @CurrentUser() user: User,
+    @Body() dto: RegenerateRecoveryCodesDto,
   ): Promise<RecoveryCodesResponseDto> {
-    return this.twoFactorService.regenerateRecoveryCodes(user.id);
+    return this.twoFactorService.regenerateRecoveryCodes(user.id, dto.code);
   }
 
   @Get('2fa/trusted-devices')
