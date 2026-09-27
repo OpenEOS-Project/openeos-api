@@ -1319,7 +1319,7 @@ export class AdminService {
         ],
       })
       .andWhere('assignment.createdAt BETWEEN :start AND :end', { start, end })
-      .getRawOne();
+      .getRawOne<{ total: string | null }>();
 
     const rentalTotal = Number(rentalRevenue?.total || 0);
 
