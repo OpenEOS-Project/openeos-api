@@ -99,7 +99,8 @@ export class AuthService {
     /** Ohne Passwort ging statt der Bestaetigung ein Anmeldelink raus. */
     magicLinkSent: boolean;
   }> {
-    const { email, password, firstName, lastName, organizationName } = registerDto;
+    const { email, password, firstName, lastName, organizationName } =
+      registerDto;
 
     /* Eigenstaendig gibt es keine Selbstregistrierung.
        Zwei Gruende: sie legt jedes Mal eine weitere Organisation an, und sie
@@ -129,7 +130,9 @@ export class AuthService {
 
     /* Ohne Passwort bleibt die Spalte leer — das Konto laeuft dann ueber
        Anmeldelinks. */
-    const passwordHash = password ? await bcrypt.hash(password, BCRYPT_ROUNDS) : null;
+    const passwordHash = password
+      ? await bcrypt.hash(password, BCRYPT_ROUNDS)
+      : null;
 
     // Generate the email verification token up front so it's created
     // atomically with the user in the same transaction
@@ -194,7 +197,8 @@ export class AuthService {
          Anmeldelink erledigt beides — das Einloesen setzt die Bestaetigung
          mit. */
       if (passwordHash) {
-        const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+        const appUrl =
+          this.configService.get<string>('APP_URL') || 'http://localhost:3000';
         const verifyUrl = `${appUrl}/verify-email?token=${verificationToken}`;
         await this.emailService.sendEmailVerificationEmail({
           to: user.email,
@@ -227,7 +231,10 @@ export class AuthService {
    * is configured anywhere.
    */
   private async notifyAdminOfRegistration(user: User): Promise<void> {
-    const notifyEmail = await this.platformSettingsService.resolveNotificationTarget('userRegistered');
+    const notifyEmail =
+      await this.platformSettingsService.resolveNotificationTarget(
+        'userRegistered',
+      );
     if (!notifyEmail) {
       return;
     }
@@ -254,7 +261,8 @@ export class AuthService {
     );
     await this.userRepository.save(user);
 
-    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    const appUrl =
+      this.configService.get<string>('APP_URL') || 'http://localhost:3000';
     const verifyUrl = `${appUrl}/verify-email?token=${verificationToken}`;
     await this.emailService.sendEmailVerificationEmail({
       to: user.email,
@@ -348,7 +356,8 @@ export class AuthService {
     if (!user.passwordHash) {
       throw new UnauthorizedException({
         code: ErrorCodes.PASSWORD_LOGIN_UNAVAILABLE,
-        message: 'Für dieses Konto ist kein Passwort gesetzt. Melde dich per Anmeldelink an.',
+        message:
+          'Für dieses Konto ist kein Passwort gesetzt. Melde dich per Anmeldelink an.',
       });
     }
 
@@ -468,7 +477,11 @@ export class AuthService {
     return tokens;
   }
 
-  async logout(userId: string, refreshToken?: string, accessToken?: string): Promise<void> {
+  async logout(
+    userId: string,
+    refreshToken?: string,
+    accessToken?: string,
+  ): Promise<void> {
     if (refreshToken) {
       // Hash the token to find it
       const tokenHash = this.hashToken(refreshToken);
@@ -521,7 +534,9 @@ export class AuthService {
 
     // Always return success to prevent email enumeration
     if (!user) {
-      this.logger.log(`Password reset requested for non-existent email: ${email}`);
+      this.logger.log(
+        `Password reset requested for non-existent email: ${email}`,
+      );
       return;
     }
 
@@ -539,7 +554,8 @@ export class AuthService {
     );
     await this.userRepository.save(user);
 
-    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    const appUrl =
+      this.configService.get<string>('APP_URL') || 'http://localhost:3000';
     const resetUrl = `${appUrl}/reset-password?token=${resetToken}`;
 
     try {
@@ -550,7 +566,10 @@ export class AuthService {
       });
       this.logger.log(`Password reset email sent to ${email}`);
     } catch (error) {
-      this.logger.error(`Failed to send password reset email to ${email}`, error);
+      this.logger.error(
+        `Failed to send password reset email to ${email}`,
+        error,
+      );
     }
   }
 
@@ -621,7 +640,10 @@ export class AuthService {
        pruefen. Die angemeldete Sitzung ist der Nachweis, und in die kommt
        nur, wer einen Anmeldelink aus dem eigenen Postfach geholt hat. */
     if (user.passwordHash) {
-      const isPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+      const isPasswordValid = await bcrypt.compare(
+        currentPassword,
+        user.passwordHash,
+      );
 
       if (!isPasswordValid) {
         throw new BadRequestException({
@@ -661,11 +683,16 @@ export class AuthService {
    * Wer hier eine Fehlermeldung bekaeme, koennte die Benutzerliste
    * abfragen.
    */
-  async requestLoginMagicLink(email: string, requestedIp?: string): Promise<void> {
+  async requestLoginMagicLink(
+    email: string,
+    requestedIp?: string,
+  ): Promise<void> {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail) return;
 
-    const user = await this.userRepository.findOne({ where: { email: cleanEmail } });
+    const user = await this.userRepository.findOne({
+      where: { email: cleanEmail },
+    });
 
     /* Deaktivierte und gesperrte Konten bekommen keinen Link. Still, aus
        demselben Grund wie oben: die Sperre selbst ist eine Auskunft. */
@@ -690,7 +717,8 @@ export class AuthService {
       }),
     );
 
-    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    const appUrl =
+      this.configService.get<string>('APP_URL') || 'http://localhost:3000';
     await this.emailService.sendLoginMagicLinkEmail({
       to: user.email,
       firstName: user.firstName,
@@ -740,7 +768,9 @@ export class AuthService {
 
     if (!user || !user.isActive) throw ungueltig();
     if (user.lockedUntil && user.lockedUntil > new Date()) {
-      const remainingMinutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
+      const remainingMinutes = Math.ceil(
+        (user.lockedUntil.getTime() - Date.now()) / 60000,
+      );
       throw new UnauthorizedException({
         code: ErrorCodes.ACCOUNT_LOCKED,
         message: `Konto ist für ${remainingMinutes} Minuten gesperrt`,
@@ -776,7 +806,9 @@ export class AuthService {
       pending2fa: true,
     };
 
-    return this.jwtService.sign(payload, { expiresIn: TWO_FACTOR_PENDING_EXPIRY });
+    return this.jwtService.sign(payload, {
+      expiresIn: TWO_FACTOR_PENDING_EXPIRY,
+    });
   }
 
   /**
@@ -785,11 +817,17 @@ export class AuthService {
    * Ein als vertrauenswuerdig markiertes Geraet ueberspringt ihn — dafuer
    * ist die Markierung da.
    */
-  async needsTwoFactor(user: User, deviceFingerprint?: string): Promise<boolean> {
+  async needsTwoFactor(
+    user: User,
+    deviceFingerprint?: string,
+  ): Promise<boolean> {
     if (!user.twoFactorEnabled) return false;
     if (!deviceFingerprint) return true;
 
-    return !(await this.twoFactorService.isDeviceTrusted(user.id, deviceFingerprint));
+    return !(await this.twoFactorService.isDeviceTrusted(
+      user.id,
+      deviceFingerprint,
+    ));
   }
 
   /**
@@ -801,7 +839,7 @@ export class AuthService {
    */
   private verbleibendeGueltigkeitMs(accessToken: string): number {
     try {
-      const { exp } = this.jwtService.decode(accessToken) as { exp?: number };
+      const { exp } = this.jwtService.decode(accessToken);
       if (!exp) return 0;
       return Math.max(0, exp * 1000 - Date.now());
     } catch {
@@ -867,9 +905,7 @@ export class AuthService {
     let slug = baseSlug;
     let counter = 1;
 
-    while (
-      await this.organizationRepository.findOne({ where: { slug } })
-    ) {
+    while (await this.organizationRepository.findOne({ where: { slug } })) {
       slug = `${baseSlug}-${counter}`;
       counter++;
     }

@@ -1,4 +1,12 @@
-import { IsString, IsEmail, IsOptional, IsArray, IsUUID, MaxLength, ArrayMinSize } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsOptional,
+  IsArray,
+  IsUUID,
+  MaxLength,
+  ArrayMinSize,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PublicRegisterDto {
@@ -7,11 +15,17 @@ export class PublicRegisterDto {
   @MaxLength(255)
   name: string;
 
-  @ApiProperty({ description: 'Email address for verification', example: 'max@example.com' })
+  @ApiProperty({
+    description: 'Email address for verification',
+    example: 'max@example.com',
+  })
   @IsEmail()
   email: string;
 
-  @ApiPropertyOptional({ description: 'Phone number (optional)', example: '+49 123 4567890' })
+  @ApiPropertyOptional({
+    description: 'Phone number (optional)',
+    example: '+49 123 4567890',
+  })
   @IsString()
   @MaxLength(50)
   @IsOptional()
@@ -23,7 +37,10 @@ export class PublicRegisterDto {
   @IsOptional()
   notes?: string;
 
-  @ApiProperty({ description: 'List of shift IDs to register for', type: [String] })
+  @ApiProperty({
+    description: 'List of shift IDs to register for',
+    type: [String],
+  })
   @IsArray()
   @IsUUID('4', { each: true })
   @ArrayMinSize(1)

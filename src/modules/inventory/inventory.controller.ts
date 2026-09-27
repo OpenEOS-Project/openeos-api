@@ -37,7 +37,11 @@ export class InventoryController {
     @Query() queryDto: QueryInventoryCountsDto,
     @CurrentUser() user: User,
   ) {
-    const result = await this.inventoryService.findAllCounts(eventId, queryDto, user.id);
+    const result = await this.inventoryService.findAllCounts(
+      eventId,
+      queryDto,
+      user.id,
+    );
     return {
       data: result.data,
       meta: {
@@ -55,7 +59,11 @@ export class InventoryController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
   ) {
-    const count = await this.inventoryService.findOneCount(eventId, id, user.id);
+    const count = await this.inventoryService.findOneCount(
+      eventId,
+      id,
+      user.id,
+    );
     return { data: count };
   }
 
@@ -80,7 +88,12 @@ export class InventoryController {
     @Body() updateDto: UpdateInventoryCountDto,
     @CurrentUser() user: User,
   ) {
-    const count = await this.inventoryService.updateCount(eventId, id, updateDto, user.id);
+    const count = await this.inventoryService.updateCount(
+      eventId,
+      id,
+      updateDto,
+      user.id,
+    );
     return { data: count };
   }
 
@@ -110,7 +123,11 @@ export class InventoryController {
     @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    const count = await this.inventoryService.completeCount(eventId, id, user.id);
+    const count = await this.inventoryService.completeCount(
+      eventId,
+      id,
+      user.id,
+    );
     return { data: count };
   }
 
@@ -133,7 +150,12 @@ export class InventoryController {
     @Body() addDto: AddInventoryItemDto,
     @CurrentUser() user: User,
   ) {
-    const item = await this.inventoryService.addItem(eventId, countId, addDto, user.id);
+    const item = await this.inventoryService.addItem(
+      eventId,
+      countId,
+      addDto,
+      user.id,
+    );
     return { data: item };
   }
 
@@ -144,7 +166,12 @@ export class InventoryController {
     @Body() bulkDto: BulkAddInventoryItemsDto,
     @CurrentUser() user: User,
   ) {
-    const items = await this.inventoryService.bulkAddItems(eventId, countId, bulkDto, user.id);
+    const items = await this.inventoryService.bulkAddItems(
+      eventId,
+      countId,
+      bulkDto,
+      user.id,
+    );
     return { data: items };
   }
 
@@ -174,7 +201,11 @@ export class InventoryController {
     @Query() queryDto: QueryStockMovementsDto,
     @CurrentUser() user: User,
   ) {
-    const result = await this.inventoryService.findAllMovements(eventId, queryDto, user.id);
+    const result = await this.inventoryService.findAllMovements(
+      eventId,
+      queryDto,
+      user.id,
+    );
     return {
       data: result.data,
       meta: {
@@ -192,7 +223,11 @@ export class InventoryController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
   ) {
-    const movement = await this.inventoryService.findOneMovement(eventId, id, user.id);
+    const movement = await this.inventoryService.findOneMovement(
+      eventId,
+      id,
+      user.id,
+    );
     return { data: movement };
   }
 }

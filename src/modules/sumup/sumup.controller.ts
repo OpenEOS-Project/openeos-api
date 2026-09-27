@@ -45,7 +45,12 @@ export class SumUpController {
     @Body() pairReaderDto: PairReaderDto,
     @CurrentUser() user: User,
   ) {
-    return this.sumUpService.pairReader(organizationId, pairReaderDto.pairingCode, pairReaderDto.name, user);
+    return this.sumUpService.pairReader(
+      organizationId,
+      pairReaderDto.pairingCode,
+      pairReaderDto.name,
+      user,
+    );
   }
 
   @Get('readers/:readerId/status')
@@ -64,7 +69,12 @@ export class SumUpController {
     @Body() updateReaderDto: UpdateReaderDto,
     @CurrentUser() user: User,
   ) {
-    return this.sumUpService.updateReader(organizationId, readerId, updateReaderDto.name, user);
+    return this.sumUpService.updateReader(
+      organizationId,
+      readerId,
+      updateReaderDto.name,
+      user,
+    );
   }
 
   @Delete('readers/:readerId')

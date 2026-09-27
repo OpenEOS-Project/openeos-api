@@ -36,11 +36,17 @@ export class SumUpApiService {
    * The SDK's APIError.error contains the parsed JSON body, e.g.:
    * { errors: { type: "READER_BUSY" } } or { errors: { detail: "some message" } }
    */
-  private extractSumUpError(error: unknown): { type?: string; detail?: string; status?: number } {
+  private extractSumUpError(error: unknown): {
+    type?: string;
+    detail?: string;
+    status?: number;
+  } {
     if (!isSumUpAPIError(error)) return {};
 
     const body = error.error;
-    const result: { type?: string; detail?: string; status: number } = { status: error.status };
+    const result: { type?: string; detail?: string; status: number } = {
+      status: error.status,
+    };
 
     if (typeof body === 'object' && body !== null) {
       const errors = (body as any).errors;
@@ -55,7 +61,10 @@ export class SumUpApiService {
     try {
       return await fn();
     } catch (error: unknown) {
-      if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof InternalServerErrorException
+      ) {
         throw error;
       }
 
@@ -74,7 +83,10 @@ export class SumUpApiService {
     }
   }
 
-  async listReaders(apiKey: string, merchantCode: string): Promise<SumUp.Readers.Reader[]> {
+  async listReaders(
+    apiKey: string,
+    merchantCode: string,
+  ): Promise<SumUp.Readers.Reader[]> {
     const client = this.createClient(apiKey);
     return this.execute(async () => {
       const result = await client.readers.list(merchantCode);
@@ -82,15 +94,28 @@ export class SumUpApiService {
     }, 'listReaders');
   }
 
-  async pairReader(apiKey: string, merchantCode: string, pairingCode: string, name: string): Promise<SumUp.Readers.Reader> {
+  async pairReader(
+    apiKey: string,
+    merchantCode: string,
+    pairingCode: string,
+    name: string,
+  ): Promise<SumUp.Readers.Reader> {
     const client = this.createClient(apiKey);
     return this.execute(
-      () => client.readers.create(merchantCode, { pairing_code: pairingCode, name }),
+      () =>
+        client.readers.create(merchantCode, {
+          pairing_code: pairingCode,
+          name,
+        }),
       'pairReader',
     );
   }
 
-  async getReaderStatus(apiKey: string, merchantCode: string, readerId: string): Promise<SumUp.Readers.StatusResponse> {
+  async getReaderStatus(
+    apiKey: string,
+    merchantCode: string,
+    readerId: string,
+  ): Promise<SumUp.Readers.StatusResponse> {
     const client = this.createClient(apiKey);
     return this.execute(
       () => client.readers.getStatus(merchantCode, readerId),
@@ -121,7 +146,12 @@ export class SumUpApiService {
     }
   }
 
-  async updateReader(apiKey: string, merchantCode: string, readerId: string, name: string): Promise<SumUp.Readers.Reader> {
+  async updateReader(
+    apiKey: string,
+    merchantCode: string,
+    readerId: string,
+    name: string,
+  ): Promise<SumUp.Readers.Reader> {
     const client = this.createClient(apiKey);
     return this.execute(
       () => client.readers.update(merchantCode, readerId, { name }),
@@ -129,7 +159,11 @@ export class SumUpApiService {
     );
   }
 
-  async deleteReader(apiKey: string, merchantCode: string, readerId: string): Promise<void> {
+  async deleteReader(
+    apiKey: string,
+    merchantCode: string,
+    readerId: string,
+  ): Promise<void> {
     const client = this.createClient(apiKey);
     return this.execute(
       () => client.readers.delete(merchantCode, readerId),
@@ -141,7 +175,12 @@ export class SumUpApiService {
     apiKey: string,
     merchantCode: string,
     readerId: string,
-    data: { amount: number; currency: string; affiliateKey?: string; appId?: string },
+    data: {
+      amount: number;
+      currency: string;
+      affiliateKey?: string;
+      appId?: string;
+    },
   ): Promise<SumUp.Readers.CreateReaderCheckoutResponse> {
     const client = this.createClient(apiKey);
 
@@ -163,17 +202,25 @@ export class SumUpApiService {
 
     try {
       return await this.execute(
-        () => client.readers.createCheckout(merchantCode, readerId, checkoutRequest),
+        () =>
+          client.readers.createCheckout(
+            merchantCode,
+            readerId,
+            checkoutRequest,
+          ),
         'initiateCheckout',
       );
     } catch (error: unknown) {
       // If reader is busy from a previous checkout, terminate and retry once
-      const errMsg = error instanceof BadRequestException
-        ? (error.getResponse() as any)?.errorType
-        : undefined;
+      const errMsg =
+        error instanceof BadRequestException
+          ? (error.getResponse() as any)?.errorType
+          : undefined;
 
       if (errMsg === 'READER_BUSY') {
-        this.logger.log('Reader busy — terminating previous checkout and retrying...');
+        this.logger.log(
+          'Reader busy — terminating previous checkout and retrying...',
+        );
         try {
           await client.readers.terminateCheckout(merchantCode, readerId, {});
           // Wait for the reader to process the termination
@@ -183,7 +230,12 @@ export class SumUpApiService {
         }
 
         return this.execute(
-          () => client.readers.createCheckout(merchantCode, readerId, checkoutRequest),
+          () =>
+            client.readers.createCheckout(
+              merchantCode,
+              readerId,
+              checkoutRequest,
+            ),
           'initiateCheckout (retry after terminate)',
         );
       }
@@ -192,14 +244,20 @@ export class SumUpApiService {
     }
   }
 
-  async terminateCheckout(apiKey: string, merchantCode: string, readerId: string): Promise<void> {
+  async terminateCheckout(
+    apiKey: string,
+    merchantCode: string,
+    readerId: string,
+  ): Promise<void> {
     const client = this.createClient(apiKey);
     this.logger.log(`Terminating checkout on reader ${readerId}...`);
     await this.execute(
       () => client.readers.terminateCheckout(merchantCode, readerId, {}),
       'terminateCheckout',
     );
-    this.logger.log(`Terminate checkout request sent successfully for reader ${readerId}`);
+    this.logger.log(
+      `Terminate checkout request sent successfully for reader ${readerId}`,
+    );
   }
 
   async createOnlineCheckout(

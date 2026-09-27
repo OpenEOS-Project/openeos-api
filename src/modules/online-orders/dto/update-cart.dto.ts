@@ -20,13 +20,16 @@ export class CartItemOptionDto {
   @IsString()
   option: string;
 
-  @ApiProperty({ example: 1.50, description: 'Preismodifikator in Euro' })
+  @ApiProperty({ example: 1.5, description: 'Preismodifikator in Euro' })
   @IsNumber()
   priceModifier: number;
 }
 
 export class AddCartItemDto {
-  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID des Produkts' })
+  @ApiProperty({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'ID des Produkts',
+  })
   @IsUUID()
   productId: string;
 
@@ -35,14 +38,20 @@ export class AddCartItemDto {
   @Min(1)
   quantity: number;
 
-  @ApiPropertyOptional({ type: [CartItemOptionDto], description: 'Ausgewählte Produktoptionen' })
+  @ApiPropertyOptional({
+    type: [CartItemOptionDto],
+    description: 'Ausgewählte Produktoptionen',
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CartItemOptionDto)
   options?: CartItemOptionDto[];
 
-  @ApiPropertyOptional({ example: 'Ohne Zwiebeln', description: 'Notizen zur Bestellposition' })
+  @ApiPropertyOptional({
+    example: 'Ohne Zwiebeln',
+    description: 'Notizen zur Bestellposition',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(200)
@@ -55,7 +64,10 @@ export class UpdateCartItemDto {
   @Min(0)
   quantity: number;
 
-  @ApiPropertyOptional({ example: 'Extra scharf', description: 'Notizen zur Bestellposition' })
+  @ApiPropertyOptional({
+    example: 'Extra scharf',
+    description: 'Notizen zur Bestellposition',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(200)

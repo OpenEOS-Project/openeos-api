@@ -7,7 +7,10 @@ export class PairReaderDto {
   @MaxLength(50)
   pairingCode: string;
 
-  @ApiPropertyOptional({ example: 'Kartenleser Bar', description: 'Name for the reader' })
+  @ApiPropertyOptional({
+    example: 'Kartenleser Bar',
+    description: 'Name for the reader',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(255)

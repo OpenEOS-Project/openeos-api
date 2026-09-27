@@ -7,11 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import * as bcrypt from 'bcrypt';
-import {
-  User,
-  Organization,
-  UserOrganization,
-} from '../../database/entities';
+import { User, Organization, UserOrganization } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { SetupDto, SetupMode } from './dto';
 import { DeploymentService } from '../../common/services/deployment.service';
@@ -76,7 +72,8 @@ export class SetupService {
     if (userCount === 0) {
       return {
         required: true,
-        reason: 'Keine Benutzer vorhanden. Erstmalige Einrichtung erforderlich.',
+        reason:
+          'Keine Benutzer vorhanden. Erstmalige Einrichtung erforderlich.',
         deployment,
       };
     }
@@ -99,7 +96,9 @@ export class SetupService {
        Aufbau anzubieten, den der Rest der Installation anschliessend
        verweigert — die Betriebsart steht in der Umgebung fest, nicht im
        Formular. */
-    const mode = this.deployment.isSelfHosted ? SetupMode.SINGLE : setupDto.mode;
+    const mode = this.deployment.isSelfHosted
+      ? SetupMode.SINGLE
+      : setupDto.mode;
 
     // Validate organizationName for single mode
     if (mode === SetupMode.SINGLE && !setupDto.organizationName) {
@@ -116,7 +115,9 @@ export class SetupService {
     }
   }
 
-  private async performSingleTenantSetup(setupDto: SetupDto): Promise<SetupResult> {
+  private async performSingleTenantSetup(
+    setupDto: SetupDto,
+  ): Promise<SetupResult> {
     const { email, password, firstName, lastName, organizationName } = setupDto;
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -148,7 +149,10 @@ export class SetupService {
       await queryRunner.manager.save(user);
 
       // 2. Organisation anlegen
-      const slug = await this.generateOrganizationSlug(organizationName!, queryRunner.manager);
+      const slug = await this.generateOrganizationSlug(
+        organizationName!,
+        queryRunner.manager,
+      );
       const supportPin = this.generateSupportPin();
 
       const organization = this.organizationRepository.create({
@@ -169,7 +173,9 @@ export class SetupService {
 
       await queryRunner.commitTransaction();
 
-      this.logger.log(`Single-Tenant Setup completed: Admin ${user.email} with organization ${organization.name}`);
+      this.logger.log(
+        `Single-Tenant Setup completed: Admin ${user.email} with organization ${organization.name}`,
+      );
 
       return {
         mode: SetupMode.SINGLE,
@@ -194,7 +200,9 @@ export class SetupService {
     }
   }
 
-  private async performMultiTenantSetup(setupDto: SetupDto): Promise<SetupResult> {
+  private async performMultiTenantSetup(
+    setupDto: SetupDto,
+  ): Promise<SetupResult> {
     const { email, password, firstName, lastName } = setupDto;
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -217,7 +225,9 @@ export class SetupService {
 
       await queryRunner.commitTransaction();
 
-      this.logger.log(`Multi-Tenant Setup completed: Super Admin ${user.email} created`);
+      this.logger.log(
+        `Multi-Tenant Setup completed: Super Admin ${user.email} created`,
+      );
 
       return {
         mode: SetupMode.MULTI,
@@ -237,7 +247,10 @@ export class SetupService {
     }
   }
 
-  private async generateOrganizationSlug(name: string, manager: any): Promise<string> {
+  private async generateOrganizationSlug(
+    name: string,
+    manager: any,
+  ): Promise<string> {
     const baseSlug = name
       .toLowerCase()
       .replace(/[äöü]/g, (match) => {

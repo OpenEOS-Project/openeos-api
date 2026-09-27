@@ -13,7 +13,11 @@ export class RedisIoAdapter extends IoAdapter {
   private readonly logger = new Logger(RedisIoAdapter.name);
   private adapterConstructor: ReturnType<typeof createAdapter>;
 
-  async connectToRedis(host: string, port: number, password?: string): Promise<void> {
+  async connectToRedis(
+    host: string,
+    port: number,
+    password?: string,
+  ): Promise<void> {
     const url = password
       ? `redis://:${encodeURIComponent(password)}@${host}:${port}`
       : `redis://${host}:${port}`;
@@ -21,8 +25,12 @@ export class RedisIoAdapter extends IoAdapter {
     const pubClient = createClient({ url });
     const subClient = pubClient.duplicate();
 
-    pubClient.on('error', (err) => this.logger.error(`Redis pub client: ${err.message}`));
-    subClient.on('error', (err) => this.logger.error(`Redis sub client: ${err.message}`));
+    pubClient.on('error', (err) =>
+      this.logger.error(`Redis pub client: ${err.message}`),
+    );
+    subClient.on('error', (err) =>
+      this.logger.error(`Redis sub client: ${err.message}`),
+    );
 
     await Promise.all([pubClient.connect(), subClient.connect()]);
     this.adapterConstructor = createAdapter(pubClient, subClient);

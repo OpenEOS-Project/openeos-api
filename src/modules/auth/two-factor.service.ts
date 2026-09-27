@@ -52,7 +52,10 @@ export class TwoFactorService {
     private readonly configService: ConfigService,
     private readonly emailService: EmailService,
   ) {
-    this.issuer = this.configService.get<string>('TWO_FACTOR_ISSUER', 'OpenEOS');
+    this.issuer = this.configService.get<string>(
+      'TWO_FACTOR_ISSUER',
+      'OpenEOS',
+    );
 
     // Configure otplib
     OTPAuth.authenticator.options = {
@@ -79,7 +82,11 @@ export class TwoFactorService {
     const secret = OTPAuth.authenticator.generateSecret();
 
     // Generate the otpauth URL
-    const otpauthUrl = OTPAuth.authenticator.keyuri(user.email, this.issuer, secret);
+    const otpauthUrl = OTPAuth.authenticator.keyuri(
+      user.email,
+      this.issuer,
+      secret,
+    );
 
     // Generate QR code
     const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
@@ -101,7 +108,10 @@ export class TwoFactorService {
   /**
    * Verify TOTP setup and enable 2FA
    */
-  async verifyTotpSetup(userId: string, token: string): Promise<RecoveryCodesResult> {
+  async verifyTotpSetup(
+    userId: string,
+    token: string,
+  ): Promise<RecoveryCodesResult> {
     const user = await this.userRepository.findOneOrFail({
       where: { id: userId },
     });
@@ -121,7 +131,9 @@ export class TwoFactorService {
     }
 
     // Decrypt and verify the token
-    const secret = this.encryptionService.decrypt(user.twoFactorSecretEncrypted);
+    const secret = this.encryptionService.decrypt(
+      user.twoFactorSecretEncrypted,
+    );
     const isValid = OTPAuth.authenticator.verify({ token, secret });
 
     if (!isValid) {
@@ -174,7 +186,10 @@ export class TwoFactorService {
   /**
    * Verify Email OTP setup and enable 2FA
    */
-  async verifyEmailOtpSetup(userId: string, code: string): Promise<RecoveryCodesResult> {
+  async verifyEmailOtpSetup(
+    userId: string,
+    code: string,
+  ): Promise<RecoveryCodesResult> {
     const user = await this.userRepository.findOneOrFail({
       where: { id: userId },
     });
@@ -228,8 +243,13 @@ export class TwoFactorService {
     let isValid = false;
 
     // Try TOTP verification first
-    if (user.twoFactorMethod === TwoFactorMethod.TOTP && user.twoFactorSecretEncrypted) {
-      const secret = this.encryptionService.decrypt(user.twoFactorSecretEncrypted);
+    if (
+      user.twoFactorMethod === TwoFactorMethod.TOTP &&
+      user.twoFactorSecretEncrypted
+    ) {
+      const secret = this.encryptionService.decrypt(
+        user.twoFactorSecretEncrypted,
+      );
       isValid = OTPAuth.authenticator.verify({ token: code, secret });
     }
     // Try Email OTP
@@ -272,7 +292,10 @@ export class TwoFactorService {
       where: { id: userId },
     });
 
-    if (!user.twoFactorEnabled || user.twoFactorMethod !== TwoFactorMethod.EMAIL) {
+    if (
+      !user.twoFactorEnabled ||
+      user.twoFactorMethod !== TwoFactorMethod.EMAIL
+    ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         message: 'Email 2FA ist nicht aktiviert',
@@ -390,7 +413,10 @@ export class TwoFactorService {
   /**
    * Check if device is trusted
    */
-  async isDeviceTrusted(userId: string, deviceFingerprint: string): Promise<boolean> {
+  async isDeviceTrusted(
+    userId: string,
+    deviceFingerprint: string,
+  ): Promise<boolean> {
     const device = await this.trustedDeviceRepository.findOne({
       where: {
         userId,
@@ -415,7 +441,10 @@ export class TwoFactorService {
 
   // Private helper methods
 
-  private async sendEmailOtp(user: User, purpose: EmailOtpPurpose): Promise<void> {
+  private async sendEmailOtp(
+    user: User,
+    purpose: EmailOtpPurpose,
+  ): Promise<void> {
     // Invalidate existing OTPs for this purpose
     await this.emailOtpRepository.update(
       { userId: user.id, purpose, usedAt: IsNull() },
@@ -442,7 +471,9 @@ export class TwoFactorService {
     if (!sent) {
       // Never log the code itself — a failed send must not become a second,
       // quieter way to read a live 2FA code out of the logs.
-      this.logger.error(`Failed to send 2FA email OTP to ${user.email} (purpose: ${purpose})`);
+      this.logger.error(
+        `Failed to send 2FA email OTP to ${user.email} (purpose: ${purpose})`,
+      );
     }
   }
 
@@ -528,7 +559,9 @@ export class TwoFactorService {
       where: { userId: user.id, deviceFingerprint },
     });
 
-    const expiresAt = new Date(Date.now() + TRUSTED_DEVICE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(
+      Date.now() + TRUSTED_DEVICE_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
+    );
 
     if (device) {
       // Update existing
@@ -570,7 +603,7 @@ export class TwoFactorService {
 
   private hashRecoveryCodes(codes: string[]): string {
     const hashes = codes.map((code) =>
-      this.encryptionService.hashCode(code.replace(/-/g, '').toLowerCase())
+      this.encryptionService.hashCode(code.replace(/-/g, '').toLowerCase()),
     );
     return JSON.stringify(hashes);
   }

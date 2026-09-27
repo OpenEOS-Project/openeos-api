@@ -1,4 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { Role, hasRole } from '../constants/roles.enum';
@@ -65,7 +70,14 @@ export class RolesGuard implements CanActivate {
     return true;
   }
 
-  private getOrganizationId(request: Request & { params?: Record<string, string>; body?: Record<string, unknown>; query?: Record<string, string>; headers: Record<string, string> }): string | undefined {
+  private getOrganizationId(
+    request: Request & {
+      params?: Record<string, string>;
+      body?: Record<string, unknown>;
+      query?: Record<string, string>;
+      headers: Record<string, string>;
+    },
+  ): string | undefined {
     return (
       request.headers['x-organization-id'] ||
       request.params?.organizationId ||

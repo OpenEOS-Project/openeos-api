@@ -10,6 +10,8 @@ export class AddCashDrawerToPrinters1776000000000 implements MigrationInterface 
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "printers" DROP COLUMN IF EXISTS "has_cash_drawer"`);
+    await queryRunner.query(
+      `ALTER TABLE "printers" DROP COLUMN IF EXISTS "has_cash_drawer"`,
+    );
   }
 }

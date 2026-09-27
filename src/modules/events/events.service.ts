@@ -27,7 +27,11 @@ import {
 import { DeploymentService } from '../../common/services/deployment.service';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  createPaginatedResult,
+} from '../../common/dto/pagination.dto';
 import { CreateEventDto, UpdateEventDto, CopyProductsDto } from './dto';
 import { GatewayService } from '../gateway/gateway.service';
 import { countEventDays } from '../../common/utils/event-schedule.util';
@@ -65,7 +69,10 @@ export class EventsService {
     });
   }
 
-  private assertChronological(startDate: Date | null, endDate: Date | null): void {
+  private assertChronological(
+    startDate: Date | null,
+    endDate: Date | null,
+  ): void {
     if (!startDate || !endDate) return;
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
       throw new BadRequestException({
@@ -96,7 +103,9 @@ export class EventsService {
     if (!this.deployment.billingEnabled) return;
     if (!EVENT_PAID_BILLING_STATUSES.includes(event.billingStatus)) return;
 
-    const organization = await this.organizationRepository.findOne({ where: { id: event.organizationId } });
+    const organization = await this.organizationRepository.findOne({
+      where: { id: event.organizationId },
+    });
     const timezone = organization?.settings?.timezone || 'Europe/Berlin';
 
     const paidDays = countEventDays(event.startDate, event.endDate, timezone);
@@ -191,9 +200,12 @@ export class EventsService {
 
     const event = await this.findOne(organizationId, eventId, user);
 
-    const datesChanged = updateDto.startDate !== undefined || updateDto.endDate !== undefined;
+    const datesChanged =
+      updateDto.startDate !== undefined || updateDto.endDate !== undefined;
     if (datesChanged) {
-      const nextStart = updateDto.startDate ? new Date(updateDto.startDate) : event.startDate;
+      const nextStart = updateDto.startDate
+        ? new Date(updateDto.startDate)
+        : event.startDate;
       const nextEnd = updateDto.endDate
         ? new Date(updateDto.endDate)
         : updateDto.startDate
@@ -206,8 +218,10 @@ export class EventsService {
     }
 
     if (updateDto.name) event.name = updateDto.name;
-    if (updateDto.description !== undefined) event.description = updateDto.description;
-    if (updateDto.settings) event.settings = { ...event.settings, ...updateDto.settings };
+    if (updateDto.description !== undefined)
+      event.description = updateDto.description;
+    if (updateDto.settings)
+      event.settings = { ...event.settings, ...updateDto.settings };
 
     await this.eventRepository.save(event);
 
@@ -244,7 +258,12 @@ export class EventsService {
     eventId: string,
     user: User,
   ): Promise<Event> {
-    const event = await this.getEventAndCheckPermission(organizationId, eventId, user.id, 'events');
+    const event = await this.getEventAndCheckPermission(
+      organizationId,
+      eventId,
+      user.id,
+      'events',
+    );
 
     if (event.status === EventStatus.ACTIVE) {
       throw new BadRequestException({
@@ -257,14 +276,21 @@ export class EventsService {
     // also auch nichts zu pruefen. Der Zustand `billingStatus` bleibt dort
     // auf 'none' stehen — bewusst nicht auf 'waived' gesetzt: "erlassen"
     // hiesse, es haette etwas gekostet.
-    if (this.deployment.billingEnabled && !isEventBillingUnlocked(event.billingStatus)) {
+    if (
+      this.deployment.billingEnabled &&
+      !isEventBillingUnlocked(event.billingStatus)
+    ) {
       throw new BadRequestException({
         code: ErrorCodes.EVENT_NOT_PAID,
-        message: 'Veranstaltung ist noch nicht freigeschaltet — bitte zuerst kostenpflichtig bestellen',
+        message:
+          'Veranstaltung ist noch nicht freigeschaltet — bitte zuerst kostenpflichtig bestellen',
       });
     }
 
-    const deactivatedSiblings = await this.deactivateActiveOrTestSiblings(organizationId, event.id);
+    const deactivatedSiblings = await this.deactivateActiveOrTestSiblings(
+      organizationId,
+      event.id,
+    );
 
     event.status = EventStatus.ACTIVE;
     await this.eventRepository.save(event);
@@ -284,7 +310,12 @@ export class EventsService {
     eventId: string,
     user: User,
   ): Promise<Event> {
-    const event = await this.getEventAndCheckPermission(organizationId, eventId, user.id, 'events');
+    const event = await this.getEventAndCheckPermission(
+      organizationId,
+      eventId,
+      user.id,
+      'events',
+    );
 
     if (event.status === EventStatus.INACTIVE) {
       return event;
@@ -305,13 +336,21 @@ export class EventsService {
     eventId: string,
     user: User,
   ): Promise<Event> {
-    const event = await this.getEventAndCheckPermission(organizationId, eventId, user.id, 'events');
+    const event = await this.getEventAndCheckPermission(
+      organizationId,
+      eventId,
+      user.id,
+      'events',
+    );
 
     if (event.status === EventStatus.TEST) {
       return event;
     }
 
-    const deactivatedSiblings = await this.deactivateActiveOrTestSiblings(organizationId, event.id);
+    const deactivatedSiblings = await this.deactivateActiveOrTestSiblings(
+      organizationId,
+      event.id,
+    );
 
     event.status = EventStatus.TEST;
     await this.eventRepository.save(event);
@@ -417,7 +456,7 @@ export class EventsService {
 
     const categoryIdMap = new Map<string, string>();
 
-    const topLevelCategories = sourceCategories.filter(c => !c.parentId);
+    const topLevelCategories = sourceCategories.filter((c) => !c.parentId);
     for (const sourceCategory of topLevelCategories) {
       const newCategory = this.categoryRepository.create({
         eventId: targetEventId,
@@ -434,7 +473,7 @@ export class EventsService {
       categoryIdMap.set(sourceCategory.id, newCategory.id);
     }
 
-    const childCategories = sourceCategories.filter(c => c.parentId);
+    const childCategories = sourceCategories.filter((c) => c.parentId);
     for (const sourceCategory of childCategories) {
       const newParentId = categoryIdMap.get(sourceCategory.parentId!) || null;
       const newCategory = this.categoryRepository.create({
@@ -552,7 +591,10 @@ export class EventsService {
   }
 
   // Helper methods
-  private async checkMembership(organizationId: string, userId: string): Promise<UserOrganization> {
+  private async checkMembership(
+    organizationId: string,
+    userId: string,
+  ): Promise<UserOrganization> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });

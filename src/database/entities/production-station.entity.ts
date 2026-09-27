@@ -33,7 +33,9 @@ export class ProductionStation extends BaseEntity {
   handoffStationId: string | null;
 
   // Relations
-  @ManyToOne(() => Event, (event) => event.productionStations, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Event, (event) => event.productionStations, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'event_id' })
   event: Event;
 

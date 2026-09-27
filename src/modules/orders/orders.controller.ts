@@ -108,7 +108,13 @@ export class OrdersController {
     @Body() updateDto: UpdateOrderItemDto,
     @CurrentUser() user: User,
   ) {
-    return this.ordersService.updateItem(organizationId, orderId, itemId, updateDto, user);
+    return this.ordersService.updateItem(
+      organizationId,
+      orderId,
+      itemId,
+      updateDto,
+      user,
+    );
   }
 
   @Delete(':orderId/items/:itemId')
@@ -131,7 +137,12 @@ export class OrdersController {
     @Param('itemId', ParseUUIDPipe) itemId: string,
     @CurrentUser() user: User,
   ) {
-    return this.ordersService.markItemReady(organizationId, orderId, itemId, user);
+    return this.ordersService.markItemReady(
+      organizationId,
+      orderId,
+      itemId,
+      user,
+    );
   }
 
   @Post(':orderId/items/:itemId/deliver')
@@ -142,7 +153,12 @@ export class OrdersController {
     @Param('itemId', ParseUUIDPipe) itemId: string,
     @CurrentUser() user: User,
   ) {
-    return this.ordersService.markItemDelivered(organizationId, orderId, itemId, user);
+    return this.ordersService.markItemDelivered(
+      organizationId,
+      orderId,
+      itemId,
+      user,
+    );
   }
 
   @Post(':orderId/call')
@@ -173,6 +189,11 @@ export class OrdersController {
     @Body() cancelDto: CancelOrderDto,
     @CurrentUser() user: User,
   ) {
-    return this.ordersService.cancelOrder(organizationId, orderId, cancelDto, user);
+    return this.ordersService.cancelOrder(
+      organizationId,
+      orderId,
+      cancelDto,
+      user,
+    );
   }
 }

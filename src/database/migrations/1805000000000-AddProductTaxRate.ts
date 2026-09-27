@@ -20,6 +20,8 @@ export class AddProductTaxRate1805000000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE products DROP COLUMN IF EXISTS tax_rate`);
+    await queryRunner.query(
+      `ALTER TABLE products DROP COLUMN IF EXISTS tax_rate`,
+    );
   }
 }

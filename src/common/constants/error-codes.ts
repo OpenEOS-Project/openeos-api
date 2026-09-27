@@ -70,7 +70,8 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.CONFLICT]: 'Konflikt',
 
   [ErrorCodes.INVALID_CREDENTIALS]: 'Falsche E-Mail oder Passwort',
-  [ErrorCodes.PASSWORD_LOGIN_UNAVAILABLE]: 'Für dieses Konto ist kein Passwort gesetzt',
+  [ErrorCodes.PASSWORD_LOGIN_UNAVAILABLE]:
+    'Für dieses Konto ist kein Passwort gesetzt',
   [ErrorCodes.ACCOUNT_LOCKED]: 'Account gesperrt',
   [ErrorCodes.ACCOUNT_INACTIVE]: 'Account deaktiviert',
   [ErrorCodes.EMAIL_NOT_VERIFIED]: 'E-Mail nicht verifiziert',
@@ -81,7 +82,8 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.REFRESH_TOKEN_REVOKED]: 'Refresh Token widerrufen',
   [ErrorCodes.USER_EXISTS]: 'Benutzer existiert bereits',
 
-  [ErrorCodes.TWO_FACTOR_REQUIRED]: 'Zwei-Faktor-Authentifizierung erforderlich',
+  [ErrorCodes.TWO_FACTOR_REQUIRED]:
+    'Zwei-Faktor-Authentifizierung erforderlich',
   [ErrorCodes.INVALID_2FA_CODE]: 'Ungültiger Verifizierungscode',
   [ErrorCodes.TWO_FACTOR_ALREADY_ENABLED]: '2FA bereits aktiviert',
   [ErrorCodes.TWO_FACTOR_NOT_ENABLED]: '2FA nicht aktiviert',
@@ -97,7 +99,8 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.MEMBER_ALREADY_EXISTS]: 'Bereits Mitglied',
   [ErrorCodes.INVENTORY_IN_PROGRESS]: 'Inventur läuft bereits',
   [ErrorCodes.INVENTORY_ALREADY_COMPLETED]: 'Inventur bereits abgeschlossen',
-  [ErrorCodes.EVENT_NOT_PAID]: 'Veranstaltung ist noch nicht freigeschaltet — bitte zuerst kostenpflichtig bestellen',
+  [ErrorCodes.EVENT_NOT_PAID]:
+    'Veranstaltung ist noch nicht freigeschaltet — bitte zuerst kostenpflichtig bestellen',
   [ErrorCodes.TEST_LIMIT_REACHED]: 'Test-Limit erreicht',
 
   [ErrorCodes.INSUFFICIENT_CREDITS]: 'Nicht genug Guthaben',
@@ -110,5 +113,6 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.SUMUP_NOT_CONFIGURED]: 'SumUp ist nicht konfiguriert',
   [ErrorCodes.SUMUP_API_ERROR]: 'SumUp API Fehler',
 
-  [ErrorCodes.STRIPE_NOT_CONFIGURED]: 'Online-Zahlung ist derzeit nicht verfügbar',
+  [ErrorCodes.STRIPE_NOT_CONFIGURED]:
+    'Online-Zahlung ist derzeit nicht verfügbar',
 };

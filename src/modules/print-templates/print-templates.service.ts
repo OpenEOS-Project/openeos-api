@@ -12,7 +12,11 @@ import { PrintTemplate, User, UserOrganization } from '../../database/entities';
 import { PrintTemplateType } from '../../database/entities/print-template.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  createPaginatedResult,
+} from '../../common/dto/pagination.dto';
 import { CreatePrintTemplateDto, UpdatePrintTemplateDto } from './dto';
 import { GatewayService } from '../gateway/gateway.service';
 
@@ -38,7 +42,10 @@ export class PrintTemplatesService {
       });
       const templates: Record<string, string> = {};
       for (const t of all) {
-        const tpl = t.template as { generatedTemplate?: string } | string | null;
+        const tpl = t.template as
+          | { generatedTemplate?: string }
+          | string
+          | null;
         if (typeof tpl === 'string') {
           templates[t.type] = tpl;
         } else if (tpl && typeof tpl.generatedTemplate === 'string') {
@@ -74,7 +81,9 @@ export class PrintTemplatesService {
     });
 
     await this.printTemplateRepository.save(template);
-    this.logger.log(`Print template created: ${template.name} (${template.id})`);
+    this.logger.log(
+      `Print template created: ${template.name} (${template.id})`,
+    );
 
     await this.pushTemplatesToAgents(organizationId);
 
@@ -101,7 +110,11 @@ export class PrintTemplatesService {
     return createPaginatedResult(items, total, page, limit);
   }
 
-  async findOne(organizationId: string, templateId: string, user: User): Promise<PrintTemplate> {
+  async findOne(
+    organizationId: string,
+    templateId: string,
+    user: User,
+  ): Promise<PrintTemplate> {
     await this.checkMembership(organizationId, user.id);
 
     const template = await this.printTemplateRepository.findOne({
@@ -145,20 +158,28 @@ export class PrintTemplatesService {
     Object.assign(template, updateDto);
     await this.printTemplateRepository.save(template);
 
-    this.logger.log(`Print template updated: ${template.name} (${template.id})`);
+    this.logger.log(
+      `Print template updated: ${template.name} (${template.id})`,
+    );
 
     await this.pushTemplatesToAgents(organizationId);
 
     return template;
   }
 
-  async remove(organizationId: string, templateId: string, user: User): Promise<void> {
+  async remove(
+    organizationId: string,
+    templateId: string,
+    user: User,
+  ): Promise<void> {
     await this.checkAdmin(organizationId, user.id);
 
     const template = await this.findOne(organizationId, templateId, user);
     await this.printTemplateRepository.remove(template);
 
-    this.logger.log(`Print template deleted: ${template.name} (${template.id})`);
+    this.logger.log(
+      `Print template deleted: ${template.name} (${template.id})`,
+    );
 
     await this.pushTemplatesToAgents(organizationId);
   }
@@ -208,7 +229,10 @@ export class PrintTemplatesService {
     );
   }
 
-  private async checkMembership(organizationId: string, userId: string): Promise<void> {
+  private async checkMembership(
+    organizationId: string,
+    userId: string,
+  ): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });

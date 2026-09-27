@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { SoftDeleteEntity } from './base.entity';
 import { numericTransformer } from '../transformers/numeric.transformer';
 import { Event } from './event.entity';
@@ -57,7 +64,14 @@ export class Product extends SoftDeleteEntity {
    * Umsatzsteuersatz in Prozent. Null bedeutet steuerfrei — das ist der
    * Standard, weil die meisten Organisationen hier Vereine sind.
    */
-  @Column({ name: 'tax_rate', type: 'decimal', precision: 5, scale: 2, default: 0, transformer: numericTransformer })
+  @Column({
+    name: 'tax_rate',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    default: 0,
+    transformer: numericTransformer,
+  })
   taxRate: number;
 
   @Column({ name: 'image_url', type: 'varchar', length: 500, nullable: true })
@@ -99,7 +113,9 @@ export class Product extends SoftDeleteEntity {
   @JoinColumn({ name: 'event_id' })
   event: Event;
 
-  @ManyToOne(() => Category, (category) => category.products, { onDelete: 'SET NULL' })
+  @ManyToOne(() => Category, (category) => category.products, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'category_id' })
   category: Category;
 

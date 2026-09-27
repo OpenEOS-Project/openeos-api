@@ -35,7 +35,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    const requestId = (request.headers['x-request-id'] as string) || response.getHeader('X-Request-Id') as string;
+    const requestId =
+      (request.headers['x-request-id'] as string) ||
+      (response.getHeader('X-Request-Id') as string);
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let errorCode: string = ErrorCodes.INTERNAL_ERROR;
@@ -52,7 +54,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
         // Check for custom error code
         if (responseObj.code && typeof responseObj.code === 'string') {
           errorCode = responseObj.code;
-          message = (responseObj.message as string) || ErrorMessages[errorCode as keyof typeof ErrorMessages] || message;
+          message =
+            (responseObj.message as string) ||
+            ErrorMessages[errorCode as keyof typeof ErrorMessages] ||
+            message;
         } else if (responseObj.message) {
           // Handle validation errors
           if (Array.isArray(responseObj.message)) {
@@ -92,7 +97,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         if (requestId) {
           scope.setTag('request_id', requestId);
         }
-        const user = (request as Request & { user?: { id: string; email: string } }).user;
+        const user = (
+          request as Request & { user?: { id: string; email: string } }
+        ).user;
         if (user) {
           scope.setUser({ id: user.id, email: user.email });
         }
@@ -111,7 +118,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
         `[${requestId}] ${request.method} ${request.url} - ${status} - ${message}${herkunft}`,
       );
       if (details && details.length > 0) {
-        this.logger.warn(`[${requestId}] Validation details: ${JSON.stringify(details)}`);
+        this.logger.warn(
+          `[${requestId}] Validation details: ${JSON.stringify(details)}`,
+        );
       }
     }
 
@@ -131,7 +140,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
     response.status(status).json(errorResponse);
   }
 
-  private mapStatusToErrorCode(status: HttpStatus, currentCode: string): string {
+  private mapStatusToErrorCode(
+    status: HttpStatus,
+    currentCode: string,
+  ): string {
     // Wenn bereits ein spezifischer Code gesetzt ist, diesen beibehalten
     if (currentCode !== ErrorCodes.INTERNAL_ERROR) {
       return currentCode;

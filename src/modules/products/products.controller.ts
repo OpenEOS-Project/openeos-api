@@ -42,7 +42,11 @@ export class ProductsController {
     @Body() importDto: ImportProductsDto,
     @CurrentUser() user: User,
   ) {
-    const result = await this.productsService.importProducts(eventId, importDto, user);
+    const result = await this.productsService.importProducts(
+      eventId,
+      importDto,
+      user,
+    );
     return { data: result };
   }
 
@@ -70,7 +74,11 @@ export class ProductsController {
     @Param('productId', ParseUUIDPipe) productId: string,
     @CurrentUser() user: User,
   ) {
-    const product = await this.productsService.findOne(eventId, productId, user);
+    const product = await this.productsService.findOne(
+      eventId,
+      productId,
+      user,
+    );
     return { data: product };
   }
 
@@ -81,7 +89,12 @@ export class ProductsController {
     @Body() updateDto: UpdateProductDto,
     @CurrentUser() user: User,
   ) {
-    const product = await this.productsService.update(eventId, productId, updateDto, user);
+    const product = await this.productsService.update(
+      eventId,
+      productId,
+      updateDto,
+      user,
+    );
     return { data: product };
   }
 

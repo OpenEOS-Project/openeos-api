@@ -12,7 +12,11 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { User, RefreshToken, UserPreferences } from '../../database/entities';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { UpdateProfileDto, UpdatePreferencesDto, RequestEmailChangeDto } from './dto';
+import {
+  UpdateProfileDto,
+  UpdatePreferencesDto,
+  RequestEmailChangeDto,
+} from './dto';
 
 const EMAIL_CHANGE_EXPIRY_HOURS = 24;
 
@@ -114,7 +118,10 @@ export class UsersService {
        traegt die angemeldete Sitzung allein. Sie zu sperren waere die
        Alternative — eine Adresse, die sich nie mehr aendern laesst. */
     if (user.passwordHash) {
-      const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+      const isPasswordValid = await bcrypt.compare(
+        dto.password,
+        user.passwordHash,
+      );
       if (!isPasswordValid) {
         throw new BadRequestException({
           code: ErrorCodes.INVALID_CREDENTIALS,
@@ -138,14 +145,19 @@ export class UsersService {
     const token = crypto.randomBytes(32).toString('hex');
 
     user.pendingEmail = dto.newEmail.toLowerCase();
-    user.pendingEmailToken = crypto.createHash('sha256').update(token).digest('hex');
+    user.pendingEmailToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
     user.pendingEmailExpiresAt = new Date(
       Date.now() + EMAIL_CHANGE_EXPIRY_HOURS * 60 * 60 * 1000,
     );
     await this.userRepository.save(user);
 
     // TODO: Send verification email
-    this.logger.log(`Email change requested for user: ${user.email} -> ${dto.newEmail}`);
+    this.logger.log(
+      `Email change requested for user: ${user.email} -> ${dto.newEmail}`,
+    );
     this.logger.log(`Verification token: ${token}`);
   }
 
@@ -166,7 +178,10 @@ export class UsersService {
       });
     }
 
-    if (!user.pendingEmailExpiresAt || user.pendingEmailExpiresAt < new Date()) {
+    if (
+      !user.pendingEmailExpiresAt ||
+      user.pendingEmailExpiresAt < new Date()
+    ) {
       throw new BadRequestException({
         code: ErrorCodes.TOKEN_EXPIRED,
         message: 'Verifizierungslink ist abgelaufen',
@@ -297,7 +312,10 @@ export class UsersService {
   /**
    * Revoke all other sessions
    */
-  async revokeAllOtherSessions(userId: string, currentTokenId?: string): Promise<number> {
+  async revokeAllOtherSessions(
+    userId: string,
+    currentTokenId?: string,
+  ): Promise<number> {
     const query = this.refreshTokenRepository
       .createQueryBuilder()
       .update()

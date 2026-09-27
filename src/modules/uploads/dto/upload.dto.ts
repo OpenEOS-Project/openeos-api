@@ -10,12 +10,19 @@ export enum UploadCategory {
 }
 
 export class UploadImageDto {
-  @ApiPropertyOptional({ example: 'product', description: 'Kategorie des Uploads', enum: UploadCategory })
+  @ApiPropertyOptional({
+    example: 'product',
+    description: 'Kategorie des Uploads',
+    enum: UploadCategory,
+  })
   @IsOptional()
   @IsEnum(UploadCategory)
   category?: UploadCategory;
 
-  @ApiPropertyOptional({ example: 'Produktbild für Wiener Schnitzel', description: 'Beschreibung des Uploads' })
+  @ApiPropertyOptional({
+    example: 'Produktbild für Wiener Schnitzel',
+    description: 'Beschreibung des Uploads',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(255)

@@ -88,18 +88,25 @@ export class ShiftReminderService {
     }
   }
 
-  private async sendReminderEmail(registration: ShiftRegistration, plan: ShiftPlan) {
+  private async sendReminderEmail(
+    registration: ShiftRegistration,
+    plan: ShiftPlan,
+  ) {
     try {
       const shift = registration.shift;
       const job = shift?.job;
 
       if (!shift || !job) {
-        this.logger.warn(`Missing shift or job for registration ${registration.id}`);
+        this.logger.warn(
+          `Missing shift or job for registration ${registration.id}`,
+        );
         return;
       }
 
       if (!registration.email) {
-        this.logger.debug(`Skipping reminder for registration ${registration.id} — no email address`);
+        this.logger.debug(
+          `Skipping reminder for registration ${registration.id} — no email address`,
+        );
         return;
       }
 
@@ -124,9 +131,14 @@ export class ShiftReminderService {
       registration.reminderSentAt = new Date();
       await this.registrationRepository.save(registration);
 
-      this.logger.log(`Sent reminder to ${registration.email} for shift on ${formattedDate}`);
+      this.logger.log(
+        `Sent reminder to ${registration.email} for shift on ${formattedDate}`,
+      );
     } catch (error) {
-      this.logger.error(`Failed to send reminder to ${registration.email}:`, error);
+      this.logger.error(
+        `Failed to send reminder to ${registration.email}:`,
+        error,
+      );
     }
   }
 
@@ -149,8 +161,14 @@ export class ShiftReminderService {
       for (const plan of plans) {
         const enabled = plan.settings?.verificationReminderEnabled ?? true;
         if (!enabled) continue;
-        const intervalH = Math.max(1, plan.settings?.verificationReminderIntervalHours ?? 24);
-        const maxCount = Math.max(0, plan.settings?.verificationReminderMaxCount ?? 5);
+        const intervalH = Math.max(
+          1,
+          plan.settings?.verificationReminderIntervalHours ?? 24,
+        );
+        const maxCount = Math.max(
+          0,
+          plan.settings?.verificationReminderMaxCount ?? 5,
+        );
         if (maxCount === 0) continue;
 
         const cutoff = new Date(Date.now() - intervalH * 60 * 60 * 1000);
@@ -163,28 +181,40 @@ export class ShiftReminderService {
           .innerJoin('reg.shift', 'shift')
           .innerJoin('shift.job', 'job')
           .where('job.shiftPlanId = :planId', { planId: plan.id })
-          .andWhere('reg.status = :status', { status: ShiftRegistrationStatus.PENDING_EMAIL })
+          .andWhere('reg.status = :status', {
+            status: ShiftRegistrationStatus.PENDING_EMAIL,
+          })
           .andWhere('reg.verificationReminderCount < :max', { max: maxCount })
-          .andWhere('(reg.lastVerificationReminderAt IS NULL OR reg.lastVerificationReminderAt < :cutoff)', { cutoff })
+          .andWhere(
+            '(reg.lastVerificationReminderAt IS NULL OR reg.lastVerificationReminderAt < :cutoff)',
+            { cutoff },
+          )
           .getMany();
 
         // Dedupe by registrationGroupId so a multi-shift signup gets ONE
         // mail per cycle, not one per shift.
         const byGroup = new Map<string, ShiftRegistration>();
         for (const c of candidates) {
-          if (!byGroup.has(c.registrationGroupId)) byGroup.set(c.registrationGroupId, c);
+          if (!byGroup.has(c.registrationGroupId))
+            byGroup.set(c.registrationGroupId, c);
         }
 
         for (const reg of byGroup.values()) {
           if (!reg.email) {
-            this.logger.debug(`Skipping verification reminder for registration ${reg.id} — no email address`);
+            this.logger.debug(
+              `Skipping verification reminder for registration ${reg.id} — no email address`,
+            );
             continue;
           }
           try {
             const verifyUrl = `${baseUrl}/s/verify/${reg.verificationToken}`;
             await this.emailService.sendVerificationReminderEmail(
-              reg.email, reg.name, plan.name, verifyUrl,
-              reg.verificationReminderCount + 1, maxCount,
+              reg.email,
+              reg.name,
+              plan.name,
+              verifyUrl,
+              reg.verificationReminderCount + 1,
+              maxCount,
             );
             // Bump the counter on every row of the helper's group so the
             // dedupe stays sane next cycle.
@@ -193,23 +223,30 @@ export class ShiftReminderService {
               .createQueryBuilder()
               .update(ShiftRegistration)
               .set({
-                verificationReminderCount: () => '"verification_reminder_count" + 1',
+                verificationReminderCount: () =>
+                  '"verification_reminder_count" + 1',
                 lastVerificationReminderAt: now,
               })
-              .where('registration_group_id = :gid', { gid: reg.registrationGroupId })
+              .where('registration_group_id = :gid', {
+                gid: reg.registrationGroupId,
+              })
               .execute();
             this.logger.log(
               `Verification reminder ${reg.verificationReminderCount + 1}/${maxCount} sent to ${reg.email}`,
             );
           } catch (err) {
-            this.logger.error(`Failed verification reminder for ${reg.email}: ${(err as Error).message}`);
+            this.logger.error(
+              `Failed verification reminder for ${reg.email}: ${(err as Error).message}`,
+            );
           }
         }
       }
 
       this.logger.log('Verification-reminder job completed');
     } catch (err) {
-      this.logger.error(`Verification-reminder job failed: ${(err as Error).message}`);
+      this.logger.error(
+        `Verification-reminder job failed: ${(err as Error).message}`,
+      );
     }
   }
 }

@@ -13,7 +13,10 @@ import {
   EVENT_UNLOCKED_BILLING_STATUSES,
   isEventBillingUnlocked,
 } from '../../database/entities/event.entity';
-import { Organization, BillingAddress } from '../../database/entities/organization.entity';
+import {
+  Organization,
+  BillingAddress,
+} from '../../database/entities/organization.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { User } from '../../database/entities';
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -103,17 +106,30 @@ export class EventBillingService {
   ) {}
 
   private async getOrganization(organizationId: string): Promise<Organization> {
-    const organization = await this.organizationRepository.findOne({ where: { id: organizationId } });
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
     if (!organization) {
-      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Organisation nicht gefunden' });
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Organisation nicht gefunden',
+      });
     }
     return organization;
   }
 
-  private async getEventInOrg(organizationId: string, eventId: string): Promise<Event> {
-    const event = await this.eventRepository.findOne({ where: { id: eventId, organizationId } });
+  private async getEventInOrg(
+    organizationId: string,
+    eventId: string,
+  ): Promise<Event> {
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId, organizationId },
+    });
     if (!event) {
-      throw new NotFoundException({ code: ErrorCodes.NOT_FOUND, message: 'Event nicht gefunden' });
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        message: 'Event nicht gefunden',
+      });
     }
     return event;
   }
@@ -124,7 +140,10 @@ export class EventBillingService {
    * ("waived") zaehlen bewusst nicht mit: wer nie etwas gezahlt hat, ist
    * beim ersten Kauf noch Neukunde.
    */
-  private async hasBilledEventBefore(organizationId: string, currentEventId: string): Promise<boolean> {
+  private async hasBilledEventBefore(
+    organizationId: string,
+    currentEventId: string,
+  ): Promise<boolean> {
     const count = await this.eventRepository
       .createQueryBuilder('event')
       /* Auch geloeschte zaehlen. Sonst liesse sich der
@@ -133,7 +152,9 @@ export class EventBillingService {
       .withDeleted()
       .where('event.organizationId = :organizationId', { organizationId })
       .andWhere('event.id != :currentEventId', { currentEventId })
-      .andWhere('event.billingStatus IN (:...statuses)', { statuses: [...EVENT_PAID_BILLING_STATUSES] })
+      .andWhere('event.billingStatus IN (:...statuses)', {
+        statuses: [...EVENT_PAID_BILLING_STATUSES],
+      })
       .getCount();
     return count > 0;
   }
@@ -152,19 +173,30 @@ export class EventBillingService {
     event: Event,
     isFirstBilledEvent: boolean,
   ): EventPrice {
-    const defaultPrice = this.configService.get<number>('billing.eventPriceEur', 25);
+    const defaultPrice = this.configService.get<number>(
+      'billing.eventPriceEur',
+      25,
+    );
     const pricePerDay =
-      organization.eventPriceOverride !== null && organization.eventPriceOverride !== undefined
+      organization.eventPriceOverride !== null &&
+      organization.eventPriceOverride !== undefined
         ? Number(organization.eventPriceOverride)
         : defaultPrice;
 
-    const days = countEventDays(event.startDate, event.endDate, organization.settings?.timezone || 'Europe/Berlin');
+    const days = countEventDays(
+      event.startDate,
+      event.endDate,
+      organization.settings?.timezone || 'Europe/Berlin',
+    );
     const price = Math.round(pricePerDay * days * 100) / 100;
 
     const discountStillValid =
-      !organization.discountValidUntil || new Date(organization.discountValidUntil) >= new Date();
+      !organization.discountValidUntil ||
+      new Date(organization.discountValidUntil) >= new Date();
     const organizationPercent =
-      discountStillValid && organization.discountPercent ? Number(organization.discountPercent) : 0;
+      discountStillValid && organization.discountPercent
+        ? Number(organization.discountPercent)
+        : 0;
 
     const firstEventPercent = isFirstBilledEvent
       ? this.configService.get<number>('billing.firstEventDiscountPercent', 20)
@@ -173,17 +205,34 @@ export class EventBillingService {
     const discountPercent = Math.max(organizationPercent, firstEventPercent);
     let discountReason: DiscountReason = null;
     if (discountPercent > 0) {
-      discountReason = organizationPercent >= firstEventPercent ? 'organization' : 'first-event';
+      discountReason =
+        organizationPercent >= firstEventPercent
+          ? 'organization'
+          : 'first-event';
     }
 
-    const finalPrice = Math.round(price * (1 - discountPercent / 100) * 100) / 100;
+    const finalPrice =
+      Math.round(price * (1 - discountPercent / 100) * 100) / 100;
 
-    return { pricePerDay, days, price, discountPercent, discountReason, finalPrice };
+    return {
+      pricePerDay,
+      days,
+      price,
+      discountPercent,
+      discountReason,
+      finalPrice,
+    };
   }
 
   /** Preis inklusive der Abfrage, ob es die erste bezahlte Veranstaltung ist. */
-  private async resolvePrice(organization: Organization, event: Event): Promise<EventPrice> {
-    const isFirstBilledEvent = !(await this.hasBilledEventBefore(organization.id, event.id));
+  private async resolvePrice(
+    organization: Organization,
+    event: Event,
+  ): Promise<EventPrice> {
+    const isFirstBilledEvent = !(await this.hasBilledEventBefore(
+      organization.id,
+      event.id,
+    ));
     return this.computePrice(organization, event, isFirstBilledEvent);
   }
 
@@ -206,7 +255,11 @@ export class EventBillingService {
     endDate: string | undefined,
     user: User,
   ): Promise<EventPricePreview> {
-    await this.organizationsService.checkPermission(organizationId, user, 'events');
+    await this.organizationsService.checkPermission(
+      organizationId,
+      user,
+      'events',
+    );
 
     const organization = await this.getOrganization(organizationId);
     /* Die Rechnung braucht vom Ereignis nur den Zeitraum. Eine leere Id
@@ -216,19 +269,33 @@ export class EventBillingService {
       endDate: endDate ? new Date(endDate) : new Date(startDate),
     } as Event;
 
-    const istErste = !(await this.hasBilledEventBefore(organizationId, NICHTS_AUSSCHLIESSEN));
+    const istErste = !(await this.hasBilledEventBefore(
+      organizationId,
+      NICHTS_AUSSCHLIESSEN,
+    ));
 
     return {
       ...this.computePrice(organization, entwurf, istErste),
       /* Mitgeliefert, damit die Oberflaeche "kostenlos ausprobieren" mit
          der tatsaechlichen Grenze beschriften kann statt mit einer
          zweiten, irgendwann abweichenden 25. */
-      testEventMaxOrders: this.configService.get<number>('billing.testEventMaxOrders', 25),
+      testEventMaxOrders: this.configService.get<number>(
+        'billing.testEventMaxOrders',
+        25,
+      ),
     };
   }
 
-  async getBillingInfo(organizationId: string, eventId: string, user: User): Promise<EventBillingInfo> {
-    await this.organizationsService.checkPermission(organizationId, user, 'events');
+  async getBillingInfo(
+    organizationId: string,
+    eventId: string,
+    user: User,
+  ): Promise<EventBillingInfo> {
+    await this.organizationsService.checkPermission(
+      organizationId,
+      user,
+      'events',
+    );
 
     const event = await this.getEventInOrg(organizationId, eventId);
     const organization = await this.getOrganization(organizationId);
@@ -251,7 +318,11 @@ export class EventBillingService {
     dto: OrderInvoiceDto,
     user: User,
   ): Promise<Event> {
-    await this.organizationsService.checkRole(organizationId, user, OrganizationRole.ADMIN);
+    await this.organizationsService.checkRole(
+      organizationId,
+      user,
+      OrganizationRole.ADMIN,
+    );
 
     const event = await this.getEventInOrg(organizationId, eventId);
     const organization = await this.getOrganization(organizationId);
@@ -292,9 +363,16 @@ export class EventBillingService {
     // Best-effort admin notification — failures are only logged, never block
     // the order-invoice flow that already succeeded above.
     try {
-      await this.notifyAdminOfEventOrdered(organization, event, finalPrice, 'invoice');
+      await this.notifyAdminOfEventOrdered(
+        organization,
+        event,
+        finalPrice,
+        'invoice',
+      );
     } catch (error) {
-      this.logger.warn(`Failed to send admin event-ordered notification: ${(error as Error).message}`);
+      this.logger.warn(
+        `Failed to send admin event-ordered notification: ${(error as Error).message}`,
+      );
     }
 
     return event;
@@ -314,7 +392,10 @@ export class EventBillingService {
     /* Derselbe Schalter fuer beide Wege: aus Betreibersicht ist es ein
        Ereignis — jemand hat eine Veranstaltung gekauft. Wie bezahlt
        wurde, steht in der Mail, nicht in den Einstellungen. */
-    const notifyEmail = await this.platformSettingsService.resolveNotificationTarget('eventOrdered');
+    const notifyEmail =
+      await this.platformSettingsService.resolveNotificationTarget(
+        'eventOrdered',
+      );
     if (!notifyEmail) {
       return;
     }
@@ -348,7 +429,11 @@ export class EventBillingService {
     eventId: string,
     user: User,
   ): Promise<{ checkoutUrl: string }> {
-    await this.organizationsService.checkRole(organizationId, user, OrganizationRole.ADMIN);
+    await this.organizationsService.checkRole(
+      organizationId,
+      user,
+      OrganizationRole.ADMIN,
+    );
 
     const event = await this.getEventInOrg(organizationId, eventId);
     const organization = await this.getOrganization(organizationId);
@@ -375,8 +460,12 @@ export class EventBillingService {
       await this.organizationRepository.save(organization);
     }
 
-    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3001';
-    const dayLabel = price.days === 1 ? '1 Veranstaltungstag' : `${price.days} Veranstaltungstage`;
+    const appUrl =
+      this.configService.get<string>('APP_URL') || 'http://localhost:3001';
+    const dayLabel =
+      price.days === 1
+        ? '1 Veranstaltungstag'
+        : `${price.days} Veranstaltungstage`;
 
     const session = await this.stripeService.createCheckoutSession({
       customerId,
@@ -399,7 +488,9 @@ export class EventBillingService {
     event.stripeCheckoutSessionId = session.id;
     await this.eventRepository.save(event);
 
-    this.logger.log(`Stripe checkout ${session.id} created for event ${event.id} (${price.finalPrice} ${currency})`);
+    this.logger.log(
+      `Stripe checkout ${session.id} created for event ${event.id} (${price.finalPrice} ${currency})`,
+    );
 
     return { checkoutUrl: session.url };
   }
@@ -416,19 +507,27 @@ export class EventBillingService {
     const session = await this.stripeService.getCheckoutSession(sessionId);
 
     if (session.payment_status !== 'paid') {
-      this.logger.warn(`Stripe session ${sessionId} ist nicht bezahlt (${session.payment_status})`);
+      this.logger.warn(
+        `Stripe session ${sessionId} ist nicht bezahlt (${session.payment_status})`,
+      );
       return null;
     }
 
     const eventId = session.metadata?.eventId;
     if (!eventId) {
-      this.logger.warn(`Stripe session ${sessionId} ohne eventId in den Metadaten`);
+      this.logger.warn(
+        `Stripe session ${sessionId} ohne eventId in den Metadaten`,
+      );
       return null;
     }
 
-    const event = await this.eventRepository.findOne({ where: { id: eventId } });
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+    });
     if (!event) {
-      this.logger.warn(`Stripe session ${sessionId} verweist auf unbekanntes Event ${eventId}`);
+      this.logger.warn(
+        `Stripe session ${sessionId} verweist auf unbekanntes Event ${eventId}`,
+      );
       return null;
     }
 
@@ -445,7 +544,10 @@ export class EventBillingService {
        schickten eine Mail. So gewinnt genau einer die Zeile, und nur wer
        sie gewonnen hat, benachrichtigt. */
     const ergebnis = await this.eventRepository.update(
-      { id: event.id, billingStatus: Not(In([...EVENT_UNLOCKED_BILLING_STATUSES])) },
+      {
+        id: event.id,
+        billingStatus: Not(In([...EVENT_UNLOCKED_BILLING_STATUSES])),
+      },
       {
         billingStatus: 'paid',
         paidAt: bezahltAm,
@@ -464,7 +566,9 @@ export class EventBillingService {
     event.stripeCheckoutSessionId = session.id;
     event.priceCharged = betrag;
 
-    this.logger.log(`Event ${event.id} bezahlt über Stripe (${event.priceCharged})`);
+    this.logger.log(
+      `Event ${event.id} bezahlt über Stripe (${event.priceCharged})`,
+    );
 
     // Best-effort wie beim Rechnungsweg: eine gescheiterte Mail darf eine
     // verbuchte Zahlung nicht zurueckdrehen.
@@ -473,7 +577,12 @@ export class EventBillingService {
         where: { id: event.organizationId },
       });
       if (organization) {
-        await this.notifyAdminOfEventOrdered(organization, event, betrag, 'stripe');
+        await this.notifyAdminOfEventOrdered(
+          organization,
+          event,
+          betrag,
+          'stripe',
+        );
       }
     } catch (error) {
       this.logger.warn(
@@ -490,15 +599,25 @@ export class EventBillingService {
    * Sekunden spaeter — und so lange soll niemand auf eine Seite starren, die
    * "noch nicht bezahlt" sagt, obwohl gerade bezahlt wurde.
    */
-  async syncStripePayment(organizationId: string, eventId: string, user: User): Promise<EventBillingInfo> {
-    await this.organizationsService.checkPermission(organizationId, user, 'events');
+  async syncStripePayment(
+    organizationId: string,
+    eventId: string,
+    user: User,
+  ): Promise<EventBillingInfo> {
+    await this.organizationsService.checkPermission(
+      organizationId,
+      user,
+      'events',
+    );
 
     const event = await this.getEventInOrg(organizationId, eventId);
     if (event.stripeCheckoutSessionId && event.billingStatus === 'pending') {
       try {
         await this.settleStripePayment(event.stripeCheckoutSessionId);
       } catch (error) {
-        this.logger.warn(`Stripe-Abgleich für Event ${eventId} fehlgeschlagen: ${(error as Error).message}`);
+        this.logger.warn(
+          `Stripe-Abgleich für Event ${eventId} fehlgeschlagen: ${(error as Error).message}`,
+        );
       }
     }
 
@@ -515,21 +634,32 @@ export class EventBillingService {
    * Ohne Stripe-Kunden hat die Organisation noch nie online bezahlt — dann
    * ist die Liste leer, und das ist kein Fehler.
    */
-  async listInvoices(organizationId: string, user: User): Promise<OrganizationInvoice[]> {
-    await this.organizationsService.checkRole(organizationId, user, OrganizationRole.ADMIN);
+  async listInvoices(
+    organizationId: string,
+    user: User,
+  ): Promise<OrganizationInvoice[]> {
+    await this.organizationsService.checkRole(
+      organizationId,
+      user,
+      OrganizationRole.ADMIN,
+    );
 
     const organization = await this.getOrganization(organizationId);
     if (!organization.stripeCustomerId || !this.stripeService.isConfigured) {
       return [];
     }
 
-    const invoices = await this.stripeService.listInvoices(organization.stripeCustomerId);
+    const invoices = await this.stripeService.listInvoices(
+      organization.stripeCustomerId,
+    );
 
     return invoices.map((invoice) => ({
       id: invoice.id ?? '',
       number: invoice.number ?? null,
       // Stripe zählt in Sekunden, der Rest der Anwendung in Millisekunden.
-      issuedAt: invoice.created ? new Date(invoice.created * 1000).toISOString() : null,
+      issuedAt: invoice.created
+        ? new Date(invoice.created * 1000).toISOString()
+        : null,
       total: (invoice.total ?? 0) / 100,
       currency: (invoice.currency ?? 'eur').toUpperCase(),
       status: invoice.status ?? 'draft',
@@ -554,13 +684,23 @@ export class EventBillingService {
     invoiceId: string,
     user: User,
   ): Promise<{ filename: string; content: Buffer }> {
-    await this.organizationsService.checkRole(organizationId, user, OrganizationRole.ADMIN);
+    await this.organizationsService.checkRole(
+      organizationId,
+      user,
+      OrganizationRole.ADMIN,
+    );
 
     const organization = await this.getOrganization(organizationId);
     const invoice = await this.stripeService.getInvoice(invoiceId);
 
-    const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
-    if (!organization.stripeCustomerId || customerId !== organization.stripeCustomerId) {
+    const customerId =
+      typeof invoice.customer === 'string'
+        ? invoice.customer
+        : invoice.customer?.id;
+    if (
+      !organization.stripeCustomerId ||
+      customerId !== organization.stripeCustomerId
+    ) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
         message: 'Rechnung nicht gefunden',
@@ -574,12 +714,22 @@ export class EventBillingService {
       });
     }
 
-    const content = await this.stripeService.fetchInvoicePdf(invoice.invoice_pdf);
+    const content = await this.stripeService.fetchInvoicePdf(
+      invoice.invoice_pdf,
+    );
     return { filename: `${invoice.number ?? invoice.id}.pdf`, content };
   }
 
-  async companySearch(organizationId: string, query: string, user: User): Promise<CompanySearchResult> {
-    await this.organizationsService.checkPermission(organizationId, user, 'events');
+  async companySearch(
+    organizationId: string,
+    query: string,
+    user: User,
+  ): Promise<CompanySearchResult> {
+    await this.organizationsService.checkPermission(
+      organizationId,
+      user,
+      'events',
+    );
 
     const apiKey = this.configService.get<string>('billing.openRegisterApiKey');
     if (!apiKey) {
@@ -602,7 +752,9 @@ export class EventBillingService {
       });
 
       if (!response.ok) {
-        this.logger.warn(`OpenRegister company search failed: HTTP ${response.status}`);
+        this.logger.warn(
+          `OpenRegister company search failed: HTTP ${response.status}`,
+        );
         return { enabled: true, results: [] };
       }
 
@@ -614,17 +766,25 @@ export class EventBillingService {
         }>;
       };
 
-      const results: CompanySearchResultItem[] = (body.results ?? []).map((r) => ({
-        name: r.name ?? '',
-        registerNumber: r.register_number,
-        address: r.address
-          ? { street: r.address.street, zip: r.address.postal_code, city: r.address.city }
-          : undefined,
-      }));
+      const results: CompanySearchResultItem[] = (body.results ?? []).map(
+        (r) => ({
+          name: r.name ?? '',
+          registerNumber: r.register_number,
+          address: r.address
+            ? {
+                street: r.address.street,
+                zip: r.address.postal_code,
+                city: r.address.city,
+              }
+            : undefined,
+        }),
+      );
 
       return { enabled: true, results };
     } catch (error) {
-      this.logger.warn(`OpenRegister company search errored: ${(error as Error).message}`);
+      this.logger.warn(
+        `OpenRegister company search errored: ${(error as Error).message}`,
+      );
       return { enabled: true, results: [] };
     } finally {
       clearTimeout(timeout);

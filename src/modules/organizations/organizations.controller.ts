@@ -11,7 +11,12 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { OrganizationsService } from './organizations.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { DevicesService } from '../devices/devices.service';
@@ -43,15 +48,15 @@ export class OrganizationsController {
     @Body() createDto: CreateOrganizationDto,
     @CurrentUser() user: User,
   ) {
-    const organization = await this.organizationsService.create(createDto, user);
+    const organization = await this.organizationsService.create(
+      createDto,
+      user,
+    );
     return { data: organization };
   }
 
   @Get()
-  async findAll(
-    @CurrentUser() user: User,
-    @Query() pagination: PaginationDto,
-  ) {
+  async findAll(@CurrentUser() user: User, @Query() pagination: PaginationDto) {
     return this.organizationsService.findAll(user, pagination);
   }
 
@@ -70,7 +75,11 @@ export class OrganizationsController {
     @Body() updateDto: UpdateOrganizationDto,
     @CurrentUser() user: User,
   ) {
-    const organization = await this.organizationsService.update(id, updateDto, user);
+    const organization = await this.organizationsService.update(
+      id,
+      updateDto,
+      user,
+    );
     return { data: organization };
   }
 
@@ -99,7 +108,11 @@ export class OrganizationsController {
     @Body() addMemberDto: AddMemberDto,
     @CurrentUser() user: User,
   ) {
-    const member = await this.organizationsService.addMember(id, addMemberDto, user);
+    const member = await this.organizationsService.addMember(
+      id,
+      addMemberDto,
+      user,
+    );
     return { data: member };
   }
 
@@ -110,7 +123,12 @@ export class OrganizationsController {
     @Body() updateDto: UpdateMemberDto,
     @CurrentUser() user: User,
   ) {
-    const member = await this.organizationsService.updateMember(id, memberId, updateDto, user);
+    const member = await this.organizationsService.updateMember(
+      id,
+      memberId,
+      updateDto,
+      user,
+    );
     return { data: member };
   }
 
@@ -153,7 +171,10 @@ export class OrganizationsController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
   ) {
-    const invitations = await this.organizationsService.getInvitations(id, user);
+    const invitations = await this.organizationsService.getInvitations(
+      id,
+      user,
+    );
     return { data: invitations };
   }
 
@@ -163,7 +184,11 @@ export class OrganizationsController {
     @Body() createDto: CreateInvitationDto,
     @CurrentUser() user: User,
   ) {
-    const invitation = await this.organizationsService.createInvitation(id, createDto, user);
+    const invitation = await this.organizationsService.createInvitation(
+      id,
+      createDto,
+      user,
+    );
     return { data: invitation };
   }
 
@@ -189,16 +214,25 @@ export class OrganizationsController {
 
   // Broadcast Messages
   @Post(':id/broadcast')
-  @ApiOperation({ summary: 'Broadcast message to all devices', description: 'Send a message to all connected devices in the organization' })
+  @ApiOperation({
+    summary: 'Broadcast message to all devices',
+    description: 'Send a message to all connected devices in the organization',
+  })
   @ApiResponse({ status: 201, description: 'Message broadcasted' })
-  @ApiResponse({ status: 403, description: 'Forbidden - not a member or insufficient permissions' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - not a member or insufficient permissions',
+  })
   async broadcastMessage(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() broadcastDto: BroadcastMessageDto,
     @CurrentUser() user: User,
   ) {
     // Verify user has access to this organization (admin or manager)
-    await this.organizationsService.verifyMemberAccess(id, user, ['admin', 'manager']);
+    await this.organizationsService.verifyMemberAccess(id, user, [
+      'admin',
+      'manager',
+    ]);
 
     const broadcast = this.gatewayService.broadcastMessage(id, {
       message: broadcastDto.message,
@@ -222,7 +256,8 @@ export class InvitationsController {
   @Public()
   @Get(':token')
   async getInvitation(@Param('token') token: string) {
-    const invitation = await this.organizationsService.getInvitationByToken(token);
+    const invitation =
+      await this.organizationsService.getInvitationByToken(token);
     return {
       data: {
         email: invitation.email,
@@ -238,7 +273,10 @@ export class InvitationsController {
     @Param('token') token: string,
     @CurrentUser() user: User,
   ) {
-    const membership = await this.organizationsService.acceptInvitation(token, user);
+    const membership = await this.organizationsService.acceptInvitation(
+      token,
+      user,
+    );
     return { data: membership };
   }
 

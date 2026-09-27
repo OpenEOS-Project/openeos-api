@@ -105,18 +105,23 @@ export class AppGateway
             id: payload.sub,
             email: payload.email,
           };
-          this.logger.log(`User connected: ${client.user.email} (${client.id})`);
+          this.logger.log(
+            `User connected: ${client.user.email} (${client.id})`,
+          );
           client.emit(GatewayEvents.CONNECTED, { userId: client.user.id });
           return;
         }
       }
 
       // Try device token authentication
-      const deviceToken = client.handshake.auth?.deviceToken ||
-                          client.handshake.query?.deviceToken;
+      const deviceToken =
+        client.handshake.auth?.deviceToken ||
+        client.handshake.query?.deviceToken;
 
       if (deviceToken) {
-        const device = await this.devicesService.findByToken(deviceToken as string);
+        const device = await this.devicesService.findByToken(
+          deviceToken as string,
+        );
         if (device) {
           // Printer agents can connect without an organization (waiting for assignment)
           const hasOrg = !!device.organizationId;
@@ -149,7 +154,10 @@ export class AppGateway
           await this.devicesService.updateLastSeen(deviceToken as string);
 
           this.logger.log(`Device connected: ${device.name} (${client.id})`);
-          client.emit(GatewayEvents.CONNECTED, { deviceId: device.id, hasOrganization: hasOrg });
+          client.emit(GatewayEvents.CONNECTED, {
+            deviceId: device.id,
+            hasOrganization: hasOrg,
+          });
 
           // Re-deliver print jobs that were queued while the agent was offline
           if (device.type === DeviceType.PRINTER_AGENT && hasOrg) {
@@ -178,7 +186,9 @@ export class AppGateway
     if (client.user) {
       this.logger.log(`User disconnected: ${client.user.email} (${client.id})`);
     } else if (client.device) {
-      this.logger.log(`Device disconnected: ${client.device.id} (${client.id})`);
+      this.logger.log(
+        `Device disconnected: ${client.device.id} (${client.id})`,
+      );
     } else {
       this.logger.log(`Client disconnected: ${client.id}`);
     }
@@ -290,7 +300,10 @@ export class AppGateway
       return { error: 'posDeviceId required' };
     }
 
-    const room = this.posCartRoom(client.device.organizationId, payload.posDeviceId);
+    const room = this.posCartRoom(
+      client.device.organizationId,
+      payload.posDeviceId,
+    );
     client.join(room);
     this.logger.debug(`Device ${client.device.id} watches POS cart: ${room}`);
 
@@ -318,7 +331,9 @@ export class AppGateway
       return { error: 'posDeviceId required' };
     }
 
-    client.leave(this.posCartRoom(client.device.organizationId, payload.posDeviceId));
+    client.leave(
+      this.posCartRoom(client.device.organizationId, payload.posDeviceId),
+    );
     return { success: true };
   }
 
@@ -373,18 +388,26 @@ export class AppGateway
         );
         return { error: 'Job not found' };
       }
-      this.logger.log(`Print job completed: ${payload.jobId} (agent: ${payload.agentId})`);
+      this.logger.log(
+        `Print job completed: ${payload.jobId} (agent: ${payload.agentId})`,
+      );
 
       // Notify organization about status change
-      this.emitToOrganization(client.device.organizationId, GatewayEvents.PRINT_JOB_STATUS_CHANGED, {
-        jobId: payload.jobId,
-        printerId: job.printerId,
-        status: PrintJobStatus.COMPLETED,
-      });
+      this.emitToOrganization(
+        client.device.organizationId,
+        GatewayEvents.PRINT_JOB_STATUS_CHANGED,
+        {
+          jobId: payload.jobId,
+          printerId: job.printerId,
+          status: PrintJobStatus.COMPLETED,
+        },
+      );
 
       return { success: true };
     } catch (error) {
-      this.logger.error(`Failed to update job ${payload.jobId}: ${error.message}`);
+      this.logger.error(
+        `Failed to update job ${payload.jobId}: ${error.message}`,
+      );
       return { error: 'Failed to update job status' };
     }
   }
@@ -411,19 +434,27 @@ export class AppGateway
         );
         return { error: 'Job not found' };
       }
-      this.logger.warn(`Print job failed: ${payload.jobId} - ${payload.errorCode}: ${payload.errorMessage}`);
+      this.logger.warn(
+        `Print job failed: ${payload.jobId} - ${payload.errorCode}: ${payload.errorMessage}`,
+      );
 
       // Notify organization about status change
-      this.emitToOrganization(client.device.organizationId, GatewayEvents.PRINT_JOB_STATUS_CHANGED, {
-        jobId: payload.jobId,
-        printerId: job.printerId,
-        status: PrintJobStatus.FAILED,
-        error: `${payload.errorCode}: ${payload.errorMessage}`,
-      });
+      this.emitToOrganization(
+        client.device.organizationId,
+        GatewayEvents.PRINT_JOB_STATUS_CHANGED,
+        {
+          jobId: payload.jobId,
+          printerId: job.printerId,
+          status: PrintJobStatus.FAILED,
+          error: `${payload.errorCode}: ${payload.errorMessage}`,
+        },
+      );
 
       return { success: true };
     } catch (error) {
-      this.logger.error(`Failed to update job ${payload.jobId}: ${error.message}`);
+      this.logger.error(
+        `Failed to update job ${payload.jobId}: ${error.message}`,
+      );
       return { error: 'Failed to update job status' };
     }
   }
@@ -434,7 +465,12 @@ export class AppGateway
     this.server.to(`org:${organizationId}`).emit(event, data);
   }
 
-  emitToEvent(organizationId: string, eventId: string, event: string, data: unknown) {
+  emitToEvent(
+    organizationId: string,
+    eventId: string,
+    event: string,
+    data: unknown,
+  ) {
     this.server.to(`org:${organizationId}:event:${eventId}`).emit(event, data);
   }
 
@@ -442,7 +478,12 @@ export class AppGateway
     this.server.emit(event, data);
   }
 
-  emitToDevice(organizationId: string, deviceId: string, event: string, data: unknown) {
+  emitToDevice(
+    organizationId: string,
+    deviceId: string,
+    event: string,
+    data: unknown,
+  ) {
     const roomName = `org:${organizationId}:device:${deviceId}`;
     this.server.to(roomName).emit(event, data);
     this.logger.debug(`Emitted ${event} to device room ${roomName}`);
@@ -475,7 +516,9 @@ export class AppGateway
   // Redis adapter resolves across all replicas — no in-process state.
 
   async getOnlineDeviceIds(organizationId: string): Promise<string[]> {
-    const sockets = await this.server.in(`org:${organizationId}`).fetchSockets();
+    const sockets = await this.server
+      .in(`org:${organizationId}`)
+      .fetchSockets();
     const ids = new Set<string>();
     for (const socket of sockets) {
       const deviceId = socket.data?.deviceId as string | undefined;
@@ -555,13 +598,20 @@ export class AppGateway
     if (authHeader && authHeader.startsWith('Bearer ')) {
       return authHeader.substring(7);
     }
-    return client.handshake.auth?.token || client.handshake.query?.token || null;
+    return (
+      client.handshake.auth?.token || client.handshake.query?.token || null
+    );
   }
 
-  private async verifyToken(token: string): Promise<{ sub: string; email: string } | null> {
+  private async verifyToken(
+    token: string,
+  ): Promise<{ sub: string; email: string } | null> {
     try {
       const secret = this.configService.get<string>('jwt.secret');
-      const payload = await this.jwtService.verifyAsync<{ sub: string; email: string }>(token, { secret });
+      const payload = await this.jwtService.verifyAsync<{
+        sub: string;
+        email: string;
+      }>(token, { secret });
       return payload;
     } catch {
       return null;

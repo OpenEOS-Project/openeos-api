@@ -9,10 +9,15 @@ import {
   IsObject,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { PrinterType, PrinterConnectionType } from '../../../database/entities/printer.entity';
+import {
+  PrinterType,
+  PrinterConnectionType,
+} from '../../../database/entities/printer.entity';
 
 export class AssignPrinterDeviceDto {
-  @ApiProperty({ description: 'ID of the unassigned printer-agent device to assign' })
+  @ApiProperty({
+    description: 'ID of the unassigned printer-agent device to assign',
+  })
   @IsUUID()
   deviceId: string;
 
@@ -28,11 +33,16 @@ export class AssignPrinterDeviceDto {
   @IsEnum(PrinterType)
   type: PrinterType;
 
-  @ApiProperty({ enum: PrinterConnectionType, description: 'How the agent reaches the printer' })
+  @ApiProperty({
+    enum: PrinterConnectionType,
+    description: 'How the agent reaches the printer',
+  })
   @IsEnum(PrinterConnectionType)
   connectionType: PrinterConnectionType;
 
-  @ApiPropertyOptional({ description: 'Connection config (IP/port for network, USB ids, ...)' })
+  @ApiPropertyOptional({
+    description: 'Connection config (IP/port for network, USB ids, ...)',
+  })
   @IsOptional()
   @IsObject()
   connectionConfig?: Record<string, unknown>;

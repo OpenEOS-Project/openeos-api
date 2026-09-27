@@ -55,12 +55,24 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(req: Request, payload: JwtPayload): Promise<User & { organizations: { id: string; role: string }[]; isSuperadmin: boolean }> {
+  async validate(
+    req: Request,
+    payload: JwtPayload,
+  ): Promise<
+    User & {
+      organizations: { id: string; role: string }[];
+      isSuperadmin: boolean;
+    }
+  > {
     /* Abgemeldete Token abweisen. Ohne diese Pruefung blieb ein Token nach
        dem Abmelden bis zum Ablauf gueltig — die Sperre wurde zwar
        geschrieben, aber nirgends gelesen. */
-    const token = ExtractJwt.fromAuthHeaderAsBearerToken()(req) ?? extractFromCookie(req);
-    if (token && (await this.cacheManager.get(gesperrterTokenSchluessel(token)))) {
+    const token =
+      ExtractJwt.fromAuthHeaderAsBearerToken()(req) ?? extractFromCookie(req);
+    if (
+      token &&
+      (await this.cacheManager.get(gesperrterTokenSchluessel(token)))
+    ) {
       throw new UnauthorizedException('Sitzung wurde beendet');
     }
 

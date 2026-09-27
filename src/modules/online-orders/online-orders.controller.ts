@@ -12,7 +12,13 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiSecurity } from '@nestjs/swagger';
 import { OnlineOrdersService } from './online-orders.service';
-import { StartSessionDto, AddCartItemDto, UpdateCartItemDto, SubmitOrderDto, CreateOnlinePaymentDto } from './dto';
+import {
+  StartSessionDto,
+  AddCartItemDto,
+  UpdateCartItemDto,
+  SubmitOrderDto,
+  CreateOnlinePaymentDto,
+} from './dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes } from '../../common/constants/error-codes';
 
@@ -45,8 +51,12 @@ export class OnlineOrdersController {
     return {
       data: {
         sessionToken: result.sessionToken,
-        eventName: (result.session as unknown as { event?: { name?: string } }).event?.name || null,
-        organizationName: (result.session as unknown as { organization?: { name?: string } }).organization?.name || null,
+        eventName:
+          (result.session as unknown as { event?: { name?: string } }).event
+            ?.name || null,
+        organizationName:
+          (result.session as unknown as { organization?: { name?: string } })
+            .organization?.name || null,
         session: {
           id: result.session.id,
           tableNumber: result.session.tableNumber,
@@ -68,10 +78,12 @@ export class OnlineOrdersController {
         status: session.status,
         cart: session.cart,
         expiresAt: session.expiresAt,
-        organization: session.organization ? {
-          id: session.organization.id,
-          name: session.organization.name,
-        } : null,
+        organization: session.organization
+          ? {
+              id: session.organization.id,
+              name: session.organization.name,
+            }
+          : null,
       },
     };
   }
@@ -91,7 +103,10 @@ export class OnlineOrdersController {
     @Body() addDto: AddCartItemDto,
   ) {
     const sessionToken = this.getSessionToken(headers);
-    const session = await this.onlineOrdersService.addToCart(sessionToken, addDto);
+    const session = await this.onlineOrdersService.addToCart(
+      sessionToken,
+      addDto,
+    );
     return {
       data: {
         cart: session.cart,
@@ -106,7 +121,11 @@ export class OnlineOrdersController {
     @Body() updateDto: UpdateCartItemDto,
   ) {
     const sessionToken = this.getSessionToken(headers);
-    const session = await this.onlineOrdersService.updateCartItem(sessionToken, index, updateDto);
+    const session = await this.onlineOrdersService.updateCartItem(
+      sessionToken,
+      index,
+      updateDto,
+    );
     return {
       data: {
         cart: session.cart,
@@ -131,7 +150,10 @@ export class OnlineOrdersController {
     @Body() submitDto: SubmitOrderDto,
   ) {
     const sessionToken = this.getSessionToken(headers);
-    const order = await this.onlineOrdersService.submitOrder(sessionToken, submitDto);
+    const order = await this.onlineOrdersService.submitOrder(
+      sessionToken,
+      submitDto,
+    );
     return {
       data: {
         orderId: order.id,
@@ -139,13 +161,14 @@ export class OnlineOrdersController {
         dailyNumber: order.dailyNumber,
         status: order.status,
         total: order.total,
-        items: order.items?.map(item => ({
-          id: item.id,
-          productName: item.productName,
-          quantity: item.quantity,
-          totalPrice: item.totalPrice,
-          status: item.status,
-        })) || [],
+        items:
+          order.items?.map((item) => ({
+            id: item.id,
+            productName: item.productName,
+            quantity: item.quantity,
+            totalPrice: item.totalPrice,
+            status: item.status,
+          })) || [],
       },
     };
   }
@@ -165,7 +188,11 @@ export class OnlineOrdersController {
     @Body() body: { paymentId: string; providerOrderId: string },
   ) {
     const sessionToken = this.getSessionToken(headers);
-    return this.onlineOrdersService.confirmPayment(sessionToken, body.paymentId, body.providerOrderId);
+    return this.onlineOrdersService.confirmPayment(
+      sessionToken,
+      body.paymentId,
+      body.providerOrderId,
+    );
   }
 
   @Get('status')
@@ -173,7 +200,7 @@ export class OnlineOrdersController {
     const sessionToken = this.getSessionToken(headers);
     const orders = await this.onlineOrdersService.getOrderStatus(sessionToken);
     return {
-      data: orders.map(order => ({
+      data: orders.map((order) => ({
         id: order.id,
         orderNumber: order.orderNumber,
         dailyNumber: order.dailyNumber,
@@ -181,13 +208,14 @@ export class OnlineOrdersController {
         paymentStatus: order.paymentStatus,
         total: order.total,
         createdAt: order.createdAt,
-        items: order.items?.map(item => ({
-          id: item.id,
-          productName: item.productName,
-          quantity: item.quantity,
-          totalPrice: item.totalPrice,
-          status: item.status,
-        })) || [],
+        items:
+          order.items?.map((item) => ({
+            id: item.id,
+            productName: item.productName,
+            quantity: item.quantity,
+            totalPrice: item.totalPrice,
+            status: item.status,
+          })) || [],
       })),
     };
   }

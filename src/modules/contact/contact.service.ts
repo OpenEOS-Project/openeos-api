@@ -48,7 +48,9 @@ export class ContactService {
     }
 
     if (Date.now() - dto.startedAt < MIN_FILL_TIME_MS) {
-      this.logger.debug('Kontaktanfrage verworfen: Formular zu schnell abgesendet');
+      this.logger.debug(
+        'Kontaktanfrage verworfen: Formular zu schnell abgesendet',
+      );
       return successResponse;
     }
 
@@ -75,11 +77,16 @@ export class ContactService {
         }),
       );
     } catch (error) {
-      this.logger.error(`Kontaktanfrage konnte nicht gespeichert werden: ${(error as Error).message}`);
+      this.logger.error(
+        `Kontaktanfrage konnte nicht gespeichert werden: ${(error as Error).message}`,
+      );
     }
 
     try {
-      const notifyEmail = await this.platformSettingsService.resolveNotificationTarget('contactRequest');
+      const notifyEmail =
+        await this.platformSettingsService.resolveNotificationTarget(
+          'contactRequest',
+        );
       if (notifyEmail) {
         await this.emailService.sendAdminContactRequestNotification({
           to: notifyEmail,
@@ -101,14 +108,18 @@ export class ContactService {
         );
       }
     } catch (error) {
-      this.logger.warn(`E-Mail-Benachrichtigung (Kontaktanfrage) fehlgeschlagen: ${(error as Error).message}`);
+      this.logger.warn(
+        `E-Mail-Benachrichtigung (Kontaktanfrage) fehlgeschlagen: ${(error as Error).message}`,
+      );
     }
 
     try {
       const text = `🌐 ${typeLabel} — nicht authentifiziert\n👤 ${name} <${email}>${organization ? `\n🏢 ${organization}` : ''}\n\n${message}`;
       await this.telegramSupportService.sendWebsiteInquiry(text);
     } catch (error) {
-      this.logger.warn(`Telegram-Weiterleitung (Kontaktanfrage) fehlgeschlagen: ${(error as Error).message}`);
+      this.logger.warn(
+        `Telegram-Weiterleitung (Kontaktanfrage) fehlgeschlagen: ${(error as Error).message}`,
+      );
     }
 
     return successResponse;

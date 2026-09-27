@@ -59,7 +59,13 @@ export class ShopCheckout extends BaseEntity {
   @Column({ name: 'total_amount', type: 'decimal', precision: 12, scale: 2 })
   totalAmount: string;
 
-  @Column({ name: 'service_fee', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  @Column({
+    name: 'service_fee',
+    type: 'decimal',
+    precision: 12,
+    scale: 2,
+    default: 0,
+  })
   serviceFee: string;
 
   @Column({
@@ -77,7 +83,12 @@ export class ShopCheckout extends BaseEntity {
   @Column({ type: 'varchar', length: 3, default: 'EUR' })
   currency: string;
 
-  @Column({ name: 'sumup_checkout_id', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'sumup_checkout_id',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   sumupCheckoutId: string | null;
 
   @Column({ name: 'sumup_checkout_url', type: 'text', nullable: true })

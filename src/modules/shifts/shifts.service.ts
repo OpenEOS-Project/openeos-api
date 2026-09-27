@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
@@ -47,13 +52,20 @@ export class ShiftsService {
 
   // ============ Shift Plans ============
 
-  async createPlan(organizationId: string, dto: CreateShiftPlanDto): Promise<ShiftPlan> {
+  async createPlan(
+    organizationId: string,
+    dto: CreateShiftPlanDto,
+  ): Promise<ShiftPlan> {
     const slug = dto.publicSlug || this.generateSlug(dto.name);
 
     // Check slug uniqueness
-    const existingSlug = await this.shiftPlanRepository.findOne({ where: { publicSlug: slug } });
+    const existingSlug = await this.shiftPlanRepository.findOne({
+      where: { publicSlug: slug },
+    });
     if (existingSlug) {
-      throw new BadRequestException('Der URL-Slug ist bereits vergeben. Bitte wähle einen anderen.');
+      throw new BadRequestException(
+        'Der URL-Slug ist bereits vergeben. Bitte wähle einen anderen.',
+      );
     }
 
     const plan = this.shiftPlanRepository.create({
@@ -68,7 +80,8 @@ export class ShiftsService {
         reminderDaysBefore: dto.reminderDaysBefore ?? 1,
         maxShiftsPerPerson: dto.maxShiftsPerPerson,
         verificationReminderEnabled: dto.verificationReminderEnabled ?? true,
-        verificationReminderIntervalHours: dto.verificationReminderIntervalHours ?? 24,
+        verificationReminderIntervalHours:
+          dto.verificationReminderIntervalHours ?? 24,
         verificationReminderMaxCount: dto.verificationReminderMaxCount ?? 5,
       },
     });
@@ -84,7 +97,10 @@ export class ShiftsService {
     });
   }
 
-  async findOnePlan(organizationId: string, planId: string): Promise<ShiftPlan> {
+  async findOnePlan(
+    organizationId: string,
+    planId: string,
+  ): Promise<ShiftPlan> {
     const plan = await this.shiftPlanRepository.findOne({
       where: { id: planId, organizationId },
       relations: ['event', 'jobs', 'jobs.shifts', 'jobs.shifts.registrations'],
@@ -97,11 +113,17 @@ export class ShiftsService {
     return plan;
   }
 
-  async updatePlan(organizationId: string, planId: string, dto: UpdateShiftPlanDto): Promise<ShiftPlan> {
+  async updatePlan(
+    organizationId: string,
+    planId: string,
+    dto: UpdateShiftPlanDto,
+  ): Promise<ShiftPlan> {
     const plan = await this.findOnePlan(organizationId, planId);
 
     if (dto.publicSlug && dto.publicSlug !== plan.publicSlug) {
-      const existingSlug = await this.shiftPlanRepository.findOne({ where: { publicSlug: dto.publicSlug } });
+      const existingSlug = await this.shiftPlanRepository.findOne({
+        where: { publicSlug: dto.publicSlug },
+      });
       if (existingSlug) {
         throw new BadRequestException('Der URL-Slug ist bereits vergeben.');
       }
@@ -113,13 +135,23 @@ export class ShiftsService {
     if (dto.eventId !== undefined) plan.eventId = dto.eventId;
 
     // Update settings
-    if (dto.requireApproval !== undefined) plan.settings.requireApproval = dto.requireApproval;
-    if (dto.allowMultipleShifts !== undefined) plan.settings.allowMultipleShifts = dto.allowMultipleShifts;
-    if (dto.reminderDaysBefore !== undefined) plan.settings.reminderDaysBefore = dto.reminderDaysBefore;
-    if (dto.maxShiftsPerPerson !== undefined) plan.settings.maxShiftsPerPerson = dto.maxShiftsPerPerson;
-    if (dto.verificationReminderEnabled !== undefined) plan.settings.verificationReminderEnabled = dto.verificationReminderEnabled;
-    if (dto.verificationReminderIntervalHours !== undefined) plan.settings.verificationReminderIntervalHours = dto.verificationReminderIntervalHours;
-    if (dto.verificationReminderMaxCount !== undefined) plan.settings.verificationReminderMaxCount = dto.verificationReminderMaxCount;
+    if (dto.requireApproval !== undefined)
+      plan.settings.requireApproval = dto.requireApproval;
+    if (dto.allowMultipleShifts !== undefined)
+      plan.settings.allowMultipleShifts = dto.allowMultipleShifts;
+    if (dto.reminderDaysBefore !== undefined)
+      plan.settings.reminderDaysBefore = dto.reminderDaysBefore;
+    if (dto.maxShiftsPerPerson !== undefined)
+      plan.settings.maxShiftsPerPerson = dto.maxShiftsPerPerson;
+    if (dto.verificationReminderEnabled !== undefined)
+      plan.settings.verificationReminderEnabled =
+        dto.verificationReminderEnabled;
+    if (dto.verificationReminderIntervalHours !== undefined)
+      plan.settings.verificationReminderIntervalHours =
+        dto.verificationReminderIntervalHours;
+    if (dto.verificationReminderMaxCount !== undefined)
+      plan.settings.verificationReminderMaxCount =
+        dto.verificationReminderMaxCount;
 
     return this.shiftPlanRepository.save(plan);
   }
@@ -129,7 +161,10 @@ export class ShiftsService {
     await this.shiftPlanRepository.remove(plan);
   }
 
-  async publishPlan(organizationId: string, planId: string): Promise<ShiftPlan> {
+  async publishPlan(
+    organizationId: string,
+    planId: string,
+  ): Promise<ShiftPlan> {
     const plan = await this.findOnePlan(organizationId, planId);
 
     if (plan.status === ShiftPlanStatus.PUBLISHED) {
@@ -148,7 +183,11 @@ export class ShiftsService {
 
   // ============ Jobs ============
 
-  async createJob(organizationId: string, planId: string, dto: CreateShiftJobDto): Promise<ShiftJob> {
+  async createJob(
+    organizationId: string,
+    planId: string,
+    dto: CreateShiftJobDto,
+  ): Promise<ShiftJob> {
     const plan = await this.findOnePlan(organizationId, planId);
 
     // Get max sort order
@@ -170,7 +209,10 @@ export class ShiftsService {
     return this.shiftJobRepository.save(job);
   }
 
-  async findAllJobs(organizationId: string, planId: string): Promise<ShiftJob[]> {
+  async findAllJobs(
+    organizationId: string,
+    planId: string,
+  ): Promise<ShiftJob[]> {
     await this.findOnePlan(organizationId, planId); // Verify access
 
     return this.shiftJobRepository.find({
@@ -180,7 +222,11 @@ export class ShiftsService {
     });
   }
 
-  async updateJob(organizationId: string, jobId: string, dto: UpdateShiftJobDto): Promise<ShiftJob> {
+  async updateJob(
+    organizationId: string,
+    jobId: string,
+    dto: UpdateShiftJobDto,
+  ): Promise<ShiftJob> {
     const job = await this.shiftJobRepository.findOne({
       where: { id: jobId },
       relations: ['shiftPlan'],
@@ -197,7 +243,10 @@ export class ShiftsService {
 
     // Required workers lives on the job; cascade to all of its shifts so the
     // public-side `confirmedCount / requiredWorkers` reading stays in sync.
-    if (dto.requiredWorkers !== undefined && dto.requiredWorkers !== job.requiredWorkers) {
+    if (
+      dto.requiredWorkers !== undefined &&
+      dto.requiredWorkers !== job.requiredWorkers
+    ) {
       job.requiredWorkers = dto.requiredWorkers;
       await this.shiftRepository.update(
         { shiftJobId: job.id },
@@ -223,7 +272,11 @@ export class ShiftsService {
 
   // ============ Shifts ============
 
-  async createShift(organizationId: string, jobId: string, dto: CreateShiftDto): Promise<Shift> {
+  async createShift(
+    organizationId: string,
+    jobId: string,
+    dto: CreateShiftDto,
+  ): Promise<Shift> {
     const job = await this.shiftJobRepository.findOne({
       where: { id: jobId },
       relations: ['shiftPlan'],
@@ -264,7 +317,11 @@ export class ShiftsService {
     });
   }
 
-  async updateShift(organizationId: string, shiftId: string, dto: UpdateShiftDto): Promise<Shift> {
+  async updateShift(
+    organizationId: string,
+    shiftId: string,
+    dto: UpdateShiftDto,
+  ): Promise<Shift> {
     const shift = await this.shiftRepository.findOne({
       where: { id: shiftId },
       relations: ['job', 'job.shiftPlan'],
@@ -330,7 +387,10 @@ export class ShiftsService {
 
   // ============ Registrations (Admin) ============
 
-  async findAllRegistrations(organizationId: string, planId: string): Promise<ShiftRegistration[]> {
+  async findAllRegistrations(
+    organizationId: string,
+    planId: string,
+  ): Promise<ShiftRegistration[]> {
     await this.findOnePlan(organizationId, planId); // Verify access
 
     return this.registrationRepository
@@ -403,11 +463,16 @@ export class ShiftsService {
     registrationId: string,
     dto: AdminUpdateRegistrationDto,
   ): Promise<ShiftRegistration> {
-    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+    const reg = await this.findRegistrationWithAccess(
+      organizationId,
+      registrationId,
+    );
 
     // Capture the pre-change shift snapshot for the notification email.
     const oldShiftLine = reg.shift
-      ? this.formatShiftsSummary([reg]).replace(/<\/?p[^>]*>/g, '').trim()
+      ? this.formatShiftsSummary([reg])
+          .replace(/<\/?p[^>]*>/g, '')
+          .trim()
       : '';
 
     if (dto.name !== undefined) reg.name = dto.name;
@@ -422,11 +487,16 @@ export class ShiftsService {
         where: { id: dto.shiftId },
         relations: ['job', 'job.shiftPlan'],
       });
-      if (!targetShift || targetShift.job.shiftPlan.organizationId !== organizationId) {
+      if (
+        !targetShift ||
+        targetShift.job.shiftPlan.organizationId !== organizationId
+      ) {
         throw new NotFoundException('Ziel-Schicht nicht gefunden');
       }
       if (targetShift.job.shiftPlanId !== reg.shift?.job?.shiftPlanId) {
-        throw new BadRequestException('Schicht muss zum selben Schichtplan gehören');
+        throw new BadRequestException(
+          'Schicht muss zum selben Schichtplan gehören',
+        );
       }
       reg.shiftId = targetShift.id;
       shiftMoved = true;
@@ -440,7 +510,9 @@ export class ShiftsService {
         relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
       });
       if (full && full.email) {
-        const newShiftLine = this.formatShiftsSummary([full]).replace(/<\/?p[^>]*>/g, '').trim();
+        const newShiftLine = this.formatShiftsSummary([full])
+          .replace(/<\/?p[^>]*>/g, '')
+          .trim();
         await this.emailService.sendShiftUpdatedEmail(
           full.email,
           full.name,
@@ -474,7 +546,10 @@ export class ShiftsService {
       where: { registrationGroupId },
       relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
     });
-    if (!anchor || anchor.shift?.job?.shiftPlan?.organizationId !== organizationId) {
+    if (
+      !anchor ||
+      anchor.shift?.job?.shiftPlan?.organizationId !== organizationId
+    ) {
       throw new NotFoundException('Anmeldung nicht gefunden');
     }
     const planId = anchor.shift.job.shiftPlanId;
@@ -491,7 +566,9 @@ export class ShiftsService {
           relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
         });
         if (!reg || reg.registrationGroupId !== registrationGroupId) {
-          throw new BadRequestException('Zu entfernende Anmeldung gehört nicht zur Gruppe');
+          throw new BadRequestException(
+            'Zu entfernende Anmeldung gehört nicht zur Gruppe',
+          );
         }
         removeLines.push(this.formatShiftLine(reg.shift));
       } else if (op.type === 'add') {
@@ -500,7 +577,9 @@ export class ShiftsService {
           relations: ['job', 'job.shiftPlan'],
         });
         if (!sh || sh.job.shiftPlanId !== planId) {
-          throw new BadRequestException('Hinzuzufügende Schicht gehört nicht zum Plan');
+          throw new BadRequestException(
+            'Hinzuzufügende Schicht gehört nicht zum Plan',
+          );
         }
         addLines.push(this.formatShiftLine(sh));
       } else {
@@ -614,7 +693,11 @@ export class ShiftsService {
   /** Small helper for the proposal email — formats a date as DD.MM.YYYY. */
   private formatShiftDate(date: Date | string): string {
     const d = typeof date === 'string' ? new Date(date) : date;
-    return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    return d.toLocaleDateString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
   }
 
   async approveRegistration(
@@ -623,10 +706,15 @@ export class ShiftsService {
     user: User,
     message?: string,
   ): Promise<ShiftRegistration> {
-    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+    const reg = await this.findRegistrationWithAccess(
+      organizationId,
+      registrationId,
+    );
 
     if (reg.status !== ShiftRegistrationStatus.PENDING_APPROVAL) {
-      throw new BadRequestException('Nur Anmeldungen mit Status "wartet auf Bestätigung" können bestätigt werden');
+      throw new BadRequestException(
+        'Nur Anmeldungen mit Status "wartet auf Bestätigung" können bestätigt werden',
+      );
     }
 
     reg.status = ShiftRegistrationStatus.CONFIRMED;
@@ -648,7 +736,8 @@ export class ShiftsService {
     // Send confirmation email (skip if no email address on file)
     if (reg.email) {
       const shiftsSummary = this.formatShiftsSummary(groupRegistrations);
-      const planName = groupRegistrations[0]?.shift?.job?.shiftPlan?.name || 'Schichtplan';
+      const planName =
+        groupRegistrations[0]?.shift?.job?.shiftPlan?.name || 'Schichtplan';
 
       await this.emailService.sendShiftConfirmationEmail(
         reg.email,
@@ -667,7 +756,10 @@ export class ShiftsService {
     user: User,
     reason?: string,
   ): Promise<ShiftRegistration> {
-    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+    const reg = await this.findRegistrationWithAccess(
+      organizationId,
+      registrationId,
+    );
 
     // Reject all registrations in the same group
     const groupRegistrations = await this.registrationRepository.find({
@@ -682,8 +774,14 @@ export class ShiftsService {
 
     // Send rejection email (skip if no email address on file)
     if (reg.email) {
-      const planName = groupRegistrations[0]?.shift?.job?.shiftPlan?.name || 'Schichtplan';
-      await this.emailService.sendShiftRejectionEmail(reg.email, reg.name, planName, reason);
+      const planName =
+        groupRegistrations[0]?.shift?.job?.shiftPlan?.name || 'Schichtplan';
+      await this.emailService.sendShiftRejectionEmail(
+        reg.email,
+        reg.name,
+        planName,
+        reason,
+      );
     }
 
     return reg;
@@ -695,7 +793,10 @@ export class ShiftsService {
     user: User,
     message: string,
   ): Promise<void> {
-    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+    const reg = await this.findRegistrationWithAccess(
+      organizationId,
+      registrationId,
+    );
     if (!reg.email) return; // no email — nothing to send
     const planName = reg.shift?.job?.shiftPlan?.name || 'Schichtplan';
 
@@ -704,7 +805,9 @@ export class ShiftsService {
       reg.name,
       planName,
       message,
-      user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email,
+      user.firstName && user.lastName
+        ? `${user.firstName} ${user.lastName}`
+        : user.email,
     );
   }
 
@@ -721,7 +824,10 @@ export class ShiftsService {
     subject?: string,
   ): Promise<{ sent: number; recipients: number }> {
     const plan = await this.findOnePlan(organizationId, planId);
-    const registrations = await this.findAllRegistrations(organizationId, planId);
+    const registrations = await this.findAllRegistrations(
+      organizationId,
+      planId,
+    );
 
     // Group by lowercased email; skip rows we can't deliver (no email) or that
     // are no longer active (rejected/cancelled).
@@ -819,18 +925,32 @@ export class ShiftsService {
       .join('\n');
   }
 
-  async deleteRegistration(organizationId: string, registrationId: string): Promise<void> {
-    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+  async deleteRegistration(
+    organizationId: string,
+    registrationId: string,
+  ): Promise<void> {
+    const reg = await this.findRegistrationWithAccess(
+      organizationId,
+      registrationId,
+    );
 
     // Delete all registrations in the same group
-    await this.registrationRepository.delete({ registrationGroupId: reg.registrationGroupId });
+    await this.registrationRepository.delete({
+      registrationGroupId: reg.registrationGroupId,
+    });
   }
 
   /** Remove a single shift from a helper's group, leaving the helper's other
    *  shifts intact. If the deleted row was the last in the group, the group
    *  disappears too — but that's just a side-effect of removing the last row. */
-  async removeSingleRegistration(organizationId: string, registrationId: string): Promise<void> {
-    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+  async removeSingleRegistration(
+    organizationId: string,
+    registrationId: string,
+  ): Promise<void> {
+    const reg = await this.findRegistrationWithAccess(
+      organizationId,
+      registrationId,
+    );
     await this.registrationRepository.delete({ id: reg.id });
   }
 
@@ -839,7 +959,10 @@ export class ShiftsService {
     registrationId: string,
     adminNotes: string,
   ): Promise<ShiftRegistration> {
-    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+    const reg = await this.findRegistrationWithAccess(
+      organizationId,
+      registrationId,
+    );
     reg.adminNotes = adminNotes;
     return this.registrationRepository.save(reg);
   }
@@ -849,11 +972,19 @@ export class ShiftsService {
   async findPlanBySlug(slug: string): Promise<ShiftPlan> {
     const plan = await this.shiftPlanRepository.findOne({
       where: { publicSlug: slug, status: ShiftPlanStatus.PUBLISHED },
-      relations: ['organization', 'event', 'jobs', 'jobs.shifts', 'jobs.shifts.registrations'],
+      relations: [
+        'organization',
+        'event',
+        'jobs',
+        'jobs.shifts',
+        'jobs.shifts.registrations',
+      ],
     });
 
     if (!plan) {
-      throw new NotFoundException('Schichtplan nicht gefunden oder nicht veröffentlicht');
+      throw new NotFoundException(
+        'Schichtplan nicht gefunden oder nicht veröffentlicht',
+      );
     }
 
     return plan;
@@ -877,12 +1008,16 @@ export class ShiftsService {
     });
 
     if (shifts.length !== shiftIds.length) {
-      throw new BadRequestException('Eine oder mehrere Schichten wurden nicht gefunden');
+      throw new BadRequestException(
+        'Eine oder mehrere Schichten wurden nicht gefunden',
+      );
     }
 
     for (const shift of shifts) {
       if (shift.job.shiftPlanId !== plan.id) {
-        throw new BadRequestException('Schicht gehört nicht zu diesem Schichtplan');
+        throw new BadRequestException(
+          'Schicht gehört nicht zu diesem Schichtplan',
+        );
       }
 
       // Check if shift is full (only count confirmed registrations)
@@ -891,12 +1026,17 @@ export class ShiftsService {
       ).length;
 
       if (confirmedCount >= shift.requiredWorkers) {
-        throw new BadRequestException(`Schicht "${shift.job.name}" ist bereits voll belegt`);
+        throw new BadRequestException(
+          `Schicht "${shift.job.name}" ist bereits voll belegt`,
+        );
       }
     }
 
     // Check max shifts per person if configured
-    if (plan.settings.maxShiftsPerPerson && plan.settings.maxShiftsPerPerson > 0) {
+    if (
+      plan.settings.maxShiftsPerPerson &&
+      plan.settings.maxShiftsPerPerson > 0
+    ) {
       // Count existing registrations for this email
       const existingCount = await this.registrationRepository
         .createQueryBuilder('reg')
@@ -905,7 +1045,10 @@ export class ShiftsService {
         .where('job.shiftPlanId = :planId', { planId: plan.id })
         .andWhere('reg.email = :email', { email })
         .andWhere('reg.status NOT IN (:...statuses)', {
-          statuses: [ShiftRegistrationStatus.REJECTED, ShiftRegistrationStatus.CANCELLED],
+          statuses: [
+            ShiftRegistrationStatus.REJECTED,
+            ShiftRegistrationStatus.CANCELLED,
+          ],
         })
         .getCount();
 
@@ -931,7 +1074,8 @@ export class ShiftsService {
         phone: phone || null,
         notes: notes || null,
         status: ShiftRegistrationStatus.PENDING_EMAIL,
-        verificationToken: registrations.length === 0 ? verificationToken : this.generateToken(),
+        verificationToken:
+          registrations.length === 0 ? verificationToken : this.generateToken(),
       });
       registrations.push(await this.registrationRepository.save(registration));
     }
@@ -962,7 +1106,9 @@ export class ShiftsService {
     };
   }
 
-  async verifyEmail(token: string): Promise<{ status: string; planSlug: string }> {
+  async verifyEmail(
+    token: string,
+  ): Promise<{ status: string; planSlug: string }> {
     const registration = await this.registrationRepository.findOne({
       where: { verificationToken: token },
       relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
@@ -1026,7 +1172,10 @@ export class ShiftsService {
     organizationId: string,
     registrationId: string,
   ): Promise<ShiftRegistration> {
-    const reg = await this.findRegistrationWithAccess(organizationId, registrationId);
+    const reg = await this.findRegistrationWithAccess(
+      organizationId,
+      registrationId,
+    );
     if (reg.emailVerifiedAt) {
       return reg;
     }
@@ -1104,11 +1253,17 @@ export class ShiftsService {
 
   /** Issue a 24h token for the given email + plan and email a link. Always
    *  resolves successfully so callers can't enumerate registered emails. */
-  async requestHelperMagicLink(slug: string, email: string, baseUrl?: string): Promise<void> {
+  async requestHelperMagicLink(
+    slug: string,
+    email: string,
+    baseUrl?: string,
+  ): Promise<void> {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail) return;
 
-    const plan = await this.shiftPlanRepository.findOne({ where: { publicSlug: slug } });
+    const plan = await this.shiftPlanRepository.findOne({
+      where: { publicSlug: slug },
+    });
     if (!plan) return;
 
     // Only issue + mail when this email actually has registrations in this
@@ -1119,7 +1274,9 @@ export class ShiftsService {
       .innerJoin('shift.job', 'job')
       .where('job.shiftPlanId = :planId', { planId: plan.id })
       .andWhere('LOWER(reg.email) = :email', { email: cleanEmail })
-      .andWhere('reg.status != :rejected', { rejected: ShiftRegistrationStatus.REJECTED })
+      .andWhere('reg.status != :rejected', {
+        rejected: ShiftRegistrationStatus.REJECTED,
+      })
       .getOne();
     if (!reg) return;
 
@@ -1127,14 +1284,23 @@ export class ShiftsService {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await this.magicLinkRepository.save(
       this.magicLinkRepository.create({
-        token, shiftPlanId: plan.id, email: cleanEmail, expiresAt, usedAt: null,
+        token,
+        shiftPlanId: plan.id,
+        email: cleanEmail,
+        expiresAt,
+        usedAt: null,
       }),
     );
 
     const base = baseUrl || this.emailService.appUrl;
     const url = `${base}/s/manage/${token}`;
     if (reg.email) {
-      await this.emailService.sendHelperMagicLinkEmail(reg.email, reg.name, plan.name, url);
+      await this.emailService.sendHelperMagicLinkEmail(
+        reg.email,
+        reg.name,
+        plan.name,
+        url,
+      );
     }
   }
 
@@ -1148,7 +1314,13 @@ export class ShiftsService {
     const link = await this.findValidMagicLink(token);
     const plan = await this.shiftPlanRepository.findOne({
       where: { id: link.shiftPlanId },
-      relations: ['organization', 'event', 'jobs', 'jobs.shifts', 'jobs.shifts.registrations'],
+      relations: [
+        'organization',
+        'event',
+        'jobs',
+        'jobs.shifts',
+        'jobs.shifts.registrations',
+      ],
     });
     if (!plan) throw new NotFoundException('Schichtplan nicht gefunden');
 
@@ -1158,7 +1330,9 @@ export class ShiftsService {
       .leftJoinAndSelect('shift.job', 'job')
       .where('job.shiftPlanId = :planId', { planId: plan.id })
       .andWhere('LOWER(reg.email) = :email', { email: link.email })
-      .andWhere('reg.status != :rejected', { rejected: ShiftRegistrationStatus.REJECTED })
+      .andWhere('reg.status != :rejected', {
+        rejected: ShiftRegistrationStatus.REJECTED,
+      })
       .orderBy('shift.date', 'ASC')
       .addOrderBy('shift.startTime', 'ASC')
       .getMany();
@@ -1176,7 +1350,10 @@ export class ShiftsService {
   }
 
   /** Helper-side single-shift removal via magic link. */
-  async removeShiftViaMagicLink(token: string, registrationId: string): Promise<void> {
+  async removeShiftViaMagicLink(
+    token: string,
+    registrationId: string,
+  ): Promise<void> {
     const link = await this.findValidMagicLink(token);
     const reg = await this.registrationRepository.findOne({
       where: { id: registrationId },
@@ -1193,7 +1370,10 @@ export class ShiftsService {
 
   /** Helper-side add: attach a new shift to one of the helper's existing
    *  registration groups (preserving the helper's contact details). */
-  async addShiftViaMagicLink(token: string, shiftId: string): Promise<ShiftRegistration> {
+  async addShiftViaMagicLink(
+    token: string,
+    shiftId: string,
+  ): Promise<ShiftRegistration> {
     const link = await this.findValidMagicLink(token);
 
     const shift = await this.shiftRepository.findOne({
@@ -1208,7 +1388,9 @@ export class ShiftsService {
       (r) => r.status === ShiftRegistrationStatus.CONFIRMED,
     ).length;
     if (confirmedCount >= shift.requiredWorkers) {
-      throw new BadRequestException(`Schicht "${shift.job.name}" ist bereits voll belegt`);
+      throw new BadRequestException(
+        `Schicht "${shift.job.name}" ist bereits voll belegt`,
+      );
     }
 
     // Anchor on any existing registration of this helper so contact details
@@ -1222,11 +1404,15 @@ export class ShiftsService {
       .andWhere('LOWER(reg.email) = :email', { email: link.email })
       .orderBy('reg.createdAt', 'DESC')
       .getOne();
-    if (!anchor) throw new NotFoundException('Keine bestehende Anmeldung gefunden');
+    if (!anchor)
+      throw new NotFoundException('Keine bestehende Anmeldung gefunden');
 
     // Prevent duplicates: same shift already booked by this helper.
     const already = await this.registrationRepository.findOne({
-      where: { shiftId: shift.id, registrationGroupId: anchor.registrationGroupId },
+      where: {
+        shiftId: shift.id,
+        registrationGroupId: anchor.registrationGroupId,
+      },
     });
     if (already) return already;
 
@@ -1251,7 +1437,8 @@ export class ShiftsService {
 
   private async findValidMagicLink(token: string): Promise<HelperMagicLink> {
     const link = await this.magicLinkRepository.findOne({ where: { token } });
-    if (!link) throw new NotFoundException('Link ungültig oder bereits abgelaufen');
+    if (!link)
+      throw new NotFoundException('Link ungültig oder bereits abgelaufen');
     if (link.expiresAt.getTime() < Date.now()) {
       throw new NotFoundException('Link abgelaufen');
     }

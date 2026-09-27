@@ -2,7 +2,9 @@ import { IsString, IsOptional, MaxLength, IsArray } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ApproveRegistrationDto {
-  @ApiPropertyOptional({ description: 'Optional message to include in confirmation email' })
+  @ApiPropertyOptional({
+    description: 'Optional message to include in confirmation email',
+  })
   @IsString()
   @MaxLength(1000)
   @IsOptional()
@@ -10,7 +12,9 @@ export class ApproveRegistrationDto {
 }
 
 export class RejectRegistrationDto {
-  @ApiPropertyOptional({ description: 'Reason for rejection (shown to helper)' })
+  @ApiPropertyOptional({
+    description: 'Reason for rejection (shown to helper)',
+  })
   @IsString()
   @MaxLength(500)
   @IsOptional()
@@ -27,7 +31,7 @@ export class SendMessageDto {
 export class BroadcastMessageDto {
   @ApiPropertyOptional({
     description:
-      'Message template. Supports placeholders {{name}}, {{plan}} and {{schichten}}/{{shifts}} (the helper\'s registered shifts).',
+      "Message template. Supports placeholders {{name}}, {{plan}} and {{schichten}}/{{shifts}} (the helper's registered shifts).",
   })
   @IsString()
   @MaxLength(5000)

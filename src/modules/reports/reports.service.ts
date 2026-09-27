@@ -16,9 +16,7 @@ import {
   Printer,
   PrintJob,
 } from '../../database/entities';
-import {
-  OrganizationRole,
-} from '../../database/entities/user-organization.entity';
+import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { OrderStatus } from '../../database/entities/order.entity';
 import { DeviceType } from '../../database/entities/device.entity';
 import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
@@ -134,8 +132,9 @@ export class ReportsService {
    * Wert wird gegen eine Whitelist geprüft, da er in SQL eingebettet wird.
    */
   private reportTimeZone(): string {
-    const tz = this.configService.get<string>('REPORT_TIMEZONE') || 'Europe/Berlin';
-    return /^[A-Za-z0-9_+\/-]+$/.test(tz) ? tz : 'Europe/Berlin';
+    const tz =
+      this.configService.get<string>('REPORT_TIMEZONE') || 'Europe/Berlin';
+    return /^[A-Za-z0-9_+/-]+$/.test(tz) ? tz : 'Europe/Berlin';
   }
 
   async getSalesReport(
@@ -450,7 +449,10 @@ export class ReportsService {
 
     // Pro vorkommendem Tag alle 24 Stunden auffüllen (getrennt je Tag —
     // mehrtägige Veranstaltungen sollen nicht in einen 24h-Topf fallen).
-    const byDate = new Map<string, Map<number, { orders: number; revenue: number }>>();
+    const byDate = new Map<
+      string,
+      Map<number, { orders: number; revenue: number }>
+    >();
     for (const r of results) {
       const date = String(r.date);
       if (!byDate.has(date)) byDate.set(date, new Map());
@@ -740,25 +742,47 @@ export class ReportsService {
 
     switch (reportType) {
       case 'sales':
-        reportData = [await this.getSalesReport(organizationId, queryDto, user)];
+        reportData = [
+          await this.getSalesReport(organizationId, queryDto, user),
+        ];
         break;
       case 'products':
-        reportData = await this.getProductsReport(organizationId, queryDto, user);
+        reportData = await this.getProductsReport(
+          organizationId,
+          queryDto,
+          user,
+        );
         break;
       case 'payments':
-        reportData = await this.getPaymentsReport(organizationId, queryDto, user);
+        reportData = await this.getPaymentsReport(
+          organizationId,
+          queryDto,
+          user,
+        );
         break;
       case 'hourly':
         reportData = await this.getHourlyReport(organizationId, queryDto, user);
         break;
       case 'channels':
-        reportData = await this.getChannelsReport(organizationId, queryDto, user);
+        reportData = await this.getChannelsReport(
+          organizationId,
+          queryDto,
+          user,
+        );
         break;
       case 'categories':
-        reportData = await this.getCategoriesReport(organizationId, queryDto, user);
+        reportData = await this.getCategoriesReport(
+          organizationId,
+          queryDto,
+          user,
+        );
         break;
       case 'devices':
-        reportData = await this.getDevicesReport(organizationId, queryDto, user);
+        reportData = await this.getDevicesReport(
+          organizationId,
+          queryDto,
+          user,
+        );
         break;
       case 'inventory':
         if (queryDto.eventId) {
@@ -918,7 +942,6 @@ export class ReportsService {
     };
   }
 
-
   /**
    * Ereignisstrom für das Dashboard.
    *
@@ -942,7 +965,13 @@ export class ReportsService {
         where: { organizationId },
         order: { createdAt: 'DESC' },
         take: limit,
-        select: { id: true, orderNumber: true, total: true, status: true, createdAt: true },
+        select: {
+          id: true,
+          orderNumber: true,
+          total: true,
+          status: true,
+          createdAt: true,
+        },
       }),
       /* Payment kennt keine organizationId — es haengt an der
          Bestellung. Deshalb ueber den Join statt ueber eine Spalte,
@@ -1000,9 +1029,6 @@ export class ReportsService {
       })),
     ];
 
-    return eintraege
-      .sort((a, b) => b.at.localeCompare(a.at))
-      .slice(0, limit);
+    return eintraege.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
   }
-
 }

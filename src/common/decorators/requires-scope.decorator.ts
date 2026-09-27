@@ -12,4 +12,5 @@ export const REQUIRES_SCOPE_KEY = 'requiresScope';
  * ändern können. Ihm pauschal die Rechte seines Besitzers zu geben,
  * hätte aus einem Lesezugang einen Generalschlüssel gemacht.
  */
-export const RequiresScope = (scope: string) => SetMetadata(REQUIRES_SCOPE_KEY, scope);
+export const RequiresScope = (scope: string) =>
+  SetMetadata(REQUIRES_SCOPE_KEY, scope);

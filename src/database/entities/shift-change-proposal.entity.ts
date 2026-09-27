@@ -51,7 +51,11 @@ export class ShiftChangeProposal extends BaseEntity {
   })
   status: ShiftChangeProposalStatus;
 
-  @Column({ name: 'responded_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'responded_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   respondedAt: Date | null;
 
   @ManyToOne(() => Organization, { onDelete: 'CASCADE' })

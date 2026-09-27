@@ -1,4 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from '@nestjs/common';
 import { RequestUser } from '../decorators/current-user.decorator';
 import { ErrorCodes } from '../constants/error-codes';
 
@@ -43,7 +48,14 @@ export class OrganizationGuard implements CanActivate {
     return true;
   }
 
-  private getOrganizationId(request: Request & { params?: Record<string, string>; body?: Record<string, unknown>; query?: Record<string, string>; headers: Record<string, string> }): string | undefined {
+  private getOrganizationId(
+    request: Request & {
+      params?: Record<string, string>;
+      body?: Record<string, unknown>;
+      query?: Record<string, string>;
+      headers: Record<string, string>;
+    },
+  ): string | undefined {
     return (
       request.headers['x-organization-id'] ||
       request.params?.organizationId ||

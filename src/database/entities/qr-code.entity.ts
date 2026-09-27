@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { Event } from './event.entity';
@@ -38,7 +45,11 @@ export class QrCode extends BaseEntity {
   @Column({ name: 'scan_count', type: 'int', default: 0 })
   scanCount: number;
 
-  @Column({ name: 'last_scanned_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'last_scanned_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   lastScannedAt: Date | null;
 
   // Relations

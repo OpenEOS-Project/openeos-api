@@ -64,7 +64,11 @@ export class DevicesPublicController {
       'of a device that is already waiting, which whoever holds the code can ' +
       'read off its screen anyway. Codes are unique among pending devices.',
   })
-  @ApiQuery({ name: 'code', description: '6-digit verification code', required: true })
+  @ApiQuery({
+    name: 'code',
+    description: '6-digit verification code',
+    required: true,
+  })
   async lookupByCode(@Query('code') code: string) {
     if (!code || code.length !== 6) {
       throw new BadRequestException({
@@ -87,7 +91,9 @@ export class DevicesPublicController {
   }
 
   @Post('register')
-  @ApiOperation({ summary: 'Register a new device (legacy - requires organization slug)' })
+  @ApiOperation({
+    summary: 'Register a new device (legacy - requires organization slug)',
+  })
   async register(@Body() registerDto: RegisterDeviceDto) {
     const result = await this.devicesService.registerDevice(registerDto);
     return {
@@ -97,7 +103,11 @@ export class DevicesPublicController {
 
   @Get('status')
   @ApiOperation({ summary: 'Get device status' })
-  @ApiHeader({ name: 'X-Device-Token', description: 'Device token', required: true })
+  @ApiHeader({
+    name: 'X-Device-Token',
+    description: 'Device token',
+    required: true,
+  })
   async getStatus(@Headers() headers: Record<string, string>) {
     const deviceToken = this.getDeviceToken(headers);
     const result = await this.devicesService.getDeviceStatus(deviceToken);
@@ -108,7 +118,11 @@ export class DevicesPublicController {
 
   @Get('me')
   @ApiOperation({ summary: 'Get current device info' })
-  @ApiHeader({ name: 'X-Device-Token', description: 'Device token', required: true })
+  @ApiHeader({
+    name: 'X-Device-Token',
+    description: 'Device token',
+    required: true,
+  })
   async getMe(@Headers() headers: Record<string, string>) {
     const deviceToken = this.getDeviceToken(headers);
     const result = await this.devicesService.getDeviceInfo(deviceToken);
@@ -119,7 +133,11 @@ export class DevicesPublicController {
 
   @Post('logout')
   @ApiOperation({ summary: 'Logout device' })
-  @ApiHeader({ name: 'X-Device-Token', description: 'Device token', required: true })
+  @ApiHeader({
+    name: 'X-Device-Token',
+    description: 'Device token',
+    required: true,
+  })
   async logout(@Headers() headers: Record<string, string>) {
     const deviceToken = this.getDeviceToken(headers);
     await this.devicesService.logoutDevice(deviceToken);

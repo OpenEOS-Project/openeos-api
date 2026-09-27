@@ -46,21 +46,33 @@ export class PrinterDeviceRelations1773000000000 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Remove rental_hardware device_id
-    await queryRunner.query(`DROP INDEX IF EXISTS "idx_rental_hardware_device_id"`);
-    await queryRunner.query(`ALTER TABLE rental_hardware DROP COLUMN IF EXISTS "device_id"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "idx_rental_hardware_device_id"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE rental_hardware DROP COLUMN IF EXISTS "device_id"`,
+    );
 
     // Restore agent_id on printers
-    await queryRunner.query(`ALTER TABLE printers ADD COLUMN "agent_id" VARCHAR(255)`);
+    await queryRunner.query(
+      `ALTER TABLE printers ADD COLUMN "agent_id" VARCHAR(255)`,
+    );
 
     // Remove rental_assignment_id from printers
-    await queryRunner.query(`ALTER TABLE printers DROP COLUMN IF EXISTS "rental_assignment_id"`);
+    await queryRunner.query(
+      `ALTER TABLE printers DROP COLUMN IF EXISTS "rental_assignment_id"`,
+    );
 
     // Remove paper_width from printers
-    await queryRunner.query(`ALTER TABLE printers DROP COLUMN IF EXISTS "paper_width"`);
+    await queryRunner.query(
+      `ALTER TABLE printers DROP COLUMN IF EXISTS "paper_width"`,
+    );
 
     // Remove device_id from printers
     await queryRunner.query(`DROP INDEX IF EXISTS "idx_printers_device_id"`);
-    await queryRunner.query(`ALTER TABLE printers DROP COLUMN IF EXISTS "device_id"`);
+    await queryRunner.query(
+      `ALTER TABLE printers DROP COLUMN IF EXISTS "device_id"`,
+    );
 
     // Note: Cannot remove enum value 'printer_agent' from device_type in PostgreSQL
     // Would need to recreate the type entirely

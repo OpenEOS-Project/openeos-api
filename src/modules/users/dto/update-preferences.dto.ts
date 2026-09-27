@@ -1,20 +1,40 @@
-import { IsString, IsOptional, IsBoolean, IsObject, IsArray, ValidateNested, IsIn, IsInt, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsObject,
+  IsArray,
+  ValidateNested,
+  IsIn,
+  IsInt,
+  Min,
+  Max,
+} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 /** Groesse einer Dashboard-Kachel im 12-Spalten-Raster. */
 export class DashboardWidgetSizeDto {
-  @ApiPropertyOptional({ example: 'topProducts', description: 'Widget-Kennung' })
+  @ApiPropertyOptional({
+    example: 'topProducts',
+    description: 'Widget-Kennung',
+  })
   @IsString()
   id: string;
 
-  @ApiPropertyOptional({ example: 6, description: 'Breite in Rasterspalten (1–12)' })
+  @ApiPropertyOptional({
+    example: 6,
+    description: 'Breite in Rasterspalten (1–12)',
+  })
   @IsInt()
   @Min(1)
   @Max(12)
   w: number;
 
-  @ApiPropertyOptional({ example: 2, description: 'Hoehe in Rasterzeilen (1–6)' })
+  @ApiPropertyOptional({
+    example: 2,
+    description: 'Hoehe in Rasterzeilen (1–6)',
+  })
   @IsInt()
   @Min(1)
   @Max(6)
@@ -44,19 +64,28 @@ export class DashboardPreferencesDto {
 }
 
 export class NotificationPreferencesDto {
-  @ApiPropertyOptional({ example: true, description: 'E-Mail-Benachrichtigungen' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'E-Mail-Benachrichtigungen',
+  })
   @IsOptional()
   @IsBoolean()
   email?: boolean;
 
-  @ApiPropertyOptional({ example: true, description: 'Push-Benachrichtigungen' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Push-Benachrichtigungen',
+  })
   @IsOptional()
   @IsBoolean()
   push?: boolean;
 }
 
 export class OnboardingPreferencesDto {
-  @ApiPropertyOptional({ example: 1, description: 'Version der abgeschlossenen Tour' })
+  @ApiPropertyOptional({
+    example: 1,
+    description: 'Version der abgeschlossenen Tour',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -67,7 +96,10 @@ export class OnboardingPreferencesDto {
   @IsString()
   tourCompletedAt?: string;
 
-  @ApiPropertyOptional({ example: true, description: 'Quick-Start ausgeblendet' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Quick-Start ausgeblendet',
+  })
   @IsOptional()
   @IsBoolean()
   quickStartHidden?: boolean;

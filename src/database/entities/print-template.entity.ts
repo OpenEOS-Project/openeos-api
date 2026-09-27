@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { PrintJob } from './print-job.entity';
@@ -29,7 +36,11 @@ export class PrintTemplate extends BaseEntity {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
-  @Column({ type: 'enum', enum: PrintTemplateType, enumName: 'print_template_type' })
+  @Column({
+    type: 'enum',
+    enum: PrintTemplateType,
+    enumName: 'print_template_type',
+  })
   type: PrintTemplateType;
 
   @Column({ type: 'jsonb', default: {} })
@@ -39,7 +50,9 @@ export class PrintTemplate extends BaseEntity {
   isDefault: boolean;
 
   // Relations
-  @ManyToOne(() => Organization, (org) => org.printTemplates, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Organization, (org) => org.printTemplates, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'organization_id' })
   organization: Organization;
 

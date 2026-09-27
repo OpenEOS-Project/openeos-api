@@ -4,9 +4,19 @@ import { In, Repository } from 'typeorm';
 
 import { ConfigService } from '@nestjs/config';
 
-import { Category, Device, Event, Order, Product, User } from '../../database/entities';
+import {
+  Category,
+  Device,
+  Event,
+  Order,
+  Product,
+  User,
+} from '../../database/entities';
 import { DeviceStatus } from '../../database/entities/device.entity';
-import { EventStatus, isEventBillingUnlocked } from '../../database/entities/event.entity';
+import {
+  EventStatus,
+  isEventBillingUnlocked,
+} from '../../database/entities/event.entity';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { DeploymentService } from '../../common/services/deployment.service';
 
@@ -72,8 +82,15 @@ export class OnboardingService {
     private readonly deployment: DeploymentService,
   ) {}
 
-  async getStatus(organizationId: string, user: User): Promise<OnboardingStatus> {
-    await this.organizationsService.checkPermission(organizationId, user, 'events');
+  async getStatus(
+    organizationId: string,
+    user: User,
+  ): Promise<OnboardingStatus> {
+    await this.organizationsService.checkPermission(
+      organizationId,
+      user,
+      'events',
+    );
 
     const events = await this.eventRepository.find({
       where: { organizationId },
@@ -98,8 +115,12 @@ export class OnboardingService {
     const bezug = freigeschaltet[0] ?? events[0] ?? null;
 
     const [categories, products, devices] = await Promise.all([
-      bezug ? this.categoryRepository.count({ where: { eventId: bezug.id } }) : 0,
-      bezug ? this.productRepository.count({ where: { eventId: bezug.id } }) : 0,
+      bezug
+        ? this.categoryRepository.count({ where: { eventId: bezug.id } })
+        : 0,
+      bezug
+        ? this.productRepository.count({ where: { eventId: bezug.id } })
+        : 0,
       this.deviceRepository.count({
         where: { organizationId, status: In([DeviceStatus.VERIFIED]) },
       }),
@@ -112,7 +133,7 @@ export class OnboardingService {
     const imTest = bezug?.status === EventStatus.TEST;
 
     const testOrdersUsed = imTest
-      ? await this.orderRepository.count({ where: { eventId: bezug!.id } })
+      ? await this.orderRepository.count({ where: { eventId: bezug.id } })
       : null;
 
     const steps: OnboardingStep[] = [
@@ -133,7 +154,10 @@ export class OnboardingService {
       total: steps.length,
       eventId: bezug?.id ?? null,
       eventStatus: bezug?.status ?? null,
-      testOrderLimit: this.configService.get<number>('billing.testEventMaxOrders', 25),
+      testOrderLimit: this.configService.get<number>(
+        'billing.testEventMaxOrders',
+        25,
+      ),
       testOrdersUsed,
     };
   }

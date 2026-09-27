@@ -45,18 +45,30 @@ export class StripeWebhookController {
     if (!request.rawBody) {
       // Ohne unveraenderten Rohtext laesst sich die Signatur nicht pruefen.
       // Fehlt er, ist rawBody im Bootstrap nicht eingeschaltet.
-      throw new BadRequestException({ code: 'RAW_BODY_MISSING', message: 'Rohdaten fehlen' });
+      throw new BadRequestException({
+        code: 'RAW_BODY_MISSING',
+        message: 'Rohdaten fehlen',
+      });
     }
     if (!signature) {
-      throw new BadRequestException({ code: 'SIGNATURE_MISSING', message: 'Signatur fehlt' });
+      throw new BadRequestException({
+        code: 'SIGNATURE_MISSING',
+        message: 'Signatur fehlt',
+      });
     }
 
     let event;
     try {
-      event = this.stripeService.constructWebhookEvent(request.rawBody, signature);
+      event = this.stripeService.constructWebhookEvent(
+        request.rawBody,
+        signature,
+      );
     } catch (error) {
       this.logger.warn(`Stripe-Webhook abgelehnt: ${(error as Error).message}`);
-      throw new BadRequestException({ code: 'SIGNATURE_INVALID', message: 'Signatur ungültig' });
+      throw new BadRequestException({
+        code: 'SIGNATURE_INVALID',
+        message: 'Signatur ungültig',
+      });
     }
 
     if (event.type === 'checkout.session.completed') {

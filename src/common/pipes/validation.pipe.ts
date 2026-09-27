@@ -39,11 +39,19 @@ export class CustomValidationPipe implements PipeTransform {
   }
 
   private toValidate(metatype: new (...args: unknown[]) => unknown): boolean {
-    const types: (new (...args: unknown[]) => unknown)[] = [String, Boolean, Number, Array, Object];
+    const types: (new (...args: unknown[]) => unknown)[] = [
+      String,
+      Boolean,
+      Number,
+      Array,
+      Object,
+    ];
     return !types.includes(metatype);
   }
 
-  private getValidationCode(error: { constraints?: Record<string, string> }): string {
+  private getValidationCode(error: {
+    constraints?: Record<string, string>;
+  }): string {
     const constraints = error.constraints || {};
     const constraintKeys = Object.keys(constraints);
 

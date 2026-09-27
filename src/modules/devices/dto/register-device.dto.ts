@@ -1,4 +1,11 @@
-import { IsString, IsNotEmpty, IsOptional, MaxLength, IsEnum, IsUUID } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  MaxLength,
+  IsEnum,
+  IsUUID,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DeviceType } from '../../../database/entities/device.entity';
 

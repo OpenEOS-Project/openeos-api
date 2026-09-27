@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
 import { SAAS_ONLY_KEY } from '../decorators/saas-only.decorator';
@@ -23,15 +28,16 @@ export class DeploymentModeGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     if (!this.deployment.isSelfHosted) return true;
 
-    const isSaasOnly = this.reflector.getAllAndOverride<boolean>(SAAS_ONLY_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const isSaasOnly = this.reflector.getAllAndOverride<boolean>(
+      SAAS_ONLY_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     if (isSaasOnly) {
       throw new NotFoundException({
         code: 'NOT_FOUND',
-        message: 'Diese Funktion ist in einer eigenstaendigen Installation nicht verfuegbar',
+        message:
+          'Diese Funktion ist in einer eigenstaendigen Installation nicht verfuegbar',
       });
     }
 

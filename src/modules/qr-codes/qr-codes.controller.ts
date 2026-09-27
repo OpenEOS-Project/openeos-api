@@ -67,7 +67,12 @@ export class QrCodesController {
     @Body() updateDto: UpdateQrCodeDto,
     @CurrentUser() user: User,
   ) {
-    return this.qrCodesService.update(organizationId, qrCodeId, updateDto, user);
+    return this.qrCodesService.update(
+      organizationId,
+      qrCodeId,
+      updateDto,
+      user,
+    );
   }
 
   @Delete(':qrCodeId')
@@ -87,6 +92,11 @@ export class QrCodesController {
     @Query('format') format: 'png' | 'svg',
     @CurrentUser() user: User,
   ) {
-    return this.qrCodesService.getImage(organizationId, qrCodeId, user, format || 'svg');
+    return this.qrCodesService.getImage(
+      organizationId,
+      qrCodeId,
+      user,
+      format || 'svg',
+    );
   }
 }

@@ -27,7 +27,12 @@ export class RentalsService {
   async findAll(
     organizationId: string,
     queryDto: QueryRentalsDto,
-  ): Promise<{ data: RentalAssignment[]; total: number; page: number; limit: number }> {
+  ): Promise<{
+    data: RentalAssignment[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
     const { status, startDate, endDate, page = 1, limit = 20 } = queryDto;
 
     const queryBuilder = this.rentalAssignmentRepository
@@ -41,10 +46,13 @@ export class RentalsService {
     }
 
     if (startDate && endDate) {
-      queryBuilder.andWhere('assignment.startDate BETWEEN :startDate AND :endDate', {
-        startDate: new Date(startDate),
-        endDate: endOfDay(endDate),
-      });
+      queryBuilder.andWhere(
+        'assignment.startDate BETWEEN :startDate AND :endDate',
+        {
+          startDate: new Date(startDate),
+          endDate: endOfDay(endDate),
+        },
+      );
     } else if (startDate) {
       queryBuilder.andWhere('assignment.startDate >= :startDate', {
         startDate: new Date(startDate),
@@ -66,7 +74,10 @@ export class RentalsService {
     return { data, total, page, limit };
   }
 
-  async findOne(organizationId: string, assignmentId: string): Promise<RentalAssignment> {
+  async findOne(
+    organizationId: string,
+    assignmentId: string,
+  ): Promise<RentalAssignment> {
     const assignment = await this.rentalAssignmentRepository.findOne({
       where: { id: assignmentId, organizationId },
       relations: ['rentalHardware', 'event', 'invoice'],
@@ -142,7 +153,9 @@ export class RentalsService {
     });
   }
 
-  async getUpcomingRentals(organizationId: string): Promise<RentalAssignment[]> {
+  async getUpcomingRentals(
+    organizationId: string,
+  ): Promise<RentalAssignment[]> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -152,7 +165,10 @@ export class RentalsService {
       .leftJoinAndSelect('assignment.event', 'event')
       .where('assignment.organizationId = :organizationId', { organizationId })
       .andWhere('assignment.status IN (:...statuses)', {
-        statuses: [RentalAssignmentStatus.PENDING, RentalAssignmentStatus.CONFIRMED],
+        statuses: [
+          RentalAssignmentStatus.PENDING,
+          RentalAssignmentStatus.CONFIRMED,
+        ],
       })
       .andWhere('assignment.startDate >= :today', { today })
       .orderBy('assignment.startDate', 'ASC')

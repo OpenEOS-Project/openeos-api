@@ -1,4 +1,8 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 
@@ -24,11 +28,14 @@ export class StripeService {
 
   constructor(private readonly configService: ConfigService) {
     const secretKey = this.configService.get<string>('stripe.secretKey') || '';
-    this.webhookSecret = this.configService.get<string>('stripe.webhookSecret') || '';
+    this.webhookSecret =
+      this.configService.get<string>('stripe.webhookSecret') || '';
 
     this.client = secretKey ? new Stripe(secretKey) : null;
     if (!this.client) {
-      this.logger.warn('STRIPE_SECRET_KEY ist nicht gesetzt — Online-Zahlung ist deaktiviert');
+      this.logger.warn(
+        'STRIPE_SECRET_KEY ist nicht gesetzt — Online-Zahlung ist deaktiviert',
+      );
     }
   }
 
@@ -63,7 +70,9 @@ export class StripeService {
 
     if (params.existingCustomerId) {
       try {
-        const existing = await client.customers.retrieve(params.existingCustomerId);
+        const existing = await client.customers.retrieve(
+          params.existingCustomerId,
+        );
         if (!existing.deleted) return existing.id;
       } catch (error) {
         // Ein geloeschter oder aus einem anderen Konto stammender Kunde darf
@@ -147,7 +156,10 @@ export class StripeService {
    * Ausgestellt hat sie Stripe, nicht wir — Nummernkreis, PDF und
    * Hosted-Ansicht kommen von dort. Hier wird nur gelesen.
    */
-  async listInvoices(customerId: string, limit = 100): Promise<Stripe.Invoice[]> {
+  async listInvoices(
+    customerId: string,
+    limit = 100,
+  ): Promise<Stripe.Invoice[]> {
     const client = this.requireClient();
     const page = await client.invoices.list({ customer: customerId, limit });
     return page.data;
@@ -176,7 +188,9 @@ export class StripeService {
     return Buffer.from(await response.arrayBuffer());
   }
 
-  async getCheckoutSession(sessionId: string): Promise<Stripe.Checkout.Session> {
+  async getCheckoutSession(
+    sessionId: string,
+  ): Promise<Stripe.Checkout.Session> {
     return this.requireClient().checkout.sessions.retrieve(sessionId);
   }
 
@@ -195,6 +209,10 @@ export class StripeService {
         message: 'STRIPE_WEBHOOK_SECRET ist nicht konfiguriert',
       });
     }
-    return client.webhooks.constructEvent(rawBody, signature, this.webhookSecret);
+    return client.webhooks.constructEvent(
+      rawBody,
+      signature,
+      this.webhookSecret,
+    );
   }
 }

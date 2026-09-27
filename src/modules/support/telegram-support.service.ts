@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -58,8 +63,10 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
     private readonly supportMessageRepository: Repository<SupportMessage>,
     private readonly platformSettingsService: PlatformSettingsService,
   ) {
-    this.botToken = this.configService.get<string>('support.telegramBotToken') || '';
-    this.chatId = this.configService.get<string>('support.telegramChatId') || '';
+    this.botToken =
+      this.configService.get<string>('support.telegramBotToken') || '';
+    this.chatId =
+      this.configService.get<string>('support.telegramChatId') || '';
     this.enabled = Boolean(this.botToken && this.chatId);
   }
 
@@ -96,7 +103,11 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Antwort eines Admins zusätzlich ins Thema spiegeln, damit die Telegram-Historie vollständig bleibt. */
-  async mirrorAdminReply(org: Organization, body: string, effectivePriority: boolean): Promise<number | null> {
+  async mirrorAdminReply(
+    org: Organization,
+    body: string,
+    effectivePriority: boolean,
+  ): Promise<number | null> {
     if (!this.enabled) return null;
     const text = `💬 Antwort (via Plattform):\n\n${body}`;
     return this.sendToTopic(org, text, effectivePriority);
@@ -113,7 +124,10 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
     return this.sendToWebsiteTopic(text);
   }
 
-  private async sendToWebsiteTopic(text: string, allowRecreate = true): Promise<number | null> {
+  private async sendToWebsiteTopic(
+    text: string,
+    allowRecreate = true,
+  ): Promise<number | null> {
     const topicId = await this.ensureWebsiteTopic();
     if (!topicId) return null;
 
@@ -128,45 +142,70 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (allowRecreate && this.isTopicNotFoundError(response)) {
-      this.logger.warn('Telegram-Website-Thema nicht mehr vorhanden, lege es neu an');
-      await this.platformSettingsService.setValue(WEBSITE_TOPIC_SETTING_KEY, null);
+      this.logger.warn(
+        'Telegram-Website-Thema nicht mehr vorhanden, lege es neu an',
+      );
+      await this.platformSettingsService.setValue(
+        WEBSITE_TOPIC_SETTING_KEY,
+        null,
+      );
       return this.sendToWebsiteTopic(text, false);
     }
 
-    this.logger.warn(`Telegram sendMessage (Website-Thema) fehlgeschlagen: ${response?.description}`);
+    this.logger.warn(
+      `Telegram sendMessage (Website-Thema) fehlgeschlagen: ${response?.description}`,
+    );
     return null;
   }
 
   private async ensureWebsiteTopic(): Promise<number | null> {
-    const existing = await this.platformSettingsService.getValue<number>(WEBSITE_TOPIC_SETTING_KEY);
+    const existing = await this.platformSettingsService.getValue<number>(
+      WEBSITE_TOPIC_SETTING_KEY,
+    );
     if (existing) return existing;
 
-    const response = await this.request<{ message_thread_id: number }>('createForumTopic', {
-      chat_id: this.chatId,
-      name: '🌐 Website-Anfragen',
-    });
+    const response = await this.request<{ message_thread_id: number }>(
+      'createForumTopic',
+      {
+        chat_id: this.chatId,
+        name: '🌐 Website-Anfragen',
+      },
+    );
 
     if (!response?.ok || !response.result) {
-      this.logger.warn(`Anlegen des Telegram-Website-Themas fehlgeschlagen: ${response?.description}`);
+      this.logger.warn(
+        `Anlegen des Telegram-Website-Themas fehlgeschlagen: ${response?.description}`,
+      );
       return null;
     }
 
-    await this.platformSettingsService.setValue(WEBSITE_TOPIC_SETTING_KEY, response.result.message_thread_id);
+    await this.platformSettingsService.setValue(
+      WEBSITE_TOPIC_SETTING_KEY,
+      response.result.message_thread_id,
+    );
     return response.result.message_thread_id;
   }
 
   /** Stellt sicher, dass die Organisation ein Telegram-Thema hat, und legt es bei Bedarf an. */
-  async ensureTopicForOrg(org: Organization, effectivePriority: boolean): Promise<number | null> {
+  async ensureTopicForOrg(
+    org: Organization,
+    effectivePriority: boolean,
+  ): Promise<number | null> {
     if (!this.enabled) return null;
     if (org.supportTelegramTopicId) return org.supportTelegramTopicId;
 
-    const response = await this.request<{ message_thread_id: number }>('createForumTopic', {
-      chat_id: this.chatId,
-      name: `${org.name}${effectivePriority ? ' 🚨' : ''}`,
-    });
+    const response = await this.request<{ message_thread_id: number }>(
+      'createForumTopic',
+      {
+        chat_id: this.chatId,
+        name: `${org.name}${effectivePriority ? ' 🚨' : ''}`,
+      },
+    );
 
     if (!response?.ok || !response.result) {
-      this.logger.warn(`Anlegen des Telegram-Themas fehlgeschlagen für Organisation ${org.id}: ${response?.description}`);
+      this.logger.warn(
+        `Anlegen des Telegram-Themas fehlgeschlagen für Organisation ${org.id}: ${response?.description}`,
+      );
       return null;
     }
 
@@ -198,18 +237,28 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (allowRecreate && this.isTopicNotFoundError(response)) {
-      this.logger.warn(`Telegram-Thema für Organisation ${org.id} nicht mehr vorhanden, lege es neu an`);
+      this.logger.warn(
+        `Telegram-Thema für Organisation ${org.id} nicht mehr vorhanden, lege es neu an`,
+      );
       org.supportTelegramTopicId = null;
-      await this.organizationRepository.update(org.id, { supportTelegramTopicId: null });
+      await this.organizationRepository.update(org.id, {
+        supportTelegramTopicId: null,
+      });
       return this.sendToTopic(org, text, effectivePriority, false);
     }
 
-    this.logger.warn(`Telegram sendMessage fehlgeschlagen für Organisation ${org.id}: ${response?.description}`);
+    this.logger.warn(
+      `Telegram sendMessage fehlgeschlagen für Organisation ${org.id}: ${response?.description}`,
+    );
     return null;
   }
 
-  private isTopicNotFoundError(response: TelegramApiResponse<unknown> | null): boolean {
-    return !!response?.description?.toLowerCase().includes('message thread not found');
+  private isTopicNotFoundError(
+    response: TelegramApiResponse<unknown> | null,
+  ): boolean {
+    return !!response?.description
+      ?.toLowerCase()
+      .includes('message thread not found');
   }
 
   private async pollUpdates(): Promise<void> {
@@ -217,8 +266,14 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
     this.pollingInFlight = true;
 
     try {
-      const offset = (await this.platformSettingsService.getValue<number>(OFFSET_SETTING_KEY)) ?? undefined;
-      const websiteTopicId = await this.platformSettingsService.getValue<number>(WEBSITE_TOPIC_SETTING_KEY);
+      const offset =
+        (await this.platformSettingsService.getValue<number>(
+          OFFSET_SETTING_KEY,
+        )) ?? undefined;
+      const websiteTopicId =
+        await this.platformSettingsService.getValue<number>(
+          WEBSITE_TOPIC_SETTING_KEY,
+        );
 
       const response = await this.request<TelegramUpdate[]>('getUpdates', {
         offset,
@@ -242,10 +297,14 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
 
       const organizations = threadIds.length
         ? await this.organizationRepository.find({
-            where: threadIds.map((topicId) => ({ supportTelegramTopicId: topicId })),
+            where: threadIds.map((topicId) => ({
+              supportTelegramTopicId: topicId,
+            })),
           })
         : [];
-      const orgByTopicId = new Map(organizations.map((org) => [org.supportTelegramTopicId as number, org]));
+      const orgByTopicId = new Map(
+        organizations.map((org) => [org.supportTelegramTopicId as number, org]),
+      );
 
       for (const update of updates) {
         const message = update.message;
@@ -271,30 +330,44 @@ export class TelegramSupportService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      const nextOffset = Math.max(...updates.map((update) => update.update_id)) + 1;
-      await this.platformSettingsService.setValue(OFFSET_SETTING_KEY, nextOffset);
+      const nextOffset =
+        Math.max(...updates.map((update) => update.update_id)) + 1;
+      await this.platformSettingsService.setValue(
+        OFFSET_SETTING_KEY,
+        nextOffset,
+      );
     } catch (error) {
-      this.logger.warn(`Telegram Reply-Polling fehlgeschlagen: ${(error as Error).message}`);
+      this.logger.warn(
+        `Telegram Reply-Polling fehlgeschlagen: ${(error as Error).message}`,
+      );
     } finally {
       this.pollingInFlight = false;
     }
   }
 
-  private async request<T>(method: string, body: Record<string, unknown>): Promise<TelegramApiResponse<T> | null> {
+  private async request<T>(
+    method: string,
+    body: Record<string, unknown>,
+  ): Promise<TelegramApiResponse<T> | null> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const res = await fetch(`https://api.telegram.org/bot${this.botToken}/${method}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+      const res = await fetch(
+        `https://api.telegram.org/bot${this.botToken}/${method}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        },
+      );
 
       return (await res.json()) as TelegramApiResponse<T>;
     } catch (error) {
-      this.logger.warn(`Telegram API ${method} Anfrage fehlgeschlagen: ${(error as Error).message}`);
+      this.logger.warn(
+        `Telegram API ${method} Anfrage fehlgeschlagen: ${(error as Error).message}`,
+      );
       return null;
     } finally {
       clearTimeout(timeout);

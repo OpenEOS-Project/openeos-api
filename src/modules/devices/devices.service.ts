@@ -12,13 +12,33 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import * as bcrypt from 'bcrypt';
-import { Device, User, UserOrganization, Organization, Order, Payment } from '../../database/entities';
-import { DeviceStatus, DeviceType } from '../../database/entities/device.entity';
+import {
+  Device,
+  User,
+  UserOrganization,
+  Organization,
+  Order,
+  Payment,
+} from '../../database/entities';
+import {
+  DeviceStatus,
+  DeviceType,
+} from '../../database/entities/device.entity';
 import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
-import { CreateDeviceDto, UpdateDeviceDto, RegisterDeviceDto, InitDeviceDto, LinkDeviceDto } from './dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  createPaginatedResult,
+} from '../../common/dto/pagination.dto';
+import {
+  CreateDeviceDto,
+  UpdateDeviceDto,
+  RegisterDeviceDto,
+  InitDeviceDto,
+  LinkDeviceDto,
+} from './dto';
 import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
@@ -102,7 +122,11 @@ export class DevicesService {
     return createPaginatedResult(items, total, page, limit);
   }
 
-  async findOne(organizationId: string, deviceId: string, user: User): Promise<Device> {
+  async findOne(
+    organizationId: string,
+    deviceId: string,
+    user: User,
+  ): Promise<Device> {
     await this.checkMembership(organizationId, user.id);
 
     const device = await this.deviceRepository.findOne({
@@ -147,7 +171,12 @@ export class DevicesService {
         ...neueSettings,
         // Das Aussehen ist selbst ein Objekt und braucht denselben Schutz.
         ...(neueSettings.display
-          ? { display: { ...(device.settings?.display ?? {}), ...neueSettings.display } }
+          ? {
+              display: {
+                ...(device.settings?.display ?? {}),
+                ...neueSettings.display,
+              },
+            }
           : {}),
       };
     }
@@ -157,13 +186,22 @@ export class DevicesService {
     this.logger.log(`Device updated: ${device.name} (${device.id})`);
 
     // Notify device about settings changes
-    if (updateDto.settings && JSON.stringify(updateDto.settings) !== JSON.stringify(previousSettings)) {
-      this.gatewayService.notifyDeviceSettingsUpdated(organizationId, deviceId, device.settings);
+    if (
+      updateDto.settings &&
+      JSON.stringify(updateDto.settings) !== JSON.stringify(previousSettings)
+    ) {
+      this.gatewayService.notifyDeviceSettingsUpdated(
+        organizationId,
+        deviceId,
+        device.settings,
+      );
     }
 
     // Notify device about config changes (name, type)
-    const nameChanged = updateDto.name !== undefined && updateDto.name !== previousName;
-    const typeChanged = updateDto.type !== undefined && updateDto.type !== previousType;
+    const nameChanged =
+      updateDto.name !== undefined && updateDto.name !== previousName;
+    const typeChanged =
+      updateDto.type !== undefined && updateDto.type !== previousType;
 
     if (nameChanged || typeChanged) {
       this.gatewayService.notifyDeviceConfigUpdated(
@@ -177,7 +215,11 @@ export class DevicesService {
     return device;
   }
 
-  async remove(organizationId: string, deviceId: string, user: User): Promise<void> {
+  async remove(
+    organizationId: string,
+    deviceId: string,
+    user: User,
+  ): Promise<void> {
     await this.checkPermission(organizationId, user.id, 'devices');
 
     const device = await this.findOne(organizationId, deviceId, user);
@@ -253,7 +295,8 @@ export class DevicesService {
 
     throw new BadRequestException({
       code: ErrorCodes.VALIDATION_ERROR,
-      message: 'Derzeit kann kein Kopplungscode vergeben werden. Bitte später erneut versuchen.',
+      message:
+        'Derzeit kann kein Kopplungscode vergeben werden. Bitte später erneut versuchen.',
     });
   }
 
@@ -289,7 +332,9 @@ export class DevicesService {
     });
 
     await this.deviceRepository.save(device);
-    this.logger.log(`Device initialized: ${device.id} - awaiting link to organization`);
+    this.logger.log(
+      `Device initialized: ${device.id} - awaiting link to organization`,
+    );
 
     return {
       deviceId: device.id,
@@ -361,7 +406,9 @@ export class DevicesService {
     this.applyTypeDefaults(device);
 
     await this.deviceRepository.save(device);
-    this.logger.log(`Device linked: ${device.name} (${device.id}) to org ${linkDto.organizationId} by user ${user.email}`);
+    this.logger.log(
+      `Device linked: ${device.name} (${device.id}) to org ${linkDto.organizationId} by user ${user.email}`,
+    );
 
     return device;
   }
@@ -402,7 +449,9 @@ export class DevicesService {
     });
 
     await this.deviceRepository.save(device);
-    this.logger.log(`Device registered: ${device.name} (${device.id}) - awaiting verification`);
+    this.logger.log(
+      `Device registered: ${device.name} (${device.id}) - awaiting verification`,
+    );
 
     return {
       deviceId: device.id,
@@ -445,10 +494,18 @@ export class DevicesService {
       status: device.status,
       deviceId: device.id,
       name: device.status === DeviceStatus.VERIFIED ? device.name : undefined,
-      organizationId: device.status === DeviceStatus.VERIFIED && device.organizationId ? device.organizationId : undefined,
-      organizationName: device.status === DeviceStatus.VERIFIED ? device.organization?.name : undefined,
-      deviceClass: device.status === DeviceStatus.VERIFIED ? device.type : undefined,
-      settings: device.status === DeviceStatus.VERIFIED ? device.settings : undefined,
+      organizationId:
+        device.status === DeviceStatus.VERIFIED && device.organizationId
+          ? device.organizationId
+          : undefined,
+      organizationName:
+        device.status === DeviceStatus.VERIFIED
+          ? device.organization?.name
+          : undefined,
+      deviceClass:
+        device.status === DeviceStatus.VERIFIED ? device.type : undefined,
+      settings:
+        device.status === DeviceStatus.VERIFIED ? device.settings : undefined,
     };
   }
 
@@ -576,7 +633,9 @@ export class DevicesService {
     this.applyTypeDefaults(device);
 
     await this.deviceRepository.save(device);
-    this.logger.log(`Device verified: ${device.name} (${device.id}) by user ${user.email}`);
+    this.logger.log(
+      `Device verified: ${device.name} (${device.id}) by user ${user.email}`,
+    );
 
     return device;
   }
@@ -593,9 +652,15 @@ export class DevicesService {
     device.isActive = false;
 
     await this.deviceRepository.save(device);
-    this.logger.log(`Device blocked: ${device.name} (${device.id}) by user ${user.email}`);
+    this.logger.log(
+      `Device blocked: ${device.name} (${device.id}) by user ${user.email}`,
+    );
 
-    this.gatewayService.notifyDeviceStatusChanged(organizationId, deviceId, 'blocked');
+    this.gatewayService.notifyDeviceStatusChanged(
+      organizationId,
+      deviceId,
+      'blocked',
+    );
 
     return device;
   }
@@ -612,9 +677,15 @@ export class DevicesService {
     device.isActive = true;
 
     await this.deviceRepository.save(device);
-    this.logger.log(`Device unblocked: ${device.name} (${device.id}) by user ${user.email}`);
+    this.logger.log(
+      `Device unblocked: ${device.name} (${device.id}) by user ${user.email}`,
+    );
 
-    this.gatewayService.notifyDeviceStatusChanged(organizationId, deviceId, 'verified');
+    this.gatewayService.notifyDeviceStatusChanged(
+      organizationId,
+      deviceId,
+      'verified',
+    );
 
     return device;
   }
@@ -648,7 +719,9 @@ export class DevicesService {
       .createQueryBuilder('payment')
       .select('COALESCE(SUM(payment.amount), 0)', 'total')
       .where('payment.processed_by_device_id = :deviceId', { deviceId })
-      .andWhere('payment.status = :status', { status: PaymentTransactionStatus.CAPTURED })
+      .andWhere('payment.status = :status', {
+        status: PaymentTransactionStatus.CAPTURED,
+      })
       .getRawOne();
 
     const revenueTotal = parseFloat(revenueResult?.total || '0');
@@ -681,10 +754,11 @@ export class DevicesService {
 
     for (const member of members) {
       if (member.userId === userId) continue;
-      if (member.pin && await bcrypt.compare(pin, member.pin)) {
+      if (member.pin && (await bcrypt.compare(pin, member.pin))) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
-          message: 'Diese PIN wird bereits von einem anderen Mitglied verwendet',
+          message:
+            'Diese PIN wird bereits von einem anderen Mitglied verwendet',
         });
       }
     }
@@ -704,7 +778,9 @@ export class DevicesService {
     membership.pin = hashedPin;
     await this.userOrganizationRepository.save(membership);
 
-    this.logger.log(`PIN set for user ${userId} in organization ${organizationId}`);
+    this.logger.log(
+      `PIN set for user ${userId} in organization ${organizationId}`,
+    );
   }
 
   async removeMemberPin(
@@ -728,13 +804,20 @@ export class DevicesService {
     membership.pin = null;
     await this.userOrganizationRepository.save(membership);
 
-    this.logger.log(`PIN removed for user ${userId} in organization ${organizationId}`);
+    this.logger.log(
+      `PIN removed for user ${userId} in organization ${organizationId}`,
+    );
   }
 
   async verifyPin(
     organizationId: string,
     pin: string,
-  ): Promise<{ userId: string; firstName: string; lastName: string; role: string }> {
+  ): Promise<{
+    userId: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+  }> {
     const members = await this.userOrganizationRepository.find({
       where: { organizationId },
       relations: ['user'],
@@ -759,7 +842,10 @@ export class DevicesService {
     });
   }
 
-  private async checkMembership(organizationId: string, userId: string): Promise<void> {
+  private async checkMembership(
+    organizationId: string,
+    userId: string,
+  ): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });

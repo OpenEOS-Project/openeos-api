@@ -30,7 +30,10 @@ export const TAX_RATE_EXEMPT: TaxRateOption[] = [{ rate: 0, labelKey: 'zero' }];
  * wir das Land nicht, gilt dasselbe: lieber keine Auswahl anbieten als
  * eine falsche.
  */
-export function taxRatesFor(country: string | undefined, vatExempt: boolean | undefined): TaxRateOption[] {
+export function taxRatesFor(
+  country: string | undefined,
+  vatExempt: boolean | undefined,
+): TaxRateOption[] {
   if (vatExempt !== false) return TAX_RATE_EXEMPT;
   return TAX_RATES_BY_COUNTRY[(country || '').toUpperCase()] ?? TAX_RATE_EXEMPT;
 }

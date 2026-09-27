@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Param,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { RentalsService } from './rentals.service';
 import { QueryRentalsDto } from './dto';
@@ -55,7 +48,9 @@ export class RentalsController {
   @Get('upcoming')
   @Roles(Role.ADMIN)
   async getUpcomingRentals(@CurrentOrganization() organization: Organization) {
-    const rentals = await this.rentalsService.getUpcomingRentals(organization.id);
+    const rentals = await this.rentalsService.getUpcomingRentals(
+      organization.id,
+    );
     return {
       data: rentals,
     };
@@ -79,7 +74,10 @@ export class RentalsController {
     @CurrentOrganization() organization: Organization,
     @Param('id') id: string,
   ) {
-    const rental = await this.rentalsService.confirmAssignment(organization.id, id);
+    const rental = await this.rentalsService.confirmAssignment(
+      organization.id,
+      id,
+    );
     return {
       data: rental,
     };
@@ -91,7 +89,10 @@ export class RentalsController {
     @CurrentOrganization() organization: Organization,
     @Param('id') id: string,
   ) {
-    const rental = await this.rentalsService.declineAssignment(organization.id, id);
+    const rental = await this.rentalsService.declineAssignment(
+      organization.id,
+      id,
+    );
     return {
       data: rental,
     };

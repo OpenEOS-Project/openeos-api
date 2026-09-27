@@ -1,9 +1,4 @@
-import {
-  IsString,
-  IsOptional,
-  IsBoolean,
-  MaxLength,
-} from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateQrCodeDto {
@@ -13,13 +8,19 @@ export class UpdateQrCodeDto {
   @MaxLength(20)
   tableNumber?: string;
 
-  @ApiPropertyOptional({ example: 'Tisch 5 - Terrasse', description: 'Bezeichnung des QR-Codes' })
+  @ApiPropertyOptional({
+    example: 'Tisch 5 - Terrasse',
+    description: 'Bezeichnung des QR-Codes',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   name?: string;
 
-  @ApiPropertyOptional({ example: true, description: 'Gibt an, ob der QR-Code aktiv ist' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Gibt an, ob der QR-Code aktiv ist',
+  })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;

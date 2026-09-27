@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { Event } from './event.entity';
@@ -50,7 +57,14 @@ export class ShiftPlan extends BaseEntity {
   })
   status: ShiftPlanStatus;
 
-  @Column({ type: 'jsonb', default: { requireApproval: true, allowMultipleShifts: true, reminderDaysBefore: 1 } })
+  @Column({
+    type: 'jsonb',
+    default: {
+      requireApproval: true,
+      allowMultipleShifts: true,
+      reminderDaysBefore: 1,
+    },
+  })
   settings: ShiftPlanSettings;
 
   // Relations

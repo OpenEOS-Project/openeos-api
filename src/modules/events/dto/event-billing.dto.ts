@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsDefined, IsEmail, IsNotEmpty, IsString, ValidateNested } from 'class-validator';
+import {
+  IsDefined,
+  IsEmail,
+  IsNotEmpty,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class OrderInvoiceBillingAddressDto {
@@ -20,7 +26,10 @@ export class OrderInvoiceBillingAddressDto {
 }
 
 export class OrderInvoiceDto {
-  @ApiProperty({ example: 'Musterverein e.V.', description: 'Rechnungsempfänger (Name)' })
+  @ApiProperty({
+    example: 'Musterverein e.V.',
+    description: 'Rechnungsempfänger (Name)',
+  })
   @IsString()
   @IsNotEmpty()
   billingName: string;

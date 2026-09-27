@@ -27,7 +27,11 @@ export class StockMovement extends BaseEntity {
   @Column({ name: 'product_id', type: 'uuid' })
   productId: string;
 
-  @Column({ type: 'enum', enum: StockMovementType, enumName: 'stock_movement_type' })
+  @Column({
+    type: 'enum',
+    enum: StockMovementType,
+    enumName: 'stock_movement_type',
+  })
   type: StockMovementType;
 
   @Column({ type: 'int' })
@@ -39,7 +43,12 @@ export class StockMovement extends BaseEntity {
   @Column({ name: 'quantity_after', type: 'int' })
   quantityAfter: number;
 
-  @Column({ name: 'reference_type', type: 'varchar', length: 50, nullable: true })
+  @Column({
+    name: 'reference_type',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
   referenceType: string | null;
 
   @Column({ name: 'reference_id', type: 'uuid', nullable: true })
@@ -55,15 +64,21 @@ export class StockMovement extends BaseEntity {
   createdByUserId: string | null;
 
   // Relations
-  @ManyToOne(() => Event, (event) => event.stockMovements, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Event, (event) => event.stockMovements, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'event_id' })
   event: Event;
 
-  @ManyToOne(() => Product, (product) => product.stockMovements, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Product, (product) => product.stockMovements, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'product_id' })
   product: Product;
 
-  @ManyToOne(() => User, (user) => user.stockMovements, { onDelete: 'SET NULL' })
+  @ManyToOne(() => User, (user) => user.stockMovements, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'created_by_user_id' })
   createdByUser: User | null;
 }

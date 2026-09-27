@@ -16,9 +16,16 @@ import {
   UserOrganization,
   Invitation,
 } from '../../database/entities';
-import { OrganizationRole, OrganizationPermissions } from '../../database/entities/user-organization.entity';
+import {
+  OrganizationRole,
+  OrganizationPermissions,
+} from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { PaginationDto, PaginatedResult, createPaginatedResult } from '../../common/dto/pagination.dto';
+import {
+  PaginationDto,
+  PaginatedResult,
+  createPaginatedResult,
+} from '../../common/dto/pagination.dto';
 import {
   CreateOrganizationDto,
   UpdateOrganizationDto,
@@ -89,7 +96,9 @@ export class OrganizationsService {
 
       await queryRunner.commitTransaction();
 
-      this.logger.log(`Organization created: ${organization.name} (${organization.id})`);
+      this.logger.log(
+        `Organization created: ${organization.name} (${organization.id})`,
+      );
 
       // Outside the transaction so a slow/failed email provider never rolls
       // back the organization creation.
@@ -148,7 +157,9 @@ export class OrganizationsService {
     });
 
     await this.userRepository.save(user);
-    this.logger.log(`Benutzerkonto ueber Mitgliederverwaltung angelegt: ${user.email}`);
+    this.logger.log(
+      `Benutzerkonto ueber Mitgliederverwaltung angelegt: ${user.email}`,
+    );
 
     return user;
   }
@@ -180,8 +191,14 @@ export class OrganizationsService {
    * address. Silently does nothing if the toggle is off or no address is
    * configured anywhere.
    */
-  private async notifyAdminOfOrganizationCreated(organization: Organization, creator: User): Promise<void> {
-    const notifyEmail = await this.platformSettingsService.resolveNotificationTarget('organizationCreated');
+  private async notifyAdminOfOrganizationCreated(
+    organization: Organization,
+    creator: User,
+  ): Promise<void> {
+    const notifyEmail =
+      await this.platformSettingsService.resolveNotificationTarget(
+        'organizationCreated',
+      );
     if (!notifyEmail) {
       return;
     }
@@ -204,7 +221,9 @@ export class OrganizationsService {
     // Get organizations where user is a member
     const query = this.organizationRepository
       .createQueryBuilder('org')
-      .innerJoin('org.userOrganizations', 'uo', 'uo.userId = :userId', { userId: user.id })
+      .innerJoin('org.userOrganizations', 'uo', 'uo.userId = :userId', {
+        userId: user.id,
+      })
       .where('org.deletedAt IS NULL')
       .orderBy('org.name', 'ASC')
       .skip(skip)
@@ -247,11 +266,22 @@ export class OrganizationsService {
     // Handle masked SumUp keys: if a key starts with ****, keep the old one from DB.
     // Note: organization was loaded via findOne() which sanitizes keys,
     // so we must read raw keys directly from DB.
-    const sumupSettings = (updateDto.settings as Record<string, unknown>)?.sumup as
-      | { apiKey?: string; merchantCode?: string; affiliateKey?: string; appId?: string }
+    const sumupSettings = (updateDto.settings as Record<string, unknown>)
+      ?.sumup as
+      | {
+          apiKey?: string;
+          merchantCode?: string;
+          affiliateKey?: string;
+          appId?: string;
+        }
       | undefined;
-    if (sumupSettings?.apiKey?.startsWith('****') || sumupSettings?.affiliateKey?.startsWith('****')) {
-      const rawOrg = await this.organizationRepository.findOne({ where: { id } });
+    if (
+      sumupSettings?.apiKey?.startsWith('****') ||
+      sumupSettings?.affiliateKey?.startsWith('****')
+    ) {
+      const rawOrg = await this.organizationRepository.findOne({
+        where: { id },
+      });
       if (sumupSettings.apiKey?.startsWith('****')) {
         const existingKey = rawOrg?.settings?.sumup?.apiKey;
         if (existingKey) {
@@ -279,12 +309,14 @@ export class OrganizationsService {
     if (incomingSettings) {
       organization.settings = {
         ...organization.settings,
-        ...(incomingSettings as Record<string, unknown>),
+        ...incomingSettings,
       } as typeof organization.settings;
     }
     await this.organizationRepository.save(organization);
 
-    this.logger.log(`Organization updated: ${organization.name} (${organization.id})`);
+    this.logger.log(
+      `Organization updated: ${organization.name} (${organization.id})`,
+    );
 
     return this.sanitizeOrganization(organization);
   }
@@ -298,7 +330,9 @@ export class OrganizationsService {
     // Soft delete
     await this.organizationRepository.softRemove(organization);
 
-    this.logger.log(`Organization deleted: ${organization.name} (${organization.id})`);
+    this.logger.log(
+      `Organization deleted: ${organization.name} (${organization.id})`,
+    );
   }
 
   // Member Management
@@ -362,12 +396,17 @@ export class OrganizationsService {
       organizationId,
       userId: user.id,
       role: addMemberDto.role,
-      permissions: addMemberDto.role === OrganizationRole.ADMIN ? {} : (addMemberDto.permissions || {}),
+      permissions:
+        addMemberDto.role === OrganizationRole.ADMIN
+          ? {}
+          : addMemberDto.permissions || {},
     });
 
     await this.userOrganizationRepository.save(userOrganization);
 
-    this.logger.log(`Member added to organization ${organizationId}: ${user.email}`);
+    this.logger.log(
+      `Member added to organization ${organizationId}: ${user.email}`,
+    );
 
     return this.userOrganizationRepository.findOneOrFail({
       where: { id: userOrganization.id },
@@ -397,7 +436,11 @@ export class OrganizationsService {
     }
 
     // Prevent self-demotion from admin
-    if (member.userId === currentUser.id && updateDto.role && updateDto.role !== OrganizationRole.ADMIN) {
+    if (
+      member.userId === currentUser.id &&
+      updateDto.role &&
+      updateDto.role !== OrganizationRole.ADMIN
+    ) {
       const adminCount = await this.userOrganizationRepository.count({
         where: { organizationId, role: OrganizationRole.ADMIN },
       });
@@ -415,12 +458,15 @@ export class OrganizationsService {
     }
     if (updateDto.permissions !== undefined) {
       // Admins don't need permissions
-      member.permissions = member.role === OrganizationRole.ADMIN ? {} : updateDto.permissions;
+      member.permissions =
+        member.role === OrganizationRole.ADMIN ? {} : updateDto.permissions;
     }
 
     await this.userOrganizationRepository.save(member);
 
-    this.logger.log(`Member updated in organization ${organizationId}: ${member.user.email}`);
+    this.logger.log(
+      `Member updated in organization ${organizationId}: ${member.user.email}`,
+    );
 
     return member;
   }
@@ -461,7 +507,9 @@ export class OrganizationsService {
 
     await this.userOrganizationRepository.remove(member);
 
-    this.logger.log(`Member removed from organization ${organizationId}: ${member.user.email}`);
+    this.logger.log(
+      `Member removed from organization ${organizationId}: ${member.user.email}`,
+    );
   }
 
   // Invitation Management
@@ -513,14 +561,19 @@ export class OrganizationsService {
 
     // Generate invitation token
     const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+    const expiresAt = new Date(
+      Date.now() + INVITATION_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
+    );
 
     const invitation = this.invitationRepository.create({
       organization,
       organizationId,
       email: createDto.email.toLowerCase(),
       role: createDto.role,
-      permissions: createDto.role === OrganizationRole.ADMIN ? {} : (createDto.permissions || {}),
+      permissions:
+        createDto.role === OrganizationRole.ADMIN
+          ? {}
+          : createDto.permissions || {},
       token,
       expiresAt,
       invitedByUser: currentUser,
@@ -530,9 +583,12 @@ export class OrganizationsService {
     await this.invitationRepository.save(invitation);
 
     // Send invitation email
-    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    const appUrl =
+      this.configService.get<string>('APP_URL') || 'http://localhost:3000';
     const acceptUrl = `${appUrl}/de/invitations/${token}`;
-    const inviterName = `${currentUser.firstName} ${currentUser.lastName}`.trim() || currentUser.email;
+    const inviterName =
+      `${currentUser.firstName} ${currentUser.lastName}`.trim() ||
+      currentUser.email;
 
     await this.emailService.sendInvitationEmail(
       createDto.email,
@@ -542,7 +598,9 @@ export class OrganizationsService {
       createDto.role,
     );
 
-    this.logger.log(`Invitation created for ${createDto.email} to organization ${organizationId}`);
+    this.logger.log(
+      `Invitation created for ${createDto.email} to organization ${organizationId}`,
+    );
 
     return invitation;
   }
@@ -616,9 +674,12 @@ export class OrganizationsService {
       });
     }
 
-    const appUrl = this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    const appUrl =
+      this.configService.get<string>('APP_URL') || 'http://localhost:3000';
     const acceptUrl = `${appUrl}/de/invitations/${invitation.token}`;
-    const inviterName = `${currentUser.firstName} ${currentUser.lastName}`.trim() || currentUser.email;
+    const inviterName =
+      `${currentUser.firstName} ${currentUser.lastName}`.trim() ||
+      currentUser.email;
 
     await this.emailService.sendInvitationEmail(
       invitation.email,
@@ -628,7 +689,9 @@ export class OrganizationsService {
       invitation.role,
     );
 
-    this.logger.log(`Invitation resent: ${invitationId} to ${invitation.email}`);
+    this.logger.log(
+      `Invitation resent: ${invitationId} to ${invitation.email}`,
+    );
   }
 
   async getInvitationByToken(token: string): Promise<Invitation> {
@@ -704,7 +767,9 @@ export class OrganizationsService {
 
       await queryRunner.commitTransaction();
 
-      this.logger.log(`Invitation accepted: ${user.email} joined organization ${invitation.organizationId}`);
+      this.logger.log(
+        `Invitation accepted: ${user.email} joined organization ${invitation.organizationId}`,
+      );
 
       return this.userOrganizationRepository.findOneOrFail({
         where: { id: userOrganization.id },
@@ -732,11 +797,16 @@ export class OrganizationsService {
     // Delete the invitation
     await this.invitationRepository.remove(invitation);
 
-    this.logger.log(`Invitation declined: ${user.email} declined invitation to organization ${invitation.organizationId}`);
+    this.logger.log(
+      `Invitation declined: ${user.email} declined invitation to organization ${invitation.organizationId}`,
+    );
   }
 
   // Helper methods
-  async checkMembership(organizationId: string, user: User): Promise<UserOrganization> {
+  async checkMembership(
+    organizationId: string,
+    user: User,
+  ): Promise<UserOrganization> {
     if (user.isSuperAdmin) {
       return { role: OrganizationRole.ADMIN } as UserOrganization;
     }

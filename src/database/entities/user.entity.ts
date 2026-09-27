@@ -56,7 +56,12 @@ export class User extends SoftDeleteEntity {
   email: string;
 
   /** Leer bei Konten, die sich nur per Anmeldelink anmelden. */
-  @Column({ name: 'password_hash', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'password_hash',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   passwordHash: string | null;
 
   @Column({ name: 'first_name', type: 'varchar', length: 100 })
@@ -74,55 +79,116 @@ export class User extends SoftDeleteEntity {
   @Column({ name: 'is_superadmin', type: 'boolean', default: false })
   isSuperAdmin: boolean;
 
-  @Column({ name: 'email_verified_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'email_verified_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   emailVerifiedAt: Date | null;
 
-  @Column({ name: 'last_login_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'last_login_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   lastLoginAt: Date | null;
 
   @Column({ name: 'failed_login_attempts', type: 'int', default: 0 })
   failedLoginAttempts: number;
 
-  @Column({ name: 'locked_until', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'locked_until',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   lockedUntil: Date | null;
 
-  @Column({ name: 'password_reset_token', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'password_reset_token',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   passwordResetToken: string | null;
 
-  @Column({ name: 'password_reset_expires_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'password_reset_expires_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   passwordResetExpiresAt: Date | null;
 
-  @Column({ name: 'email_verification_token', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'email_verification_token',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   emailVerificationToken: string | null;
 
-  @Column({ name: 'email_verification_expires_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'email_verification_expires_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   emailVerificationExpiresAt: Date | null;
 
   // 2FA Fields
   @Column({ name: 'two_factor_enabled', type: 'boolean', default: false })
   twoFactorEnabled: boolean;
 
-  @Column({ name: 'two_factor_method', type: 'enum', enum: TwoFactorMethod, enumName: 'two_factor_method', nullable: true })
+  @Column({
+    name: 'two_factor_method',
+    type: 'enum',
+    enum: TwoFactorMethod,
+    enumName: 'two_factor_method',
+    nullable: true,
+  })
   twoFactorMethod: TwoFactorMethod | null;
 
   @Column({ name: 'two_factor_secret_encrypted', type: 'text', nullable: true })
   twoFactorSecretEncrypted: string | null;
 
-  @Column({ name: 'two_factor_backup_codes_hash', type: 'text', nullable: true })
+  @Column({
+    name: 'two_factor_backup_codes_hash',
+    type: 'text',
+    nullable: true,
+  })
   twoFactorBackupCodesHash: string | null;
 
   // User Preferences
-  @Column({ type: 'jsonb', default: { theme: 'system', locale: 'de', notifications: { email: true, push: true } } })
+  @Column({
+    type: 'jsonb',
+    default: {
+      theme: 'system',
+      locale: 'de',
+      notifications: { email: true, push: true },
+    },
+  })
   preferences: UserPreferences;
 
   // Pending Email Change
-  @Column({ name: 'pending_email', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'pending_email',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   pendingEmail: string | null;
 
-  @Column({ name: 'pending_email_token', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'pending_email_token',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   pendingEmailToken: string | null;
 
-  @Column({ name: 'pending_email_expires_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'pending_email_expires_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   pendingEmailExpiresAt: Date | null;
 
   // Relations

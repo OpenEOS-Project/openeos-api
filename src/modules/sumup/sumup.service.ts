@@ -27,7 +27,9 @@ export class SumUpService {
     private readonly configService: ConfigService,
   ) {}
 
-  private async getCredentials(organizationId: string): Promise<SumUpCredentials> {
+  private async getCredentials(
+    organizationId: string,
+  ): Promise<SumUpCredentials> {
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
     });
@@ -39,10 +41,12 @@ export class SumUpService {
       });
     }
 
-    const apiKey = organization.settings?.sumup?.apiKey
-      || this.configService.get<string>('SUMUP_API_KEY');
-    const merchantCode = organization.settings?.sumup?.merchantCode
-      || this.configService.get<string>('SUMUP_MERCHANT_CODE');
+    const apiKey =
+      organization.settings?.sumup?.apiKey ||
+      this.configService.get<string>('SUMUP_API_KEY');
+    const merchantCode =
+      organization.settings?.sumup?.merchantCode ||
+      this.configService.get<string>('SUMUP_MERCHANT_CODE');
 
     if (!apiKey || !merchantCode) {
       throw new BadRequestException({
@@ -51,31 +55,50 @@ export class SumUpService {
       });
     }
 
-    const affiliateKey = organization.settings?.sumup?.affiliateKey
-      || this.configService.get<string>('SUMUP_AFFILIATE_KEY');
-    const appId = organization.settings?.sumup?.appId
-      || this.configService.get<string>('SUMUP_APP_ID');
+    const affiliateKey =
+      organization.settings?.sumup?.affiliateKey ||
+      this.configService.get<string>('SUMUP_AFFILIATE_KEY');
+    const appId =
+      organization.settings?.sumup?.appId ||
+      this.configService.get<string>('SUMUP_APP_ID');
 
     return { apiKey, merchantCode, affiliateKey, appId };
   }
 
-  async testConnection(organizationId: string, user: User): Promise<{ success: boolean }> {
+  async testConnection(
+    organizationId: string,
+    user: User,
+  ): Promise<{ success: boolean }> {
     await this.checkPermission(organizationId, user.id, 'devices');
     const credentials = await this.getCredentials(organizationId);
 
-    await this.sumUpApiService.listReaders(credentials.apiKey, credentials.merchantCode);
+    await this.sumUpApiService.listReaders(
+      credentials.apiKey,
+      credentials.merchantCode,
+    );
 
     return { success: true };
   }
 
-  async listReaders(organizationId: string, user: User): Promise<SumUp.Readers.Reader[]> {
+  async listReaders(
+    organizationId: string,
+    user: User,
+  ): Promise<SumUp.Readers.Reader[]> {
     await this.checkPermission(organizationId, user.id, 'devices');
     const credentials = await this.getCredentials(organizationId);
 
-    return this.sumUpApiService.listReaders(credentials.apiKey, credentials.merchantCode);
+    return this.sumUpApiService.listReaders(
+      credentials.apiKey,
+      credentials.merchantCode,
+    );
   }
 
-  async pairReader(organizationId: string, pairingCode: string, name: string | undefined, user: User): Promise<SumUp.Readers.Reader> {
+  async pairReader(
+    organizationId: string,
+    pairingCode: string,
+    name: string | undefined,
+    user: User,
+  ): Promise<SumUp.Readers.Reader> {
     await this.checkPermission(organizationId, user.id, 'devices');
     const credentials = await this.getCredentials(organizationId);
 
@@ -89,29 +112,59 @@ export class SumUpService {
     );
   }
 
-  async getReaderStatus(organizationId: string, readerId: string, user: User): Promise<SumUp.Readers.StatusResponse> {
+  async getReaderStatus(
+    organizationId: string,
+    readerId: string,
+    user: User,
+  ): Promise<SumUp.Readers.StatusResponse> {
     await this.checkPermission(organizationId, user.id, 'devices');
     const credentials = await this.getCredentials(organizationId);
 
-    return this.sumUpApiService.getReaderStatus(credentials.apiKey, credentials.merchantCode, readerId);
+    return this.sumUpApiService.getReaderStatus(
+      credentials.apiKey,
+      credentials.merchantCode,
+      readerId,
+    );
   }
 
-  async updateReader(organizationId: string, readerId: string, name: string, user: User): Promise<SumUp.Readers.Reader> {
+  async updateReader(
+    organizationId: string,
+    readerId: string,
+    name: string,
+    user: User,
+  ): Promise<SumUp.Readers.Reader> {
     await this.checkPermission(organizationId, user.id, 'devices');
     const credentials = await this.getCredentials(organizationId);
 
-    this.logger.log(`Updating SumUp reader ${readerId} for organization ${organizationId}`);
+    this.logger.log(
+      `Updating SumUp reader ${readerId} for organization ${organizationId}`,
+    );
 
-    return this.sumUpApiService.updateReader(credentials.apiKey, credentials.merchantCode, readerId, name);
+    return this.sumUpApiService.updateReader(
+      credentials.apiKey,
+      credentials.merchantCode,
+      readerId,
+      name,
+    );
   }
 
-  async deleteReader(organizationId: string, readerId: string, user: User): Promise<void> {
+  async deleteReader(
+    organizationId: string,
+    readerId: string,
+    user: User,
+  ): Promise<void> {
     await this.checkPermission(organizationId, user.id, 'devices');
     const credentials = await this.getCredentials(organizationId);
 
-    this.logger.log(`Deleting SumUp reader ${readerId} for organization ${organizationId}`);
+    this.logger.log(
+      `Deleting SumUp reader ${readerId} for organization ${organizationId}`,
+    );
 
-    await this.sumUpApiService.deleteReader(credentials.apiKey, credentials.merchantCode, readerId);
+    await this.sumUpApiService.deleteReader(
+      credentials.apiKey,
+      credentials.merchantCode,
+      readerId,
+    );
   }
 
   async initiateCheckout(
@@ -124,7 +177,9 @@ export class SumUpService {
     await this.checkMembership(organizationId, user.id);
     const credentials = await this.getCredentials(organizationId);
 
-    this.logger.log(`Initiating SumUp checkout on reader ${readerId} for ${amount} ${currency}`);
+    this.logger.log(
+      `Initiating SumUp checkout on reader ${readerId} for ${amount} ${currency}`,
+    );
 
     return this.sumUpApiService.initiateCheckout(
       credentials.apiKey,
@@ -139,13 +194,21 @@ export class SumUpService {
     );
   }
 
-  async terminateCheckout(organizationId: string, readerId: string, user: User): Promise<void> {
+  async terminateCheckout(
+    organizationId: string,
+    readerId: string,
+    user: User,
+  ): Promise<void> {
     await this.checkMembership(organizationId, user.id);
     const credentials = await this.getCredentials(organizationId);
 
     this.logger.log(`Terminating SumUp checkout on reader ${readerId}`);
 
-    await this.sumUpApiService.terminateCheckout(credentials.apiKey, credentials.merchantCode, readerId);
+    await this.sumUpApiService.terminateCheckout(
+      credentials.apiKey,
+      credentials.merchantCode,
+      readerId,
+    );
   }
 
   async createOnlineCheckout(
@@ -176,12 +239,17 @@ export class SumUpService {
     );
 
     return {
-      checkoutUrl: response.checkoutUrl || `https://pay.sumup.com/b2c/checkout/${response.id}`,
+      checkoutUrl:
+        response.checkoutUrl ||
+        `https://pay.sumup.com/b2c/checkout/${response.id}`,
       checkoutId: response.id,
     };
   }
 
-  private async checkMembership(organizationId: string, userId: string): Promise<void> {
+  private async checkMembership(
+    organizationId: string,
+    userId: string,
+  ): Promise<void> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });

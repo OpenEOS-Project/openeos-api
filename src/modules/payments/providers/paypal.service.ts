@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 interface PayPalOrderResponse {
@@ -10,7 +10,9 @@ interface PayPalOrderResponse {
 interface PayPalCaptureResponse {
   id: string;
   status: string;
-  purchase_units: { payments: { captures: { id: string; amount: { value: string } }[] } }[];
+  purchase_units: {
+    payments: { captures: { id: string; amount: { value: string } }[] };
+  }[];
 }
 
 @Injectable()
@@ -25,7 +27,10 @@ export class PayPalService {
       : 'https://api-m.paypal.com';
   }
 
-  private async getAccessToken(clientId: string, clientSecret: string): Promise<string> {
+  private async getAccessToken(
+    clientId: string,
+    clientSecret: string,
+  ): Promise<string> {
     const response = await fetch(`${this.baseUrl}/v1/oauth2/token`, {
       method: 'POST',
       headers: {
@@ -39,7 +44,7 @@ export class PayPalService {
       throw new Error(`PayPal auth failed: ${response.status}`);
     }
 
-    const data = await response.json() as { access_token: string };
+    const data = (await response.json()) as { access_token: string };
     return data.access_token;
   }
 
@@ -62,13 +67,15 @@ export class PayPalService {
       },
       body: JSON.stringify({
         intent: 'CAPTURE',
-        purchase_units: [{
-          amount: {
-            currency_code: currency,
-            value: amount.toFixed(2),
+        purchase_units: [
+          {
+            amount: {
+              currency_code: currency,
+              value: amount.toFixed(2),
+            },
+            description,
           },
-          description,
-        }],
+        ],
         application_context: {
           return_url: returnUrl,
           cancel_url: cancelUrl,
@@ -87,20 +94,49 @@ export class PayPalService {
     return response.json() as Promise<PayPalOrderResponse>;
   }
 
+  /**
+   * Prueft die Bestellnummer, bevor sie in eine URL wandert.
+   *
+   * Sie kommt aus der Anfrage des Kunden und landete bisher ungeprueft im
+   * Pfad. Ein Wert mit `/`, `?` oder `..` haette die Anfrage damit auf einen
+   * anderen Endpunkt umgelenkt, als hier gemeint ist — mit dem gueltigen
+   * Zugangstoken der Organisation im Gepaeck.
+   *
+   * PayPal vergibt Kennungen aus Grossbuchstaben und Ziffern. Alles, was
+   * nicht so aussieht, ist kein Auftrag von PayPal.
+   *
+   * Zusaetzlich wird der Wert beim Einsetzen kodiert. Die Pruefung allein
+   * genuegte zwar, aber sie steht an anderer Stelle als die Verwendung —
+   * die Kodierung schuetzt auch dann noch, wenn jemand spaeter eine dritte
+   * Abfrage ergaenzt und den Aufruf hier vergisst.
+   */
+  private assertSafeOrderId(paypalOrderId: string): void {
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(paypalOrderId)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Ungueltige PayPal-Bestellnummer',
+      });
+    }
+  }
+
   async captureOrder(
     paypalOrderId: string,
     clientId: string,
     clientSecret: string,
   ): Promise<PayPalCaptureResponse> {
+    this.assertSafeOrderId(paypalOrderId);
     const accessToken = await this.getAccessToken(clientId, clientSecret);
 
-    const response = await fetch(`${this.baseUrl}/v2/checkout/orders/${paypalOrderId}/capture`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
+    const response = await fetch(
+      `${this.baseUrl}/v2/checkout/orders/${encodeURIComponent(paypalOrderId)}/capture`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       const error = await response.text();
@@ -116,14 +152,18 @@ export class PayPalService {
     clientId: string,
     clientSecret: string,
   ): Promise<PayPalOrderResponse> {
+    this.assertSafeOrderId(paypalOrderId);
     const accessToken = await this.getAccessToken(clientId, clientSecret);
 
-    const response = await fetch(`${this.baseUrl}/v2/checkout/orders/${paypalOrderId}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
+    const response = await fetch(
+      `${this.baseUrl}/v2/checkout/orders/${encodeURIComponent(paypalOrderId)}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       throw new Error(`PayPal get order failed: ${response.status}`);

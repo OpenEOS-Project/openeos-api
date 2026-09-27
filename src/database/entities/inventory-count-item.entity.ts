@@ -29,15 +29,23 @@ export class InventoryCountItem extends BaseEntity {
   @Column({ name: 'counted_by_user_id', type: 'uuid', nullable: true })
   countedByUserId: string | null;
 
-  @Column({ name: 'counted_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'counted_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   countedAt: Date | null;
 
   // Relations
-  @ManyToOne(() => InventoryCount, (count) => count.items, { onDelete: 'CASCADE' })
+  @ManyToOne(() => InventoryCount, (count) => count.items, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'inventory_count_id' })
   inventoryCount: InventoryCount;
 
-  @ManyToOne(() => Product, (product) => product.inventoryCountItems, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Product, (product) => product.inventoryCountItems, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'product_id' })
   product: Product;
 

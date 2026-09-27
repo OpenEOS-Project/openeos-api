@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ApiTokensService } from './api-tokens.service';
@@ -48,7 +57,10 @@ export class ApiTokensController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Revoke a token' })
-  async widerrufe(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
+  async widerrufe(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     const data = await this.apiTokensService.widerrufe(user.id, id);
     return { data };
   }

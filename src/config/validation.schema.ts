@@ -2,7 +2,9 @@ import * as Joi from 'joi';
 
 export const validationSchema = Joi.object({
   // Application
-  NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
+  NODE_ENV: Joi.string()
+    .valid('development', 'production', 'test')
+    .default('development'),
   PORT: Joi.number().default(3000),
   API_PREFIX: Joi.string().default('api'),
   API_VERSION: Joi.number().default(1),
@@ -50,7 +52,9 @@ export const validationSchema = Joi.object({
   }),
 
   // CORS
-  CORS_ORIGINS: Joi.string().default('http://localhost:3001,http://localhost:3002'),
+  CORS_ORIGINS: Joi.string().default(
+    'http://localhost:3001,http://localhost:3002',
+  ),
 
   // Rate Limiting
   THROTTLE_TTL: Joi.number().default(60000),

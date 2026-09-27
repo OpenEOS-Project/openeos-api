@@ -15,7 +15,10 @@ export class ContactController {
 
   @Post()
   @Throttle({ default: { limit: 5, ttl: 3600000 } })
-  @ApiOperation({ summary: 'Demo-/Kontaktanfrage von der Marketing-Website (nicht authentifiziert)' })
+  @ApiOperation({
+    summary:
+      'Demo-/Kontaktanfrage von der Marketing-Website (nicht authentifiziert)',
+  })
   async submit(@Body() dto: CreateContactRequestDto) {
     const data = await this.contactService.submit(dto);
     return { data };

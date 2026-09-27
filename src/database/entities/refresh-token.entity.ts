@@ -22,7 +22,11 @@ export class RefreshToken extends BaseEntity {
   @Column({ name: 'expires_at', type: 'timestamp with time zone' })
   expiresAt: Date;
 
-  @Column({ name: 'revoked_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'revoked_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   revokedAt: Date | null;
 
   // Relations

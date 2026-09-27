@@ -2,7 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
 
-import { ContactRequest, type ContactRequestKind } from '../../database/entities';
+import {
+  ContactRequest,
+  type ContactRequestKind,
+} from '../../database/entities';
 import { ErrorCodes } from '../../common/constants/error-codes';
 
 @Injectable()
@@ -32,7 +35,9 @@ export class ContactAdminService {
 
   /** Haken setzen oder wieder entfernen — versehentliches Abhaken passiert. */
   async toggleHandled(id: string): Promise<ContactRequest> {
-    const eintrag = await this.contactRequestRepository.findOne({ where: { id } });
+    const eintrag = await this.contactRequestRepository.findOne({
+      where: { id },
+    });
     if (!eintrag) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,

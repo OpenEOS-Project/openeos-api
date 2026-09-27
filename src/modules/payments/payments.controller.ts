@@ -36,7 +36,11 @@ export class PaymentsController {
     @Body() splitDto: SplitPaymentDto,
     @CurrentUser() user: User,
   ) {
-    return this.paymentsService.createSplitPayment(organizationId, splitDto, user);
+    return this.paymentsService.createSplitPayment(
+      organizationId,
+      splitDto,
+      user,
+    );
   }
 
   @Get()
@@ -63,7 +67,11 @@ export class PaymentsController {
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @CurrentUser() user: User,
   ) {
-    return this.paymentsService.getPaymentsByOrder(organizationId, orderId, user);
+    return this.paymentsService.getPaymentsByOrder(
+      organizationId,
+      orderId,
+      user,
+    );
   }
 
   @Post(':paymentId/refund')

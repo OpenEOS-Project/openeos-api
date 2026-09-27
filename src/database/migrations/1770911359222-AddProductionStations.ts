@@ -1,17 +1,17 @@
-import { MigrationInterface, QueryRunner } from "typeorm";
+import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddProductionStations1770911359222 implements MigrationInterface {
-    name = 'AddProductionStations1770911359222'
+  name = 'AddProductionStations1770911359222';
 
-    public async up(queryRunner: QueryRunner): Promise<void> {
-        // This migration was generated against a dev DB whose FK constraint
-        // names happened to match what TypeORM expected. Other deployments
-        // (esp. ones bootstrapped with `synchronize: true` at any point) have
-        // hash-named FKs (`FK_xxxxxxxxxxxxxxxxxxxxxxxxx`) that don't match
-        // the literal names below. We use a PL/pgSQL helper to drop any FK
-        // by (table, column) regardless of its actual name, so the migration
-        // is reproducible across DB histories.
-        await queryRunner.query(`
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    // This migration was generated against a dev DB whose FK constraint
+    // names happened to match what TypeORM expected. Other deployments
+    // (esp. ones bootstrapped with `synchronize: true` at any point) have
+    // hash-named FKs (`FK_xxxxxxxxxxxxxxxxxxxxxxxxx`) that don't match
+    // the literal names below. We use a PL/pgSQL helper to drop any FK
+    // by (table, column) regardless of its actual name, so the migration
+    // is reproducible across DB histories.
+    await queryRunner.query(`
             CREATE OR REPLACE FUNCTION __omc_drop_fk(t text, c text) RETURNS void AS $$
             DECLARE cname text;
             BEGIN
@@ -31,44 +31,102 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
             END;
             $$ LANGUAGE plpgsql
         `);
-        await queryRunner.query(`SELECT __omc_drop_fk('printers', 'device_id')`);
-        await queryRunner.query(`SELECT __omc_drop_fk('devices', 'verified_by_id')`);
-        await queryRunner.query(`SELECT __omc_drop_fk('rental_hardware', 'device_id')`);
-        await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'event_id')`);
-        await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'organization_id')`);
-        await queryRunner.query(`SELECT __omc_drop_fk('shift_jobs', 'shift_plan_id')`);
-        await queryRunner.query(`SELECT __omc_drop_fk('shift_registrations', 'shift_id')`);
-        await queryRunner.query(`SELECT __omc_drop_fk('shifts', 'shift_job_id')`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."idx_printers_device_id"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_devices_organization_status"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."idx_rental_hardware_device_id"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_credit_purchases_stripe_checkout_session_id"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_trusted_devices_user_fingerprint"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_trusted_devices_expires_at"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_email_otps_user_purpose"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_email_otps_expires_at"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_organizations_stripe_customer_id"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_subscription_config_is_active"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_plans_organization_created"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_plans_public_slug"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_plans_status"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_jobs_plan_order"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_registrations_email"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_registrations_token"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_registrations_group"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shift_registrations_shift_status"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shifts_job_date"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shifts_date"`);
-        await queryRunner.query(`CREATE TABLE IF NOT EXISTS "production_stations" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "event_id" uuid NOT NULL, "name" character varying(255) NOT NULL, "description" text, "color" character varying(7), "sort_order" integer NOT NULL DEFAULT '0', "is_active" boolean NOT NULL DEFAULT true, "handoff_station_id" uuid, CONSTRAINT "PK_ae758725ecacb01e9c05ea3e28f" PRIMARY KEY ("id"))`);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_e48ed479b9aa559003056ce915" ON "production_stations" ("event_id", "sort_order") `);
-        await queryRunner.query(`ALTER TABLE "order_items" ADD COLUMN IF NOT EXISTS "production_station_id" uuid`);
-        await queryRunner.query(`ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "production_station_id" uuid`);
-        await queryRunner.query(`ALTER TABLE "categories" ADD COLUMN IF NOT EXISTS "production_station_id" uuid`);
+    await queryRunner.query(`SELECT __omc_drop_fk('printers', 'device_id')`);
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('devices', 'verified_by_id')`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('rental_hardware', 'device_id')`,
+    );
+    await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'event_id')`);
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('shift_plans', 'organization_id')`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('shift_jobs', 'shift_plan_id')`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('shift_registrations', 'shift_id')`,
+    );
+    await queryRunner.query(`SELECT __omc_drop_fk('shifts', 'shift_job_id')`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."idx_printers_device_id"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_devices_organization_status"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."idx_rental_hardware_device_id"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_credit_purchases_stripe_checkout_session_id"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_trusted_devices_user_fingerprint"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_trusted_devices_expires_at"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_email_otps_user_purpose"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_email_otps_expires_at"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_organizations_stripe_customer_id"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_subscription_config_is_active"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_shift_plans_organization_created"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_shift_plans_public_slug"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_shift_plans_status"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_shift_jobs_plan_order"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_shift_registrations_email"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_shift_registrations_token"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_shift_registrations_group"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_shift_registrations_shift_status"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "public"."IDX_shifts_job_date"`,
+    );
+    await queryRunner.query(`DROP INDEX IF EXISTS "public"."IDX_shifts_date"`);
+    await queryRunner.query(
+      `CREATE TABLE IF NOT EXISTS "production_stations" ("id" uuid NOT NULL DEFAULT uuid_generate_v4(), "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), "event_id" uuid NOT NULL, "name" character varying(255) NOT NULL, "description" text, "color" character varying(7), "sort_order" integer NOT NULL DEFAULT '0', "is_active" boolean NOT NULL DEFAULT true, "handoff_station_id" uuid, CONSTRAINT "PK_ae758725ecacb01e9c05ea3e28f" PRIMARY KEY ("id"))`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_e48ed479b9aa559003056ce915" ON "production_stations" ("event_id", "sort_order") `,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "order_items" ADD COLUMN IF NOT EXISTS "production_station_id" uuid`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "production_station_id" uuid`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "categories" ADD COLUMN IF NOT EXISTS "production_station_id" uuid`,
+    );
 
-        // Map legacy organization_role values (manager/cashier/kitchen/delivery)
-        // to admin/member BEFORE the enum is narrowed, otherwise the USING-text
-        // cast below fails on those values.
-        await queryRunner.query(`
+    // Map legacy organization_role values (manager/cashier/kitchen/delivery)
+    // to admin/member BEFORE the enum is narrowed, otherwise the USING-text
+    // cast below fails on those values.
+    await queryRunner.query(`
             DO $$
             BEGIN
                 IF EXISTS (SELECT 1 FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid WHERE t.typname = 'organization_role' AND e.enumlabel = 'manager') THEN
@@ -81,8 +139,8 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
                 END IF;
             END $$
         `);
-        // Enum rename — idempotent: skip if already done by a prior partial run.
-        await queryRunner.query(`
+    // Enum rename — idempotent: skip if already done by a prior partial run.
+    await queryRunner.query(`
             DO $$
             BEGIN
                 IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organization_role')
@@ -93,7 +151,7 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
                 END IF;
             END $$
         `);
-        await queryRunner.query(`
+    await queryRunner.query(`
             DO $$
             BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organization_role') THEN
@@ -101,7 +159,7 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
                 END IF;
             END $$
         `);
-        await queryRunner.query(`
+    await queryRunner.query(`
             DO $$
             BEGIN
                 IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'organization_role_old') THEN
@@ -111,18 +169,28 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
                 END IF;
             END $$
         `);
-        // invitations.permissions might still have NULLs from very-old rows;
-        // backfill them with the empty-object default so the NOT NULL stick.
-        await queryRunner.query(`UPDATE "invitations" SET "permissions" = '{}'::jsonb WHERE "permissions" IS NULL`);
-        await queryRunner.query(`ALTER TABLE "invitations" ALTER COLUMN "permissions" SET NOT NULL`);
-        // organization_id FK is name-agnostic — already dropped via __omc_drop_fk above.
-        await queryRunner.query(`SELECT __omc_drop_fk('devices', 'organization_id')`);
-        await queryRunner.query(`ALTER TABLE "devices" ALTER COLUMN "organization_id" DROP NOT NULL`);
-        await queryRunner.query(`ALTER TABLE "devices" ALTER COLUMN "status" SET DEFAULT 'pending'`);
-        // `pin` is added by a later migration (AddUserOrganizationPin1772000000000),
-        // but this migration was authored on a dev DB where pin already existed,
-        // so the schema diff included it. Skip if the column isn't there yet.
-        await queryRunner.query(`
+    // invitations.permissions might still have NULLs from very-old rows;
+    // backfill them with the empty-object default so the NOT NULL stick.
+    await queryRunner.query(
+      `UPDATE "invitations" SET "permissions" = '{}'::jsonb WHERE "permissions" IS NULL`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "invitations" ALTER COLUMN "permissions" SET NOT NULL`,
+    );
+    // organization_id FK is name-agnostic — already dropped via __omc_drop_fk above.
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('devices', 'organization_id')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "devices" ALTER COLUMN "organization_id" DROP NOT NULL`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "devices" ALTER COLUMN "status" SET DEFAULT 'pending'`,
+    );
+    // `pin` is added by a later migration (AddUserOrganizationPin1772000000000),
+    // but this migration was authored on a dev DB where pin already existed,
+    // so the schema diff included it. Skip if the column isn't there yet.
+    await queryRunner.query(`
             DO $$
             BEGIN
                 IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_organizations' AND column_name = 'pin') THEN
@@ -130,11 +198,11 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
                 END IF;
             END $$
         `);
-        // device_id columns on printers/rental_hardware are added later by
-        // 1773000000000-PrinterDeviceRelations; skip these index/FK setups
-        // if the columns don't exist yet — that migration will create them
-        // with their own FK and we don't need to backport here.
-        await queryRunner.query(`
+    // device_id columns on printers/rental_hardware are added later by
+    // 1773000000000-PrinterDeviceRelations; skip these index/FK setups
+    // if the columns don't exist yet — that migration will create them
+    // with their own FK and we don't need to backport here.
+    await queryRunner.query(`
             DO $$
             BEGIN
                 IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'printers' AND column_name = 'device_id') THEN
@@ -142,20 +210,40 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
                 END IF;
             END $$
         `);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_11280db1d1cfac8c769bd5efb1" ON "shift_plans" ("status") `);
-        await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS "IDX_715ccd209537860dbd54076e45" ON "shift_plans" ("public_slug") `);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_7cfde20f68b54e84900f2366bf" ON "shift_plans" ("organization_id", "created_at") `);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_152965489cf057486306e5385b" ON "shift_jobs" ("shift_plan_id", "sort_order") `);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_7cd665289b4003eee910330236" ON "shift_registrations" ("registration_group_id") `);
-        await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS "IDX_2322549eaf2319b5f0943dc9d2" ON "shift_registrations" ("verification_token") `);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_57f3f55d490079b74353332b84" ON "shift_registrations" ("email") `);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_42ce32dfce5077b51f03ad7cd3" ON "shift_registrations" ("shift_id", "status") `);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_01a43905fce3aabc2d113840bc" ON "shifts" ("date") `);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_42f803aef0212347632115eb4b" ON "shifts" ("shift_job_id", "date") `);
-        // ADD CONSTRAINT FKs — drop any pre-existing FK on the same column first
-        // (idempotent against partial-run state or legacy hash names).
-        await queryRunner.query(`SELECT __omc_drop_fk('printers', 'device_id')`);
-        await queryRunner.query(`
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_11280db1d1cfac8c769bd5efb1" ON "shift_plans" ("status") `,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "IDX_715ccd209537860dbd54076e45" ON "shift_plans" ("public_slug") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_7cfde20f68b54e84900f2366bf" ON "shift_plans" ("organization_id", "created_at") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_152965489cf057486306e5385b" ON "shift_jobs" ("shift_plan_id", "sort_order") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_7cd665289b4003eee910330236" ON "shift_registrations" ("registration_group_id") `,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "IDX_2322549eaf2319b5f0943dc9d2" ON "shift_registrations" ("verification_token") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_57f3f55d490079b74353332b84" ON "shift_registrations" ("email") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_42ce32dfce5077b51f03ad7cd3" ON "shift_registrations" ("shift_id", "status") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_01a43905fce3aabc2d113840bc" ON "shifts" ("date") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_42f803aef0212347632115eb4b" ON "shifts" ("shift_job_id", "date") `,
+    );
+    // ADD CONSTRAINT FKs — drop any pre-existing FK on the same column first
+    // (idempotent against partial-run state or legacy hash names).
+    await queryRunner.query(`SELECT __omc_drop_fk('printers', 'device_id')`);
+    await queryRunner.query(`
             DO $$
             BEGIN
                 IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'printers' AND column_name = 'device_id') THEN
@@ -163,22 +251,52 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
                 END IF;
             END $$
         `);
-        await queryRunner.query(`SELECT __omc_drop_fk('devices', 'organization_id')`);
-        await queryRunner.query(`ALTER TABLE "devices" ADD CONSTRAINT "FK_3f8418d0a8ce1e08098d37c9b67" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`SELECT __omc_drop_fk('devices', 'verified_by_id')`);
-        await queryRunner.query(`ALTER TABLE "devices" ADD CONSTRAINT "FK_d747b46aa60a919ada56253a820" FOREIGN KEY ("verified_by_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
-        await queryRunner.query(`SELECT __omc_drop_fk('production_stations', 'event_id')`);
-        await queryRunner.query(`ALTER TABLE "production_stations" ADD CONSTRAINT "FK_afa939e30ab4a6d744b7bf8da81" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`SELECT __omc_drop_fk('production_stations', 'handoff_station_id')`);
-        await queryRunner.query(`ALTER TABLE "production_stations" ADD CONSTRAINT "FK_a157e65aa86c9489e6b34b8ecfd" FOREIGN KEY ("handoff_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
-        await queryRunner.query(`SELECT __omc_drop_fk('order_items', 'production_station_id')`);
-        await queryRunner.query(`ALTER TABLE "order_items" ADD CONSTRAINT "FK_c938c2ae5a8835fedc1c40b0690" FOREIGN KEY ("production_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
-        await queryRunner.query(`SELECT __omc_drop_fk('products', 'production_station_id')`);
-        await queryRunner.query(`ALTER TABLE "products" ADD CONSTRAINT "FK_b856095b06c363b7a3f4b33430c" FOREIGN KEY ("production_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
-        await queryRunner.query(`SELECT __omc_drop_fk('categories', 'production_station_id')`);
-        await queryRunner.query(`ALTER TABLE "categories" ADD CONSTRAINT "FK_98ac0c21134c027a744c980a421" FOREIGN KEY ("production_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
-        await queryRunner.query(`SELECT __omc_drop_fk('rental_hardware', 'device_id')`);
-        await queryRunner.query(`
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('devices', 'organization_id')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "devices" ADD CONSTRAINT "FK_3f8418d0a8ce1e08098d37c9b67" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('devices', 'verified_by_id')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "devices" ADD CONSTRAINT "FK_d747b46aa60a919ada56253a820" FOREIGN KEY ("verified_by_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('production_stations', 'event_id')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" ADD CONSTRAINT "FK_afa939e30ab4a6d744b7bf8da81" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('production_stations', 'handoff_station_id')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" ADD CONSTRAINT "FK_a157e65aa86c9489e6b34b8ecfd" FOREIGN KEY ("handoff_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('order_items', 'production_station_id')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "order_items" ADD CONSTRAINT "FK_c938c2ae5a8835fedc1c40b0690" FOREIGN KEY ("production_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('products', 'production_station_id')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "products" ADD CONSTRAINT "FK_b856095b06c363b7a3f4b33430c" FOREIGN KEY ("production_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('categories', 'production_station_id')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "categories" ADD CONSTRAINT "FK_98ac0c21134c027a744c980a421" FOREIGN KEY ("production_station_id") REFERENCES "production_stations"("id") ON DELETE SET NULL ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('rental_hardware', 'device_id')`,
+    );
+    await queryRunner.query(`
             DO $$
             BEGIN
                 IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'rental_hardware' AND column_name = 'device_id') THEN
@@ -186,88 +304,237 @@ export class AddProductionStations1770911359222 implements MigrationInterface {
                 END IF;
             END $$
         `);
-        await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'organization_id')`);
-        await queryRunner.query(`ALTER TABLE "shift_plans" ADD CONSTRAINT "FK_25ad411b8990077d18799d28384" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'event_id')`);
-        await queryRunner.query(`ALTER TABLE "shift_plans" ADD CONSTRAINT "FK_cee7acc9cf2e7f5bad60ebb6a9e" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
-        await queryRunner.query(`SELECT __omc_drop_fk('shift_jobs', 'shift_plan_id')`);
-        await queryRunner.query(`ALTER TABLE "shift_jobs" ADD CONSTRAINT "FK_0551bb15772312807d7f7fd6123" FOREIGN KEY ("shift_plan_id") REFERENCES "shift_plans"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`SELECT __omc_drop_fk('shift_registrations', 'shift_id')`);
-        await queryRunner.query(`ALTER TABLE "shift_registrations" ADD CONSTRAINT "FK_b539608be5ddac34913edce8385" FOREIGN KEY ("shift_id") REFERENCES "shifts"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`SELECT __omc_drop_fk('shifts', 'shift_job_id')`);
-        await queryRunner.query(`ALTER TABLE "shifts" ADD CONSTRAINT "FK_6773714b65a84efabf657480e8f" FOREIGN KEY ("shift_job_id") REFERENCES "shift_jobs"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`DROP FUNCTION IF EXISTS __omc_drop_fk(text, text)`);
-    }
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('shift_plans', 'organization_id')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_plans" ADD CONSTRAINT "FK_25ad411b8990077d18799d28384" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(`SELECT __omc_drop_fk('shift_plans', 'event_id')`);
+    await queryRunner.query(
+      `ALTER TABLE "shift_plans" ADD CONSTRAINT "FK_cee7acc9cf2e7f5bad60ebb6a9e" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE SET NULL ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('shift_jobs', 'shift_plan_id')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_jobs" ADD CONSTRAINT "FK_0551bb15772312807d7f7fd6123" FOREIGN KEY ("shift_plan_id") REFERENCES "shift_plans"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `SELECT __omc_drop_fk('shift_registrations', 'shift_id')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_registrations" ADD CONSTRAINT "FK_b539608be5ddac34913edce8385" FOREIGN KEY ("shift_id") REFERENCES "shifts"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(`SELECT __omc_drop_fk('shifts', 'shift_job_id')`);
+    await queryRunner.query(
+      `ALTER TABLE "shifts" ADD CONSTRAINT "FK_6773714b65a84efabf657480e8f" FOREIGN KEY ("shift_job_id") REFERENCES "shift_jobs"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `DROP FUNCTION IF EXISTS __omc_drop_fk(text, text)`,
+    );
+  }
 
-    public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`ALTER TABLE "shifts" DROP CONSTRAINT "FK_6773714b65a84efabf657480e8f"`);
-        await queryRunner.query(`ALTER TABLE "shift_registrations" DROP CONSTRAINT "FK_b539608be5ddac34913edce8385"`);
-        await queryRunner.query(`ALTER TABLE "shift_jobs" DROP CONSTRAINT "FK_0551bb15772312807d7f7fd6123"`);
-        await queryRunner.query(`ALTER TABLE "shift_plans" DROP CONSTRAINT "FK_cee7acc9cf2e7f5bad60ebb6a9e"`);
-        await queryRunner.query(`ALTER TABLE "shift_plans" DROP CONSTRAINT "FK_25ad411b8990077d18799d28384"`);
-        await queryRunner.query(`ALTER TABLE "rental_hardware" DROP CONSTRAINT "FK_eb38782e6bb558ce73c84173b2b"`);
-        await queryRunner.query(`ALTER TABLE "categories" DROP CONSTRAINT "FK_98ac0c21134c027a744c980a421"`);
-        await queryRunner.query(`ALTER TABLE "products" DROP CONSTRAINT "FK_b856095b06c363b7a3f4b33430c"`);
-        await queryRunner.query(`ALTER TABLE "order_items" DROP CONSTRAINT "FK_c938c2ae5a8835fedc1c40b0690"`);
-        await queryRunner.query(`ALTER TABLE "production_stations" DROP CONSTRAINT "FK_a157e65aa86c9489e6b34b8ecfd"`);
-        await queryRunner.query(`ALTER TABLE "production_stations" DROP CONSTRAINT "FK_afa939e30ab4a6d744b7bf8da81"`);
-        await queryRunner.query(`ALTER TABLE "devices" DROP CONSTRAINT "FK_d747b46aa60a919ada56253a820"`);
-        await queryRunner.query(`ALTER TABLE "devices" DROP CONSTRAINT "FK_3f8418d0a8ce1e08098d37c9b67"`);
-        await queryRunner.query(`ALTER TABLE "printers" DROP CONSTRAINT "FK_387be382a8b6eccb1b2157bb849"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_42f803aef0212347632115eb4b"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_01a43905fce3aabc2d113840bc"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_42ce32dfce5077b51f03ad7cd3"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_57f3f55d490079b74353332b84"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_2322549eaf2319b5f0943dc9d2"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_7cd665289b4003eee910330236"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_152965489cf057486306e5385b"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_7cfde20f68b54e84900f2366bf"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_715ccd209537860dbd54076e45"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_11280db1d1cfac8c769bd5efb1"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_387be382a8b6eccb1b2157bb84"`);
-        await queryRunner.query(`ALTER TABLE "user_organizations" ALTER COLUMN "pin" SET DEFAULT NULL`);
-        await queryRunner.query(`ALTER TABLE "devices" ALTER COLUMN "status" SET DEFAULT 'verified'`);
-        await queryRunner.query(`ALTER TABLE "devices" ALTER COLUMN "organization_id" SET NOT NULL`);
-        await queryRunner.query(`ALTER TABLE "devices" ADD CONSTRAINT "FK_3f8418d0a8ce1e08098d37c9b67" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`ALTER TABLE "invitations" ALTER COLUMN "permissions" DROP NOT NULL`);
-        await queryRunner.query(`CREATE TYPE "public"."organization_role_old" AS ENUM('admin', 'cashier', 'delivery', 'kitchen', 'manager', 'member')`);
-        await queryRunner.query(`ALTER TABLE "invitations" ALTER COLUMN "role" TYPE "public"."organization_role_old" USING "role"::"text"::"public"."organization_role_old"`);
-        await queryRunner.query(`ALTER TABLE "user_organizations" ALTER COLUMN "role" TYPE "public"."organization_role_old" USING "role"::"text"::"public"."organization_role_old"`);
-        await queryRunner.query(`DROP TYPE "public"."organization_role"`);
-        await queryRunner.query(`ALTER TYPE "public"."organization_role_old" RENAME TO "organization_role"`);
-        await queryRunner.query(`ALTER TABLE "categories" DROP COLUMN "production_station_id"`);
-        await queryRunner.query(`ALTER TABLE "products" DROP COLUMN "production_station_id"`);
-        await queryRunner.query(`ALTER TABLE "order_items" DROP COLUMN "production_station_id"`);
-        await queryRunner.query(`DROP INDEX "public"."IDX_e48ed479b9aa559003056ce915"`);
-        await queryRunner.query(`DROP TABLE "production_stations"`);
-        await queryRunner.query(`CREATE INDEX "IDX_shifts_date" ON "shifts" ("date") `);
-        await queryRunner.query(`CREATE INDEX "IDX_shifts_job_date" ON "shifts" ("shift_job_id", "date") `);
-        await queryRunner.query(`CREATE INDEX "IDX_shift_registrations_shift_status" ON "shift_registrations" ("shift_id", "status") `);
-        await queryRunner.query(`CREATE INDEX "IDX_shift_registrations_group" ON "shift_registrations" ("registration_group_id") `);
-        await queryRunner.query(`CREATE UNIQUE INDEX "IDX_shift_registrations_token" ON "shift_registrations" ("verification_token") `);
-        await queryRunner.query(`CREATE INDEX "IDX_shift_registrations_email" ON "shift_registrations" ("email") `);
-        await queryRunner.query(`CREATE INDEX "IDX_shift_jobs_plan_order" ON "shift_jobs" ("shift_plan_id", "sort_order") `);
-        await queryRunner.query(`CREATE INDEX "IDX_shift_plans_status" ON "shift_plans" ("status") `);
-        await queryRunner.query(`CREATE UNIQUE INDEX "IDX_shift_plans_public_slug" ON "shift_plans" ("public_slug") `);
-        await queryRunner.query(`CREATE INDEX "IDX_shift_plans_organization_created" ON "shift_plans" ("organization_id", "created_at") `);
-        await queryRunner.query(`CREATE INDEX "IDX_subscription_config_is_active" ON "subscription_config" ("is_active") `);
-        await queryRunner.query(`CREATE INDEX "IDX_organizations_stripe_customer_id" ON "organizations" ("stripe_customer_id") WHERE (stripe_customer_id IS NOT NULL)`);
-        await queryRunner.query(`CREATE INDEX "IDX_email_otps_expires_at" ON "email_otps" ("expires_at") `);
-        await queryRunner.query(`CREATE INDEX "IDX_email_otps_user_purpose" ON "email_otps" ("user_id", "purpose") `);
-        await queryRunner.query(`CREATE INDEX "IDX_trusted_devices_expires_at" ON "trusted_devices" ("expires_at") `);
-        await queryRunner.query(`CREATE UNIQUE INDEX "IDX_trusted_devices_user_fingerprint" ON "trusted_devices" ("user_id", "device_fingerprint") `);
-        await queryRunner.query(`CREATE INDEX "IDX_credit_purchases_stripe_checkout_session_id" ON "credit_purchases" ("stripe_checkout_session_id") WHERE (stripe_checkout_session_id IS NOT NULL)`);
-        await queryRunner.query(`CREATE INDEX "idx_rental_hardware_device_id" ON "rental_hardware" ("device_id") `);
-        await queryRunner.query(`CREATE INDEX "IDX_devices_organization_status" ON "devices" ("organization_id", "status") `);
-        await queryRunner.query(`CREATE INDEX "idx_printers_device_id" ON "printers" ("device_id") `);
-        await queryRunner.query(`ALTER TABLE "shifts" ADD CONSTRAINT "FK_shifts_job" FOREIGN KEY ("shift_job_id") REFERENCES "shift_jobs"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`ALTER TABLE "shift_registrations" ADD CONSTRAINT "FK_shift_registrations_shift" FOREIGN KEY ("shift_id") REFERENCES "shifts"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`ALTER TABLE "shift_jobs" ADD CONSTRAINT "FK_shift_jobs_plan" FOREIGN KEY ("shift_plan_id") REFERENCES "shift_plans"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`ALTER TABLE "shift_plans" ADD CONSTRAINT "FK_shift_plans_organization" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
-        await queryRunner.query(`ALTER TABLE "shift_plans" ADD CONSTRAINT "FK_shift_plans_event" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
-        await queryRunner.query(`ALTER TABLE "rental_hardware" ADD CONSTRAINT "rental_hardware_device_id_fkey" FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
-        await queryRunner.query(`ALTER TABLE "devices" ADD CONSTRAINT "FK_devices_verified_by" FOREIGN KEY ("verified_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
-        await queryRunner.query(`ALTER TABLE "printers" ADD CONSTRAINT "printers_device_id_fkey" FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
-    }
-
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `ALTER TABLE "shifts" DROP CONSTRAINT "FK_6773714b65a84efabf657480e8f"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_registrations" DROP CONSTRAINT "FK_b539608be5ddac34913edce8385"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_jobs" DROP CONSTRAINT "FK_0551bb15772312807d7f7fd6123"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_plans" DROP CONSTRAINT "FK_cee7acc9cf2e7f5bad60ebb6a9e"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_plans" DROP CONSTRAINT "FK_25ad411b8990077d18799d28384"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "rental_hardware" DROP CONSTRAINT "FK_eb38782e6bb558ce73c84173b2b"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "categories" DROP CONSTRAINT "FK_98ac0c21134c027a744c980a421"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "products" DROP CONSTRAINT "FK_b856095b06c363b7a3f4b33430c"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "order_items" DROP CONSTRAINT "FK_c938c2ae5a8835fedc1c40b0690"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP CONSTRAINT "FK_a157e65aa86c9489e6b34b8ecfd"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP CONSTRAINT "FK_afa939e30ab4a6d744b7bf8da81"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "devices" DROP CONSTRAINT "FK_d747b46aa60a919ada56253a820"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "devices" DROP CONSTRAINT "FK_3f8418d0a8ce1e08098d37c9b67"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "printers" DROP CONSTRAINT "FK_387be382a8b6eccb1b2157bb849"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_42f803aef0212347632115eb4b"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_01a43905fce3aabc2d113840bc"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_42ce32dfce5077b51f03ad7cd3"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_57f3f55d490079b74353332b84"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_2322549eaf2319b5f0943dc9d2"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_7cd665289b4003eee910330236"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_152965489cf057486306e5385b"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_7cfde20f68b54e84900f2366bf"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_715ccd209537860dbd54076e45"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_11280db1d1cfac8c769bd5efb1"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_387be382a8b6eccb1b2157bb84"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "user_organizations" ALTER COLUMN "pin" SET DEFAULT NULL`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "devices" ALTER COLUMN "status" SET DEFAULT 'verified'`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "devices" ALTER COLUMN "organization_id" SET NOT NULL`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "devices" ADD CONSTRAINT "FK_3f8418d0a8ce1e08098d37c9b67" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "invitations" ALTER COLUMN "permissions" DROP NOT NULL`,
+    );
+    await queryRunner.query(
+      `CREATE TYPE "public"."organization_role_old" AS ENUM('admin', 'cashier', 'delivery', 'kitchen', 'manager', 'member')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "invitations" ALTER COLUMN "role" TYPE "public"."organization_role_old" USING "role"::"text"::"public"."organization_role_old"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "user_organizations" ALTER COLUMN "role" TYPE "public"."organization_role_old" USING "role"::"text"::"public"."organization_role_old"`,
+    );
+    await queryRunner.query(`DROP TYPE "public"."organization_role"`);
+    await queryRunner.query(
+      `ALTER TYPE "public"."organization_role_old" RENAME TO "organization_role"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "categories" DROP COLUMN "production_station_id"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "products" DROP COLUMN "production_station_id"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "order_items" DROP COLUMN "production_station_id"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX "public"."IDX_e48ed479b9aa559003056ce915"`,
+    );
+    await queryRunner.query(`DROP TABLE "production_stations"`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shifts_date" ON "shifts" ("date") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shifts_job_date" ON "shifts" ("shift_job_id", "date") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_registrations_shift_status" ON "shift_registrations" ("shift_id", "status") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_registrations_group" ON "shift_registrations" ("registration_group_id") `,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_shift_registrations_token" ON "shift_registrations" ("verification_token") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_registrations_email" ON "shift_registrations" ("email") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_jobs_plan_order" ON "shift_jobs" ("shift_plan_id", "sort_order") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_plans_status" ON "shift_plans" ("status") `,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_shift_plans_public_slug" ON "shift_plans" ("public_slug") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_shift_plans_organization_created" ON "shift_plans" ("organization_id", "created_at") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_subscription_config_is_active" ON "subscription_config" ("is_active") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_organizations_stripe_customer_id" ON "organizations" ("stripe_customer_id") WHERE (stripe_customer_id IS NOT NULL)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_email_otps_expires_at" ON "email_otps" ("expires_at") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_email_otps_user_purpose" ON "email_otps" ("user_id", "purpose") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_trusted_devices_expires_at" ON "trusted_devices" ("expires_at") `,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "IDX_trusted_devices_user_fingerprint" ON "trusted_devices" ("user_id", "device_fingerprint") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_credit_purchases_stripe_checkout_session_id" ON "credit_purchases" ("stripe_checkout_session_id") WHERE (stripe_checkout_session_id IS NOT NULL)`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "idx_rental_hardware_device_id" ON "rental_hardware" ("device_id") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_devices_organization_status" ON "devices" ("organization_id", "status") `,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "idx_printers_device_id" ON "printers" ("device_id") `,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shifts" ADD CONSTRAINT "FK_shifts_job" FOREIGN KEY ("shift_job_id") REFERENCES "shift_jobs"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_registrations" ADD CONSTRAINT "FK_shift_registrations_shift" FOREIGN KEY ("shift_id") REFERENCES "shifts"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_jobs" ADD CONSTRAINT "FK_shift_jobs_plan" FOREIGN KEY ("shift_plan_id") REFERENCES "shift_plans"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_plans" ADD CONSTRAINT "FK_shift_plans_organization" FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "shift_plans" ADD CONSTRAINT "FK_shift_plans_event" FOREIGN KEY ("event_id") REFERENCES "events"("id") ON DELETE SET NULL ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "rental_hardware" ADD CONSTRAINT "rental_hardware_device_id_fkey" FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "devices" ADD CONSTRAINT "FK_devices_verified_by" FOREIGN KEY ("verified_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "printers" ADD CONSTRAINT "printers_device_id_fkey" FOREIGN KEY ("device_id") REFERENCES "devices"("id") ON DELETE SET NULL ON UPDATE NO ACTION`,
+    );
+  }
 }

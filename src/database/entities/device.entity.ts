@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { Order } from './order.entity';
@@ -20,7 +27,12 @@ export enum DeviceStatus {
 }
 
 export type ServiceMode = 'table' | 'counter';
-export type PrinterMode = 'fixed' | 'dynamic' | 'device' | 'category' | 'product';
+export type PrinterMode =
+  | 'fixed'
+  | 'dynamic'
+  | 'device'
+  | 'category'
+  | 'product';
 export type DisplayMode = 'customer' | 'station';
 
 /**
@@ -70,7 +82,12 @@ export class Device extends BaseEntity {
   @Column({ name: 'organization_id', type: 'uuid', nullable: true })
   organizationId: string | null;
 
-  @Column({ name: 'suggested_name', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'suggested_name',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   suggestedName: string | null;
 
   @Column({ type: 'varchar', length: 255 })
@@ -82,19 +99,37 @@ export class Device extends BaseEntity {
   @Column({ name: 'device_token', type: 'varchar', length: 255, unique: true })
   deviceToken: string;
 
-  @Column({ name: 'last_seen_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'last_seen_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   lastSeenAt: Date | null;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
-  @Column({ type: 'enum', enum: DeviceStatus, enumName: 'device_status', default: DeviceStatus.PENDING })
+  @Column({
+    type: 'enum',
+    enum: DeviceStatus,
+    enumName: 'device_status',
+    default: DeviceStatus.PENDING,
+  })
   status: DeviceStatus;
 
-  @Column({ name: 'verification_code', type: 'varchar', length: 6, nullable: true })
+  @Column({
+    name: 'verification_code',
+    type: 'varchar',
+    length: 6,
+    nullable: true,
+  })
   verificationCode: string | null;
 
-  @Column({ name: 'verified_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'verified_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   verifiedAt: Date | null;
 
   @Column({ name: 'verified_by_id', type: 'uuid', nullable: true })
@@ -107,7 +142,10 @@ export class Device extends BaseEntity {
   settings: DeviceSettings;
 
   // Relations
-  @ManyToOne(() => Organization, (org) => org.devices, { onDelete: 'CASCADE', nullable: true })
+  @ManyToOne(() => Organization, (org) => org.devices, {
+    onDelete: 'CASCADE',
+    nullable: true,
+  })
   @JoinColumn({ name: 'organization_id' })
   organization: Organization | null;
 

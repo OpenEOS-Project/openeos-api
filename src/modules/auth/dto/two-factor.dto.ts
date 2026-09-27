@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsBoolean, Length, Matches } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  Length,
+  Matches,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class VerifyTotpSetupDto {
@@ -18,17 +24,26 @@ export class VerifyEmailOtpSetupDto {
 }
 
 export class Verify2FADto {
-  @ApiProperty({ example: '123456', description: '6-stelliger Verifizierungscode oder Recovery-Code' })
+  @ApiProperty({
+    example: '123456',
+    description: '6-stelliger Verifizierungscode oder Recovery-Code',
+  })
   @IsString()
   @Length(6, 11) // 6 for OTP, 9 for recovery code with dash (xxxx-xxxx)
   code: string;
 
-  @ApiPropertyOptional({ example: true, description: 'Gerät als vertrauenswürdig markieren' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Gerät als vertrauenswürdig markieren',
+  })
   @IsOptional()
   @IsBoolean()
   trustDevice?: boolean;
 
-  @ApiPropertyOptional({ example: 'abc123...', description: 'Geräte-Fingerabdruck' })
+  @ApiPropertyOptional({
+    example: 'abc123...',
+    description: 'Geräte-Fingerabdruck',
+  })
   @IsOptional()
   @IsString()
   deviceFingerprint?: string;
@@ -50,25 +65,40 @@ export class Verify2FADto {
 }
 
 export class Disable2FADto {
-  @ApiProperty({ example: 'MySecurePassword123!', description: 'Aktuelles Passwort zur Bestätigung' })
+  @ApiProperty({
+    example: 'MySecurePassword123!',
+    description: 'Aktuelles Passwort zur Bestätigung',
+  })
   @IsString()
   password: string;
 }
 
 // Response DTOs
 export class TotpSetupResponseDto {
-  @ApiProperty({ example: 'JBSWY3DPEHPK3PXP', description: 'TOTP-Secret für manuelle Eingabe' })
+  @ApiProperty({
+    example: 'JBSWY3DPEHPK3PXP',
+    description: 'TOTP-Secret für manuelle Eingabe',
+  })
   secret: string;
 
-  @ApiProperty({ example: 'data:image/png;base64,...', description: 'QR-Code als Data-URL' })
+  @ApiProperty({
+    example: 'data:image/png;base64,...',
+    description: 'QR-Code als Data-URL',
+  })
   qrCodeDataUrl: string;
 
-  @ApiProperty({ example: 'JBSWY3DPEHPK3PXP', description: 'Secret für manuelle Eingabe' })
+  @ApiProperty({
+    example: 'JBSWY3DPEHPK3PXP',
+    description: 'Secret für manuelle Eingabe',
+  })
   manualEntryKey: string;
 }
 
 export class RecoveryCodesResponseDto {
-  @ApiProperty({ example: ['abcd-1234', 'efgh-5678'], description: 'Recovery-Codes (einmalig anzeigen!)' })
+  @ApiProperty({
+    example: ['abcd-1234', 'efgh-5678'],
+    description: 'Recovery-Codes (einmalig anzeigen!)',
+  })
   codes: string[];
 }
 
@@ -76,7 +106,11 @@ export class TwoFactorStatusResponseDto {
   @ApiProperty({ example: true, description: '2FA aktiviert' })
   enabled: boolean;
 
-  @ApiProperty({ example: 'totp', description: '2FA-Methode', enum: ['totp', 'email', null] })
+  @ApiProperty({
+    example: 'totp',
+    description: '2FA-Methode',
+    enum: ['totp', 'email', null],
+  })
   method: 'totp' | 'email' | null;
 
   @ApiProperty({ example: true, description: 'Recovery-Codes vorhanden' })
@@ -99,7 +133,10 @@ export class TrustedDeviceResponseDto {
   @ApiProperty({ example: '192.168.1.1', description: 'IP-Adresse' })
   ipAddress: string | null;
 
-  @ApiProperty({ example: '2024-01-15T10:00:00Z', description: 'Zuletzt verwendet' })
+  @ApiProperty({
+    example: '2024-01-15T10:00:00Z',
+    description: 'Zuletzt verwendet',
+  })
   lastUsedAt: Date;
 
   @ApiProperty({ example: '2024-02-15T10:00:00Z', description: 'Läuft ab am' })
@@ -113,9 +150,16 @@ export class TwoFactorRequiredResponseDto {
   @ApiProperty({ example: true, description: '2FA erforderlich' })
   twoFactorRequired: boolean;
 
-  @ApiProperty({ example: 'totp', description: '2FA-Methode', enum: ['totp', 'email'] })
+  @ApiProperty({
+    example: 'totp',
+    description: '2FA-Methode',
+    enum: ['totp', 'email'],
+  })
   method: 'totp' | 'email';
 
-  @ApiProperty({ example: 'temp-token-uuid', description: 'Temporärer Token für 2FA-Verifizierung' })
+  @ApiProperty({
+    example: 'temp-token-uuid',
+    description: 'Temporärer Token für 2FA-Verifizierung',
+  })
   twoFactorToken: string;
 }

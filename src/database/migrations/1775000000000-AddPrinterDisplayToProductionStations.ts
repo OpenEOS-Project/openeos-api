@@ -11,14 +11,18 @@ export class AddPrinterDisplayToProductionStations1775000000000 implements Migra
     `);
 
     // Drop pre-existing FKs (e.g. from partial run) before re-adding by name.
-    await queryRunner.query(`ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_printer"`);
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_printer"`,
+    );
     await queryRunner.query(`
       ALTER TABLE "production_stations"
         ADD CONSTRAINT "FK_production_stations_printer"
         FOREIGN KEY ("printer_id") REFERENCES "printers"("id") ON DELETE SET NULL
     `);
 
-    await queryRunner.query(`ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_display_device"`);
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_display_device"`,
+    );
     await queryRunner.query(`
       ALTER TABLE "production_stations"
         ADD CONSTRAINT "FK_production_stations_display_device"
@@ -27,9 +31,17 @@ export class AddPrinterDisplayToProductionStations1775000000000 implements Migra
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_display_device"`);
-    await queryRunner.query(`ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_printer"`);
-    await queryRunner.query(`ALTER TABLE "production_stations" DROP COLUMN IF EXISTS "display_device_id"`);
-    await queryRunner.query(`ALTER TABLE "production_stations" DROP COLUMN IF EXISTS "printer_id"`);
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_display_device"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP CONSTRAINT IF EXISTS "FK_production_stations_printer"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP COLUMN IF EXISTS "display_device_id"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "production_stations" DROP COLUMN IF EXISTS "printer_id"`,
+    );
   }
 }

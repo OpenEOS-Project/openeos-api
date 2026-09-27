@@ -15,7 +15,9 @@ export class ConsolidateDeviceTypes1771000000000 implements MigrationInterface {
     }
 
     // Step 1: Convert column to varchar FIRST so parameterized queries work with old enum values
-    await queryRunner.query(`ALTER TABLE devices ALTER COLUMN type TYPE varchar USING type::varchar`);
+    await queryRunner.query(
+      `ALTER TABLE devices ALTER COLUMN type TYPE varchar USING type::varchar`,
+    );
 
     // Step 2: Set displayMode in settings for each old display type
     const displayMappings = [
@@ -35,20 +37,35 @@ export class ConsolidateDeviceTypes1771000000000 implements MigrationInterface {
     }
 
     // Step 3: Update all display_* types to 'display'
-    await queryRunner.query(`UPDATE devices SET type = 'display' WHERE type LIKE 'display_%'`);
+    await queryRunner.query(
+      `UPDATE devices SET type = 'display' WHERE type LIKE 'display_%'`,
+    );
 
     // Step 4: Replace the PostgreSQL enum
     await queryRunner.query(`DROP TYPE IF EXISTS "device_type"`);
-    await queryRunner.query(`CREATE TYPE "device_type" AS ENUM ('pos', 'display', 'admin')`);
-    await queryRunner.query(`ALTER TABLE devices ALTER COLUMN type TYPE "device_type" USING type::"device_type"`);
+    await queryRunner.query(
+      `CREATE TYPE "device_type" AS ENUM ('pos', 'display', 'admin')`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE devices ALTER COLUMN type TYPE "device_type" USING type::"device_type"`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Step 1: Convert column to varchar
-    await queryRunner.query(`ALTER TABLE devices ALTER COLUMN type TYPE varchar USING type::varchar`);
+    await queryRunner.query(
+      `ALTER TABLE devices ALTER COLUMN type TYPE varchar USING type::varchar`,
+    );
 
     // Step 2: Restore old display_* types from displayMode in settings
-    const displayModes = ['kitchen', 'delivery', 'menu', 'pickup', 'sales', 'customer'];
+    const displayModes = [
+      'kitchen',
+      'delivery',
+      'menu',
+      'pickup',
+      'sales',
+      'customer',
+    ];
 
     for (const mode of displayModes) {
       await queryRunner.query(
@@ -58,17 +75,23 @@ export class ConsolidateDeviceTypes1771000000000 implements MigrationInterface {
     }
 
     // Fallback: any remaining 'display' without displayMode -> display_menu
-    await queryRunner.query(`UPDATE devices SET type = 'display_menu' WHERE type = 'display'`);
+    await queryRunner.query(
+      `UPDATE devices SET type = 'display_menu' WHERE type = 'display'`,
+    );
 
     // Step 3: Recreate old enum and convert column back
     await queryRunner.query(`DROP TYPE IF EXISTS "device_type"`);
     await queryRunner.query(
       `CREATE TYPE "device_type" AS ENUM ('pos', 'display_kitchen', 'display_delivery', 'display_menu', 'display_pickup', 'display_sales', 'display_customer', 'admin')`,
     );
-    await queryRunner.query(`ALTER TABLE devices ALTER COLUMN type TYPE "device_type" USING type::"device_type"`);
+    await queryRunner.query(
+      `ALTER TABLE devices ALTER COLUMN type TYPE "device_type" USING type::"device_type"`,
+    );
 
     // Step 4: Remove displayMode from settings
-    await queryRunner.query(`UPDATE devices SET settings = settings - 'displayMode' WHERE settings ? 'displayMode'`);
+    await queryRunner.query(
+      `UPDATE devices SET settings = settings - 'displayMode' WHERE settings ? 'displayMode'`,
+    );
 
     // Note: suggested_name column is NOT removed on down since it belongs to the device entity
   }

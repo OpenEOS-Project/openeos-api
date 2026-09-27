@@ -1,4 +1,11 @@
-import { Entity, Column, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { Device } from './device.entity';
@@ -38,7 +45,12 @@ export class Printer extends BaseEntity {
   @Column({ type: 'enum', enum: PrinterType, enumName: 'printer_type' })
   type: PrinterType;
 
-  @Column({ name: 'connection_type', type: 'enum', enum: PrinterConnectionType, enumName: 'printer_connection_type' })
+  @Column({
+    name: 'connection_type',
+    type: 'enum',
+    enum: PrinterConnectionType,
+    enumName: 'printer_connection_type',
+  })
   connectionType: PrinterConnectionType;
 
   @Column({ name: 'connection_config', type: 'jsonb', default: {} })
@@ -49,7 +61,12 @@ export class Printer extends BaseEntity {
 
   /** Stable local identifier from the agent's config.yaml. Used to match an
       agent-pushed printer back to an existing Printer row. */
-  @Column({ name: 'agent_local_id', type: 'varchar', length: 64, nullable: true })
+  @Column({
+    name: 'agent_local_id',
+    type: 'varchar',
+    length: 64,
+    nullable: true,
+  })
   agentLocalId: string | null;
 
   @Column({ name: 'paper_width', type: 'int', default: 80 })
@@ -64,18 +81,28 @@ export class Printer extends BaseEntity {
   @Column({ name: 'is_online', type: 'boolean', default: false })
   isOnline: boolean;
 
-  @Column({ name: 'last_seen_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'last_seen_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   lastSeenAt: Date | null;
 
   @Column({ name: 'rental_assignment_id', type: 'uuid', nullable: true })
   rentalAssignmentId: string | null;
 
   // Relations
-  @ManyToOne(() => Organization, (org) => org.printers, { onDelete: 'SET NULL', nullable: true })
+  @ManyToOne(() => Organization, (org) => org.printers, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
   @JoinColumn({ name: 'organization_id' })
   organization: Organization | null;
 
-  @ManyToOne(() => Device, (device) => device.printers, { onDelete: 'SET NULL', nullable: true })
+  @ManyToOne(() => Device, (device) => device.printers, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
   @JoinColumn({ name: 'device_id' })
   device: Device | null;
 

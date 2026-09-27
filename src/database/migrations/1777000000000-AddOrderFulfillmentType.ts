@@ -10,11 +10,15 @@ export class AddOrderFulfillmentType1777000000000 implements MigrationInterface 
         END IF;
       END $$;
     `);
-    await queryRunner.query(`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "fulfillment_type" "order_fulfillment_type" NOT NULL DEFAULT 'counter_pickup'`);
+    await queryRunner.query(
+      `ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "fulfillment_type" "order_fulfillment_type" NOT NULL DEFAULT 'counter_pickup'`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "orders" DROP COLUMN IF EXISTS "fulfillment_type"`);
+    await queryRunner.query(
+      `ALTER TABLE "orders" DROP COLUMN IF EXISTS "fulfillment_type"`,
+    );
     await queryRunner.query(`DROP TYPE IF EXISTS "order_fulfillment_type"`);
   }
 }

@@ -21,7 +21,12 @@ import {
 import { Event } from '../../database/entities/event.entity';
 import { OnlineOrderSessionStatus } from '../../database/entities/online-order-session.entity';
 import { QrCodeType } from '../../database/entities/qr-code.entity';
-import { OrderStatus, PaymentStatus, OrderSource, OrderFulfillmentType } from '../../database/entities/order.entity';
+import {
+  OrderStatus,
+  PaymentStatus,
+  OrderSource,
+  OrderFulfillmentType,
+} from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import {
   PaymentMethod,
@@ -29,7 +34,14 @@ import {
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { StartSessionDto, AddCartItemDto, UpdateCartItemDto, SubmitOrderDto, CreateOnlinePaymentDto, OnlinePaymentMethod } from './dto';
+import {
+  StartSessionDto,
+  AddCartItemDto,
+  UpdateCartItemDto,
+  SubmitOrderDto,
+  CreateOnlinePaymentDto,
+  OnlinePaymentMethod,
+} from './dto';
 import { PayPalService } from '../payments/providers/paypal.service';
 import { SumUpService } from '../sumup/sumup.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
@@ -62,7 +74,9 @@ export class OnlineOrdersService {
     private readonly orderPrintService: OrderPrintService,
   ) {}
 
-  async startSession(startDto: StartSessionDto): Promise<{ sessionToken: string; session: OnlineOrderSession }> {
+  async startSession(
+    startDto: StartSessionDto,
+  ): Promise<{ sessionToken: string; session: OnlineOrderSession }> {
     let organizationId: string;
     let eventId: string | null = null;
     let tableNumber: string | null = startDto.tableNumber || null;
@@ -103,14 +117,18 @@ export class OnlineOrdersService {
         eventId = startDto.eventId;
       } else {
         // Find the most relevant active event for this organization
-        const event = await this.orderRepository.manager.getRepository(Event).findOne({
-          where: { organizationId, status: In(['active', 'test']) },
-          order: { startDate: 'ASC' },
-        });
+        const event = await this.orderRepository.manager
+          .getRepository(Event)
+          .findOne({
+            where: { organizationId, status: In(['active', 'test']) },
+            order: { startDate: 'ASC' },
+          });
         eventId = event?.id || null;
       }
 
-      this.logger.log(`Session started directly for org ${organizationId}, event ${eventId}`);
+      this.logger.log(
+        `Session started directly for org ${organizationId}, event ${eventId}`,
+      );
     } else {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
@@ -140,11 +158,13 @@ export class OnlineOrdersService {
   }
 
   async getPublicEvents(organizationId: string) {
-    const events = await this.orderRepository.manager.getRepository(Event).find({
-      where: { organizationId, status: In(['active', 'test']) },
-      order: { startDate: 'ASC' },
-      select: ['id', 'name', 'startDate', 'endDate', 'status'],
-    });
+    const events = await this.orderRepository.manager
+      .getRepository(Event)
+      .find({
+        where: { organizationId, status: In(['active', 'test']) },
+        order: { startDate: 'ASC' },
+        select: ['id', 'name', 'startDate', 'endDate', 'status'],
+      });
     return { data: events };
   }
 
@@ -173,7 +193,9 @@ export class OnlineOrdersService {
     return session;
   }
 
-  async getMenu(sessionToken: string): Promise<{ categories: Category[]; products: Product[] }> {
+  async getMenu(
+    sessionToken: string,
+  ): Promise<{ categories: Category[]; products: Product[] }> {
     const session = await this.getSession(sessionToken);
 
     if (!session.eventId) {
@@ -199,7 +221,10 @@ export class OnlineOrdersService {
     return { categories, products };
   }
 
-  async addToCart(sessionToken: string, addDto: AddCartItemDto): Promise<OnlineOrderSession> {
+  async addToCart(
+    sessionToken: string,
+    addDto: AddCartItemDto,
+  ): Promise<OnlineOrderSession> {
     const session = await this.getSession(sessionToken);
 
     if (!session.eventId) {
@@ -235,8 +260,9 @@ export class OnlineOrdersService {
 
     // Find existing item in cart
     const existingIndex = session.cart.items.findIndex(
-      item => item.productId === addDto.productId &&
-              JSON.stringify(item.options) === JSON.stringify(addDto.options || [])
+      (item) =>
+        item.productId === addDto.productId &&
+        JSON.stringify(item.options) === JSON.stringify(addDto.options || []),
     );
 
     if (existingIndex >= 0) {
@@ -305,7 +331,10 @@ export class OnlineOrdersService {
     return session;
   }
 
-  async submitOrder(sessionToken: string, submitDto: SubmitOrderDto): Promise<Order> {
+  async submitOrder(
+    sessionToken: string,
+    submitDto: SubmitOrderDto,
+  ): Promise<Order> {
     const session = await this.getSession(sessionToken);
 
     if (session.cart.items.length === 0) {
@@ -317,7 +346,10 @@ export class OnlineOrdersService {
 
     // Generate order number
     const orderNumber = await this.generateOrderNumber(session.organizationId);
-    const dailyNumber = await this.getDailyNumber(session.organizationId, session.eventId);
+    const dailyNumber = await this.getDailyNumber(
+      session.organizationId,
+      session.eventId,
+    );
 
     // Create order
     const order = this.orderRepository.create({
@@ -331,9 +363,10 @@ export class OnlineOrdersService {
       status: OrderStatus.OPEN,
       paymentStatus: PaymentStatus.UNPAID,
       source: OrderSource.QR_ORDER,
-      fulfillmentType: session.qrCode?.type === QrCodeType.TABLE
-        ? OrderFulfillmentType.TABLE_SERVICE
-        : OrderFulfillmentType.COUNTER_PICKUP,
+      fulfillmentType:
+        session.qrCode?.type === QrCodeType.TABLE
+          ? OrderFulfillmentType.TABLE_SERVICE
+          : OrderFulfillmentType.COUNTER_PICKUP,
       onlineSessionId: session.id,
     });
 
@@ -356,7 +389,8 @@ export class OnlineOrdersService {
         optionsPrice += opt.priceModifier;
       }
 
-      const totalPrice = (cartItem.unitPrice + optionsPrice) * cartItem.quantity;
+      const totalPrice =
+        (cartItem.unitPrice + optionsPrice) * cartItem.quantity;
       subtotal += totalPrice;
 
       const orderItem = this.orderItemRepository.create({
@@ -416,7 +450,10 @@ export class OnlineOrdersService {
     return orders;
   }
 
-  async initiatePayment(sessionToken: string, payDto: CreateOnlinePaymentDto): Promise<{ data: unknown }> {
+  async initiatePayment(
+    sessionToken: string,
+    payDto: CreateOnlinePaymentDto,
+  ): Promise<{ data: unknown }> {
     const session = await this.getSession(sessionToken);
 
     const order = await this.orderRepository.findOne({
@@ -658,7 +695,10 @@ export class OnlineOrdersService {
     return `${dateStr}-${String(count + 1).padStart(4, '0')}`;
   }
 
-  private async getDailyNumber(organizationId: string, eventId: string | null): Promise<number> {
+  private async getDailyNumber(
+    organizationId: string,
+    eventId: string | null,
+  ): Promise<number> {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 

@@ -2,7 +2,7 @@ import { IsNumber, IsString, IsPositive, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class InitiateCheckoutDto {
-  @ApiProperty({ example: 12.50, description: 'Payment amount' })
+  @ApiProperty({ example: 12.5, description: 'Payment amount' })
   @IsNumber()
   @IsPositive()
   amount: number;

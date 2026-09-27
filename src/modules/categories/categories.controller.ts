@@ -10,9 +10,18 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from '@nestjs/swagger';
 import { CategoriesService } from './categories.service';
-import { CreateCategoryDto, UpdateCategoryDto, ReorderCategoriesDto } from './dto';
+import {
+  CreateCategoryDto,
+  UpdateCategoryDto,
+  ReorderCategoriesDto,
+} from './dto';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
 
@@ -28,7 +37,11 @@ export class CategoriesController {
     @Body() createDto: CreateCategoryDto,
     @CurrentUser() user: User,
   ) {
-    const category = await this.categoriesService.create(eventId, createDto, user);
+    const category = await this.categoriesService.create(
+      eventId,
+      createDto,
+      user,
+    );
     return { data: category };
   }
 
@@ -47,7 +60,11 @@ export class CategoriesController {
     @Param('categoryId', ParseUUIDPipe) categoryId: string,
     @CurrentUser() user: User,
   ) {
-    const category = await this.categoriesService.findOne(eventId, categoryId, user);
+    const category = await this.categoriesService.findOne(
+      eventId,
+      categoryId,
+      user,
+    );
     return { data: category };
   }
 
@@ -73,7 +90,12 @@ export class CategoriesController {
     @Body() updateDto: UpdateCategoryDto,
     @CurrentUser() user: User,
   ) {
-    const category = await this.categoriesService.update(eventId, categoryId, updateDto, user);
+    const category = await this.categoriesService.update(
+      eventId,
+      categoryId,
+      updateDto,
+      user,
+    );
     return { data: category };
   }
 
@@ -86,5 +108,4 @@ export class CategoriesController {
   ) {
     await this.categoriesService.remove(eventId, categoryId, user);
   }
-
 }

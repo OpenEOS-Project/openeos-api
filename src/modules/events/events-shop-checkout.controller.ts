@@ -64,7 +64,10 @@ interface CreateCheckoutBody {
   }>;
 }
 
-function lineUnitPrice(unit: number, options?: ShopCheckoutItemOption[]): number {
+function lineUnitPrice(
+  unit: number,
+  options?: ShopCheckoutItemOption[],
+): number {
   if (!options) return unit;
   const extras = options
     .filter((o) => !o.excluded && o.priceModifier > 0)
@@ -102,9 +105,13 @@ export class EventsShopCheckoutController {
   ) {}
 
   private async loadShopEvent(eventId: string): Promise<Event> {
-    const event = await this.eventRepository.findOne({ where: { id: eventId } });
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+    });
     const shopEnabled = event?.settings?.shop?.enabled === true;
-    const isLive = event?.status === EventStatus.ACTIVE || event?.status === EventStatus.TEST;
+    const isLive =
+      event?.status === EventStatus.ACTIVE ||
+      event?.status === EventStatus.TEST;
     if (!event || !shopEnabled || !isLive) {
       throw new NotFoundException({
         code: 'SHOP_NOT_FOUND',
@@ -127,7 +134,10 @@ export class EventsShopCheckoutController {
     const organization = await this.organizationRepository.findOne({
       where: { id: event.organizationId },
     });
-    const windows = resolveShopWindows(event, organization?.settings?.timezone || 'Europe/Berlin');
+    const windows = resolveShopWindows(
+      event,
+      organization?.settings?.timezone || 'Europe/Berlin',
+    );
 
     if (!isWithinShopWindows(new Date(), windows)) {
       throw new BadRequestException({
@@ -138,7 +148,9 @@ export class EventsShopCheckoutController {
   }
 
   @Post(':eventId/checkout')
-  @ApiOperation({ summary: 'Create a pending shop checkout + SumUp Online Checkout session' })
+  @ApiOperation({
+    summary: 'Create a pending shop checkout + SumUp Online Checkout session',
+  })
   async createCheckout(
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Body() body: CreateCheckoutBody,
@@ -180,17 +192,22 @@ export class EventsShopCheckoutController {
       where: { id: event.organizationId },
     });
     if (!organization) {
-      throw new NotFoundException({ code: 'ORG_NOT_FOUND', message: 'Organisation nicht gefunden' });
+      throw new NotFoundException({
+        code: 'ORG_NOT_FOUND',
+        message: 'Organisation nicht gefunden',
+      });
     }
-    const orgSettings = organization.settings as
-      | { sumup?: { apiKey?: string; merchantCode?: string }; currency?: string }
-      | null;
+    const orgSettings = organization.settings as {
+      sumup?: { apiKey?: string; merchantCode?: string };
+      currency?: string;
+    } | null;
     const apiKey = orgSettings?.sumup?.apiKey;
     const merchantCode = orgSettings?.sumup?.merchantCode;
     if (!apiKey || !merchantCode) {
       throw new BadRequestException({
         code: 'SUMUP_NOT_CONFIGURED',
-        message: 'Online-Bezahlung ist für diese Organisation nicht konfiguriert',
+        message:
+          'Online-Bezahlung ist für diese Organisation nicht konfiguriert',
       });
     }
     const currency = orgSettings.currency || 'EUR';
@@ -238,7 +255,8 @@ export class EventsShopCheckoutController {
     }
 
     const rawFee = event.settings?.shop?.serviceFee;
-    const serviceFee = typeof rawFee === 'number' && rawFee > 0 ? Number(rawFee.toFixed(2)) : 0;
+    const serviceFee =
+      typeof rawFee === 'number' && rawFee > 0 ? Number(rawFee.toFixed(2)) : 0;
     const totalAmount = Number((itemsTotal + serviceFee).toFixed(2));
 
     const fulfillmentType =
@@ -247,9 +265,14 @@ export class EventsShopCheckoutController {
         : ShopCheckoutFulfillment.COUNTER_PICKUP;
     const tableNumber =
       fulfillmentType === ShopCheckoutFulfillment.TABLE_SERVICE
-        ? String(body.tableNumber ?? '').trim().slice(0, 50) || ''
+        ? String(body.tableNumber ?? '')
+            .trim()
+            .slice(0, 50) || ''
         : '';
-    if (fulfillmentType === ShopCheckoutFulfillment.TABLE_SERVICE && !tableNumber) {
+    if (
+      fulfillmentType === ShopCheckoutFulfillment.TABLE_SERVICE &&
+      !tableNumber
+    ) {
       throw new BadRequestException({
         code: 'TABLE_NUMBER_REQUIRED',
         message: 'Bitte gib eine Tischnummer an',
@@ -272,7 +295,8 @@ export class EventsShopCheckoutController {
     await this.shopCheckoutRepository.save(checkout);
 
     // Browser redirect after payment -> shop return page (polls verify).
-    const returnBase = process.env.SHOP_RETURN_URL_BASE || 'https://shop.openeos.de';
+    const returnBase =
+      process.env.SHOP_RETURN_URL_BASE || 'https://shop.openeos.de';
     const returnUrl = `${returnBase}/${event.id}/checkout/return?checkoutId=${checkout.id}`;
 
     // Server webhook -> settles the checkout (creates the order) even when
@@ -280,14 +304,18 @@ export class EventsShopCheckoutController {
     const apiBase = process.env.API_PUBLIC_URL || 'https://api.openeos.de';
     const webhookUrl = `${apiBase}/api/public/shop/checkout/${checkout.id}/webhook`;
 
-    const sumup = await this.sumupApi.createOnlineCheckout(apiKey, merchantCode, {
-      amount: Number(totalAmount.toFixed(2)),
-      currency,
-      description: `Shop · ${event.name}`,
-      checkoutReference: checkout.id,
-      returnUrl: webhookUrl,
-      redirectUrl: returnUrl,
-    });
+    const sumup = await this.sumupApi.createOnlineCheckout(
+      apiKey,
+      merchantCode,
+      {
+        amount: Number(totalAmount.toFixed(2)),
+        currency,
+        description: `Shop · ${event.name}`,
+        checkoutReference: checkout.id,
+        returnUrl: webhookUrl,
+        redirectUrl: returnUrl,
+      },
+    );
 
     checkout.sumupCheckoutId = sumup.id;
     checkout.sumupCheckoutUrl = sumup.checkoutUrl;
@@ -303,11 +331,19 @@ export class EventsShopCheckoutController {
   }
 
   @Get('checkout/:checkoutId/verify')
-  @ApiOperation({ summary: 'Verify SumUp checkout status; idempotently create the Order on PAID' })
+  @ApiOperation({
+    summary:
+      'Verify SumUp checkout status; idempotently create the Order on PAID',
+  })
   async verifyCheckout(@Param('checkoutId', ParseUUIDPipe) checkoutId: string) {
-    const checkout = await this.shopCheckoutRepository.findOne({ where: { id: checkoutId } });
+    const checkout = await this.shopCheckoutRepository.findOne({
+      where: { id: checkoutId },
+    });
     if (!checkout) {
-      throw new NotFoundException({ code: 'CHECKOUT_NOT_FOUND', message: 'Checkout nicht gefunden' });
+      throw new NotFoundException({
+        code: 'CHECKOUT_NOT_FOUND',
+        message: 'Checkout nicht gefunden',
+      });
     }
 
     return { data: await this.settleCheckout(checkout) };
@@ -321,9 +357,15 @@ export class EventsShopCheckoutController {
    */
   @Post('checkout/:checkoutId/webhook')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'SumUp payment-status webhook; settles the checkout server-side' })
-  async checkoutWebhook(@Param('checkoutId', ParseUUIDPipe) checkoutId: string) {
-    const checkout = await this.shopCheckoutRepository.findOne({ where: { id: checkoutId } });
+  @ApiOperation({
+    summary: 'SumUp payment-status webhook; settles the checkout server-side',
+  })
+  async checkoutWebhook(
+    @Param('checkoutId', ParseUUIDPipe) checkoutId: string,
+  ) {
+    const checkout = await this.shopCheckoutRepository.findOne({
+      where: { id: checkoutId },
+    });
     if (!checkout) {
       // Always answer 200 — SumUp retries on errors and the checkout may
       // simply be unknown (e.g. deleted test data).
@@ -346,8 +388,13 @@ export class EventsShopCheckoutController {
     orderNumber?: string | null;
   }> {
     if (checkout.status === ShopCheckoutStatus.PAID && checkout.orderId) {
-      const order = await this.orderRepository.findOne({ where: { id: checkout.orderId } });
-      return { status: 'paid' as const, orderNumber: order?.orderNumber ?? null };
+      const order = await this.orderRepository.findOne({
+        where: { id: checkout.orderId },
+      });
+      return {
+        status: 'paid' as const,
+        orderNumber: order?.orderNumber ?? null,
+      };
     }
 
     if (!checkout.sumupCheckoutId) {
@@ -357,9 +404,9 @@ export class EventsShopCheckoutController {
     const organization = await this.organizationRepository.findOne({
       where: { id: checkout.organizationId },
     });
-    const orgSettings = organization?.settings as
-      | { sumup?: { apiKey?: string } }
-      | null;
+    const orgSettings = organization?.settings as {
+      sumup?: { apiKey?: string };
+    } | null;
     const apiKey = orgSettings?.sumup?.apiKey;
     if (!apiKey) {
       return { status: checkout.status as 'pending' | 'failed' | 'cancelled' };
@@ -369,7 +416,12 @@ export class EventsShopCheckoutController {
     try {
       const res = await fetch(
         `https://api.sumup.com/v0.1/checkouts/${encodeURIComponent(checkout.sumupCheckoutId)}`,
-        { headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' } },
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: 'application/json',
+          },
+        },
       );
       if (res.ok) {
         const json = (await res.json()) as { status?: string };
@@ -388,10 +440,17 @@ export class EventsShopCheckoutController {
         { status: ShopCheckoutStatus.PAID, paidAt: new Date() },
       );
       if (!claim.affected) {
-        const fresh = await this.shopCheckoutRepository.findOne({ where: { id: checkout.id } });
+        const fresh = await this.shopCheckoutRepository.findOne({
+          where: { id: checkout.id },
+        });
         if (fresh?.status === ShopCheckoutStatus.PAID && fresh.orderId) {
-          const order = await this.orderRepository.findOne({ where: { id: fresh.orderId } });
-          return { status: 'paid' as const, orderNumber: order?.orderNumber ?? null };
+          const order = await this.orderRepository.findOne({
+            where: { id: fresh.orderId },
+          });
+          return {
+            status: 'paid' as const,
+            orderNumber: order?.orderNumber ?? null,
+          };
         }
         // Another request is mid-settlement — report pending so pollers retry.
         return { status: 'pending' as const };
@@ -431,13 +490,18 @@ export class EventsShopCheckoutController {
   }
 
   /** Confirmation/receipt mail to the shopper, sent once the order exists. */
-  private async sendOrderConfirmation(checkout: ShopCheckout, order: Order): Promise<void> {
+  private async sendOrderConfirmation(
+    checkout: ShopCheckout,
+    order: Order,
+  ): Promise<void> {
     try {
       if (!checkout.email) return;
 
       const [event, organization] = await Promise.all([
         this.eventRepository.findOne({ where: { id: checkout.eventId } }),
-        this.organizationRepository.findOne({ where: { id: checkout.organizationId } }),
+        this.organizationRepository.findOne({
+          where: { id: checkout.organizationId },
+        }),
       ]);
 
       const formatAmount = (value: number) =>
@@ -448,13 +512,16 @@ export class EventsShopCheckoutController {
 
       const rows = checkout.items
         .map((item) => {
-          const lineTotal = lineUnitPrice(Number(item.unitPrice), item.options) * item.quantity;
+          const lineTotal =
+            lineUnitPrice(Number(item.unitPrice), item.options) * item.quantity;
           const optionsText = (item.options || [])
             .map((o) => (o.excluded ? `ohne ${o.option}` : o.option))
             .join(', ');
           return `<tr>
             <td style="padding: 4px 8px 4px 0;">${item.quantity}× ${item.name}${
-              optionsText ? `<br><span style="color: #666; font-size: 12px;">${optionsText}</span>` : ''
+              optionsText
+                ? `<br><span style="color: #666; font-size: 12px;">${optionsText}</span>`
+                : ''
             }</td>
             <td style="padding: 4px 0; text-align: right; white-space: nowrap;">${formatAmount(lineTotal)}</td>
           </tr>`;
@@ -462,14 +529,18 @@ export class EventsShopCheckoutController {
         .join('');
 
       const serviceFee = Number(checkout.serviceFee || 0);
-      const feeRow = serviceFee > 0
-        ? `<tr>
+      const feeRow =
+        serviceFee > 0
+          ? `<tr>
             <td style="padding: 4px 8px 4px 0; color: #666;">Servicegebühr</td>
             <td style="padding: 4px 0; text-align: right;">${formatAmount(serviceFee)}</td>
           </tr>`
-        : '';
+          : '';
 
-      const name = [checkout.customerName?.firstName, checkout.customerName?.lastName]
+      const name = [
+        checkout.customerName?.firstName,
+        checkout.customerName?.lastName,
+      ]
         .filter(Boolean)
         .join(' ')
         .trim();
@@ -484,7 +555,9 @@ export class EventsShopCheckoutController {
         itemsHtml: `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">${rows}${feeRow}</table>`,
         totalFormatted: formatAmount(Number(checkout.totalAmount)),
       });
-      this.logger.log(`Order confirmation sent for ${order.orderNumber} to ${checkout.email}`);
+      this.logger.log(
+        `Order confirmation sent for ${order.orderNumber} to ${checkout.email}`,
+      );
     } catch (error) {
       this.logger.warn(
         `Order confirmation mail for ${order.orderNumber} failed: ${
@@ -494,17 +567,26 @@ export class EventsShopCheckoutController {
     }
   }
 
-  private async createOrderFromCheckout(checkout: ShopCheckout): Promise<Order> {
-    const nameParts = [checkout.customerName?.firstName, checkout.customerName?.lastName]
+  private async createOrderFromCheckout(
+    checkout: ShopCheckout,
+  ): Promise<Order> {
+    const nameParts = [
+      checkout.customerName?.firstName,
+      checkout.customerName?.lastName,
+    ]
       .filter(Boolean)
       .join(' ')
       .trim();
     const customerName = nameParts || null;
 
     const productIds = checkout.items.map((i) => i.productId);
-    const products = await this.productRepository.find({ where: { id: In(productIds) } });
+    const products = await this.productRepository.find({
+      where: { id: In(productIds) },
+    });
     const categoryIds = Array.from(
-      new Set(products.map((p) => p.categoryId).filter((id): id is string => !!id)),
+      new Set(
+        products.map((p) => p.categoryId).filter((id): id is string => !!id),
+      ),
     );
     const categories = categoryIds.length
       ? await this.categoryRepository.find({ where: { id: In(categoryIds) } })
@@ -516,9 +598,11 @@ export class EventsShopCheckoutController {
     const total = Number(checkout.totalAmount);
     const fee = Number(checkout.serviceFee || 0);
     const subtotal = Number((total - fee).toFixed(2));
-    const feeNote = fee > 0 ? ` · Servicegebühr: ${fee.toFixed(2)} ${checkout.currency}` : '';
+    const feeNote =
+      fee > 0 ? ` · Servicegebühr: ${fee.toFixed(2)} ${checkout.currency}` : '';
 
-    const isTableService = checkout.fulfillmentType === ShopCheckoutFulfillment.TABLE_SERVICE;
+    const isTableService =
+      checkout.fulfillmentType === ShopCheckoutFulfillment.TABLE_SERVICE;
     const orderFulfillmentType = isTableService
       ? OrderFulfillmentType.TABLE_SERVICE
       : OrderFulfillmentType.COUNTER_PICKUP;
@@ -555,7 +639,8 @@ export class EventsShopCheckoutController {
         : undefined;
       const selectedOptions = (line.options ?? []).filter((o) => !o.excluded);
       const optionsPrice = selectedOptions.reduce(
-        (acc, o) => acc + (Number(o.priceModifier) > 0 ? Number(o.priceModifier) : 0),
+        (acc, o) =>
+          acc + (Number(o.priceModifier) > 0 ? Number(o.priceModifier) : 0),
         0,
       );
       const linePrice = line.unitPrice + optionsPrice;

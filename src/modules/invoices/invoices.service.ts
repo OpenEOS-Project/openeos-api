@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Invoice, Organization } from '../../database/entities';
@@ -37,10 +33,13 @@ export class InvoicesService {
     }
 
     if (startDate && endDate) {
-      queryBuilder.andWhere('invoice.createdAt BETWEEN :startDate AND :endDate', {
-        startDate: new Date(startDate),
-        endDate: endOfDay(endDate),
-      });
+      queryBuilder.andWhere(
+        'invoice.createdAt BETWEEN :startDate AND :endDate',
+        {
+          startDate: new Date(startDate),
+          endDate: endOfDay(endDate),
+        },
+      );
     } else if (startDate) {
       queryBuilder.andWhere('invoice.createdAt >= :startDate', {
         startDate: new Date(startDate),
@@ -93,7 +92,10 @@ export class InvoicesService {
     return invoice;
   }
 
-  async generatePdfUrl(organizationId: string, invoiceId: string): Promise<string> {
+  async generatePdfUrl(
+    organizationId: string,
+    invoiceId: string,
+  ): Promise<string> {
     const invoice = await this.findOne(organizationId, invoiceId);
 
     // In production, this would generate a signed URL for the PDF
@@ -188,7 +190,9 @@ export class InvoicesService {
 
     await this.invoiceRepository.save(invoice);
 
-    this.logger.log(`Invoice created: ${invoiceNumber} for org ${organizationId}`);
+    this.logger.log(
+      `Invoice created: ${invoiceNumber} for org ${organizationId}`,
+    );
 
     return invoice;
   }
@@ -200,7 +204,9 @@ export class InvoicesService {
 
     const count = await this.invoiceRepository
       .createQueryBuilder('invoice')
-      .where('invoice.invoiceNumber LIKE :prefix', { prefix: `INV-${year}${month}%` })
+      .where('invoice.invoiceNumber LIKE :prefix', {
+        prefix: `INV-${year}${month}%`,
+      })
       .getCount();
 
     return `INV-${year}${month}-${String(count + 1).padStart(4, '0')}`;

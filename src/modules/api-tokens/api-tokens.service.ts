@@ -71,7 +71,9 @@ export class ApiTokensService {
       }),
     );
 
-    this.logger.log(`API-Token ausgestellt: ${eintrag.name} (${eintrag.tokenPrefix}…)`);
+    this.logger.log(
+      `API-Token ausgestellt: ${eintrag.name} (${eintrag.tokenPrefix}…)`,
+    );
 
     return { token: geheim, eintrag: oeffentlich(eintrag) };
   }
@@ -111,9 +113,14 @@ export class ApiTokensService {
     if (Date.now() - zuletzt < BENUTZT_VERMERK_INTERVALL_MS) return;
 
     try {
-      await this.apiTokenRepository.update({ id: eintrag.id }, { lastUsedAt: new Date() });
+      await this.apiTokenRepository.update(
+        { id: eintrag.id },
+        { lastUsedAt: new Date() },
+      );
     } catch (fehler) {
-      this.logger.warn(`Benutzung nicht vermerkt (${eintrag.tokenPrefix}…): ${(fehler as Error).message}`);
+      this.logger.warn(
+        `Benutzung nicht vermerkt (${eintrag.tokenPrefix}…): ${(fehler as Error).message}`,
+      );
     }
   }
 
@@ -136,7 +143,9 @@ export class ApiTokensService {
 
   /** Widerrufen statt löschen: die Spur, dass es ihn gab, bleibt. */
   async widerrufe(userId: string, id: string): Promise<OeffentlicherApiToken> {
-    const eintrag = await this.apiTokenRepository.findOne({ where: { id, userId } });
+    const eintrag = await this.apiTokenRepository.findOne({
+      where: { id, userId },
+    });
     if (!eintrag) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,

@@ -6,7 +6,12 @@ import { OrderItem } from '../../database/entities/order-item.entity';
 import { Organization } from '../../database/entities/organization.entity';
 import { ProductionStation } from '../../database/entities/production-station.entity';
 
-export type ItemPrinterSource = 'product' | 'category' | 'device' | 'org' | null;
+export type ItemPrinterSource =
+  | 'product'
+  | 'category'
+  | 'device'
+  | 'org'
+  | null;
 export type OrderPrinterSource = 'device' | 'org' | null;
 export type OrderWorkflow = 'kitchen' | 'receipt' | 'order_ticket';
 
@@ -167,8 +172,8 @@ export class PrintRoutingService {
     const orderFlow = org?.settings?.orderFlow;
     const orgPrinterId =
       workflow === 'kitchen'
-        ? orderFlow?.kitchenTicketPrinting?.printerId ?? null
-        : orderFlow?.receiptPrinting?.printerId ?? null;
+        ? (orderFlow?.kitchenTicketPrinting?.printerId ?? null)
+        : (orderFlow?.receiptPrinting?.printerId ?? null);
 
     if (orgPrinterId) {
       return { printerId: String(orgPrinterId), source: 'org' };

@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { OrganizationsController, InvitationsController } from './organizations.controller';
+import {
+  OrganizationsController,
+  InvitationsController,
+} from './organizations.controller';
 import { OrganizationsService } from './organizations.service';
 import {
   Organization,
@@ -13,7 +16,12 @@ import { DevicesModule } from '../devices/devices.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Organization, User, UserOrganization, Invitation]),
+    TypeOrmModule.forFeature([
+      Organization,
+      User,
+      UserOrganization,
+      Invitation,
+    ]),
     GatewayModule,
     DevicesModule,
   ],

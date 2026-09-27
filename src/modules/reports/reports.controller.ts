@@ -199,15 +199,16 @@ export class ReportsController {
     return { data: status };
   }
 
-
   @Get('activity')
   @Roles(Role.MEMBER)
   async getActivityStream(
     @CurrentOrganization() organizationId: string,
     @CurrentUser() user: User,
   ) {
-    const entries = await this.reportsService.getActivityStream(organizationId, user);
+    const entries = await this.reportsService.getActivityStream(
+      organizationId,
+      user,
+    );
     return { data: entries };
   }
-
 }

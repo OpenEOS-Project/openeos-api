@@ -31,18 +31,26 @@ export class Invitation extends BaseEntity {
   @Column({ name: 'invited_by_user_id', type: 'uuid' })
   invitedByUserId: string;
 
-  @Column({ name: 'accepted_at', type: 'timestamp with time zone', nullable: true })
+  @Column({
+    name: 'accepted_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
   acceptedAt: Date | null;
 
   @Column({ name: 'expires_at', type: 'timestamp with time zone' })
   expiresAt: Date;
 
   // Relations
-  @ManyToOne(() => Organization, (org) => org.invitations, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Organization, (org) => org.invitations, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'organization_id' })
   organization: Organization;
 
-  @ManyToOne(() => User, (user) => user.sentInvitations, { onDelete: 'SET NULL' })
+  @ManyToOne(() => User, (user) => user.sentInvitations, {
+    onDelete: 'SET NULL',
+  })
   @JoinColumn({ name: 'invited_by_user_id' })
   invitedByUser: User;
 

@@ -25,9 +25,12 @@ export class DeploymentService {
   readonly multiTenant: boolean;
 
   constructor(private readonly configService: ConfigService) {
-    this.mode = this.configService.get<DeploymentMode>('deployment.mode') ?? 'saas';
-    this.billingEnabled = this.configService.get<boolean>('deployment.billingEnabled') ?? true;
-    this.multiTenant = this.configService.get<boolean>('deployment.multiTenant') ?? true;
+    this.mode =
+      this.configService.get<DeploymentMode>('deployment.mode') ?? 'saas';
+    this.billingEnabled =
+      this.configService.get<boolean>('deployment.billingEnabled') ?? true;
+    this.multiTenant =
+      this.configService.get<boolean>('deployment.multiTenant') ?? true;
 
     if (this.isSelfHosted) {
       this.logger.log(

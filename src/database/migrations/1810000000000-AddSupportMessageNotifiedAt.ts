@@ -18,6 +18,8 @@ export class AddSupportMessageNotifiedAt1810000000000 implements MigrationInterf
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE support_messages DROP COLUMN IF EXISTS notified_at`);
+    await queryRunner.query(
+      `ALTER TABLE support_messages DROP COLUMN IF EXISTS notified_at`,
+    );
   }
 }
