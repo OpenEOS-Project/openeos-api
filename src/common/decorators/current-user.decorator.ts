@@ -13,7 +13,7 @@ export interface JwtPayload {
 export interface RequestUser extends Partial<User> {
   id: string;
   email: string;
-  isSuperadmin: boolean;
+  isSuperAdmin: boolean;
   organizations: { id: string; role: string }[];
 }
 
