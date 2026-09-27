@@ -13,7 +13,9 @@ import { gesperrterTokenSchluessel } from '../token-blocklist';
 // no Authorization header is present, so browser clients no longer need to
 // keep the access token in localStorage to stay authenticated.
 function extractFromCookie(req: Request): string | null {
-  return req.cookies?.accessToken || null;
+  // cookie-parser typt die Cookies als Record<string, any>.
+  const cookies = req.cookies as Record<string, string | undefined> | undefined;
+  return cookies?.accessToken || null;
 }
 
 export interface JwtPayload {
