@@ -27,48 +27,30 @@ export default tseslint.config(
   {
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-floating-promises': 'warn',
       "prettier/prettier": ["error", { endOfLine: "auto" }],
 
-      /* Die `no-unsafe-*`-Familie zeigt auf denselben Bestand: `any` aus
-         Fremdbibliotheken und aus dynamisch getypten Antworten, das
-         ungeprueft weiterwandert. Das sind rund 280 Stellen — echte
-         Typschuld, aber nichts, was sich mechanisch beheben liesse, und ein
-         rotes Gate am ersten Tag haette nur dazu gefuehrt, dass die Pruefung
-         wieder abgeschaltet statt abgearbeitet wird.
+      /* Die `no-unsafe-*`-Familie und die uebrigen typgestuetzten Regeln
+         blockieren wieder (#17). Beim Einschalten der Pruefung standen sie
+         auf Warnung — rund 380 Befunde, meist `any` aus Fremdbibliotheken
+         und untypisierten Antworten. Die sind abgearbeitet; ab jetzt faellt
+         ein umbenanntes Feld im Build auf statt als `undefined` in
+         Produktion.
 
-         Als Warnung bleiben sie im Protokoll sichtbar und lassen sich Modul
-         fuer Modul aufloesen. Alles andere — auch Formatierung — blockiert. */
-      '@typescript-eslint/no-unsafe-argument': 'warn',
-      '@typescript-eslint/no-unsafe-member-access': 'warn',
-      '@typescript-eslint/no-unsafe-assignment': 'warn',
-      '@typescript-eslint/no-unsafe-return': 'warn',
-      '@typescript-eslint/no-unsafe-call': 'warn',
-      '@typescript-eslint/no-unsafe-enum-comparison': 'warn',
+         Wo eine Bibliothek selbst keinen brauchbaren Typ liefert (das
+         SumUp-SDK, `IoAdapter.createIOServer`), steht genau ein
+         kommentierter Cast an der Grenze — nicht verstreut im Code. */
+
       /* Ein fuehrender Unterstrich markiert Absicht: Parameter, die eine
          Schnittstelle vorgibt (`down(_queryRunner)`), und Felder, die per
          Rest-Destrukturierung bewusst weggelassen werden. */
       '@typescript-eslint/no-unused-vars': [
-        'warn',
+        'error',
         {
           argsIgnorePattern: '^_',
           varsIgnorePattern: '^_',
           ignoreRestSiblings: true,
         },
       ],
-
-      /* Die letzten zwoelf Befunde. Jeder einzelne waere zu beheben, aber
-         sie sitzen verstreut in Code, dessen Verhalten sich dabei aendern
-         kann — `require-await` etwa verlangt, `async` zu entfernen, was den
-         Rueckgabetyp aendert, und `unbound-method` trifft frisch
-         hinzugekommenen Monitoring-Code. Das gehoert in eine eigene
-         Aufraeumrunde mit Test, nicht in den Durchlauf, der die Pruefung
-         ueberhaupt erst einschaltet. */
-      '@typescript-eslint/require-await': 'warn',
-      '@typescript-eslint/unbound-method': 'warn',
-      '@typescript-eslint/no-redundant-type-constituents': 'warn',
-      '@typescript-eslint/restrict-template-expressions': 'warn',
-      '@typescript-eslint/no-base-to-string': 'warn',
     },
   },
 );
