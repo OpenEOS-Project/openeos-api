@@ -11,9 +11,9 @@ export class ExtendPaymentMethods1778000000000 implements MigrationInterface {
     await queryRunner.query(
       `ALTER TYPE "payment_method" ADD VALUE IF NOT EXISTS 'apple_pay'`,
     );
-    const providerExists = await queryRunner.query(
+    const providerExists = (await queryRunner.query(
       `SELECT 1 FROM pg_type WHERE typname = 'payment_provider'`,
-    );
+    )) as unknown[];
     if (providerExists.length > 0) {
       await queryRunner.query(
         `ALTER TYPE "payment_provider" ADD VALUE IF NOT EXISTS 'PAYPAL'`,

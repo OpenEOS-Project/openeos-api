@@ -15,6 +15,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
+import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 
 export interface SendEmailOptions {
   to: string;
@@ -26,7 +27,7 @@ export interface SendEmailOptions {
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private transporter: Transporter | null = null;
+  private transporter: Transporter<SMTPTransport.SentMessageInfo> | null = null;
   private readonly isEnabled: boolean;
   private readonly fromAddress: string;
   readonly appUrl: string;
@@ -117,7 +118,7 @@ export class EmailService {
       return true;
     } catch (error) {
       this.logger.error(
-        `Failed to send email to ${options.to}: ${error.message}`,
+        `Failed to send email to ${options.to}: ${(error as Error).message}`,
       );
       return false;
     }

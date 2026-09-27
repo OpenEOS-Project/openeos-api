@@ -124,7 +124,7 @@ export class PaymentsService {
         isFullyPaid: isFullyPaid,
         order,
       })
-      .catch((err) => {
+      .catch((err: Error) => {
         this.logger.error(`Failed to trigger payment printing: ${err.message}`);
       });
 
@@ -243,7 +243,7 @@ export class PaymentsService {
         isFullyPaid,
         order,
       })
-      .catch((err) => {
+      .catch((err: Error) => {
         this.logger.error(`Failed to trigger payment printing: ${err.message}`);
       });
 

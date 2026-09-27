@@ -291,10 +291,10 @@ export class PrintersService {
     return this.dispatchTestPrint(printer, { requireOnline: false });
   }
 
-  private async dispatchTestPrint(
+  private dispatchTestPrint(
     printer: Printer,
     options: { requireOnline?: boolean } = { requireOnline: true },
-  ): Promise<{ success: boolean; message: string }> {
+  ): { success: boolean; message: string } {
     if (!printer.isActive) {
       return { success: false, message: 'Drucker ist deaktiviert' };
     }

@@ -194,7 +194,7 @@ export class ShiftsService {
       .createQueryBuilder('job')
       .where('job.shiftPlanId = :planId', { planId })
       .select('MAX(job.sortOrder)', 'max')
-      .getRawOne();
+      .getRawOne<{ max: number | null }>();
 
     const job = this.shiftJobRepository.create({
       shiftPlanId: plan.id,
@@ -1212,9 +1212,9 @@ export class ShiftsService {
   // ============ Helpers ============
 
   private generateToken(): string {
-    return [...Array(64)]
-      .map(() => Math.random().toString(36).charAt(2))
-      .join('');
+    return Array.from({ length: 64 }, () =>
+      Math.random().toString(36).charAt(2),
+    ).join('');
   }
 
   private async findRegistrationWithAccess(

@@ -74,7 +74,7 @@ export class SetupDto {
     minLength: 2,
     maxLength: 200,
   })
-  @ValidateIf((o) => o.mode === SetupMode.SINGLE)
+  @ValidateIf((o: SetupDto) => o.mode === SetupMode.SINGLE)
   @IsString({ message: 'Organisationsname ist bei Single-Modus erforderlich' })
   @MinLength(2, {
     message: 'Organisationsname muss mindestens 2 Zeichen lang sein',

@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { QrCode, User, UserOrganization } from '../../database/entities';
+import { QrCodeType } from '../../database/entities/qr-code.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import {
@@ -76,7 +77,7 @@ export class QrCodesService {
         eventId: bulkDto.eventId || null,
         code,
         type: bulkDto.type,
-        tableNumber: bulkDto.type === 'table' ? tableNumber : null,
+        tableNumber: bulkDto.type === QrCodeType.TABLE ? tableNumber : null,
         name: bulkDto.prefix ? `${bulkDto.prefix} ${num}` : `QR ${num}`,
         isActive: true,
         scanCount: 0,

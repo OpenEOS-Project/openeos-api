@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User, Organization, UserOrganization } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
@@ -249,7 +249,7 @@ export class SetupService {
 
   private async generateOrganizationSlug(
     name: string,
-    manager: any,
+    manager: EntityManager,
   ): Promise<string> {
     const baseSlug = name
       .toLowerCase()
