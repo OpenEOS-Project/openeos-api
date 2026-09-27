@@ -6,6 +6,30 @@ import * as fs from 'fs/promises';
 import { UploadCategory } from './dto';
 import { ErrorCodes } from '../../common/constants/error-codes';
 
+const OWNER_ID = /^[A-Za-z0-9-]{1,64}$/;
+
+/** Verzeichnisse, die ein Upload anlegen darf: die Kategorien plus 'general'. */
+const UPLOAD_DIRECTORIES = new Set<string>([
+  ...Object.values(UploadCategory),
+  'general',
+]);
+
+const EXTENSION_FOR_MIME: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+};
+
+/**
+ * So sehen gespeicherte Dateinamen aus: eine UUID mit kurzer Endung. Die
+ * Endung ist bewusst locker, weil aeltere Uploads sie noch aus dem
+ * Original-Dateinamen uebernommen haben — Pfadtrenner und `..` sind durch
+ * das Muster trotzdem ausgeschlossen.
+ */
+const STORED_FILENAME =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]{1,10}$/i;
+
 export interface UploadedFile {
   id: string;
   originalName: string;
@@ -50,17 +74,26 @@ export class UploadsService {
     // Validate file
     this.validateFile(file);
 
-    // Generate unique filename
-    const fileId = uuidv4();
-    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-    const filename = `${fileId}${ext}`;
+    /* Die Kategorie kommt als Query-Parameter. Ein TypeScript-Enum am
+       Parameter prueft zur Laufzeit nichts — ohne diese Pruefung landete
+       `../<andere-id>/…` unveraendert im Pfad. */
+    const categoryDir = this.categoryOrThrow(category);
 
-    // Create directory structure
-    const categoryDir = category || 'general';
-    const uploadPath = path.join(this.uploadDir, organizationId, categoryDir);
+    /* Endung aus dem geprueften MIME-Typ, nicht aus dem vom Client
+       gelieferten Dateinamen: der kann `.js` oder `.html` heissen, obwohl
+       der Inhalt als Bild durchgewunken wurde. */
+    const fileId = uuidv4();
+    const filename = `${fileId}${EXTENSION_FOR_MIME[file.mimetype]}`;
+
+    const uploadPath = this.pathInside(organizationId, categoryDir);
+    if (!uploadPath) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Ungültiger Speicherort',
+      });
+    }
     await this.ensureDirectory(uploadPath);
 
-    // Save file
     const filePath = path.join(uploadPath, filename);
     await fs.writeFile(filePath, file.buffer);
 
@@ -86,13 +119,16 @@ export class UploadsService {
     filename: string,
     category?: UploadCategory,
   ): Promise<void> {
-    const categoryDir = category || 'general';
-    const filePath = path.join(
-      this.uploadDir,
-      organizationId,
-      categoryDir,
-      filename,
-    );
+    /* Wirft bewusst nicht: der Avatar-Tausch ruft das mit dem Dateinamen
+       aus einer alten URL auf, die alles Moegliche sein kann. Ein
+       ungueltiger Name heisst hier nur: es gibt nichts zu loeschen. */
+    const filePath = this.filePathInside(organizationId, category, filename);
+    if (!filePath) {
+      this.logger.warn(
+        `Refused to delete outside the upload area: ${filename}`,
+      );
+      return;
+    }
 
     try {
       await fs.access(filePath);
@@ -108,13 +144,8 @@ export class UploadsService {
     filename: string,
     category?: string,
   ): Promise<string | null> {
-    const categoryDir = category || 'general';
-    const filePath = path.join(
-      this.uploadDir,
-      organizationId,
-      categoryDir,
-      filename,
-    );
+    const filePath = this.filePathInside(organizationId, category, filename);
+    if (!filePath) return null;
 
     try {
       await fs.access(filePath);
@@ -122,6 +153,54 @@ export class UploadsService {
     } catch {
       return null;
     }
+  }
+
+  private categoryOrThrow(category?: string): string {
+    const dir = category || 'general';
+    if (!UPLOAD_DIRECTORIES.has(dir)) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Ungültige Kategorie',
+      });
+    }
+    return dir;
+  }
+
+  /**
+   * Pfad zu einer gespeicherten Datei — oder null, wenn Kategorie oder
+   * Dateiname nicht dem entsprechen, was `uploadImage` selbst anlegt.
+   */
+  private filePathInside(
+    ownerId: string,
+    category: string | undefined,
+    filename: string,
+  ): string | null {
+    const dir = category || 'general';
+    if (!UPLOAD_DIRECTORIES.has(dir)) return null;
+    if (!STORED_FILENAME.test(filename)) return null;
+
+    const folder = this.pathInside(ownerId, dir);
+    return folder ? path.join(folder, filename) : null;
+  }
+
+  /**
+   * Verzeichnis `<UPLOAD_DIR>/<ownerId>/<dir>` — nur wenn es tatsaechlich
+   * unterhalb des Bereichs dieses Eigentuemers liegt.
+   *
+   * Die Pruefungen oben lassen schon keine Pfadtrenner durch; das hier ist
+   * die zweite Linie, die auch dann haelt, wenn spaeter jemand eine
+   * Kategorie oder einen Aufrufer ergaenzt.
+   */
+  private pathInside(ownerId: string, dir: string): string | null {
+    /* Die Eigentuemer-ID ist eine UUID (Organisation oder Benutzer). Nur
+       die Ebene zu pruefen genuegt nicht: `<eigene>/../<fremde>` loest sich
+       zu genau einem Verzeichnis auf — dem fremden. */
+    if (!OWNER_ID.test(ownerId)) return null;
+
+    const ownerRoot = path.resolve(this.uploadDir, ownerId);
+
+    const target = path.resolve(ownerRoot, dir);
+    return target.startsWith(ownerRoot + path.sep) ? target : null;
   }
 
   private validateFile(file: MulterFile): void {
