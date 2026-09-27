@@ -49,6 +49,7 @@ import {
   UpdateOrderItemDto,
   QueryOrdersDto,
   CancelOrderDto,
+  SelectedOptionDto,
 } from './dto';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
@@ -185,7 +186,7 @@ export class OrdersService {
         total: createdOrder.total,
         source: createdOrder.source,
       })
-      .catch((error) => {
+      .catch((error: Error) => {
         this.logger.error(
           `Failed to trigger auto-printing for order ${order.id}: ${error.message}`,
         );
@@ -209,7 +210,14 @@ export class OrdersService {
             where: { id: stationId },
           });
           if (station && station.printerId) {
-            this.printToStation(organizationId, station, createdOrder, items);
+            // Bewusst ohne await: der Stationsdruck faengt seine Fehler selbst
+            // ab und soll das Anlegen der Bestellung nicht aufhalten.
+            void this.printToStation(
+              organizationId,
+              station,
+              createdOrder,
+              items,
+            );
           }
         }
       }
@@ -888,7 +896,7 @@ export class OrdersService {
           quantity: number;
           notes?: string;
           kitchenNotes?: string;
-          selectedOptions?: any[];
+          selectedOptions?: SelectedOptionDto[];
           isRefill?: boolean;
         },
     user: User,
@@ -1171,7 +1179,7 @@ export class OrdersService {
       );
     } catch (err) {
       this.logger.error(
-        `Station printing failed for ${station.name}: ${err.message}`,
+        `Station printing failed for ${station.name}: ${(err as Error).message}`,
       );
     }
   }
