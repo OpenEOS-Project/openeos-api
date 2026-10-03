@@ -575,8 +575,18 @@ export class EmailService {
     name: string,
     shiftPlanName: string,
     shiftsSummary: string,
+    /** Optionale Nachricht, die beim Bestaetigen eingegeben wurde. */
+    note?: { message: string; senderName: string },
   ): Promise<boolean> {
     const subject = `Deine Schicht wurde bestätigt: ${shiftPlanName}`;
+    /* Die Nachricht ist Freitext aus dem Dashboard und landet in HTML —
+       also maskieren, Zeilenumbrueche bleiben erhalten. */
+    const noteHtml = note?.message.trim()
+      ? `<div style="background: #eff6ff; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+        <p style="margin: 0;">${escapeHtmlMitUmbruechen(note.message.trim())}</p>
+        <p style="color: #666; font-size: 14px; margin: 10px 0 0 0;">Nachricht von: ${escapeHtml(note.senderName)}</p>
+      </div>`
+      : '';
     const html = this.getBaseTemplate(`
       <h1>Hallo ${name}!</h1>
       <p>Gute Nachrichten! Deine Anmeldung zum <strong>${shiftPlanName}</strong> wurde bestätigt.</p>
@@ -584,6 +594,7 @@ export class EmailService {
       <div style="background: #d1fae5; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #10b981;">
         ${shiftsSummary}
       </div>
+      ${noteHtml}
       <p>Wir freuen uns auf dich!</p>
     `);
 

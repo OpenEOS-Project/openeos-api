@@ -702,8 +702,8 @@ export class ShiftsService {
   async approveRegistration(
     organizationId: string,
     registrationId: string,
-    _user: User,
-    _message?: string,
+    user: User,
+    message?: string,
   ): Promise<ShiftRegistration> {
     const reg = await this.findRegistrationWithAccess(
       organizationId,
@@ -738,11 +738,23 @@ export class ShiftsService {
       const planName =
         groupRegistrations[0]?.shift?.job?.shiftPlan?.name || 'Schichtplan';
 
+      // Die Nachricht beim Bestaetigen geht mit der Bestaetigungsmail raus —
+      // einen anderen Kanal zum Helfer gibt es nicht. Absender wie bei
+      // sendMessage(), damit der Helfer weiss, wer geschrieben hat.
       await this.emailService.sendShiftConfirmationEmail(
         reg.email,
         reg.name,
         planName,
         shiftsSummary,
+        message?.trim()
+          ? {
+              message,
+              senderName:
+                user.firstName && user.lastName
+                  ? `${user.firstName} ${user.lastName}`
+                  : user.email,
+            }
+          : undefined,
       );
     }
 
