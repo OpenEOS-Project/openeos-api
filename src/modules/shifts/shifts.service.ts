@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { randomBytes } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import {
   ShiftPlan,
@@ -1223,10 +1224,24 @@ export class ShiftsService {
 
   // ============ Helpers ============
 
+  /**
+   * 64 Zeichen aus [0-9a-z] — dasselbe Format wie bisher, damit Spalten und
+   * bestehende Links passen. Die Tokens oeffnen Bestaetigungs- und
+   * Selbstverwaltungslinks, also kommen sie aus crypto statt Math.random.
+   * Bytes ab 252 (= 7 * 36) werden verworfen, sonst waeren die ersten Zeichen
+   * des Alphabets per Modulo leicht bevorzugt.
+   */
   private generateToken(): string {
-    return Array.from({ length: 64 }, () =>
-      Math.random().toString(36).charAt(2),
-    ).join('');
+    const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
+    let token = '';
+    while (token.length < 64) {
+      for (const byte of randomBytes(64)) {
+        if (byte >= 252) continue;
+        token += alphabet[byte % 36];
+        if (token.length === 64) break;
+      }
+    }
+    return token;
   }
 
   private async findRegistrationWithAccess(
