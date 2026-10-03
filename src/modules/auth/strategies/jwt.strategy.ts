@@ -61,7 +61,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   ): Promise<
     User & {
       organizations: { id: string; role: string }[];
-      isSuperadmin: boolean;
     }
   > {
     /* Abgemeldete Token abweisen. Ohne diese Pruefung blieb ein Token nach
@@ -98,11 +97,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       id: uo.organizationId,
       role: uo.role,
     }));
+    /* Das Super-Admin-Kennzeichen kommt unveraendert als `isSuperAdmin` aus
+       der Entity. Frueher stand hier zusaetzlich ein Alias `isSuperadmin`
+       (kleines a), weil zwei Guards diese Schreibweise lasen und einer die
+       andere. Das hielt nur, solange jeder Weg zu `request.user` beide Felder
+       setzte — der API-Token-Pfad tat das nie. Jetzt lesen alle Guards
+       dasselbe Feld, und der Alias entfaellt. */
     return Object.assign(user, {
       pending2fa: payload.pending2fa === true,
       organizations,
-      // Guards check `isSuperadmin` (lowercase a); the entity column is `isSuperAdmin`.
-      isSuperadmin: user.isSuperAdmin,
     });
   }
 }

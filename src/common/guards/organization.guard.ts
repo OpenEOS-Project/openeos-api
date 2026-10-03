@@ -21,7 +21,7 @@ export class OrganizationGuard implements CanActivate {
     }
 
     // Superadmin hat Zugriff auf alle Organisationen
-    if (user.isSuperadmin) {
+    if (user.isSuperAdmin) {
       return true;
     }
 

@@ -35,7 +35,7 @@ export class RolesGuard implements CanActivate {
     }
 
     // Superadmin hat alle Rechte
-    if (user.isSuperadmin) {
+    if (user.isSuperAdmin) {
       return true;
     }
 
