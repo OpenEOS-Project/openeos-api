@@ -37,6 +37,7 @@ import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { ConfigService } from '@nestjs/config';
 import { DeploymentService } from '../../common/services/deployment.service';
+import { restoreMaskedCredentials } from '../../common/utils/response-redaction.util';
 
 const INVITATION_EXPIRY_DAYS = 7;
 const BCRYPT_ROUNDS = 12;
@@ -250,7 +251,7 @@ export class OrganizationsService {
     // Check if user is a member
     await this.checkMembership(organization.id, user);
 
-    return this.sanitizeOrganization(organization);
+    return organization;
   }
 
   async update(
@@ -263,38 +264,16 @@ export class OrganizationsService {
     // Check if user is admin
     await this.checkRole(organization.id, user, OrganizationRole.ADMIN);
 
-    // Handle masked SumUp keys: if a key starts with ****, keep the old one from DB.
-    // Note: organization was loaded via findOne() which sanitizes keys,
-    // so we must read raw keys directly from DB.
-    const sumupSettings = (updateDto.settings as Record<string, unknown>)
-      ?.sumup as
-      | {
-          apiKey?: string;
-          merchantCode?: string;
-          affiliateKey?: string;
-          appId?: string;
-        }
-      | undefined;
-    if (
-      sumupSettings?.apiKey?.startsWith('****') ||
-      sumupSettings?.affiliateKey?.startsWith('****')
-    ) {
-      const rawOrg = await this.organizationRepository.findOne({
-        where: { id },
-      });
-      if (sumupSettings.apiKey?.startsWith('****')) {
-        const existingKey = rawOrg?.settings?.sumup?.apiKey;
-        if (existingKey) {
-          sumupSettings.apiKey = existingKey;
-        }
-      }
-      if (sumupSettings.affiliateKey?.startsWith('****')) {
-        const existingKey = rawOrg?.settings?.sumup?.affiliateKey;
-        if (existingKey) {
-          sumupSettings.affiliateKey = existingKey;
-        }
-      }
-    }
+    /* Maskierte Zugangsdaten zurueckuebersetzen. Die Oberflaeche bekommt
+       Schluessel nur als `****1234` zu sehen (siehe
+       response-redaction.util.ts) und schickt genau das beim Speichern
+       zurueck. Ohne diesen Schritt stuende danach `****1234` als Schluessel
+       in der Datenbank. `organization` ist hier das unmaskierte Entity —
+       findOne() maskiert nicht mehr selbst. */
+    restoreMaskedCredentials(
+      updateDto.settings,
+      organization.settings as unknown as Record<string, unknown>,
+    );
 
     /* Einstellungen zusammenfuehren statt ersetzen. Object.assign ist flach:
        ein Aufrufer, der nur `settings: { vatExempt: true }` schickt, haette
@@ -318,7 +297,7 @@ export class OrganizationsService {
       `Organization updated: ${organization.name} (${organization.id})`,
     );
 
-    return this.sanitizeOrganization(organization);
+    return organization;
   }
 
   async remove(id: string, user: User): Promise<void> {
@@ -894,23 +873,6 @@ export class OrganizationsService {
     }
 
     return membership;
-  }
-
-  private sanitizeOrganization(organization: Organization): Organization {
-    if (organization.settings?.sumup) {
-      const sumup = { ...organization.settings.sumup };
-      if (sumup.apiKey) {
-        sumup.apiKey = `****${sumup.apiKey.slice(-4)}`;
-      }
-      if (sumup.affiliateKey) {
-        sumup.affiliateKey = `****${sumup.affiliateKey.slice(-4)}`;
-      }
-      organization.settings = {
-        ...organization.settings,
-        sumup,
-      };
-    }
-    return organization;
   }
 
   private async generateSlug(name: string): Promise<string> {

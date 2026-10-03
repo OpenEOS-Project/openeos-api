@@ -17,6 +17,7 @@ import {
   SentryContextInterceptor,
 } from './common/interceptors';
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
+import { RedactSecretsInterceptor } from './common/interceptors/redact-secrets.interceptor';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -90,6 +91,9 @@ async function bootstrap() {
 
   // Global Interceptors
   app.useGlobalInterceptors(
+    // Zuerst registriert, damit es auf dem Rueckweg zuletzt laeuft und die
+    // fertige Antwort sieht — siehe response-redaction.util.ts.
+    new RedactSecretsInterceptor(),
     new SentryContextInterceptor(),
     new LoggingInterceptor(),
     new TransformInterceptor(),
