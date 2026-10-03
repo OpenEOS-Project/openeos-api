@@ -48,6 +48,7 @@ import {
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
 import { SumUpApiService } from '../sumup/sumup-api.service';
+import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { EmailService } from '../email/email.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
@@ -199,6 +200,10 @@ export class EventsShopCheckoutController {
         message: 'Organisation nicht gefunden',
       });
     }
+    /* Nur das Anlegen neuer Checkouts wird gesperrt. Pruefung und Webhook
+       eines bereits begonnenen Checkouts laufen weiter: dort ist das Geld
+       womoeglich schon bezahlt, und ohne Abschluss fehlte die Bestellung. */
+    assertIntegrationEnabled(organization.settings, 'sumup');
     const orgSettings = organization.settings as {
       sumup?: { apiKey?: string; merchantCode?: string };
       currency?: string;
