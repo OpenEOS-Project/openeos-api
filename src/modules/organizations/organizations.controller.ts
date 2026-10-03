@@ -3,7 +3,6 @@ import {
   Get,
   Post,
   Patch,
-  Put,
   Delete,
   Body,
   Param,
@@ -85,7 +84,9 @@ export class OrganizationsController {
     return { data: organization };
   }
 
-  @Put(':id/integrations/:integrationId')
+  // PATCH wie alle anderen Aenderungen: die CORS-Konfiguration kennt kein PUT,
+  // und ein Browser-Aufruf scheiterte schon an der Vorabfrage.
+  @Patch(':id/integrations/:integrationId')
   @ApiOperation({ summary: 'Enable or disable an integration (admins only)' })
   async setIntegration(
     @Param('id', ParseUUIDPipe) id: string,
