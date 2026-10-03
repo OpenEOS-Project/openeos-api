@@ -25,10 +25,11 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
 /**
  * MwSt fuer den Bon aus den Positionen berechnen.
  *
- * Bewusst nicht aus `order.taxTotal`: das rechnet `Preis * Satz / 100`, als
- * waeren die Preise netto — sie sind aber brutto (der Gesamtbetrag ist
- * Zwischensumme ohne Aufschlag). Ausserdem setzt der Shop-Checkout
- * `taxTotal` auf 0. Im Bruttopreis enthalten ist `Preis * Satz / (100 + Satz)`.
+ * Die Preise sind brutto (der Gesamtbetrag ist die Zwischensumme ohne
+ * Aufschlag), enthalten ist also `Preis * Satz / (100 + Satz)`. Dieselbe
+ * Rechnung liefert ueber `orderTaxTotal` auch `order.taxTotal`; gerechnet
+ * wird hier trotzdem aus den Positionen, weil der Bon die Saetze einzeln
+ * braucht.
  *
  * - Pfand steckt nicht in `totalPrice` (es liegt in `depositAmount`) und ist
  *   keine Lieferung, also auch nicht steuerbar — es bleibt hier aussen vor.
@@ -113,4 +114,19 @@ export function cashReceivedMetadata(
   }
   if (amountReceived < Number(amount)) return {};
   return { amountReceived: round2(amountReceived) };
+}
+
+/**
+ * `order.taxTotal` — dieselbe Rechnung wie auf dem Bon, damit Beleg und
+ * gespeicherte Summe nicht auseinanderlaufen koennen: im Bruttopreis
+ * enthaltene Steuer je Satz, Rabatt anteilig, Pfand und Trinkgeld aussen
+ * vor, und 0 fuer jede Organisation, die nicht ausdruecklich
+ * `vatExempt: false` hat.
+ */
+export function orderTaxTotal(
+  items: Pick<OrderItem, 'totalPrice' | 'taxRate' | 'status'>[],
+  discountAmount: number | null | undefined,
+  vatExempt: boolean | undefined,
+): number {
+  return buildReceiptTax(items, discountAmount, vatExempt).tax_amount ?? 0;
 }

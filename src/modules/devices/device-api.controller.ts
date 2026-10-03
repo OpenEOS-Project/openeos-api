@@ -66,7 +66,10 @@ import { SumUpApiService } from '../sumup/sumup-api.service';
 import { PrintersService } from '../printers/printers.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
-import { cashReceivedMetadata } from '../print-jobs/receipt-tax.util';
+import {
+  cashReceivedMetadata,
+  orderTaxTotal,
+} from '../print-jobs/receipt-tax.util';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { OrdersService } from '../orders/orders.service';
 import { DiscountVouchersService } from '../discount-vouchers/discount-vouchers.service';
@@ -1449,7 +1452,8 @@ export class DeviceApiController {
       quantity: itemDto.quantity,
       unitPrice,
       optionsPrice,
-      taxRate: 19.0,
+      // Satz des Produkts festhalten; daraus rechnen Bon und taxTotal.
+      taxRate: Number(product.taxRate) || 0,
       totalPrice,
       options: { selected: selectedOptions },
       notes: itemDto.notes || null,
@@ -1503,19 +1507,16 @@ export class DeviceApiController {
     if (!order) return;
 
     let subtotal = 0;
-    let taxTotal = 0;
     let pfandTotal = 0;
 
     for (const item of order.items) {
       if (item.status !== OrderItemStatus.CANCELLED) {
         subtotal += Number(item.totalPrice);
-        taxTotal += Number(item.totalPrice) * (Number(item.taxRate) / 100);
         pfandTotal += Number(item.depositAmount || 0) * item.quantity;
       }
     }
 
     order.subtotal = subtotal;
-    order.taxTotal = taxTotal;
     order.pfandTotal = pfandTotal;
 
     // Cap the discount at the subtotal so the order total can never go negative —
@@ -1528,6 +1529,18 @@ export class DeviceApiController {
     order.discountAmount = effectiveDiscount;
     order.total =
       subtotal - effectiveDiscount + Number(order.tipAmount || 0) + pfandTotal;
+
+    // Wie in OrdersService.recalculateOrderTotals: enthaltene Steuer,
+    // dieselbe Rechnung wie auf dem Bon.
+    const organization = await this.organizationRepository.findOne({
+      where: { id: order.organizationId },
+      select: ['id', 'settings'],
+    });
+    order.taxTotal = orderTaxTotal(
+      order.items,
+      effectiveDiscount,
+      organization?.settings?.vatExempt,
+    );
 
     await this.orderRepository.save(order);
   }

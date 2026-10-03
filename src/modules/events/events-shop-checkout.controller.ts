@@ -50,6 +50,7 @@ import {
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { EmailService } from '../email/email.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 
 interface CreateCheckoutBody {
@@ -627,6 +628,7 @@ export class EventsShopCheckoutController {
       paidAmount: total,
       tipAmount: 0,
       discountAmount: 0,
+      // Wird nach dem Anlegen der Positionen berechnet (unten).
       taxTotal: 0,
       notes: `Shop-Bestellung (online bezahlt) · ${checkout.email}${fulfillmentNote}${feeNote}`,
     });
@@ -657,7 +659,8 @@ export class EventsShopCheckoutController {
         quantity: line.quantity,
         unitPrice: line.unitPrice,
         optionsPrice,
-        taxRate: 0,
+        // Satz des Produkts wie an der Kasse — bisher stand hier fest 0.
+        taxRate: Number(product?.taxRate) || 0,
         totalPrice: linePrice * line.quantity,
         options: {
           selected: selectedOptions.map((o) => ({
@@ -669,6 +672,16 @@ export class EventsShopCheckoutController {
       });
     });
     await this.orderItemRepository.save(items);
+
+    /* Die Steuer ergibt sich erst aus den Positionen. Die Servicegebuehr
+       ist keine Position und steckt nicht in `subtotal`; sie bleibt hier
+       wie bisher aussen vor. */
+    const organization = await this.organizationRepository.findOne({
+      where: { id: order.organizationId },
+      select: ['id', 'settings'],
+    });
+    order.taxTotal = orderTaxTotal(items, 0, organization?.settings?.vatExempt);
+    await this.orderRepository.save(order);
 
     const payment = this.paymentRepository.create({
       orderId: order.id,
