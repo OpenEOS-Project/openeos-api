@@ -363,14 +363,14 @@ export class EmailService {
           .join(', ')
       : '';
     const addressRow = addressLine
-      ? `<tr><td style="padding: 6px 0; color: #666;">Rechnungsadresse:</td><td style="padding: 6px 0;"><strong>${addressLine}</strong></td></tr>`
+      ? `<tr><td style="padding: 6px 0; color: #666;">Rechnungsadresse:</td><td style="padding: 6px 0;"><strong>${escapeHtml(addressLine)}</strong></td></tr>`
       : '';
     const html = this.getBaseTemplate(`
       <h1>${subject}</h1>
       <p>${einleitung}</p>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-        <tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${options.organizationName}</strong></td></tr>
-        <tr><td style="padding: 6px 0; color: #666;">Veranstaltung:</td><td style="padding: 6px 0;"><strong>${options.eventName}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${escapeHtml(options.organizationName)}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Veranstaltung:</td><td style="padding: 6px 0;"><strong>${escapeHtml(options.eventName)}</strong></td></tr>
         <tr><td style="padding: 6px 0; color: #666;">Datum:</td><td style="padding: 6px 0;"><strong>${dateLabel}</strong></td></tr>
         <tr><td style="padding: 6px 0; color: #666;">Preis:</td><td style="padding: 6px 0;"><strong>${priceLabel}</strong></td></tr>
         ${addressRow}
@@ -424,8 +424,8 @@ export class EmailService {
     const html = this.getBaseTemplate(`
       <h1>Neue Support-Anfrage${options.priority ? ' (Priority)' : ''}</h1>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-        <tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${options.organizationName}</strong></td></tr>
-        <tr><td style="padding: 6px 0; color: #666;">Von:</td><td style="padding: 6px 0;"><strong>${options.senderName}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${escapeHtml(options.organizationName)}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">Von:</td><td style="padding: 6px 0;"><strong>${escapeHtml(options.senderName)}</strong></td></tr>
       </table>
       <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333;">${escapeHtml(options.preview)}</p>
       <p style="color: #666; font-size: 14px;">Antworten kannst du im Super-Admin-Bereich unter Support oder direkt im Telegram-Topic der Organisation.</p>
@@ -459,11 +459,11 @@ export class EmailService {
       </p>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
         <tr><td style="padding: 6px 0; color: #666;">Typ:</td><td style="padding: 6px 0;"><strong>${typeLabel}</strong></td></tr>
-        <tr><td style="padding: 6px 0; color: #666;">Name:</td><td style="padding: 6px 0;"><strong>${options.name}</strong></td></tr>
-        <tr><td style="padding: 6px 0; color: #666;">E-Mail:</td><td style="padding: 6px 0;"><strong><a href="mailto:${options.email}" style="color: #2563eb;">${options.email}</a></strong></td></tr>
-        ${options.organization ? `<tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${options.organization}</strong></td></tr>` : ''}
+        <tr><td style="padding: 6px 0; color: #666;">Name:</td><td style="padding: 6px 0;"><strong>${escapeHtml(options.name)}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #666;">E-Mail:</td><td style="padding: 6px 0;"><strong><a href="mailto:${escapeHtml(options.email)}" style="color: #2563eb;">${escapeHtml(options.email)}</a></strong></td></tr>
+        ${options.organization ? `<tr><td style="padding: 6px 0; color: #666;">Organisation:</td><td style="padding: 6px 0;"><strong>${escapeHtml(options.organization)}</strong></td></tr>` : ''}
       </table>
-      <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333; white-space: pre-wrap;">${options.message}</p>
+      <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333; white-space: pre-wrap;">${escapeHtml(options.message)}</p>
     `);
 
     return this.sendEmail({ to: options.to, subject, html });
@@ -482,7 +482,7 @@ export class EmailService {
     const subject = `Einladung: ${organizationName}`;
     const html = this.getBaseTemplate(`
       <h1>Sie wurden eingeladen!</h1>
-      <p><strong>${inviterName}</strong> hat Sie als <strong>${roleLabel}</strong> zur Organisation <strong>${organizationName}</strong> eingeladen.</p>
+      <p><strong>${escapeHtml(inviterName)}</strong> hat Sie als <strong>${roleLabel}</strong> zur Organisation <strong>${escapeHtml(organizationName)}</strong> eingeladen.</p>
       <p>Klicken Sie auf den folgenden Button, um die Einladung anzunehmen:</p>
       <p style="text-align: center; margin: 30px 0;">
         <a href="${acceptUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
@@ -512,8 +512,8 @@ export class EmailService {
   ): Promise<boolean> {
     const subject = `Bitte bestätige deine Anmeldung: ${shiftPlanName}`;
     const html = this.getBaseTemplate(`
-      <h1>Hallo ${name}!</h1>
-      <p>Vielen Dank für deine Anmeldung zum <strong>${shiftPlanName}</strong>.</p>
+      <h1>Hallo ${escapeHtml(name)}!</h1>
+      <p>Vielen Dank für deine Anmeldung zum <strong>${escapeHtml(shiftPlanName)}</strong>.</p>
       <p>Du hast dich für folgende Schichten angemeldet:</p>
       <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 20px 0;">
         ${shiftsSummary}
@@ -548,18 +548,18 @@ export class EmailService {
   }): Promise<boolean> {
     const subject = `Bestellbestätigung ${options.orderNumber} – ${options.eventName}`;
     const html = this.getBaseTemplate(`
-      <h1>Vielen Dank für deine Bestellung${options.name ? `, ${options.name}` : ''}!</h1>
+      <h1>Vielen Dank für deine Bestellung${options.name ? `, ${escapeHtml(options.name)}` : ''}!</h1>
       <p>
         Deine Zahlung ist eingegangen und die Bestellung
-        <strong>${options.orderNumber}</strong> bei
-        <strong>${options.organizationName}</strong> (${options.eventName}) wurde aufgenommen.
+        <strong>${escapeHtml(options.orderNumber)}</strong> bei
+        <strong>${escapeHtml(options.organizationName)}</strong> (${escapeHtml(options.eventName)}) wurde aufgenommen.
       </p>
-      ${options.tableNumber ? `<p>Tisch: <strong>${options.tableNumber}</strong></p>` : ''}
+      ${options.tableNumber ? `<p>Tisch: <strong>${escapeHtml(options.tableNumber)}</strong></p>` : ''}
       <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
         ${options.itemsHtml}
       </div>
       <p style="font-size: 16px;">
-        <strong>Gesamtbetrag: ${options.totalFormatted}</strong><br>
+        <strong>Gesamtbetrag: ${escapeHtml(options.totalFormatted)}</strong><br>
         <span style="color: #666; font-size: 13px;">bezahlt per SumUp Online-Zahlung</span>
       </p>
       <p style="color: #666; font-size: 14px;">
@@ -588,8 +588,8 @@ export class EmailService {
       </div>`
       : '';
     const html = this.getBaseTemplate(`
-      <h1>Hallo ${name}!</h1>
-      <p>Gute Nachrichten! Deine Anmeldung zum <strong>${shiftPlanName}</strong> wurde bestätigt.</p>
+      <h1>Hallo ${escapeHtml(name)}!</h1>
+      <p>Gute Nachrichten! Deine Anmeldung zum <strong>${escapeHtml(shiftPlanName)}</strong> wurde bestätigt.</p>
       <p>Du bist für folgende Schichten eingeteilt:</p>
       <div style="background: #d1fae5; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #10b981;">
         ${shiftsSummary}
@@ -609,9 +609,9 @@ export class EmailService {
   ): Promise<boolean> {
     const subject = `Absage: ${shiftPlanName}`;
     const html = this.getBaseTemplate(`
-      <h1>Hallo ${name},</h1>
-      <p>Leider müssen wir dir mitteilen, dass deine Anmeldung zum <strong>${shiftPlanName}</strong> nicht berücksichtigt werden konnte.</p>
-      ${reason ? `<p><strong>Grund:</strong> ${reason}</p>` : ''}
+      <h1>Hallo ${escapeHtml(name)},</h1>
+      <p>Leider müssen wir dir mitteilen, dass deine Anmeldung zum <strong>${escapeHtml(shiftPlanName)}</strong> nicht berücksichtigt werden konnte.</p>
+      ${reason ? `<p><strong>Grund:</strong> ${escapeHtmlMitUmbruechen(reason)}</p>` : ''}
       <p>Bei Fragen kannst du dich gerne an die Organisatoren wenden.</p>
     `);
 
@@ -628,12 +628,12 @@ export class EmailService {
   }): Promise<boolean> {
     const subject = `Erinnerung: Deine Schicht bei ${options.planName}`;
     const html = this.getBaseTemplate(`
-      <h1>Hallo ${options.helperName}!</h1>
-      <p>Dies ist eine freundliche Erinnerung an deine Schicht bei <strong>${options.planName}</strong>.</p>
+      <h1>Hallo ${escapeHtml(options.helperName)}!</h1>
+      <p>Dies ist eine freundliche Erinnerung an deine Schicht bei <strong>${escapeHtml(options.planName)}</strong>.</p>
       <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
-        <p style="margin: 0;"><strong>${options.jobName}</strong></p>
-        <p style="margin: 5px 0 0 0;">${options.shiftDate}</p>
-        <p style="margin: 5px 0 0 0;">${options.shiftTime}</p>
+        <p style="margin: 0;"><strong>${escapeHtml(options.jobName)}</strong></p>
+        <p style="margin: 5px 0 0 0;">${escapeHtml(options.shiftDate)}</p>
+        <p style="margin: 5px 0 0 0;">${escapeHtml(options.shiftTime)}</p>
       </div>
       <p>Wir freuen uns auf dich!</p>
     `);
@@ -657,8 +657,8 @@ export class EmailService {
   ): Promise<boolean> {
     const subject = `Erinnerung: Bestätige deine Schichten — ${shiftPlanName}`;
     const html = this.getBaseTemplate(`
-      <h1>Hallo ${name}!</h1>
-      <p>Du hast dich für Schichten im Plan <strong>${shiftPlanName}</strong> angemeldet, aber deine E-Mail-Adresse noch nicht bestätigt.</p>
+      <h1>Hallo ${escapeHtml(name)}!</h1>
+      <p>Du hast dich für Schichten im Plan <strong>${escapeHtml(shiftPlanName)}</strong> angemeldet, aber deine E-Mail-Adresse noch nicht bestätigt.</p>
       <p>Damit deine Anmeldung gültig wird, klick bitte einmal auf den Bestätigungs-Link unten:</p>
       <div style="margin: 24px 0; text-align: center;">
         <a href="${verifyUrl}" style="display: inline-block; padding: 12px 24px; background: #10b981; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">E-Mail bestätigen</a>
@@ -676,8 +676,8 @@ export class EmailService {
   ): Promise<boolean> {
     const subject = `Schichten verwalten: ${planName}`;
     const html = this.getBaseTemplate(`
-      <h1>Hallo${name ? ` ${name}` : ''}!</h1>
-      <p>Du hast einen Link zum Verwalten deiner Schichten im Plan <strong>${planName}</strong> angefordert.</p>
+      <h1>Hallo${name ? ` ${escapeHtml(name)}` : ''}!</h1>
+      <p>Du hast einen Link zum Verwalten deiner Schichten im Plan <strong>${escapeHtml(planName)}</strong> angefordert.</p>
       <div style="margin: 24px 0; text-align: center;">
         <a href="${manageUrl}" style="display: inline-block; padding: 12px 24px; background: #10b981; color: white; text-decoration: none; border-radius: 8px; font-weight: 600;">Meine Schichten öffnen</a>
       </div>
@@ -701,7 +701,7 @@ export class EmailService {
       ? `<table style="width: 100%; border-collapse: collapse; margin: 12px 0;">
           <tr><td style="padding: 12px; background: #fee2e2; border-left: 4px solid #dc2626;">
             <div style="font-size: 12px; color: #991b1b; text-transform: uppercase; letter-spacing: .04em;">Wird entfernt</div>
-            <ul style="margin: 6px 0 0; padding-left: 18px;">${options.removedShifts.map((l) => `<li>${l}</li>`).join('')}</ul>
+            <ul style="margin: 6px 0 0; padding-left: 18px;">${options.removedShifts.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>
           </td></tr>
         </table>`
       : '';
@@ -709,16 +709,16 @@ export class EmailService {
       ? `<table style="width: 100%; border-collapse: collapse; margin: 12px 0;">
           <tr><td style="padding: 12px; background: #d1fae5; border-left: 4px solid #10b981;">
             <div style="font-size: 12px; color: #065f46; text-transform: uppercase; letter-spacing: .04em;">Wird hinzugefügt</div>
-            <ul style="margin: 6px 0 0; padding-left: 18px;">${options.addedShifts.map((l) => `<li>${l}</li>`).join('')}</ul>
+            <ul style="margin: 6px 0 0; padding-left: 18px;">${options.addedShifts.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>
           </td></tr>
         </table>`
       : '';
     const html = this.getBaseTemplate(`
-      <h1>Hallo ${options.name}!</h1>
-      <p>Die Organisation möchte deine Schichten im Plan <strong>${options.shiftPlanName}</strong> ändern.</p>
+      <h1>Hallo ${escapeHtml(options.name)}!</h1>
+      <p>Die Organisation möchte deine Schichten im Plan <strong>${escapeHtml(options.shiftPlanName)}</strong> ändern.</p>
       ${removedBlock}
       ${addedBlock}
-      ${options.message ? `<p><strong>Nachricht:</strong></p><div style="background: #eff6ff; padding: 12px; border-radius: 6px; border-left: 4px solid #3b82f6; white-space: pre-wrap;">${options.message}</div>` : ''}
+      ${options.message ? `<p><strong>Nachricht:</strong></p><div style="background: #eff6ff; padding: 12px; border-radius: 6px; border-left: 4px solid #3b82f6; white-space: pre-wrap;">${escapeHtml(options.message)}</div>` : ''}
       <div style="margin: 24px 0; text-align: center;">
         <a href="${options.acceptUrl}" style="display: inline-block; padding: 12px 24px; background: #10b981; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; margin-right: 8px;">✓ Annehmen</a>
         <a href="${options.declineUrl}" style="display: inline-block; padding: 12px 24px; background: #f3f4f6; color: #374151; text-decoration: none; border-radius: 8px; font-weight: 600;">✗ Ablehnen</a>
@@ -742,20 +742,20 @@ export class EmailService {
   }): Promise<boolean> {
     const subject = `Schichtvorschlag: ${options.shiftPlanName}`;
     const html = this.getBaseTemplate(`
-      <h1>Hallo ${options.name}!</h1>
-      <p>Die Organisation möchte deine Schicht im Plan <strong>${options.shiftPlanName}</strong> verschieben.</p>
+      <h1>Hallo ${escapeHtml(options.name)}!</h1>
+      <p>Die Organisation möchte deine Schicht im Plan <strong>${escapeHtml(options.shiftPlanName)}</strong> verschieben.</p>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
         <tr><td style="padding: 12px; background: #fee2e2; border-left: 4px solid #dc2626;">
           <div style="font-size: 12px; color: #991b1b; text-transform: uppercase; letter-spacing: .04em;">Bisher</div>
-          <div style="margin-top: 4px;">${options.oldShiftLine}</div>
+          <div style="margin-top: 4px;">${escapeHtml(options.oldShiftLine)}</div>
         </td></tr>
         <tr><td style="height: 8px;"></td></tr>
         <tr><td style="padding: 12px; background: #d1fae5; border-left: 4px solid #10b981;">
           <div style="font-size: 12px; color: #065f46; text-transform: uppercase; letter-spacing: .04em;">Vorgeschlagen</div>
-          <div style="margin-top: 4px;">${options.newShiftLine}</div>
+          <div style="margin-top: 4px;">${escapeHtml(options.newShiftLine)}</div>
         </td></tr>
       </table>
-      ${options.message ? `<p><strong>Nachricht:</strong></p><div style="background: #eff6ff; padding: 12px; border-radius: 6px; border-left: 4px solid #3b82f6; white-space: pre-wrap;">${options.message}</div>` : ''}
+      ${options.message ? `<p><strong>Nachricht:</strong></p><div style="background: #eff6ff; padding: 12px; border-radius: 6px; border-left: 4px solid #3b82f6; white-space: pre-wrap;">${escapeHtml(options.message)}</div>` : ''}
       <div style="margin: 24px 0; text-align: center;">
         <a href="${options.acceptUrl}" style="display: inline-block; padding: 12px 24px; background: #10b981; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; margin-right: 8px;">✓ Annehmen</a>
         <a href="${options.declineUrl}" style="display: inline-block; padding: 12px 24px; background: #f3f4f6; color: #374151; text-decoration: none; border-radius: 8px; font-weight: 600;">✗ Ablehnen</a>
@@ -775,8 +775,8 @@ export class EmailService {
   ): Promise<boolean> {
     const subject = `Schicht aktualisiert: ${shiftPlanName}`;
     const html = this.getBaseTemplate(`
-      <h1>Hallo ${name}!</h1>
-      <p>Deine Einteilung im Schichtplan <strong>${shiftPlanName}</strong> wurde aktualisiert.</p>
+      <h1>Hallo ${escapeHtml(name)}!</h1>
+      <p>Deine Einteilung im Schichtplan <strong>${escapeHtml(shiftPlanName)}</strong> wurde aktualisiert.</p>
       <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
         <tr>
           <td style="padding: 12px; background: #fee2e2; border-left: 4px solid #dc2626; border-radius: 6px 0 0 6px;">
@@ -792,7 +792,7 @@ export class EmailService {
           </td>
         </tr>
       </table>
-      ${note ? `<p><strong>Hinweis:</strong></p><div style="background: #eff6ff; padding: 12px; border-radius: 6px; border-left: 4px solid #3b82f6; white-space: pre-wrap;">${note}</div>` : ''}
+      ${note ? `<p><strong>Hinweis:</strong></p><div style="background: #eff6ff; padding: 12px; border-radius: 6px; border-left: 4px solid #3b82f6; white-space: pre-wrap;">${escapeHtml(note)}</div>` : ''}
       <p>Bei Fragen melde dich gerne bei den Organisatoren.</p>
     `);
 
@@ -808,12 +808,12 @@ export class EmailService {
   ): Promise<boolean> {
     const subject = `Nachricht zu: ${shiftPlanName}`;
     const html = this.getBaseTemplate(`
-      <h1>Hallo ${name}!</h1>
-      <p>Du hast eine Nachricht bezüglich <strong>${shiftPlanName}</strong> erhalten:</p>
+      <h1>Hallo ${escapeHtml(name)}!</h1>
+      <p>Du hast eine Nachricht bezüglich <strong>${escapeHtml(shiftPlanName)}</strong> erhalten:</p>
       <div style="background: #eff6ff; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
-        <p style="white-space: pre-wrap;">${message}</p>
+        <p style="white-space: pre-wrap;">${escapeHtml(message)}</p>
       </div>
-      <p style="color: #666; font-size: 14px;">Gesendet von: ${senderName}</p>
+      <p style="color: #666; font-size: 14px;">Gesendet von: ${escapeHtml(senderName)}</p>
     `);
 
     return this.sendEmail({ to: email, subject, html });
@@ -829,11 +829,9 @@ export class EmailService {
     body: string;
     senderName: string;
   }): Promise<boolean> {
-    const esc = (s: string) =>
-      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const html = this.getBaseTemplate(`
-      <div style="white-space: pre-wrap; font-size: 15px; color: #333;">${esc(opts.body)}</div>
-      <p style="color: #a1a1aa; font-size: 13px; margin-top: 28px;">Gesendet von ${esc(opts.senderName)}</p>
+      <div style="white-space: pre-wrap; font-size: 15px; color: #333;">${escapeHtml(opts.body)}</div>
+      <p style="color: #a1a1aa; font-size: 13px; margin-top: 28px;">Gesendet von ${escapeHtml(opts.senderName)}</p>
     `);
     return this.sendEmail({ to: opts.email, subject: opts.subject, html });
   }
@@ -851,6 +849,13 @@ export class EmailService {
    * Das ist ausdrücklich eine Brücke, keine Lösung: Wer eine dieser
    * Mails anfasst, stellt sie bitte auf `rahmen()` und die Bausteine um
    * und nimmt sie damit aus diesem Weg heraus.
+   *
+   * Anders als die Bausteine maskiert dieser Weg nichts selbst: `content`
+   * ist fertiges HTML. Jeder Wert, der von Nutzern stammt (Namen,
+   * Plannamen, Nachrichten, Gruende), geht deshalb durch `escapeHtml`,
+   * bevor er hier landet. Fertige HTML-Schnipsel als Parameter
+   * (`shiftsSummary`, `itemsHtml`, die Schichtzeilen von
+   * sendShiftUpdatedEmail) maskieren ihre Werte schon beim Erzeugen.
    */
   private getBaseTemplate(
     content: string,

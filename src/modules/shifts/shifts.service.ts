@@ -21,6 +21,7 @@ import {
 } from '../../database/entities';
 import type { ShiftChangeOp } from '../../database/entities/shift-change-proposal.entity';
 import { EmailService } from '../email/email.service';
+import { escapeHtml } from '../email/email-template';
 import {
   CreateShiftPlanDto,
   UpdateShiftPlanDto,
@@ -1489,7 +1490,8 @@ export class ShiftsService {
           year: 'numeric',
         });
 
-        return `<p><strong>${job.name}</strong>: ${date}, ${shift.startTime} - ${shift.endTime} Uhr</p>`;
+        // Ergebnis ist HTML fuer die Mail — Jobname und Zeiten maskieren.
+        return `<p><strong>${escapeHtml(job.name)}</strong>: ${escapeHtml(date)}, ${escapeHtml(String(shift.startTime))} - ${escapeHtml(String(shift.endTime))} Uhr</p>`;
       })
       .filter(Boolean)
       .join('');

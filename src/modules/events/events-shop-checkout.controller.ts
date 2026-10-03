@@ -51,6 +51,7 @@ import { SumUpApiService } from '../sumup/sumup-api.service';
 import { EmailService } from '../email/email.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
+import { escapeHtml } from '../email/email-template';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 
 interface CreateCheckoutBody {
@@ -518,10 +519,11 @@ export class EventsShopCheckoutController {
           const optionsText = (item.options || [])
             .map((o) => (o.excluded ? `ohne ${o.option}` : o.option))
             .join(', ');
+          // itemsHtml ist fertiges HTML: Namen aus dem Warenkorb maskieren.
           return `<tr>
-            <td style="padding: 4px 8px 4px 0;">${item.quantity}× ${item.name}${
+            <td style="padding: 4px 8px 4px 0;">${item.quantity}× ${escapeHtml(item.name)}${
               optionsText
-                ? `<br><span style="color: #666; font-size: 12px;">${optionsText}</span>`
+                ? `<br><span style="color: #666; font-size: 12px;">${escapeHtml(optionsText)}</span>`
                 : ''
             }</td>
             <td style="padding: 4px 0; text-align: right; white-space: nowrap;">${formatAmount(lineTotal)}</td>
