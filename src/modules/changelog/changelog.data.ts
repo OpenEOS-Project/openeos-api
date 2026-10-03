@@ -16,6 +16,102 @@ import type { ChangelogEintrag } from './changelog.types';
  */
 export const CHANGELOG: ChangelogEintrag[] = [
   {
+    datum: '2026-10-03',
+    art: 'neu',
+    titel: {
+      de: 'OpenEOS kostenlos selbst betreiben',
+      en: 'Run OpenEOS yourself, free of charge',
+    },
+    kurz: {
+      de: 'Auf eigenem Server, für eine Organisation, ohne Gebühren — mit Anleitung im Handbuch.',
+      en: 'On your own server, for one organisation, with no fees — with a guide in the handbook.',
+    },
+    text: {
+      de: 'OpenEOS lässt sich jetzt kostenlos auf einem eigenen Server betreiben. Diese Variante ist bewusst schlank: eine Organisation, in der Sie alles verwalten, ohne Abrechnung und ohne Selbstregistrierung — neue Mitglieder legen Sie selbst mit einem Startpasswort an. Wie man das mit Docker einrichtet, sichert und aktualisiert, steht im Handbuch unter „Selbst betreiben". Am gehosteten Angebot unter openeos.de ändert sich nichts.',
+      en: 'OpenEOS can now be run on your own server free of charge. This edition is deliberately lean: one organisation in which you manage everything, with no billing and no self-registration — you create new members yourself with a starting password. How to set it up with Docker, back it up and update it is described in the handbook under "Self-hosting". Nothing changes for the hosted service at openeos.de.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'neu',
+    titel: {
+      de: 'Küchenbildschirm einer Station zuordnen',
+      en: 'Assign a kitchen screen to a station',
+    },
+    kurz: {
+      de: 'In den Geräteeinstellungen wählen Sie, welche Station ein Bildschirm zeigt.',
+      en: 'Device settings now let you choose which station a screen shows.',
+    },
+    text: {
+      de: 'Ein Bildschirm im Stationsmodus meldete bisher „keine Station konfiguriert", ohne dass sich das irgendwo ändern ließ. In den Einstellungen des Geräts stehen jetzt die Stationen der laufenden Veranstaltung zur Auswahl; danach zeigt der Bildschirm die Bestellungen dieser Station.',
+      en: 'A screen in station mode used to report "no station configured" with no way to change that. The device settings now offer the stations of the running event; once one is chosen, the screen shows that station\'s orders.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'verbessert',
+    titel: {
+      de: 'Zwei-Faktor-Schutz abschalten nur mit Code',
+      en: 'Turning off two-factor sign-in needs a code',
+    },
+    kurz: {
+      de: 'Wer die Zwei-Faktor-Anmeldung abschaltet, bestätigt das mit einem aktuellen Code.',
+      en: 'Turning off two-factor sign-in is now confirmed with a current code.',
+    },
+    text: {
+      de: 'Um die Zwei-Faktor-Anmeldung abzuschalten oder neue Wiederherstellungscodes zu erzeugen, geben Sie jetzt einen aktuellen Code aus Ihrer App, per E-Mail oder einen Wiederherstellungscode ein. So kann niemand den Schutz abschalten, nur weil an einem Gerät noch jemand angemeldet ist.',
+      en: 'To turn off two-factor sign-in or create new recovery codes you now enter a current code from your app, by email, or a recovery code. That way nobody can remove the protection just because a device was left signed in.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Zahlungsanbieter-Zugangsdaten bleiben beim Speichern erhalten',
+      en: 'Payment provider credentials survive saving settings',
+    },
+    kurz: {
+      de: 'Funktioniert die Kartenzahlung nicht mehr? Bitte den SumUp- bzw. PayPal-Schlüssel neu eintragen.',
+      en: 'Card payments stopped working? Please enter your SumUp or PayPal key again.',
+    },
+    text: {
+      de: 'Beim Speichern der Organisationseinstellungen konnte ein hinterlegter SumUp- oder PayPal-Schlüssel unbrauchbar werden — die Kartenzahlung an der Kasse schlug danach fehl. Das ist behoben, und Zugangsdaten werden insgesamt zurückhaltender an die Oberfläche gegeben. Falls die Kartenzahlung bei Ihnen seitdem nicht mehr funktioniert, tragen Sie den Schlüssel unter „Integrationen" einmal neu ein.',
+      en: 'Saving the organisation settings could leave a stored SumUp or PayPal key unusable, after which card payments at the till failed. This is fixed, and credentials are now handed to the interface far more sparingly. If card payments have not worked for you since, enter the key once more under "Integrations".',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Organisationseinstellungen speichern wieder vollständig',
+      en: 'Organisation settings save completely again',
+    },
+    kurz: {
+      de: 'Die Beschreibung der Organisation ging beim Speichern verloren — behoben.',
+      en: 'The organisation description was lost on saving — fixed.',
+    },
+    text: {
+      de: 'Die Beschreibung der Organisation wurde beim Speichern nicht übernommen. Außerdem fehlte Betreibern mit eigener Organisation der Reiter „Organisation" in den Einstellungen. Beides ist behoben.',
+      en: 'The organisation description was not kept when saving, and operators with their own organisation did not see the "Organisation" tab in the settings. Both are fixed.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Sprachwechsel bleibt auf der Seite',
+      en: 'Switching language keeps your page',
+    },
+    kurz: {
+      de: 'Nach dem Umstellen der Sprache landet man nicht mehr auf der Startseite.',
+      en: 'Changing the language no longer sends you back to the start page.',
+    },
+    text: {
+      de: 'Wer in den Einstellungen die Sprache umstellte, landete bisher auf der Startseite. Jetzt bleibt die Seite offen, auf der Sie gerade sind.',
+      en: 'Changing the language in the settings used to send you back to the start page. The page you are on now stays open.',
+    },
+  },
+  {
     datum: '2026-09-24',
     art: 'behoben',
     titel: {
@@ -257,6 +353,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
  * Eintrag ohne Version da.
  */
 export const RELEASES: Record<string, string> = {
+  '2026-10-03': '1.5',
   '2026-09-24': '1.4',
   '2026-09-17': '1.3',
   '2026-09-16': '1.2',
