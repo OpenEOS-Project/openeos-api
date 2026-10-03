@@ -72,6 +72,12 @@ export interface OrganizationSettings {
     clientId: string;
     clientSecret: string;
   };
+  /**
+   * Schalter je Integration (Schluessel aus INTEGRATION_IDS). Getrennt von
+   * den Zugangsdaten (`sumup` oben): Ausschalten laesst die hinterlegten
+   * Daten stehen, damit ein spaeteres Einschalten ohne Neueingabe geht.
+   */
+  integrations?: Record<string, { enabled: boolean; enabledAt?: string }>;
   orderFlow?: {
     receiptPrinting?: {
       enabled: boolean;

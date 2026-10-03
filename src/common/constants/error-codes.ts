@@ -54,6 +54,10 @@ export const ErrorCodes = {
   SUMUP_NOT_CONFIGURED: 'SUMUP_NOT_CONFIGURED',
   SUMUP_API_ERROR: 'SUMUP_API_ERROR',
 
+  // Integration Errors
+  INTEGRATION_NOT_FOUND: 'INTEGRATION_NOT_FOUND',
+  INTEGRATION_DISABLED: 'INTEGRATION_DISABLED',
+
   // Stripe Errors
   STRIPE_NOT_CONFIGURED: 'STRIPE_NOT_CONFIGURED',
 } as const;
@@ -112,6 +116,9 @@ export const ErrorMessages: Record<ErrorCode, string> = {
 
   [ErrorCodes.SUMUP_NOT_CONFIGURED]: 'SumUp ist nicht konfiguriert',
   [ErrorCodes.SUMUP_API_ERROR]: 'SumUp API Fehler',
+
+  [ErrorCodes.INTEGRATION_NOT_FOUND]: 'Integration nicht gefunden',
+  [ErrorCodes.INTEGRATION_DISABLED]: 'Integration ist nicht aktiviert',
 
   [ErrorCodes.STRIPE_NOT_CONFIGURED]:
     'Online-Zahlung ist derzeit nicht verfügbar',
