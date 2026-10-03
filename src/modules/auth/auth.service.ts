@@ -798,7 +798,7 @@ export class AuthService {
    * den 2FA-Endpunkten. Kurz gueltig, weil er nur eine Code-Eingabe
    * ueberbruecken muss.
    */
-  async issueTwoFactorToken(user: User): Promise<string> {
+  issueTwoFactorToken(user: User): string {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
@@ -839,7 +839,7 @@ export class AuthService {
    */
   private verbleibendeGueltigkeitMs(accessToken: string): number {
     try {
-      const { exp } = this.jwtService.decode(accessToken);
+      const { exp } = this.jwtService.decode<{ exp?: number }>(accessToken);
       if (!exp) return 0;
       return Math.max(0, exp * 1000 - Date.now());
     } catch {

@@ -21,7 +21,6 @@ import {
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
 import { PaymentStatus } from '../../database/entities/order.entity';
-import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import {
   PaginatedResult,
@@ -125,7 +124,7 @@ export class PaymentsService {
         isFullyPaid: isFullyPaid,
         order,
       })
-      .catch((err) => {
+      .catch((err: Error) => {
         this.logger.error(`Failed to trigger payment printing: ${err.message}`);
       });
 
@@ -244,7 +243,7 @@ export class PaymentsService {
         isFullyPaid,
         order,
       })
-      .catch((err) => {
+      .catch((err: Error) => {
         this.logger.error(`Failed to trigger payment printing: ${err.message}`);
       });
 

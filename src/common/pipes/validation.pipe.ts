@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { validate } from 'class-validator';
-import { plainToInstance } from 'class-transformer';
+import { plainToInstance, type ClassConstructor } from 'class-transformer';
 import { ErrorCodes } from '../constants/error-codes';
 
 @Injectable()
@@ -15,7 +15,9 @@ export class CustomValidationPipe implements PipeTransform {
       return value;
     }
 
-    const object = plainToInstance(metatype, value);
+    // Nest reicht den Parametertyp als `Type<any>` durch; validiert wird
+    // ohnehin nur ein Objekt.
+    const object = plainToInstance(metatype as ClassConstructor<object>, value);
     const errors = await validate(object, {
       whitelist: true,
       forbidNonWhitelisted: true,

@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -195,7 +194,7 @@ export class ShiftsService {
       .createQueryBuilder('job')
       .where('job.shiftPlanId = :planId', { planId })
       .select('MAX(job.sortOrder)', 'max')
-      .getRawOne();
+      .getRawOne<{ max: number | null }>();
 
     const job = this.shiftJobRepository.create({
       shiftPlanId: plan.id,
@@ -703,8 +702,8 @@ export class ShiftsService {
   async approveRegistration(
     organizationId: string,
     registrationId: string,
-    user: User,
-    message?: string,
+    _user: User,
+    _message?: string,
   ): Promise<ShiftRegistration> {
     const reg = await this.findRegistrationWithAccess(
       organizationId,
@@ -1213,9 +1212,9 @@ export class ShiftsService {
   // ============ Helpers ============
 
   private generateToken(): string {
-    return [...Array(64)]
-      .map(() => Math.random().toString(36).charAt(2))
-      .join('');
+    return Array.from({ length: 64 }, () =>
+      Math.random().toString(36).charAt(2),
+    ).join('');
   }
 
   private async findRegistrationWithAccess(

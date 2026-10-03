@@ -11,10 +11,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { DevicesService } from './devices.service';
-import { RegisterDeviceDto, InitDeviceDto, LinkDeviceDto } from './dto';
+import { RegisterDeviceDto, InitDeviceDto } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { User } from '../../database/entities';
 import { ErrorCodes } from '../../common/constants/error-codes';
 
 @ApiTags('Devices')

@@ -11,6 +11,7 @@ import { ALLOW_PENDING_TWO_FACTOR_KEY } from '../decorators/allow-pending-two-fa
 import { REQUIRES_SCOPE_KEY } from '../decorators/requires-scope.decorator';
 import { ErrorCodes } from '../constants/error-codes';
 import { ApiTokensService } from '../../modules/api-tokens/api-tokens.service';
+import type { AppRequest } from '../types/request.types';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -31,10 +32,8 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest();
-    const vorgelegt = (
-      request.headers?.authorization as string | undefined
-    )?.replace(/^Bearer /i, '');
+    const request = context.switchToHttp().getRequest<AppRequest>();
+    const vorgelegt = request.headers?.authorization?.replace(/^Bearer /i, '');
 
     /* Ein API-Token statt eines Anmeldetokens. Die Unterscheidung faellt
        am Praefix, nicht am Ausprobieren: ein JWT durch die Token-Pruefung

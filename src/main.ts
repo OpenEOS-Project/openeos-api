@@ -198,4 +198,6 @@ async function bootstrap() {
   logger.log(`Environment: ${nodeEnv}`);
 }
 
-bootstrap();
+// Ein Fehler beim Start bleibt eine unbehandelte Ablehnung und beendet den
+// Prozess — genau das ist gewollt, daher nur ausdruecklich `void`.
+void bootstrap();

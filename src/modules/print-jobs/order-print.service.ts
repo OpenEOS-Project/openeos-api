@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Device } from '../../database/entities/device.entity';
 import { Organization } from '../../database/entities/organization.entity';
 import { OrderItem } from '../../database/entities/order-item.entity';
+import { Order } from '../../database/entities/order.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
 import { PrintJobsService } from './print-jobs.service';
 import { PrintRoutingService } from './print-routing.service';
@@ -58,7 +59,7 @@ export class OrderPrintService {
    * The agent expects fields like `created_at`, `daily_number`, `customer_name`
    * — not the camelCase entity fields used elsewhere in the API.
    */
-  private buildOrderPayload(order: any): Record<string, unknown> {
+  private buildOrderPayload(order: Order | null): Record<string, unknown> {
     if (!order) return {};
     return {
       order_id: order.id,
@@ -103,7 +104,7 @@ export class OrderPrintService {
   async handleOrderCreated(
     organizationId: string,
     data: {
-      order: any;
+      order: Order | null;
       orderId: string;
       orderNumber: string;
       tableNumber?: string | null;
@@ -185,7 +186,7 @@ export class OrderPrintService {
       orgFallbackPrinterId: string | null;
     },
     data: {
-      order: any;
+      order: Order | null;
       orderId: string;
       orderNumber: string;
       tableNumber?: string | null;
@@ -397,7 +398,7 @@ export class OrderPrintService {
       amount: number;
       paymentMethod: string;
       isFullyPaid: boolean;
-      order: any;
+      order: Order | null;
     },
   ): Promise<void> {
     try {
@@ -459,14 +460,20 @@ export class OrderPrintService {
               })),
               total: data.order?.total,
               subtotal: data.order?.subtotal,
-              tax_amount: data.order?.taxAmount,
-              tax_rate: data.order?.taxRate,
+              /* Order hat weder `taxAmount` noch `taxRate` (nur `taxTotal`,
+                 Steuersaetze haengen an den Positionen) — die Felder kamen
+                 hier schon immer als undefined an, und der Bon druckt die
+                 MwSt-Zeile deshalb nie. Beim Typisieren (#17) sichtbar
+                 geworden, bewusst nicht still umgebogen. */
+              tax_amount: undefined,
+              tax_rate: undefined,
               // Pfand (deposit) is part of `total` but not `subtotal`, which is
               // why total > subtotal. Expose it so the receipt can show it.
               pfand_total: data.order?.pfandTotal ?? null,
               discount_amount: data.order?.discountAmount ?? null,
               paid_amount: data.order?.paidAmount,
-              change: data.order?.change,
+              // Ebenso: Order kennt kein Rueckgeld — die Zeile blieb immer leer.
+              change: undefined,
               payment_method: data.paymentMethod,
               paymentId: data.paymentId,
               amount: data.amount,

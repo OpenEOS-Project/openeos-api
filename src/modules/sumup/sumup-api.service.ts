@@ -19,16 +19,64 @@ function isSumUpAPIError(err: unknown): err is SumUpAPIError {
     err instanceof Error &&
     'status' in err &&
     'error' in err &&
-    typeof (err as any).status === 'number'
+    typeof (err as { status?: unknown }).status === 'number'
   );
+}
+
+/**
+ * Die Methoden des SDK-Clients, die wir benutzen.
+ *
+ * @sumup/sdk 0.0.x liefert Typdeklarationen, die unter
+ * `moduleResolution: nodenext` nicht aufloesen: core.d.ts importiert ohne
+ * Dateiendung, und `Core.APIPromise` wird zum Fehlertyp. Jedes `await` auf
+ * einen SDK-Aufruf war deshalb stillschweigend `any`. Die Datentypen der
+ * Ressourcen (Reader, StatusResponse, ...) sind dagegen intakt — hier werden
+ * nur die Rueckgaben als gewoehnliche Promises beschrieben.
+ */
+interface SumUpClient {
+  readers: {
+    list(merchantCode: string): Promise<SumUp.Readers.ListReadersResponse>;
+    create(
+      merchantCode: string,
+      body: SumUp.Readers.CreateReaderParams,
+    ): Promise<SumUp.Readers.Reader>;
+    getStatus(
+      merchantCode: string,
+      readerId: string,
+    ): Promise<SumUp.Readers.StatusResponse>;
+    update(
+      merchantCode: string,
+      readerId: string,
+      body: SumUp.Readers.UpdateReaderParams,
+    ): Promise<SumUp.Readers.Reader>;
+    delete(merchantCode: string, readerId: string): Promise<void>;
+    createCheckout(
+      merchantCode: string,
+      readerId: string,
+      body: SumUp.Readers.CreateReaderCheckoutRequest,
+    ): Promise<SumUp.Readers.CreateReaderCheckoutResponse>;
+    terminateCheckout(
+      merchantCode: string,
+      readerId: string,
+      body?: SumUp.Readers.CreateReaderTerminateParams,
+    ): Promise<void>;
+  };
+  transactions: {
+    get(
+      merchantCode: string,
+      query: { client_transaction_id?: string },
+    ): Promise<SumUp.Transactions.TransactionFull>;
+  };
 }
 
 @Injectable()
 export class SumUpApiService {
   private readonly logger = new Logger(SumUpApiService.name);
 
-  private createClient(apiKey: string): SumUp {
-    return new SumUp({ apiKey });
+  private createClient(apiKey: string): SumUpClient {
+    // Die einzige Stelle, an der die kaputten SDK-Typen (s. o.) auf unsere
+    // Beschreibung treffen.
+    return new SumUp({ apiKey }) as unknown as SumUpClient;
   }
 
   /**
@@ -49,7 +97,8 @@ export class SumUpApiService {
     };
 
     if (typeof body === 'object' && body !== null) {
-      const errors = (body as any).errors;
+      const errors = (body as { errors?: { type?: string; detail?: string } })
+        .errors;
       if (errors?.type) result.type = errors.type;
       if (errors?.detail) result.detail = errors.detail;
     }
@@ -214,7 +263,7 @@ export class SumUpApiService {
       // If reader is busy from a previous checkout, terminate and retry once
       const errMsg =
         error instanceof BadRequestException
-          ? (error.getResponse() as any)?.errorType
+          ? (error.getResponse() as { errorType?: string })?.errorType
           : undefined;
 
       if (errMsg === 'READER_BUSY') {

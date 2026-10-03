@@ -10,6 +10,7 @@ import { Repository } from 'typeorm';
 import { Device } from '../../database/entities';
 import { DeviceStatus } from '../../database/entities/device.entity';
 import { ErrorCodes } from '../constants/error-codes';
+import type { AppRequest } from '../types/request.types';
 
 export const IS_DEVICE_AUTH_KEY = 'isDeviceAuth';
 
@@ -22,8 +23,8 @@ export class DeviceAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const deviceToken = request.headers['x-device-token'];
+    const request = context.switchToHttp().getRequest<AppRequest>();
+    const deviceToken = request.headers['x-device-token'] as string | undefined;
 
     if (!deviceToken) {
       throw new UnauthorizedException({

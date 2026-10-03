@@ -8,7 +8,10 @@ import {
 } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { ShiftJob } from './shift-job.entity';
-import { ShiftRegistration } from './shift-registration.entity';
+import {
+  ShiftRegistration,
+  ShiftRegistrationStatus,
+} from './shift-registration.entity';
 
 @Entity('shifts')
 @Index(['shiftJobId', 'date'])
@@ -43,7 +46,9 @@ export class Shift extends BaseEntity {
   // Helper: Count confirmed registrations
   getConfirmedCount(): number {
     if (!this.registrations) return 0;
-    return this.registrations.filter((r) => r.status === 'confirmed').length;
+    return this.registrations.filter(
+      (r) => r.status === ShiftRegistrationStatus.CONFIRMED,
+    ).length;
   }
 
   // Helper: Check if shift is fully booked

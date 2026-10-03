@@ -21,6 +21,35 @@ export interface AdminEventListItem {
   invoiceNote: string | null;
 }
 
+/**
+ * Eine Zeile aus `getRawMany()`/`getRawOne()` der Eventliste. TypeORM
+ * benennt die Spalten nach `<alias>_<spalte>`; COUNT und SUM kommen von
+ * PostgreSQL als Zeichenkette zurueck.
+ */
+interface AdminEventRawRow {
+  event_id: string;
+  event_name: string;
+  event_organization_id: string;
+  event_start_date: Date | null;
+  event_end_date: Date | null;
+  event_status: string;
+  event_billing_status: string;
+  event_invoiced_at: Date | null;
+  event_invoiced_by: string | null;
+  event_invoice_note: string | null;
+  organizationName?: string | null;
+  org_name?: string | null;
+  orderCount?: string | null;
+  revenueTotal?: string | null;
+}
+
+interface AdminEventOrderRawRow {
+  id: string;
+  orderNumber: string;
+  status: string;
+  totalAmount?: string | null;
+}
+
 @Injectable()
 export class AdminEventsService {
   constructor(
@@ -108,7 +137,7 @@ export class AdminEventsService {
       .orderBy('event.createdAt', 'DESC')
       .offset((page - 1) * limit)
       .limit(limit)
-      .getRawMany();
+      .getRawMany<AdminEventRawRow>();
 
     const data: AdminEventListItem[] = raw.map((r) => ({
       id: r.event_id,
@@ -170,7 +199,7 @@ export class AdminEventsService {
       .groupBy('event.id')
       .addGroupBy('org.name');
 
-    const raw = await qb.getRawOne();
+    const raw = await qb.getRawOne<AdminEventRawRow>();
 
     if (!raw) {
       throw new NotFoundException({
@@ -197,7 +226,7 @@ export class AdminEventsService {
       .andWhere('order.id IS NOT NULL')
       .groupBy('order.id')
       .orderBy('order.createdAt', 'DESC')
-      .getRawMany();
+      .getRawMany<AdminEventOrderRawRow>();
 
     const orders = ordersRaw.map((o) => ({
       id: o.id,

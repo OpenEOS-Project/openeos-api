@@ -90,7 +90,9 @@ export function resolveShopWindows(
 function weeklyHoursToWindows(
   event: Event,
   hours: ShopOpeningHours | null,
-  timeZone: string,
+  /* Wird durchgereicht, aber (noch) nicht beachtet: die Tagesgrenzen
+     unten rechnen in der Zeitzone des Servers, nicht in der des Events. */
+  _timeZone: string,
 ): ShopWindow[] {
   if (!hours || !event.startDate) return [];
   const windows: ShopWindow[] = [];

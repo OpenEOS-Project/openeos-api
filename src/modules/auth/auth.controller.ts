@@ -77,6 +77,9 @@ function parseDurationToMs(duration: string): number {
   return value * unitMs[match[2] as 's' | 'm' | 'h' | 'd'];
 }
 
+/** cookie-parser typt die Cookies als Record<string, any>. */
+type Cookies = Record<string, string | undefined>;
+
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
@@ -189,7 +192,7 @@ export class AuthController {
     if (
       await this.authService.needsTwoFactor(user, loginDto.deviceFingerprint)
     ) {
-      const twoFactorToken = await this.authService.issueTwoFactorToken(user);
+      const twoFactorToken = this.authService.issueTwoFactorToken(user);
 
       // Beim Mail-Verfahren muss der Code erst unterwegs sein, bevor
       // jemand danach gefragt wird.
@@ -239,7 +242,8 @@ export class AuthController {
   ) {
     // Try to get refresh token from cookie first, then from body
     const refreshToken =
-      request.cookies?.refreshToken || refreshTokenDto.refreshToken;
+      (request.cookies as Cookies | undefined)?.refreshToken ||
+      refreshTokenDto.refreshToken;
 
     if (!refreshToken) {
       return {
@@ -277,13 +281,13 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const refreshToken = request.cookies?.refreshToken;
+    const refreshToken = (request.cookies as Cookies | undefined)?.refreshToken;
     /* Derselbe Token, mit dem diese Anfrage hereinkam — genau der wird
        gesperrt. Beide Quellen, weil Browser das Cookie schicken und
        Geraete den Kopfzeileneintrag. */
     const accessToken =
       request.headers.authorization?.replace(/^Bearer /i, '') ||
-      request.cookies?.accessToken;
+      (request.cookies as Cookies | undefined)?.accessToken;
     await this.authService.logout(user.id, refreshToken, accessToken);
 
     // Clear refresh token cookie
@@ -376,7 +380,7 @@ export class AuthController {
 
     // Ein Link ersetzt das Passwort, nicht den zweiten Faktor.
     if (await this.authService.needsTwoFactor(user)) {
-      const twoFactorToken = await this.authService.issueTwoFactorToken(user);
+      const twoFactorToken = this.authService.issueTwoFactorToken(user);
       if (user.twoFactorMethod === TwoFactorMethod.EMAIL) {
         await this.twoFactorService.sendLoginOtp(user.id);
       }

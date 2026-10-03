@@ -15,7 +15,13 @@ import {
 import { ApiTags, ApiOperation, ApiHeader } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Repository, Between, MoreThanOrEqual, In } from 'typeorm';
+import {
+  Repository,
+  Between,
+  MoreThanOrEqual,
+  In,
+  type FindOptionsWhere,
+} from 'typeorm';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
 import { CurrentDevice } from '../../common/decorators';
 import { DevicesService } from './devices.service';
@@ -54,8 +60,7 @@ import {
 } from '../../database/entities/payment.entity';
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes } from '../../common/constants/error-codes';
-import { DeviceSettings } from '../../database/entities/device.entity';
-import { CreateOrderDto } from '../orders/dto';
+import { CreateOrderDto, SelectedOptionDto } from '../orders/dto';
 import { CreatePaymentDto } from '../payments/dto';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { PrintersService } from '../printers/printers.service';
@@ -919,7 +924,7 @@ export class DeviceApiController {
       });
     }
 
-    const sumupSettings = (organization.settings as any)?.sumup;
+    const sumupSettings = organization.settings?.sumup;
     if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
@@ -962,7 +967,7 @@ export class DeviceApiController {
       });
     }
 
-    const sumupSettings = (organization.settings as any)?.sumup;
+    const sumupSettings = organization.settings?.sumup;
     if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
@@ -1013,7 +1018,7 @@ export class DeviceApiController {
       });
     }
 
-    const sumupSettings = (organization.settings as any)?.sumup;
+    const sumupSettings = organization.settings?.sumup;
     if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
@@ -1052,12 +1057,12 @@ export class DeviceApiController {
     );
     const skip = (pageNum - 1) * limitNum;
 
-    const where: any = { organizationId };
+    const where: FindOptionsWhere<Order> = { organizationId };
 
     if (status) {
       const validStatuses = Object.values(OrderStatus);
       if (validStatuses.includes(status as OrderStatus)) {
-        where.status = status;
+        where.status = status as OrderStatus;
       }
     }
 
@@ -1358,7 +1363,7 @@ export class DeviceApiController {
       quantity: number;
       notes?: string;
       kitchenNotes?: string;
-      selectedOptions?: any[];
+      selectedOptions?: SelectedOptionDto[];
       isRefill?: boolean;
     },
     chargePfand = true,

@@ -34,7 +34,7 @@ export class HealthController {
 
   @Public()
   @Get()
-  async check(): Promise<HealthCheck> {
+  check(): HealthCheck {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -95,7 +95,7 @@ export class HealthController {
 
   @Public()
   @Get('live')
-  async liveness(): Promise<HealthCheck> {
+  liveness(): HealthCheck {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),

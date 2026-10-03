@@ -722,7 +722,7 @@ export class DevicesService {
       .andWhere('payment.status = :status', {
         status: PaymentTransactionStatus.CAPTURED,
       })
-      .getRawOne();
+      .getRawOne<{ total: string }>();
 
     const revenueTotal = parseFloat(revenueResult?.total || '0');
 

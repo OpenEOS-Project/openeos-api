@@ -7,23 +7,27 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
+import type { Request, Response } from 'express';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger(LoggingInterceptor.name);
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const request = context.switchToHttp().getRequest();
-    const { method, url, body } = request;
+    const request = context.switchToHttp().getRequest<Request>();
+    const { method, url } = request;
+    // Der Rumpf ist ungeprueftes JSON — nur fuers Debug-Log gelesen.
+    const body = request.body as Record<string, unknown> | undefined;
     const requestId =
-      request.headers['x-request-id'] || this.generateRequestId();
+      (request.headers['x-request-id'] as string | undefined) ||
+      this.generateRequestId();
     const userAgent = request.headers['user-agent'] || 'unknown';
     const ip = request.ip;
 
     const now = Date.now();
 
     // Füge requestId zur Response hinzu
-    const response = context.switchToHttp().getResponse();
+    const response = context.switchToHttp().getResponse<Response>();
     response.setHeader('X-Request-Id', requestId);
 
     this.logger.log(
@@ -49,7 +53,7 @@ export class LoggingInterceptor implements NestInterceptor {
             `[${requestId}] ${method} ${url} - ${statusCode} - ${duration}ms`,
           );
         },
-        error: (error) => {
+        error: (error: { status?: number; message?: string }) => {
           const statusCode = error.status || 500;
           const duration = Date.now() - now;
           this.logger.error(

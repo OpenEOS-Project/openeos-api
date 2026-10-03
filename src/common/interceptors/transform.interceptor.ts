@@ -16,14 +16,17 @@ export interface Response<T> {
 @Injectable()
 export class TransformInterceptor<T> implements NestInterceptor<
   T,
-  Response<T>
+  Response<T> | T
 > {
+  /* Rueckgabe `Response<T> | T`: Dateien, Buffer, Streams und bereits
+     verpackte Antworten gehen unveraendert durch — nur alles andere wird
+     in `{ data }` gehuellt. */
   intercept(
     context: ExecutionContext,
-    next: CallHandler,
-  ): Observable<Response<T>> {
+    next: CallHandler<T>,
+  ): Observable<Response<T> | T> {
     return next.handle().pipe(
-      map((data) => {
+      map((data): Response<T> | T => {
         // Streamable file responses (PDF export etc.) must NOT be wrapped —
         // NestJS handles them specially and pipes the underlying stream
         // straight to the response. Wrapping them in { data } would JSON-

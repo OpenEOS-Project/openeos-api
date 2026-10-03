@@ -1,7 +1,7 @@
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
+import { Repository, MoreThanOrEqual } from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -20,7 +20,8 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { OrderStatus } from '../../database/entities/order.entity';
 import { DeviceType } from '../../database/entities/device.entity';
 import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
-import { QueryReportsDto, ReportGroupBy, ReportExportFormat } from './dto';
+import { PrintJobStatus } from '../../database/entities/print-job.entity';
+import { QueryReportsDto, ReportExportFormat } from './dto';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { endOfDay } from '../../common/utils/date-range.util';
 
@@ -94,6 +95,8 @@ export interface StockMovementReport {
   deductions: number;
   closingStock: number;
 }
+
+type CsvZelle = string | number | boolean | null | undefined;
 
 @Injectable()
 export class ReportsService {
@@ -237,7 +240,7 @@ export class ReportsService {
 
     const itemsResult = await itemsQueryBuilder
       .select('SUM(item.quantity)', 'totalItems')
-      .getRawOne();
+      .getRawOne<{ totalItems: string | null }>();
 
     // Cancelled orders, same filters — mirrors the queries above but flips
     // the status filter instead of excluding CANCELLED.
@@ -336,7 +339,14 @@ export class ReportsService {
       // Top-Produkte nach verkaufter Menge (bei Gleichstand nach Umsatz)
       .orderBy('SUM(item.quantity)', 'DESC')
       .addOrderBy('SUM(item.totalPrice)', 'DESC')
-      .getRawMany();
+      .getRawMany<{
+        productId: string;
+        productName: string;
+        categoryName: string;
+        quantitySold: string | null;
+        revenue: string | null;
+        averagePrice: string | null;
+      }>();
 
     return results.map((r) => ({
       productId: r.productId,
@@ -388,7 +398,11 @@ export class ReportsService {
         'SUM(payment.amount) as total',
       ])
       .groupBy('payment.paymentMethod')
-      .getRawMany();
+      .getRawMany<{
+        method: string;
+        count: string | null;
+        total: string | null;
+      }>();
 
     const grandTotal = results.reduce(
       (sum, r) => sum + Number(r.total || 0),
@@ -445,7 +459,12 @@ export class ReportsService {
       .addGroupBy(localHour)
       .orderBy('date', 'ASC')
       .addOrderBy('hour', 'ASC')
-      .getRawMany();
+      .getRawMany<{
+        date: string;
+        hour: string;
+        orders: string | null;
+        revenue: string | null;
+      }>();
 
     // Pro vorkommendem Tag alle 24 Stunden auffüllen (getrennt je Tag —
     // mehrtägige Veranstaltungen sollen nicht in einen 24h-Topf fallen).
@@ -523,7 +542,11 @@ export class ReportsService {
       ])
       .groupBy('order.source')
       .orderBy('SUM(order.total - order.pfandTotal)', 'DESC')
-      .getRawMany();
+      .getRawMany<{
+        channel: string;
+        orders: string | null;
+        revenue: string | null;
+      }>();
 
     return results.map((r) => {
       const orders = Number(r.orders || 0);
@@ -582,7 +605,12 @@ export class ReportsService {
       .groupBy('item.categoryId')
       .addGroupBy('item.categoryName')
       .orderBy('SUM(item.totalPrice)', 'DESC')
-      .getRawMany();
+      .getRawMany<{
+        categoryId: string;
+        name: string;
+        quantity: string | null;
+        revenue: string | null;
+      }>();
 
     return results.map((r) => ({
       categoryId: r.categoryId,
@@ -637,7 +665,12 @@ export class ReportsService {
       .groupBy('order.createdByDeviceId')
       .addGroupBy('device.name')
       .orderBy('SUM(order.total - order.pfandTotal)', 'DESC')
-      .getRawMany();
+      .getRawMany<{
+        deviceId: string;
+        name: string | null;
+        orders: string | null;
+        revenue: string | null;
+      }>();
 
     return results.map((r) => ({
       deviceId: r.deviceId,
@@ -704,7 +737,12 @@ export class ReportsService {
       ])
       .groupBy('movement.productId')
       .addGroupBy('product.name')
-      .getRawMany();
+      .getRawMany<{
+        productId: string;
+        productName: string;
+        additions: string | null;
+        deductions: string | null;
+      }>();
 
     // Get current stock for each product
     const productIds = results.map((r) => r.productId);
@@ -862,7 +900,8 @@ export class ReportsService {
     const rows = data.map((row) =>
       headers
         .map((h) => {
-          const val = (row as Record<string, unknown>)[h];
+          // Berichtszeilen tragen nur primitive Werte (Zahlen, Texte, null).
+          const val = (row as Record<string, CsvZelle>)[h];
           if (typeof val === 'string' && val.includes(',')) {
             return `"${val}"`;
           }
@@ -1013,7 +1052,7 @@ export class ReportsService {
         id: `payment:${p.id}`,
         at: p.createdAt.toISOString(),
         kind: 'payment',
-        tone: p.status === 'failed' ? 'error' : 'ok',
+        tone: p.status === PaymentTransactionStatus.FAILED ? 'error' : 'ok',
         message: p.paymentMethod,
         amount: Number(p.amount),
       })),
@@ -1021,7 +1060,7 @@ export class ReportsService {
         id: `print:${j.id}`,
         at: j.createdAt.toISOString(),
         kind: 'print',
-        tone: j.status === 'failed' ? 'error' : 'ok',
+        tone: j.status === PrintJobStatus.FAILED ? 'error' : 'ok',
         /* Bei Fehlern trägt die Meldung die Ursache — sonst müsste man
            für jeden fehlgeschlagenen Druck ins Log steigen. */
         message: j.error ?? j.status,

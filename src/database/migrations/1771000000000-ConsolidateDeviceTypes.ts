@@ -5,9 +5,9 @@ export class ConsolidateDeviceTypes1771000000000 implements MigrationInterface {
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Step 0: Add suggested_name column if it doesn't exist
-    const hasColumn = await queryRunner.query(
+    const hasColumn = (await queryRunner.query(
       `SELECT column_name FROM information_schema.columns WHERE table_name = 'devices' AND column_name = 'suggested_name'`,
-    );
+    )) as unknown[];
     if (hasColumn.length === 0) {
       await queryRunner.query(
         `ALTER TABLE devices ADD COLUMN "suggested_name" varchar(255)`,

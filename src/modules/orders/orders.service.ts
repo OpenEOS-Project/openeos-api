@@ -12,7 +12,6 @@ import { ConfigService } from '@nestjs/config';
 import {
   Repository,
   Between,
-  LessThanOrEqual,
   MoreThanOrEqual,
   SelectQueryBuilder,
 } from 'typeorm';
@@ -37,7 +36,6 @@ import {
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import { EventStatus } from '../../database/entities/event.entity';
-import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 import {
@@ -51,6 +49,7 @@ import {
   UpdateOrderItemDto,
   QueryOrdersDto,
   CancelOrderDto,
+  SelectedOptionDto,
 } from './dto';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
@@ -187,7 +186,7 @@ export class OrdersService {
         total: createdOrder.total,
         source: createdOrder.source,
       })
-      .catch((error) => {
+      .catch((error: Error) => {
         this.logger.error(
           `Failed to trigger auto-printing for order ${order.id}: ${error.message}`,
         );
@@ -211,7 +210,14 @@ export class OrdersService {
             where: { id: stationId },
           });
           if (station && station.printerId) {
-            this.printToStation(organizationId, station, createdOrder, items);
+            // Bewusst ohne await: der Stationsdruck faengt seine Fehler selbst
+            // ab und soll das Anlegen der Bestellung nicht aufhalten.
+            void this.printToStation(
+              organizationId,
+              station,
+              createdOrder,
+              items,
+            );
           }
         }
       }
@@ -890,7 +896,7 @@ export class OrdersService {
           quantity: number;
           notes?: string;
           kitchenNotes?: string;
-          selectedOptions?: any[];
+          selectedOptions?: SelectedOptionDto[];
           isRefill?: boolean;
         },
     user: User,
@@ -1108,7 +1114,6 @@ export class OrdersService {
     order: Order,
     item: OrderItem,
   ): Promise<Order> {
-    const previousStatus = item.status;
     item.status = OrderItemStatus.READY;
     item.readyAt = new Date();
     await this.orderItemRepository.save(item);
@@ -1174,7 +1179,7 @@ export class OrdersService {
       );
     } catch (err) {
       this.logger.error(
-        `Station printing failed for ${station.name}: ${err.message}`,
+        `Station printing failed for ${station.name}: ${(err as Error).message}`,
       );
     }
   }

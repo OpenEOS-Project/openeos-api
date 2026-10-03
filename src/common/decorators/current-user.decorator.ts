@@ -1,5 +1,6 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { User } from '../../database/entities';
+import type { AppRequest } from '../types/request.types';
 
 export interface JwtPayload {
   sub: string;
@@ -18,11 +19,8 @@ export interface RequestUser extends Partial<User> {
 }
 
 export const CurrentUser = createParamDecorator(
-  (
-    data: keyof RequestUser | undefined,
-    ctx: ExecutionContext,
-  ): RequestUser | unknown => {
-    const request = ctx.switchToHttp().getRequest();
+  (data: keyof RequestUser | undefined, ctx: ExecutionContext): unknown => {
+    const request = ctx.switchToHttp().getRequest<AppRequest>();
     const user = request.user as RequestUser;
 
     if (data) {

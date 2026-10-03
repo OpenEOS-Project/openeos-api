@@ -11,6 +11,7 @@ import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ShiftsService } from './shifts.service';
 import { PublicRegisterDto } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
+import { ShiftRegistrationStatus } from '../../database/entities/shift-registration.entity';
 
 @ApiTags('Shifts (Public)')
 @Controller('public/shifts')
@@ -59,8 +60,9 @@ export class ShiftsPublicController {
             })
             .map((shift) => {
               const confirmedCount =
-                shift.registrations?.filter((r) => r.status === 'confirmed')
-                  .length || 0;
+                shift.registrations?.filter(
+                  (r) => r.status === ShiftRegistrationStatus.CONFIRMED,
+                ).length || 0;
 
               return {
                 id: shift.id,
@@ -221,8 +223,9 @@ export class ShiftsPublicController {
                 )
                 .map((shift) => {
                   const confirmedCount =
-                    shift.registrations?.filter((r) => r.status === 'confirmed')
-                      .length || 0;
+                    shift.registrations?.filter(
+                      (r) => r.status === ShiftRegistrationStatus.CONFIRMED,
+                    ).length || 0;
                   return {
                     id: shift.id,
                     date: shift.date,

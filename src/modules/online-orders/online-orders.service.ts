@@ -571,7 +571,9 @@ export class OnlineOrdersService {
       default:
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
-          message: `Nicht unterstützte Zahlungsmethode: ${payDto.paymentMethod}`,
+          // Dem Typ nach `never` (alle Werte sind oben behandelt); zur
+          // Laufzeit steht hier, was der Client tatsaechlich geschickt hat.
+          message: `Nicht unterstützte Zahlungsmethode: ${payDto.paymentMethod as string}`,
         });
     }
 
