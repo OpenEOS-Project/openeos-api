@@ -3,3 +3,4 @@ export * from './update-organization.dto';
 export * from './add-member.dto';
 export * from './create-invitation.dto';
 export * from './broadcast-message.dto';
+export * from './update-integration.dto';

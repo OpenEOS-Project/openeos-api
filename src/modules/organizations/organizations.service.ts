@@ -38,6 +38,7 @@ import { PlatformSettingsService } from '../platform-settings/platform-settings.
 import { ConfigService } from '@nestjs/config';
 import { DeploymentService } from '../../common/services/deployment.service';
 import { restoreMaskedCredentials } from '../../common/utils/response-redaction.util';
+import { isKnownIntegration } from '../integrations/integration-catalog';
 
 const INVITATION_EXPIRY_DAYS = 7;
 const BCRYPT_ROUNDS = 12;
@@ -298,6 +299,60 @@ export class OrganizationsService {
     );
 
     return organization;
+  }
+
+  /**
+   * Schaltet eine Integration fuer die Organisation ein oder aus.
+   *
+   * Geschrieben wird gezielt nur `settings.integrations.<id>`, per
+   * jsonb-Zusammenfuehrung in der Datenbank. Der Weg ueber update() und
+   * save() kaeme hier nicht in Frage: er schreibt die kompletten
+   * Einstellungen zurueck, und sobald irgendwo ein maskiertes Objekt
+   * (`****1234`) dazwischengeraet, stuende die Maske als SumUp-Schluessel
+   * in der Datenbank. Zugangsdaten bleiben so beim Umschalten unberuehrt —
+   * auch beim Ausschalten, damit Wiedereinschalten ohne Neueingabe geht.
+   */
+  async setIntegrationEnabled(
+    id: string,
+    integrationId: string,
+    enabled: boolean,
+    user: User,
+  ): Promise<Organization> {
+    const organization = await this.findOne(id, user);
+    await this.checkRole(organization.id, user, OrganizationRole.ADMIN);
+
+    if (!isKnownIntegration(integrationId)) {
+      throw new NotFoundException({
+        code: ErrorCodes.INTEGRATION_NOT_FOUND,
+        message: 'Integration nicht gefunden',
+      });
+    }
+
+    const entry = enabled
+      ? { enabled: true, enabledAt: new Date().toISOString() }
+      : { enabled: false };
+
+    await this.organizationRepository.query(
+      `UPDATE organizations
+          SET settings = jsonb_set(
+                COALESCE(settings, '{}'::jsonb),
+                '{integrations}',
+                CASE WHEN jsonb_typeof(settings->'integrations') = 'object'
+                     THEN settings->'integrations'
+                     ELSE '{}'::jsonb
+                END || jsonb_build_object($2::text, $3::jsonb),
+                true
+              ),
+              updated_at = now()
+        WHERE id = $1 AND deleted_at IS NULL`,
+      [organization.id, integrationId, JSON.stringify(entry)],
+    );
+
+    this.logger.log(
+      `Integration ${integrationId} ${enabled ? 'enabled' : 'disabled'} for organization ${organization.id}`,
+    );
+
+    return this.findOne(organization.id, user);
   }
 
   async remove(id: string, user: User): Promise<void> {

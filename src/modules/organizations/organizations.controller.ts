@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   Param,
@@ -27,6 +28,7 @@ import {
   UpdateMemberDto,
   CreateInvitationDto,
   BroadcastMessageDto,
+  UpdateIntegrationDto,
 } from './dto';
 import { SetPinDto } from '../devices/dto';
 import { CurrentUser, Public } from '../../common/decorators';
@@ -78,6 +80,23 @@ export class OrganizationsController {
     const organization = await this.organizationsService.update(
       id,
       updateDto,
+      user,
+    );
+    return { data: organization };
+  }
+
+  @Put(':id/integrations/:integrationId')
+  @ApiOperation({ summary: 'Enable or disable an integration (admins only)' })
+  async setIntegration(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('integrationId') integrationId: string,
+    @Body() updateDto: UpdateIntegrationDto,
+    @CurrentUser() user: User,
+  ) {
+    const organization = await this.organizationsService.setIntegrationEnabled(
+      id,
+      integrationId,
+      updateDto.enabled,
       user,
     );
     return { data: organization };
