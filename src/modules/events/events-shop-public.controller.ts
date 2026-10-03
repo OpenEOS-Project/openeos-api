@@ -17,8 +17,10 @@ import {
 } from '../../database/entities/event.entity';
 import { Organization } from '../../database/entities/organization.entity';
 import {
+  ShopDayWindow,
   ShopWindow,
   dayWindowsToAbsolute,
+  listEventDayKeys,
   deriveShopWindows,
   isWithinShopWindows,
 } from '../../common/utils/event-schedule.util';
@@ -86,38 +88,39 @@ export function resolveShopWindows(
  * abgeleitete Modus liefert — so kennt der Shop nur noch eine Darstellung.
  * Erzeugt werden die Fenster fuer den Veranstaltungszeitraum, hoechstens
  * aber fuer 31 Tage.
+ *
+ * Tage und Uhrzeiten gelten in der Zeitzone der Organisation, nicht in der
+ * des Servers: "Samstag 10 bis 18 Uhr" heisst 10 Uhr Ortszeit, auch auf
+ * einem Server in UTC und auch in der Woche, in der die Sommerzeit endet.
+ * Deshalb laeuft die Rechnung ueber dieselben Kalendertage und dieselbe
+ * Umrechnung wie im Veranstaltungsmodus.
  */
 function weeklyHoursToWindows(
   event: Event,
   hours: ShopOpeningHours | null,
-  /* Wird durchgereicht, aber (noch) nicht beachtet: die Tagesgrenzen
-     unten rechnen in der Zeitzone des Servers, nicht in der des Events. */
-  _timeZone: string,
+  timeZone: string,
 ): ShopWindow[] {
   if (!hours || !event.startDate) return [];
-  const windows: ShopWindow[] = [];
-  const start = new Date(event.startDate);
-  const end = event.endDate ? new Date(event.endDate) : start;
-  const dayCount = Math.min(
-    31,
-    Math.max(1, Math.floor((end.getTime() - start.getTime()) / 86400000) + 1),
-  );
+  const days: ShopDayWindow[] = [];
 
-  for (let offset = 0; offset < dayCount; offset += 1) {
-    const day = new Date(start.getTime() + offset * 86400000);
-    const window = hours[WEEKDAY_KEYS[day.getDay()]];
+  for (const date of listEventDayKeys(
+    event.startDate,
+    event.endDate,
+    timeZone,
+  ).slice(0, 31)) {
+    // Der Wochentag eines Kalendertags haengt nicht an der Zeitzone — der
+    // Tag selbst stammt schon aus der Ortszeit.
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+    const window = hours[WEEKDAY_KEYS[weekday]];
     if (!window) continue;
     const from = parseHHMM(window.start);
     const until = parseHHMM(window.end);
+    // Anders als die Tagesfenster kennt die Wochentags-Tabelle keine
+    // Nacht ueber Mitternacht; solche Eintraege galten schon immer als leer.
     if (from === null || until === null || until <= from) continue;
-    const midnight = new Date(day);
-    midnight.setHours(0, 0, 0, 0);
-    windows.push({
-      start: new Date(midnight.getTime() + from * 60000).toISOString(),
-      end: new Date(midnight.getTime() + until * 60000).toISOString(),
-    });
+    days.push({ date, start: window.start, end: window.end });
   }
-  return windows;
+  return dayWindowsToAbsolute(days, timeZone);
 }
 
 @ApiTags('Shop (Public)')

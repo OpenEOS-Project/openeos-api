@@ -53,6 +53,7 @@ import {
 } from './dto';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
+import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { GatewayService } from '../gateway/gateway.service';
 import { endOfDay } from '../../common/utils/date-range.util';
 
@@ -968,7 +969,8 @@ export class OrdersService {
       quantity: itemDto.quantity,
       unitPrice,
       optionsPrice,
-      taxRate: 19.0, // Default German VAT rate
+      // Satz des Produkts festhalten; daraus rechnen Bon und taxTotal.
+      taxRate: Number(product.taxRate) || 0,
       totalPrice,
       options: { selected: selectedOptions },
       notes: itemDto.notes || null,
@@ -1193,19 +1195,16 @@ export class OrdersService {
     if (!order) return;
 
     let subtotal = 0;
-    let taxTotal = 0;
     let pfandTotal = 0;
 
     for (const item of order.items) {
       if (item.status !== OrderItemStatus.CANCELLED) {
         subtotal += Number(item.totalPrice);
-        taxTotal += Number(item.totalPrice) * (Number(item.taxRate) / 100);
         pfandTotal += Number(item.depositAmount) * item.quantity;
       }
     }
 
     order.subtotal = subtotal;
-    order.taxTotal = taxTotal;
     order.pfandTotal = pfandTotal;
 
     // Cap the discount at the subtotal so the order total can never go negative —
@@ -1213,6 +1212,18 @@ export class OrdersService {
     // Pfand (deposit) is added on top and is tax-free (not part of subtotal/taxTotal).
     const effectiveDiscount = Math.min(Number(order.discountAmount), subtotal);
     order.discountAmount = effectiveDiscount;
+
+    // Preise sind brutto: gespeichert wird die enthaltene Steuer, gerechnet
+    // wie auf dem Bon (siehe orderTaxTotal), nach Abzug des Rabatts.
+    const organization = await this.organizationRepository.findOne({
+      where: { id: order.organizationId },
+      select: ['id', 'settings'],
+    });
+    order.taxTotal = orderTaxTotal(
+      order.items,
+      effectiveDiscount,
+      organization?.settings?.vatExempt,
+    );
     order.total =
       subtotal - effectiveDiscount + Number(order.tipAmount) + pfandTotal;
 

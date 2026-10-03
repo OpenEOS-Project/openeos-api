@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { randomBytes } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import {
   ShiftPlan,
@@ -20,6 +21,7 @@ import {
 } from '../../database/entities';
 import type { ShiftChangeOp } from '../../database/entities/shift-change-proposal.entity';
 import { EmailService } from '../email/email.service';
+import { escapeHtml } from '../email/email-template';
 import {
   CreateShiftPlanDto,
   UpdateShiftPlanDto,
@@ -702,8 +704,8 @@ export class ShiftsService {
   async approveRegistration(
     organizationId: string,
     registrationId: string,
-    _user: User,
-    _message?: string,
+    user: User,
+    message?: string,
   ): Promise<ShiftRegistration> {
     const reg = await this.findRegistrationWithAccess(
       organizationId,
@@ -738,11 +740,23 @@ export class ShiftsService {
       const planName =
         groupRegistrations[0]?.shift?.job?.shiftPlan?.name || 'Schichtplan';
 
+      // Die Nachricht beim Bestaetigen geht mit der Bestaetigungsmail raus —
+      // einen anderen Kanal zum Helfer gibt es nicht. Absender wie bei
+      // sendMessage(), damit der Helfer weiss, wer geschrieben hat.
       await this.emailService.sendShiftConfirmationEmail(
         reg.email,
         reg.name,
         planName,
         shiftsSummary,
+        message?.trim()
+          ? {
+              message,
+              senderName:
+                user.firstName && user.lastName
+                  ? `${user.firstName} ${user.lastName}`
+                  : user.email,
+            }
+          : undefined,
       );
     }
 
@@ -1211,10 +1225,24 @@ export class ShiftsService {
 
   // ============ Helpers ============
 
+  /**
+   * 64 Zeichen aus [0-9a-z] — dasselbe Format wie bisher, damit Spalten und
+   * bestehende Links passen. Die Tokens oeffnen Bestaetigungs- und
+   * Selbstverwaltungslinks, also kommen sie aus crypto statt Math.random.
+   * Bytes ab 252 (= 7 * 36) werden verworfen, sonst waeren die ersten Zeichen
+   * des Alphabets per Modulo leicht bevorzugt.
+   */
   private generateToken(): string {
-    return Array.from({ length: 64 }, () =>
-      Math.random().toString(36).charAt(2),
-    ).join('');
+    const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
+    let token = '';
+    while (token.length < 64) {
+      for (const byte of randomBytes(64)) {
+        if (byte >= 252) continue;
+        token += alphabet[byte % 36];
+        if (token.length === 64) break;
+      }
+    }
+    return token;
   }
 
   private async findRegistrationWithAccess(
@@ -1462,7 +1490,8 @@ export class ShiftsService {
           year: 'numeric',
         });
 
-        return `<p><strong>${job.name}</strong>: ${date}, ${shift.startTime} - ${shift.endTime} Uhr</p>`;
+        // Ergebnis ist HTML fuer die Mail — Jobname und Zeiten maskieren.
+        return `<p><strong>${escapeHtml(job.name)}</strong>: ${escapeHtml(date)}, ${escapeHtml(String(shift.startTime))} - ${escapeHtml(String(shift.endTime))} Uhr</p>`;
       })
       .filter(Boolean)
       .join('');

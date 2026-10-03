@@ -1,3 +1,4 @@
+import { randomInt } from 'crypto';
 import {
   Injectable,
   BadRequestException,
@@ -653,7 +654,8 @@ export class TwoFactorService {
   private generateNumericCode(length: number): string {
     let code = '';
     for (let i = 0; i < length; i++) {
-      code += Math.floor(Math.random() * 10).toString();
+      // Ziffern aus crypto statt Math.random; Format bleibt gleich.
+      code += randomInt(10).toString();
     }
     return code;
   }

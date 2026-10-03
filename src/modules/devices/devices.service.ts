@@ -1,3 +1,4 @@
+import { randomInt } from 'crypto';
 import {
   Injectable,
   NotFoundException,
@@ -283,7 +284,8 @@ export class DevicesService {
    */
   private async generateVerificationCode(): Promise<string> {
     for (let versuch = 0; versuch < 10; versuch++) {
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      // Sechsstellig wie bisher (100000–999999), aber aus crypto.
+      const code = randomInt(100000, 1000000).toString();
 
       const vergeben = await this.deviceRepository.findOne({
         where: { verificationCode: code, status: DeviceStatus.PENDING },

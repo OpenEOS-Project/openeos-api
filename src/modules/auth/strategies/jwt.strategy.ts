@@ -23,6 +23,8 @@ export interface JwtPayload {
   jti?: string;
   /** Gesetzt zwischen Passwort und zweitem Faktor — kein voller Zugang. */
   pending2fa?: boolean;
+  /** Kennung der Sitzung (refresh_tokens.id). Fehlt in aelteren Token. */
+  sid?: string;
   sub: string;
   email: string;
   isSuperAdmin: boolean;
@@ -62,6 +64,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     payload: JwtPayload,
   ): Promise<
     User & {
+      sessionId: string | null;
       organizations: { id: string; role: string }[];
     }
   > {
@@ -107,6 +110,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
        dasselbe Feld, und der Alias entfaellt. */
     return Object.assign(user, {
       pending2fa: payload.pending2fa === true,
+      sessionId: payload.sid ?? null,
       organizations,
     });
   }

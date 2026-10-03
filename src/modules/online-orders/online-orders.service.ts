@@ -45,6 +45,7 @@ import {
 import { PayPalService } from '../payments/providers/paypal.service';
 import { SumUpService } from '../sumup/sumup.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 
 @Injectable()
 export class OnlineOrdersService {
@@ -375,6 +376,7 @@ export class OnlineOrdersService {
     // Create order items
     let subtotal = 0;
     let sortOrder = 0;
+    const createdItems: OrderItem[] = [];
 
     for (const cartItem of session.cart.items) {
       const product = await this.productRepository.findOne({
@@ -408,7 +410,8 @@ export class OnlineOrdersService {
         quantity: cartItem.quantity,
         unitPrice: cartItem.unitPrice,
         optionsPrice,
-        taxRate: 19.0, // Default German VAT rate
+        // Satz des Produkts festhalten; daraus rechnen Bon und taxTotal.
+        taxRate: Number(product.taxRate) || 0,
         totalPrice,
         options: { selected: cartItem.options },
         notes: cartItem.notes || null,
@@ -417,12 +420,23 @@ export class OnlineOrdersService {
       });
 
       await this.orderItemRepository.save(orderItem);
+      createdItems.push(orderItem);
       sortOrder++;
     }
 
     // Update order totals
     order.subtotal = subtotal;
     order.total = subtotal;
+    // Enthaltene Steuer wie an der Kasse und auf dem Bon.
+    const organization = await this.organizationRepository.findOne({
+      where: { id: session.organizationId },
+      select: ['id', 'settings'],
+    });
+    order.taxTotal = orderTaxTotal(
+      createdItems,
+      0,
+      organization?.settings?.vatExempt,
+    );
     await this.orderRepository.save(order);
 
     // Update session

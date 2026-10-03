@@ -16,6 +16,198 @@ import type { ChangelogEintrag } from './changelog.types';
  */
 export const CHANGELOG: ChangelogEintrag[] = [
   {
+    datum: '2026-10-03',
+    art: 'neu',
+    titel: {
+      de: 'OpenEOS kostenlos selbst betreiben',
+      en: 'Run OpenEOS yourself, free of charge',
+    },
+    kurz: {
+      de: 'Auf eigenem Server, für eine Organisation, ohne Gebühren — mit Anleitung im Handbuch.',
+      en: 'On your own server, for one organisation, with no fees — with a guide in the handbook.',
+    },
+    text: {
+      de: 'OpenEOS lässt sich jetzt kostenlos auf einem eigenen Server betreiben. Diese Variante ist bewusst schlank: eine Organisation, in der Sie alles verwalten, ohne Abrechnung und ohne Selbstregistrierung — neue Mitglieder legen Sie selbst mit einem Startpasswort an. Wie man das mit Docker einrichtet, sichert und aktualisiert, steht im Handbuch unter „Selbst betreiben". Am gehosteten Angebot unter openeos.de ändert sich nichts.',
+      en: 'OpenEOS can now be run on your own server free of charge. This edition is deliberately lean: one organisation in which you manage everything, with no billing and no self-registration — you create new members yourself with a starting password. How to set it up with Docker, back it up and update it is described in the handbook under "Self-hosting". Nothing changes for the hosted service at openeos.de.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'neu',
+    titel: {
+      de: 'Küchenbildschirm einer Station zuordnen',
+      en: 'Assign a kitchen screen to a station',
+    },
+    kurz: {
+      de: 'In den Geräteeinstellungen wählen Sie, welche Station ein Bildschirm zeigt.',
+      en: 'Device settings now let you choose which station a screen shows.',
+    },
+    text: {
+      de: 'Ein Bildschirm im Stationsmodus meldete bisher „keine Station konfiguriert", ohne dass sich das irgendwo ändern ließ. In den Einstellungen des Geräts stehen jetzt die Stationen der laufenden Veranstaltung zur Auswahl; danach zeigt der Bildschirm die Bestellungen dieser Station.',
+      en: 'A screen in station mode used to report "no station configured" with no way to change that. The device settings now offer the stations of the running event; once one is chosen, the screen shows that station\'s orders.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'verbessert',
+    titel: {
+      de: 'Zwei-Faktor-Schutz abschalten nur mit Code',
+      en: 'Turning off two-factor sign-in needs a code',
+    },
+    kurz: {
+      de: 'Wer die Zwei-Faktor-Anmeldung abschaltet, bestätigt das mit einem aktuellen Code.',
+      en: 'Turning off two-factor sign-in is now confirmed with a current code.',
+    },
+    text: {
+      de: 'Um die Zwei-Faktor-Anmeldung abzuschalten oder neue Wiederherstellungscodes zu erzeugen, geben Sie jetzt einen aktuellen Code aus Ihrer App, per E-Mail oder einen Wiederherstellungscode ein. So kann niemand den Schutz abschalten, nur weil an einem Gerät noch jemand angemeldet ist.',
+      en: 'To turn off two-factor sign-in or create new recovery codes you now enter a current code from your app, by email, or a recovery code. That way nobody can remove the protection just because a device was left signed in.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Zahlungsanbieter-Zugangsdaten bleiben beim Speichern erhalten',
+      en: 'Payment provider credentials survive saving settings',
+    },
+    kurz: {
+      de: 'Funktioniert die Kartenzahlung nicht mehr? Bitte den SumUp- bzw. PayPal-Schlüssel neu eintragen.',
+      en: 'Card payments stopped working? Please enter your SumUp or PayPal key again.',
+    },
+    text: {
+      de: 'Beim Speichern der Organisationseinstellungen konnte ein hinterlegter SumUp- oder PayPal-Schlüssel unbrauchbar werden — die Kartenzahlung an der Kasse schlug danach fehl. Das ist behoben, und Zugangsdaten werden insgesamt zurückhaltender an die Oberfläche gegeben. Falls die Kartenzahlung bei Ihnen seitdem nicht mehr funktioniert, tragen Sie den Schlüssel unter „Integrationen" einmal neu ein.',
+      en: 'Saving the organisation settings could leave a stored SumUp or PayPal key unusable, after which card payments at the till failed. This is fixed, and credentials are now handed to the interface far more sparingly. If card payments have not worked for you since, enter the key once more under "Integrations".',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Organisationseinstellungen speichern wieder vollständig',
+      en: 'Organisation settings save completely again',
+    },
+    kurz: {
+      de: 'Die Beschreibung der Organisation ging beim Speichern verloren — behoben.',
+      en: 'The organisation description was lost on saving — fixed.',
+    },
+    text: {
+      de: 'Die Beschreibung der Organisation wurde beim Speichern nicht übernommen. Außerdem fehlte Betreibern mit eigener Organisation der Reiter „Organisation" in den Einstellungen. Beides ist behoben.',
+      en: 'The organisation description was not kept when saving, and operators with their own organisation did not see the "Organisation" tab in the settings. Both are fixed.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Sprachwechsel bleibt auf der Seite',
+      en: 'Switching language keeps your page',
+    },
+    kurz: {
+      de: 'Nach dem Umstellen der Sprache landet man nicht mehr auf der Startseite.',
+      en: 'Changing the language no longer sends you back to the start page.',
+    },
+    text: {
+      de: 'Wer in den Einstellungen die Sprache umstellte, landete bisher auf der Startseite. Jetzt bleibt die Seite offen, auf der Sie gerade sind.',
+      en: 'Changing the language in the settings used to send you back to the start page. The page you are on now stays open.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Bon mit Mehrwertsteuer und Rückgeld',
+      en: 'Receipts show VAT and change',
+    },
+    kurz: {
+      de: 'Der Bon weist die enthaltene MwSt je Steuersatz aus und druckt das Rückgeld.',
+      en: 'Receipts now show the VAT contained per rate and print the change.',
+    },
+    text: {
+      de: 'Kassenbons zeigten bisher weder die enthaltene Mehrwertsteuer noch das Rückgeld. Jetzt steht für jeden Steuersatz eine eigene Zeile auf dem Bon, Pfand und Trinkgeld bleiben dabei außen vor. Bei Barzahlung druckt der Bon das Rückgeld, sobald an der Kasse der erhaltene Betrag eingegeben wird. Organisationen, die als Kleinunternehmer oder steuerbefreit eingetragen sind, bekommen weiterhin keine MwSt-Zeile.',
+      en: 'Receipts used to show neither the VAT they contain nor the change. Each VAT rate now gets its own line, leaving deposits and tips out. For cash payments the receipt prints the change as soon as the received amount is entered at the till. Organisations registered as VAT-exempt still get no VAT line.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Shop-Öffnungszeiten nach Ortszeit',
+      en: 'Shop opening hours follow local time',
+    },
+    kurz: {
+      de: 'Wöchentliche Öffnungszeiten im Shop gelten jetzt in der Zeitzone der Veranstaltung.',
+      en: "Weekly shop hours now apply in the event's time zone.",
+    },
+    text: {
+      de: 'Wöchentliche Öffnungszeiten des Online-Shops wurden bisher nicht in der Zeitzone der Veranstaltung berechnet. Dadurch konnte der Shop eine oder zwei Stunden zu früh oder zu spät öffnen, besonders rund um die Zeitumstellung. Jetzt gelten die Zeiten genau so, wie sie eingetragen sind.',
+      en: "Weekly opening hours of the online shop were not calculated in the event's time zone, so the shop could open an hour or two early or late, especially around the clock change. The hours now apply exactly as entered.",
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'verbessert',
+    titel: {
+      de: 'Nachricht bei der Schichtbestätigung',
+      en: 'A message with a shift confirmation',
+    },
+    kurz: {
+      de: 'Was Sie beim Bestätigen einer Schicht schreiben, steht jetzt in der E-Mail an den Helfer.',
+      en: 'What you write when confirming a shift now appears in the email to the helper.',
+    },
+    text: {
+      de: 'Beim Bestätigen einer Schichtanmeldung ließ sich eine Nachricht eingeben, sie kam aber nie an. Jetzt steht sie in der Bestätigungsmail an den Helfer, zusammen mit Ihrem Namen.',
+      en: 'When confirming a shift registration you could enter a message, but it never arrived. It now appears in the confirmation email to the helper, together with your name.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'verbessert',
+    titel: {
+      de: 'Angemeldete Geräte erkennbar',
+      en: 'Recognisable signed-in devices',
+    },
+    kurz: {
+      de: 'Die Sitzungsliste zeigt Browser und System, markiert dieses Gerät und wächst nicht mehr endlos.',
+      en: 'The session list shows browser and system, marks this device and no longer grows endlessly.',
+    },
+    text: {
+      de: 'Unter Einstellungen → Sicherheit stand bisher bei jeder Anmeldung „Unbekanntes Gerät", und die Liste wurde ständig länger. Jetzt sehen Sie Browser und Betriebssystem, das Gerät, an dem Sie gerade sitzen, ist markiert, und jede Anmeldung erscheint nur einmal. „Alle anderen abmelden" lässt die eigene Sitzung bestehen.',
+      en: 'Settings → Security used to list every sign-in as "Unknown device", and the list kept growing. You now see browser and operating system, the device you are using is marked, and each sign-in appears only once. "Sign out all others" keeps your own session.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Modulrechte gelten auch per Direktlink',
+      en: 'Module permissions apply to direct links too',
+    },
+    kurz: {
+      de: 'Mitglieder ohne das passende Recht kommen auch über einen Link nicht mehr auf die Seite.',
+      en: 'Members without the matching permission can no longer reach the page via a link either.',
+    },
+    text: {
+      de: 'Ein Mitglied ohne Recht für Veranstaltungen, Produkte, Geräte und so weiter sah den Menüpunkt zwar nicht, konnte die Seite aber über einen direkten Link öffnen. Jetzt geht es dann zurück zur Übersicht.',
+      en: 'A member without permission for events, products, devices and so on did not see the menu item, but could still open the page through a direct link. They are now taken back to the dashboard.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Kleinigkeiten in Anmeldung und Einstellungen',
+      en: 'Small fixes in sign-in and settings',
+    },
+    kurz: {
+      de: 'Fehlermeldungen in Ihrer Sprache, und „Speichern" wird nach dem Speichern wieder grau.',
+      en: 'Error messages in your language, and "Save" greys out again after saving.',
+    },
+    text: {
+      de: 'Falsche Anmeldedaten und Fehler beim Zurücksetzen des Passworts werden jetzt in der eingestellten Sprache gemeldet statt auf Englisch bzw. Deutsch. In Profil und Organisationseinstellungen wird der Speichern-Knopf nach dem Speichern wieder inaktiv, damit sichtbar ist, dass nichts mehr offen ist. Dialoge sind für Bildschirmleser besser zugänglich.',
+      en: 'Wrong sign-in details and password reset errors are now reported in your chosen language instead of always in English or German. In the profile and organisation settings the save button becomes inactive again after saving, so you can see nothing is pending. Dialogs work better with screen readers.',
+    },
+  },
+  {
     datum: '2026-09-24',
     art: 'behoben',
     titel: {
@@ -257,6 +449,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
  * Eintrag ohne Version da.
  */
 export const RELEASES: Record<string, string> = {
+  '2026-10-03': '1.5',
   '2026-09-24': '1.4',
   '2026-09-17': '1.3',
   '2026-09-16': '1.2',
