@@ -112,6 +112,102 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Bon mit Mehrwertsteuer und Rückgeld',
+      en: 'Receipts show VAT and change',
+    },
+    kurz: {
+      de: 'Der Bon weist die enthaltene MwSt je Steuersatz aus und druckt das Rückgeld.',
+      en: 'Receipts now show the VAT contained per rate and print the change.',
+    },
+    text: {
+      de: 'Kassenbons zeigten bisher weder die enthaltene Mehrwertsteuer noch das Rückgeld. Jetzt steht für jeden Steuersatz eine eigene Zeile auf dem Bon, Pfand und Trinkgeld bleiben dabei außen vor. Bei Barzahlung druckt der Bon das Rückgeld, sobald an der Kasse der erhaltene Betrag eingegeben wird. Organisationen, die als Kleinunternehmer oder steuerbefreit eingetragen sind, bekommen weiterhin keine MwSt-Zeile.',
+      en: 'Receipts used to show neither the VAT they contain nor the change. Each VAT rate now gets its own line, leaving deposits and tips out. For cash payments the receipt prints the change as soon as the received amount is entered at the till. Organisations registered as VAT-exempt still get no VAT line.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Shop-Öffnungszeiten nach Ortszeit',
+      en: 'Shop opening hours follow local time',
+    },
+    kurz: {
+      de: 'Wöchentliche Öffnungszeiten im Shop gelten jetzt in der Zeitzone der Veranstaltung.',
+      en: "Weekly shop hours now apply in the event's time zone.",
+    },
+    text: {
+      de: 'Wöchentliche Öffnungszeiten des Online-Shops wurden bisher nicht in der Zeitzone der Veranstaltung berechnet. Dadurch konnte der Shop eine oder zwei Stunden zu früh oder zu spät öffnen, besonders rund um die Zeitumstellung. Jetzt gelten die Zeiten genau so, wie sie eingetragen sind.',
+      en: "Weekly opening hours of the online shop were not calculated in the event's time zone, so the shop could open an hour or two early or late, especially around the clock change. The hours now apply exactly as entered.",
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'verbessert',
+    titel: {
+      de: 'Nachricht bei der Schichtbestätigung',
+      en: 'A message with a shift confirmation',
+    },
+    kurz: {
+      de: 'Was Sie beim Bestätigen einer Schicht schreiben, steht jetzt in der E-Mail an den Helfer.',
+      en: 'What you write when confirming a shift now appears in the email to the helper.',
+    },
+    text: {
+      de: 'Beim Bestätigen einer Schichtanmeldung ließ sich eine Nachricht eingeben, sie kam aber nie an. Jetzt steht sie in der Bestätigungsmail an den Helfer, zusammen mit Ihrem Namen.',
+      en: 'When confirming a shift registration you could enter a message, but it never arrived. It now appears in the confirmation email to the helper, together with your name.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'verbessert',
+    titel: {
+      de: 'Angemeldete Geräte erkennbar',
+      en: 'Recognisable signed-in devices',
+    },
+    kurz: {
+      de: 'Die Sitzungsliste zeigt Browser und System, markiert dieses Gerät und wächst nicht mehr endlos.',
+      en: 'The session list shows browser and system, marks this device and no longer grows endlessly.',
+    },
+    text: {
+      de: 'Unter Einstellungen → Sicherheit stand bisher bei jeder Anmeldung „Unbekanntes Gerät", und die Liste wurde ständig länger. Jetzt sehen Sie Browser und Betriebssystem, das Gerät, an dem Sie gerade sitzen, ist markiert, und jede Anmeldung erscheint nur einmal. „Alle anderen abmelden" lässt die eigene Sitzung bestehen.',
+      en: 'Settings → Security used to list every sign-in as "Unknown device", and the list kept growing. You now see browser and operating system, the device you are using is marked, and each sign-in appears only once. "Sign out all others" keeps your own session.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Modulrechte gelten auch per Direktlink',
+      en: 'Module permissions apply to direct links too',
+    },
+    kurz: {
+      de: 'Mitglieder ohne das passende Recht kommen auch über einen Link nicht mehr auf die Seite.',
+      en: 'Members without the matching permission can no longer reach the page via a link either.',
+    },
+    text: {
+      de: 'Ein Mitglied ohne Recht für Veranstaltungen, Produkte, Geräte und so weiter sah den Menüpunkt zwar nicht, konnte die Seite aber über einen direkten Link öffnen. Jetzt geht es dann zurück zur Übersicht.',
+      en: 'A member without permission for events, products, devices and so on did not see the menu item, but could still open the page through a direct link. They are now taken back to the dashboard.',
+    },
+  },
+  {
+    datum: '2026-10-03',
+    art: 'behoben',
+    titel: {
+      de: 'Kleinigkeiten in Anmeldung und Einstellungen',
+      en: 'Small fixes in sign-in and settings',
+    },
+    kurz: {
+      de: 'Fehlermeldungen in Ihrer Sprache, und „Speichern" wird nach dem Speichern wieder grau.',
+      en: 'Error messages in your language, and "Save" greys out again after saving.',
+    },
+    text: {
+      de: 'Falsche Anmeldedaten und Fehler beim Zurücksetzen des Passworts werden jetzt in der eingestellten Sprache gemeldet statt auf Englisch bzw. Deutsch. In Profil und Organisationseinstellungen wird der Speichern-Knopf nach dem Speichern wieder inaktiv, damit sichtbar ist, dass nichts mehr offen ist. Dialoge sind für Bildschirmleser besser zugänglich.',
+      en: 'Wrong sign-in details and password reset errors are now reported in your chosen language instead of always in English or German. In the profile and organisation settings the save button becomes inactive again after saving, so you can see nothing is pending. Dialogs work better with screen readers.',
+    },
+  },
+  {
     datum: '2026-09-24',
     art: 'behoben',
     titel: {
