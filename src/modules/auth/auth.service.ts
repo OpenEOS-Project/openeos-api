@@ -914,7 +914,8 @@ export class AuthService {
   }
 
   private generateSupportPin(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    // Sechsstellig wie bisher (100000–999999), aber aus crypto statt Math.random.
+    return crypto.randomInt(100000, 1000000).toString();
   }
 
   private parseExpiryToSeconds(expiry: string): number {
