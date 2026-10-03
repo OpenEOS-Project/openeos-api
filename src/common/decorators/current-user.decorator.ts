@@ -16,6 +16,8 @@ export interface RequestUser extends Partial<User> {
   email: string;
   isSuperAdmin: boolean;
   organizations: { id: string; role: string }[];
+  /** Sitzung aus dem Zugangstoken (`sid`); null bei Token ohne Sitzung. */
+  sessionId?: string | null;
 }
 
 export const CurrentUser = createParamDecorator(

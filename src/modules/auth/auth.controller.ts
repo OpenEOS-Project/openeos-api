@@ -22,7 +22,7 @@ import {
 } from '@nestjs/swagger';
 import type { Response, Request } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { AuthService } from './auth.service';
+import { AuthService, SessionClient } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
 import {
   RegisterDto,
@@ -207,7 +207,10 @@ export class AuthController {
       };
     }
 
-    const result = await this.authService.login(user);
+    const result = await this.authService.login(
+      user,
+      this.getClientInfo(request),
+    );
 
     // Set refresh token as httpOnly cookie
     this.setRefreshTokenCookie(response, result.refreshToken);
@@ -252,7 +255,10 @@ export class AuthController {
       };
     }
 
-    const tokens = await this.authService.refreshTokens(refreshToken);
+    const tokens = await this.authService.refreshTokens(
+      refreshToken,
+      this.getClientInfo(request),
+    );
 
     // Set new refresh token as httpOnly cookie
     this.setRefreshTokenCookie(response, tokens.refreshToken);
@@ -374,6 +380,7 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid or expired link' })
   async verifyMagicLink(
     @Body() dto: VerifyMagicLinkDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
     const user = await this.authService.consumeLoginMagicLink(dto.token);
@@ -391,7 +398,10 @@ export class AuthController {
       };
     }
 
-    const result = await this.authService.login(user);
+    const result = await this.authService.login(
+      user,
+      this.getClientInfo(request),
+    );
 
     // Gleiche Sitzungsbehandlung wie beim Passwort-Login: derselbe
     // Zustand danach, egal welcher Weg hineinfuehrte.
@@ -634,7 +644,10 @@ export class AuthController {
 
     /* Erst hier entsteht die Sitzung. Der Ausweis aus Schritt eins taugte
        nur fuer diesen Aufruf und ist mit der Antwort erledigt. */
-    const result = await this.authService.login(user);
+    const result = await this.authService.login(
+      user,
+      this.getClientInfo(request),
+    );
     this.setRefreshTokenCookie(response, result.refreshToken);
     this.setAccessTokenCookie(response, result.accessToken);
 
@@ -752,6 +765,15 @@ export class AuthController {
   async sendLoginOtp(@CurrentUser() user: User): Promise<{ message: string }> {
     await this.twoFactorService.sendLoginOtp(user.id);
     return { message: 'Verifizierungscode wurde per E-Mail gesendet' };
+  }
+
+  /** Geraet und Adresse fuer die Sitzungsliste, wie in AdminController. */
+  private getClientInfo(request: Request): SessionClient {
+    const userAgent = request.headers['user-agent'];
+    return {
+      ip: request.ip || request.socket?.remoteAddress,
+      userAgent: typeof userAgent === 'string' ? userAgent : undefined,
+    };
   }
 
   private setRefreshTokenCookie(response: Response, token: string): void {

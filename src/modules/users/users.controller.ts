@@ -218,7 +218,10 @@ export class UsersController {
   })
   @ApiResponse({ status: 200, description: 'List of sessions' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async getSessions(@CurrentUser() user: User) {
+  async getSessions(
+    @CurrentUser() user: User,
+    @CurrentUser('sessionId') sessionId: string | null | undefined,
+  ) {
     const sessions = await this.usersService.getSessions(user.id);
     return {
       data: sessions.map((s) => ({
@@ -226,12 +229,12 @@ export class UsersController {
         deviceInfo: s.deviceInfo ?? null,
         ipAddress: s.ipAddress ?? null,
         createdAt: s.createdAt,
-        // We don't track per-request session activity yet; surface createdAt
-        // as the best-known "last active" timestamp so the UI doesn't display
-        // "Invalid Date".
-        lastActiveAt: s.createdAt,
+        // Die Zeile wird beim Erneuern des Tokens fortgeschrieben, nicht
+        // ersetzt — updatedAt ist damit die letzte Erneuerung.
+        lastActiveAt: s.updatedAt ?? s.createdAt,
         expiresAt: s.expiresAt,
-        isCurrent: false,
+        // Die Sitzung steht als `sid` im Zugangstoken dieser Anfrage.
+        isCurrent: !!sessionId && s.id === sessionId,
       })),
     };
   }
@@ -263,8 +266,18 @@ export class UsersController {
   })
   @ApiResponse({ status: 200, description: 'Sessions revoked' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async revokeAllOtherSessions(@CurrentUser() user: User) {
-    const count = await this.usersService.revokeAllOtherSessions(user.id);
+  async revokeAllOtherSessions(
+    @CurrentUser() user: User,
+    @CurrentUser('sessionId') sessionId: string | null | undefined,
+  ) {
+    /* Ohne die eigene Sitzung wuerde auch diese beendet — wer "alle
+       anderen abmelden" drueckt, flog bisher selbst mit hinaus. Token von
+       vor dieser Aenderung tragen keine Sitzung; dann bleibt es beim
+       alten Verhalten, bis der Token einmal erneuert wurde. */
+    const count = await this.usersService.revokeAllOtherSessions(
+      user.id,
+      sessionId ?? undefined,
+    );
     return { message: `${count} Session(s) wurden beendet` };
   }
 

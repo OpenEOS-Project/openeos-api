@@ -37,6 +37,25 @@ import {
 import { JwtPayload } from './strategies/jwt.strategy';
 import { DeploymentService } from '../../common/services/deployment.service';
 
+/** Woher eine Anmeldung kam — fuer die Sitzungsliste. */
+export interface SessionClient {
+  userAgent?: string;
+  ip?: string;
+}
+
+/* Die Spalten der refresh_tokens-Tabelle: device_info varchar(255),
+   ip_address varchar(45). Laengere Werte wuerden das Speichern scheitern
+   lassen, also abschneiden — die Oberflaeche wertet den Rohwert aus. */
+function sessionColumns(client?: SessionClient): {
+  deviceInfo: string | null;
+  ipAddress: string | null;
+} {
+  return {
+    deviceInfo: client?.userAgent ? client.userAgent.slice(0, 255) : null,
+    ipAddress: client?.ip ? client.ip.slice(0, 45) : null,
+  };
+}
+
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCK_DURATION_MINUTES = 15;
 const BCRYPT_ROUNDS = 12;
@@ -405,12 +424,15 @@ export class AuthService {
     await this.userRepository.save(user);
   }
 
-  async login(user: User): Promise<{
+  async login(
+    user: User,
+    client?: SessionClient,
+  ): Promise<{
     user: User;
     accessToken: string;
     refreshToken: string;
   }> {
-    const tokens = await this.generateTokens(user);
+    const tokens = await this.generateTokens(user, client);
 
     this.logger.log(`User logged in: ${user.email}`);
 
@@ -420,7 +442,10 @@ export class AuthService {
     };
   }
 
-  async refreshTokens(refreshTokenValue: string): Promise<{
+  async refreshTokens(
+    refreshTokenValue: string,
+    client?: SessionClient,
+  ): Promise<{
     accessToken: string;
     refreshToken: string;
   }> {
@@ -465,16 +490,43 @@ export class AuthService {
       });
     }
 
-    // Revoke old token (rotation)
-    storedToken.revokedAt = new Date();
-    await this.refreshTokenRepository.save(storedToken);
+    /* Rotation in derselben Zeile statt alte sperren und neue anlegen.
+       Sonst wuchs die Sitzungsliste mit jedem Erneuern um einen Eintrag,
+       und die Sitzung verlor ihre Kennung, an der die Oberflaeche "dieses
+       Geraet" erkennt. Der alte Token taugt danach trotzdem nichts mehr:
+       sein Hash steht nirgends mehr, er wird oben als ungueltig
+       abgewiesen.
 
-    // Generate new tokens
-    const tokens = await this.generateTokens(storedToken.user);
+       Die Bedingung auf den alten Hash macht das Ersetzen atomar. Kommen
+       zwei Erneuerungen mit demselben Token gleichzeitig an, gewinnt eine;
+       die andere findet ihren Hash nicht mehr und scheitert, statt eine
+       zweite gueltige Kette zu eroeffnen. */
+    const refreshTokenValueNew = crypto.randomBytes(32).toString('hex');
+    const { ipAddress, deviceInfo } = sessionColumns(client);
+    const rotated = await this.refreshTokenRepository.update(
+      { id: storedToken.id, tokenHash, revokedAt: IsNull() },
+      {
+        tokenHash: this.hashToken(refreshTokenValueNew),
+        expiresAt: this.refreshTokenExpiry(),
+        // Die letzte bekannte Adresse; das Geraet nur nachtragen, wenn es
+        // fehlt (Sitzungen von vor dieser Aenderung).
+        ...(ipAddress ? { ipAddress } : {}),
+        ...(!storedToken.deviceInfo && deviceInfo ? { deviceInfo } : {}),
+      },
+    );
+    if (!rotated.affected) {
+      throw new UnauthorizedException({
+        code: ErrorCodes.INVALID_TOKEN,
+        message: 'Ungültiger Refresh-Token',
+      });
+    }
 
     this.logger.log(`Tokens refreshed for user: ${storedToken.user.email}`);
 
-    return tokens;
+    return {
+      accessToken: this.signAccessToken(storedToken.user, storedToken.id),
+      refreshToken: refreshTokenValueNew,
+    };
   }
 
   async logout(
@@ -847,10 +899,33 @@ export class AuthService {
     }
   }
 
-  private async generateTokens(user: User): Promise<{
+  /** Eine neue Sitzung: Zeile in refresh_tokens plus Zugangstoken dazu. */
+  private async generateTokens(
+    user: User,
+    client?: SessionClient,
+  ): Promise<{
     accessToken: string;
     refreshToken: string;
   }> {
+    const refreshTokenValue = crypto.randomBytes(32).toString('hex');
+    const refreshToken = this.refreshTokenRepository.create({
+      tokenHash: this.hashToken(refreshTokenValue),
+      user,
+      userId: user.id,
+      expiresAt: this.refreshTokenExpiry(),
+      ...sessionColumns(client),
+    });
+    // Zuerst speichern: die Kennung der Zeile kommt als `sid` in den
+    // Zugangstoken.
+    await this.refreshTokenRepository.save(refreshToken);
+
+    return {
+      accessToken: this.signAccessToken(user, refreshToken.id),
+      refreshToken: refreshTokenValue,
+    };
+  }
+
+  private signAccessToken(user: User, sessionId: string): string {
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
@@ -862,29 +937,18 @@ export class AuthService {
          teilten sich dann buchstaeblich denselben Ausweis — und das
          Abmelden am einen sperrte das andere mit aus. */
       jti: crypto.randomUUID(),
+      /* Die Sitzung (Zeile in refresh_tokens), zu der dieser Token gehoert.
+         Daran erkennt die Sitzungsliste "dieses Geraet", und "alle anderen
+         abmelden" laesst genau diese Sitzung stehen. */
+      sid: sessionId,
     };
+    return this.jwtService.sign(payload);
+  }
 
-    const accessToken = this.jwtService.sign(payload);
-
-    // Generate refresh token
-    const refreshTokenValue = crypto.randomBytes(32).toString('hex');
-    const tokenHash = this.hashToken(refreshTokenValue);
-    const expiresAt = new Date(
+  private refreshTokenExpiry(): Date {
+    return new Date(
       Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
     );
-
-    const refreshToken = this.refreshTokenRepository.create({
-      tokenHash,
-      user,
-      userId: user.id,
-      expiresAt,
-    });
-    await this.refreshTokenRepository.save(refreshToken);
-
-    return {
-      accessToken,
-      refreshToken: refreshTokenValue,
-    };
   }
 
   private hashToken(token: string): string {
