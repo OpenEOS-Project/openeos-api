@@ -13,6 +13,7 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { SumUpApiService } from './sumup-api.service';
 import type { SumUpCredentials } from './interfaces/sumup.interfaces';
+import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 
 @Injectable()
 export class SumUpService {
@@ -40,6 +41,13 @@ export class SumUpService {
         message: 'Organisation nicht gefunden',
       });
     }
+
+    /* Jede SumUp-Funktion holt sich hier die Zugangsdaten — Kartenleser,
+       Kopplung, Verbindungstest, Checkouts und der Online-Checkout der
+       Bestellseite. Die Sperre an dieser Stelle trifft deshalb alle auf
+       einmal und auch kuenftige. Das Speichern der Zugangsdaten laeuft
+       ueber die Organisationseinstellungen und bleibt davon unberuehrt. */
+    assertIntegrationEnabled(organization.settings, 'sumup');
 
     const apiKey =
       organization.settings?.sumup?.apiKey ||

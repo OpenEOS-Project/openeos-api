@@ -12,6 +12,7 @@ import {
   Order,
   OrderItem,
   OrderItemPayment,
+  Organization,
   User,
   UserOrganization,
 } from '../../database/entities';
@@ -29,6 +30,7 @@ import {
 import { CreatePaymentDto, SplitPaymentDto, QueryPaymentsDto } from './dto';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { cashReceivedMetadata } from '../print-jobs/receipt-tax.util';
+import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 
 @Injectable()
 export class PaymentsService {
@@ -45,6 +47,8 @@ export class PaymentsService {
     private readonly orderItemPaymentRepository: Repository<OrderItemPayment>,
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
+    @InjectRepository(Organization)
+    private readonly organizationRepository: Repository<Organization>,
     private readonly orderPrintService: OrderPrintService,
   ) {}
 
@@ -83,6 +87,7 @@ export class PaymentsService {
     }
 
     const provider = this.getProviderForMethod(createDto.paymentMethod);
+    await this.assertProviderEnabled(organizationId, provider);
 
     const payment = this.paymentRepository.create({
       orderId: createDto.orderId,
@@ -201,6 +206,7 @@ export class PaymentsService {
     }
 
     const provider = this.getProviderForMethod(splitDto.paymentMethod);
+    await this.assertProviderEnabled(organizationId, provider);
 
     const payment = this.paymentRepository.create({
       orderId: splitDto.orderId,
@@ -432,6 +438,23 @@ export class PaymentsService {
   }
 
   // Private helper methods
+
+  /**
+   * SumUp-Zahlungen nur bei eingeschaltetem SumUp verbuchen. `card` ist ein
+   * fremdes Kartengeraet ohne Anbindung und bleibt wie Bargeld immer
+   * moeglich — gesperrt wird nur, was ueber SumUp laeuft.
+   */
+  private async assertProviderEnabled(
+    organizationId: string,
+    provider: PaymentProvider,
+  ): Promise<void> {
+    if (provider !== PaymentProvider.SUMUP) return;
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: { id: true, settings: true },
+    });
+    assertIntegrationEnabled(organization?.settings, 'sumup');
+  }
 
   private getProviderForMethod(method: PaymentMethod): PaymentProvider {
     switch (method) {

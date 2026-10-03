@@ -8,6 +8,7 @@ import {
   Order,
   OrderItem,
   OrderItemPayment,
+  Organization,
   UserOrganization,
 } from '../../database/entities';
 import { PrintJobsModule } from '../print-jobs/print-jobs.module';
@@ -19,6 +20,7 @@ import { PrintJobsModule } from '../print-jobs/print-jobs.module';
       Order,
       OrderItem,
       OrderItemPayment,
+      Organization,
       UserOrganization,
     ]),
     PrintJobsModule,

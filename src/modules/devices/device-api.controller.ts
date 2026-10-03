@@ -63,6 +63,7 @@ import { ErrorCodes } from '../../common/constants/error-codes';
 import { CreateOrderDto, SelectedOptionDto } from '../orders/dto';
 import { CreatePaymentDto } from '../payments/dto';
 import { SumUpApiService } from '../sumup/sumup-api.service';
+import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { PrintersService } from '../printers/printers.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
@@ -645,6 +646,7 @@ export class DeviceApiController {
     }
 
     const provider = this.getProviderForMethod(createDto.paymentMethod);
+    await this.assertProviderEnabled(organizationId, provider);
 
     const payment = this.paymentRepository.create({
       orderId: createDto.orderId,
@@ -792,6 +794,7 @@ export class DeviceApiController {
     }
 
     const provider = this.getProviderForMethod(createDto.paymentMethod);
+    await this.assertProviderEnabled(organizationId, provider);
 
     // Create payment
     const payment = this.paymentRepository.create({
@@ -915,6 +918,10 @@ export class DeviceApiController {
   }
 
   // SumUp endpoints
+  //
+  // Alle drei pruefen, ob SumUp fuer die Organisation eingeschaltet ist.
+  // Die Kasse blendet die Kartenzahlung dann zwar aus, aber eine Kasse mit
+  // altem Stand oder ein direkter Aufruf soll trotzdem nichts ausloesen.
 
   @Post('sumup/checkout')
   @ApiOperation({ summary: 'Initiate SumUp checkout on linked card reader' })
@@ -941,6 +948,7 @@ export class DeviceApiController {
       });
     }
 
+    assertIntegrationEnabled(organization.settings, 'sumup');
     const sumupSettings = organization.settings?.sumup;
     if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
       throw new BadRequestException({
@@ -984,6 +992,7 @@ export class DeviceApiController {
       });
     }
 
+    assertIntegrationEnabled(organization.settings, 'sumup');
     const sumupSettings = organization.settings?.sumup;
     if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
       throw new BadRequestException({
@@ -1035,6 +1044,7 @@ export class DeviceApiController {
       });
     }
 
+    assertIntegrationEnabled(organization.settings, 'sumup');
     const sumupSettings = organization.settings?.sumup;
     if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
       throw new BadRequestException({
@@ -1599,6 +1609,23 @@ export class DeviceApiController {
     });
 
     return count + 1;
+  }
+
+  /**
+   * SumUp-Zahlungen nur bei eingeschaltetem SumUp verbuchen. `card` ist ein
+   * fremdes Kartengeraet ohne Anbindung und bleibt wie Bargeld immer
+   * moeglich — gesperrt wird nur, was ueber SumUp laeuft.
+   */
+  private async assertProviderEnabled(
+    organizationId: string,
+    provider: PaymentProvider,
+  ): Promise<void> {
+    if (provider !== PaymentProvider.SUMUP) return;
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: { id: true, settings: true },
+    });
+    assertIntegrationEnabled(organization?.settings, 'sumup');
   }
 
   private getProviderForMethod(method: PaymentMethod): PaymentProvider {
