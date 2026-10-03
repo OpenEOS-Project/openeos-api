@@ -73,4 +73,14 @@ export class SplitPaymentDto {
   })
   @IsOptional()
   metadata?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    example: 50,
+    description:
+      'Bei Barzahlung: vom Kunden erhaltener Betrag in Euro (für das Rückgeld auf dem Bon)',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  amountReceived?: number;
 }

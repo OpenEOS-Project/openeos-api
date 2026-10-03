@@ -8,6 +8,7 @@ import { Order } from '../../database/entities/order.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
 import { PrintJobsService } from './print-jobs.service';
 import { PrintRoutingService } from './print-routing.service';
+import { buildReceiptTax, cashChange } from './receipt-tax.util';
 
 @Injectable()
 export class OrderPrintService {
@@ -399,6 +400,8 @@ export class OrderPrintService {
       paymentMethod: string;
       isFullyPaid: boolean;
       order: Order | null;
+      /** Bei Barzahlung: erhaltener Betrag aus `payment.metadata`, fuers Rueckgeld. */
+      amountReceived?: unknown;
     },
   ): Promise<void> {
     try {
@@ -460,20 +463,23 @@ export class OrderPrintService {
               })),
               total: data.order?.total,
               subtotal: data.order?.subtotal,
-              /* Order hat weder `taxAmount` noch `taxRate` (nur `taxTotal`,
-                 Steuersaetze haengen an den Positionen) — die Felder kamen
-                 hier schon immer als undefined an, und der Bon druckt die
-                 MwSt-Zeile deshalb nie. Beim Typisieren (#17) sichtbar
-                 geworden, bewusst nicht still umgebogen. */
-              tax_amount: undefined,
-              tax_rate: undefined,
+              // MwSt je Satz aus den Positionen; fehlt bei steuerbefreiten
+              // Organisationen ganz, damit der Bon keine MwSt-Zeile druckt.
+              ...buildReceiptTax(
+                receiptItems,
+                data.order?.discountAmount,
+                org?.settings?.vatExempt,
+              ),
               // Pfand (deposit) is part of `total` but not `subtotal`, which is
               // why total > subtotal. Expose it so the receipt can show it.
               pfand_total: data.order?.pfandTotal ?? null,
               discount_amount: data.order?.discountAmount ?? null,
               paid_amount: data.order?.paidAmount,
-              // Ebenso: Order kennt kein Rueckgeld — die Zeile blieb immer leer.
-              change: undefined,
+              change: cashChange(
+                data.paymentMethod,
+                data.amount,
+                data.amountReceived,
+              ),
               payment_method: data.paymentMethod,
               paymentId: data.paymentId,
               amount: data.amount,

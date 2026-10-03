@@ -28,6 +28,7 @@ import {
 } from '../../common/dto/pagination.dto';
 import { CreatePaymentDto, SplitPaymentDto, QueryPaymentsDto } from './dto';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { cashReceivedMetadata } from '../print-jobs/receipt-tax.util';
 
 @Injectable()
 export class PaymentsService {
@@ -90,7 +91,14 @@ export class PaymentsService {
       paymentProvider: provider,
       providerTransactionId: createDto.providerTransactionId || null,
       status: PaymentTransactionStatus.CAPTURED,
-      metadata: createDto.metadata || {},
+      metadata: {
+        ...(createDto.metadata || {}),
+        ...cashReceivedMetadata(
+          createDto.paymentMethod,
+          createDto.amount,
+          createDto.amountReceived,
+        ),
+      },
       processedByUserId: user.id,
     });
 
@@ -123,6 +131,7 @@ export class PaymentsService {
         paymentMethod: payment.paymentMethod,
         isFullyPaid: isFullyPaid,
         order,
+        amountReceived: payment.metadata?.amountReceived,
       })
       .catch((err: Error) => {
         this.logger.error(`Failed to trigger payment printing: ${err.message}`);
@@ -200,7 +209,14 @@ export class PaymentsService {
       paymentProvider: provider,
       providerTransactionId: splitDto.providerTransactionId || null,
       status: PaymentTransactionStatus.CAPTURED,
-      metadata: splitDto.metadata || {},
+      metadata: {
+        ...(splitDto.metadata || {}),
+        ...cashReceivedMetadata(
+          splitDto.paymentMethod,
+          splitDto.amount,
+          splitDto.amountReceived,
+        ),
+      },
       processedByUserId: user.id,
     });
 
@@ -242,6 +258,7 @@ export class PaymentsService {
         paymentMethod: payment.paymentMethod,
         isFullyPaid,
         order,
+        amountReceived: payment.metadata?.amountReceived,
       })
       .catch((err: Error) => {
         this.logger.error(`Failed to trigger payment printing: ${err.message}`);

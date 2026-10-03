@@ -66,6 +66,7 @@ import { SumUpApiService } from '../sumup/sumup-api.service';
 import { PrintersService } from '../printers/printers.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { cashReceivedMetadata } from '../print-jobs/receipt-tax.util';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { OrdersService } from '../orders/orders.service';
 import { DiscountVouchersService } from '../discount-vouchers/discount-vouchers.service';
@@ -649,7 +650,11 @@ export class DeviceApiController {
       paymentProvider: provider,
       providerTransactionId: null,
       status: PaymentTransactionStatus.CAPTURED,
-      metadata: {},
+      metadata: cashReceivedMetadata(
+        createDto.paymentMethod,
+        createDto.amount,
+        createDto.amountReceived,
+      ),
       processedByDeviceId: device.id,
     });
 
@@ -702,6 +707,7 @@ export class DeviceApiController {
         paymentMethod: payment.paymentMethod,
         isFullyPaid,
         order,
+        amountReceived: payment.metadata?.amountReceived,
       })
       .catch((err) =>
         this.logger.error(
@@ -724,6 +730,7 @@ export class DeviceApiController {
       amount: number;
       paymentMethod: PaymentMethod;
       items: Array<{ orderItemId: string; quantity: number }>;
+      amountReceived?: number;
     },
   ) {
     const organizationId = requireOrganization(device);
@@ -791,7 +798,14 @@ export class DeviceApiController {
       paymentProvider: provider,
       providerTransactionId: null,
       status: PaymentTransactionStatus.CAPTURED,
-      metadata: { splitItems: createDto.items },
+      metadata: {
+        splitItems: createDto.items,
+        ...cashReceivedMetadata(
+          createDto.paymentMethod,
+          createDto.amount,
+          createDto.amountReceived,
+        ),
+      },
       processedByDeviceId: device.id,
     });
 
@@ -1259,6 +1273,7 @@ export class DeviceApiController {
         paymentMethod: lastPayment.paymentMethod,
         isFullyPaid: order.paymentStatus === PaymentStatus.PAID,
         order,
+        amountReceived: lastPayment.metadata?.amountReceived,
       });
     }
 
