@@ -39,6 +39,9 @@ services:
       # CORS
       CORS_ORIGINS: ${CORS_ORIGINS:-https://app.openeos.de,https://display.openeos.de,https://printer.openeos.de,https://openeos.de,https://www.openeos.de}
 
+      # Reverse proxy (see .env.example); empty = private networks
+      TRUST_PROXY: ${TRUST_PROXY:-}
+
       # Rate Limiting
       THROTTLE_TTL: ${THROTTLE_TTL:-60000}
       THROTTLE_LIMIT: ${THROTTLE_LIMIT:-300}
