@@ -132,7 +132,7 @@ export class AuthService {
         reason: ErrorReasons.SELF_REGISTRATION_DISABLED,
         message:
           'Selbstregistrierung ist in dieser Installation nicht möglich. ' +
-          'Bitte wenden Sie sich an die Administration.',
+          'Bitte wende dich an die Administration.',
       });
     }
 
