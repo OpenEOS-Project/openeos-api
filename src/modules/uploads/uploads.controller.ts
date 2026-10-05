@@ -22,7 +22,7 @@ import { CurrentOrganization } from '../../common/decorators/current-organizatio
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { OrganizationGuard } from '../../common/guards/organization.guard';
 import { Role } from '../../common/constants/roles.enum';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 
 @ApiTags('Uploads')
 @ApiBearerAuth('JWT-auth')
@@ -75,6 +75,7 @@ export class UploadsController {
     if (!filePath) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.FILE_NOT_FOUND,
         message: 'Datei nicht gefunden',
       });
     }

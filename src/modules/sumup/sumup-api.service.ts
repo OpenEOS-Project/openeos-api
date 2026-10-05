@@ -5,7 +5,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import SumUp from '@sumup/sdk';
-import { ErrorCodes, ErrorMessages } from '../../common/constants/error-codes';
+import {
+  ErrorCodes,
+  ErrorMessages,
+  ErrorReasons,
+} from '../../common/constants/error-codes';
 
 // SumUp SDK's APIError has { status, error, response } but is not exported separately
 interface SumUpAPIError extends Error {
@@ -410,7 +414,8 @@ export class SumUpApiService {
       );
       throw new BadRequestException({
         code: ErrorCodes.SUMUP_API_ERROR,
-        message: 'SumUp did not return a hosted checkout URL',
+        reason: ErrorReasons.SUMUP_NO_CHECKOUT_URL,
+        message: 'SumUp hat keine Bezahlseite zurückgegeben',
       });
     }
     return { id: result.id, checkoutUrl };

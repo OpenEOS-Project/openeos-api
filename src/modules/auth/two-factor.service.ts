@@ -18,7 +18,7 @@ import {
 } from '../../database/entities';
 import { EmailOtpPurpose } from '../../database/entities/email-otp.entity';
 import { EncryptionService } from '../../common/services/encryption.service';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { EmailService } from '../email/email.service';
 
 const TOTP_WINDOW = 1; // Allow 1 step before/after for clock drift
@@ -75,6 +75,7 @@ export class TwoFactorService {
     if (user.twoFactorEnabled) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TWO_FACTOR_ALREADY_ENABLED,
         message: '2FA ist bereits aktiviert',
       });
     }
@@ -120,6 +121,7 @@ export class TwoFactorService {
     if (user.twoFactorEnabled) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TWO_FACTOR_ALREADY_ENABLED,
         message: '2FA ist bereits aktiviert',
       });
     }
@@ -127,6 +129,7 @@ export class TwoFactorService {
     if (!user.twoFactorSecretEncrypted) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TWO_FACTOR_SETUP_NOT_STARTED,
         message: 'Bitte starten Sie zuerst die 2FA-Einrichtung',
       });
     }
@@ -170,6 +173,7 @@ export class TwoFactorService {
     if (user.twoFactorEnabled) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TWO_FACTOR_ALREADY_ENABLED,
         message: '2FA ist bereits aktiviert',
       });
     }
@@ -198,6 +202,7 @@ export class TwoFactorService {
     if (user.twoFactorEnabled) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TWO_FACTOR_ALREADY_ENABLED,
         message: '2FA ist bereits aktiviert',
       });
     }
@@ -237,6 +242,7 @@ export class TwoFactorService {
     if (!user.twoFactorEnabled) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TWO_FACTOR_NOT_ENABLED,
         message: '2FA ist nicht aktiviert',
       });
     }
@@ -272,7 +278,8 @@ export class TwoFactorService {
     ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Email 2FA ist nicht aktiviert',
+        reason: ErrorReasons.EMAIL_TWO_FACTOR_NOT_ENABLED,
+        message: 'E-Mail-2FA ist nicht aktiviert',
       });
     }
 
@@ -290,6 +297,7 @@ export class TwoFactorService {
     if (!user.twoFactorEnabled) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TWO_FACTOR_NOT_ENABLED,
         message: '2FA ist nicht aktiviert',
       });
     }
@@ -358,6 +366,7 @@ export class TwoFactorService {
     if (!user.twoFactorEnabled) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TWO_FACTOR_NOT_ENABLED,
         message: '2FA ist nicht aktiviert',
       });
     }
@@ -405,6 +414,7 @@ export class TwoFactorService {
     if (result.affected === 0) {
       throw new BadRequestException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.DEVICE_NOT_FOUND,
         message: 'Gerät nicht gefunden',
       });
     }
@@ -544,6 +554,7 @@ export class TwoFactorService {
     if (otp.isExpired()) {
       throw new BadRequestException({
         code: ErrorCodes.TOKEN_EXPIRED,
+        reason: ErrorReasons.TWO_FACTOR_CODE_EXPIRED,
         message: 'Code ist abgelaufen',
       });
     }

@@ -20,7 +20,7 @@ import {
   OrganizationRole,
   OrganizationPermissions,
 } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   PaginationDto,
   PaginatedResult,
@@ -133,6 +133,7 @@ export class OrganizationsService {
     if (!this.deployment.isSelfHosted) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.USER_NOT_FOUND,
         message: 'Benutzer nicht gefunden',
       });
     }
@@ -140,6 +141,7 @@ export class OrganizationsService {
     if (!password || !firstName || !lastName) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.MEMBER_ACCOUNT_DETAILS_REQUIRED,
         message:
           'Zu dieser E-Mail-Adresse gibt es noch kein Konto. ' +
           'Bitte Vorname, Nachname und ein Startpasswort angeben, um es anzulegen.',
@@ -181,9 +183,10 @@ export class OrganizationsService {
     if (bestehende > 0) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SINGLE_ORGANIZATION_LIMIT,
         message:
           'Diese Installation verwaltet genau eine Organisation. ' +
-          'Fuer weitere Organisationen wird der Mehrmandanten-Betrieb benoetigt.',
+          'Für weitere Organisationen wird der Mehrmandanten-Betrieb benötigt.',
       });
     }
   }
@@ -245,6 +248,7 @@ export class OrganizationsService {
     if (!organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -465,6 +469,7 @@ export class OrganizationsService {
     if (!member) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.MEMBER_NOT_FOUND,
         message: 'Mitglied nicht gefunden',
       });
     }
@@ -482,6 +487,7 @@ export class OrganizationsService {
       if (adminCount <= 1) {
         throw new BadRequestException({
           code: ErrorCodes.FORBIDDEN,
+          reason: ErrorReasons.LAST_ADMIN_REQUIRED,
           message: 'Mindestens ein Admin muss bestehen bleiben',
         });
       }
@@ -521,6 +527,7 @@ export class OrganizationsService {
     if (!member) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.MEMBER_NOT_FOUND,
         message: 'Mitglied nicht gefunden',
       });
     }
@@ -534,6 +541,7 @@ export class OrganizationsService {
       if (adminCount <= 1) {
         throw new BadRequestException({
           code: ErrorCodes.FORBIDDEN,
+          reason: ErrorReasons.LAST_ADMIN_REQUIRED,
           message: 'Der letzte Admin kann nicht entfernt werden',
         });
       }
@@ -589,6 +597,7 @@ export class OrganizationsService {
     if (existingInvitation && existingInvitation.expiresAt > new Date()) {
       throw new ConflictException({
         code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.INVITATION_ALREADY_EXISTS,
         message: 'Eine Einladung für diese E-Mail existiert bereits',
       });
     }
@@ -666,6 +675,7 @@ export class OrganizationsService {
     if (!invitation) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.INVITATION_NOT_FOUND,
         message: 'Einladung nicht gefunden',
       });
     }
@@ -690,6 +700,7 @@ export class OrganizationsService {
     if (!invitation) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.INVITATION_NOT_FOUND,
         message: 'Einladung nicht gefunden',
       });
     }
@@ -704,6 +715,7 @@ export class OrganizationsService {
     if (invitation.isAccepted()) {
       throw new BadRequestException({
         code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.INVITATION_ALREADY_ACCEPTED,
         message: 'Einladung wurde bereits angenommen',
       });
     }
@@ -737,6 +749,7 @@ export class OrganizationsService {
     if (!invitation) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.INVITATION_NOT_FOUND,
         message: 'Einladung nicht gefunden',
       });
     }
@@ -751,6 +764,7 @@ export class OrganizationsService {
     if (invitation.acceptedAt) {
       throw new BadRequestException({
         code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.INVITATION_ALREADY_ACCEPTED,
         message: 'Einladung wurde bereits angenommen',
       });
     }
@@ -765,6 +779,7 @@ export class OrganizationsService {
     if (invitation.email !== user.email.toLowerCase()) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INVITATION_EMAIL_MISMATCH,
         message: 'Diese Einladung ist für eine andere E-Mail-Adresse',
       });
     }
@@ -777,6 +792,7 @@ export class OrganizationsService {
     if (existingMember) {
       throw new ConflictException({
         code: ErrorCodes.MEMBER_ALREADY_EXISTS,
+        reason: ErrorReasons.ALREADY_MEMBER,
         message: 'Sie sind bereits Mitglied dieser Organisation',
       });
     }
@@ -824,6 +840,7 @@ export class OrganizationsService {
     if (invitation.email !== user.email.toLowerCase()) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INVITATION_EMAIL_MISMATCH,
         message: 'Diese Einladung ist für eine andere E-Mail-Adresse',
       });
     }
@@ -852,6 +869,7 @@ export class OrganizationsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -874,6 +892,7 @@ export class OrganizationsService {
     if (roleHierarchy[membership.role] < roleHierarchy[requiredRole]) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }
@@ -901,6 +920,7 @@ export class OrganizationsService {
     if (!membership.permissions?.[permission]) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }
@@ -923,6 +943,7 @@ export class OrganizationsService {
     if (!allowedRoles.includes(membership.role)) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen für diese Aktion',
       });
     }

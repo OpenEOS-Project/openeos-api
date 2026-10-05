@@ -45,7 +45,7 @@ export class AddMemberDto {
   @ApiPropertyOptional({
     example: 'Max',
     description:
-      'Vorname — nur beim Anlegen eines neuen Kontos (eigenstaendige Installation)',
+      'Vorname — nur beim Anlegen eines neuen Kontos (eigenständige Installation)',
   })
   @IsOptional()
   @IsString()
@@ -56,7 +56,7 @@ export class AddMemberDto {
   @ApiPropertyOptional({
     example: 'Mustermann',
     description:
-      'Nachname — nur beim Anlegen eines neuen Kontos (eigenstaendige Installation)',
+      'Nachname — nur beim Anlegen eines neuen Kontos (eigenständige Installation)',
   })
   @IsOptional()
   @IsString()
@@ -67,8 +67,8 @@ export class AddMemberDto {
   @ApiPropertyOptional({
     example: 'SecurePass123!',
     description:
-      'Startpasswort — nur beim Anlegen eines neuen Kontos (eigenstaendige Installation). ' +
-      'Das Konto ist sofort anmeldebereit, eine Bestaetigungsmail entfaellt.',
+      'Startpasswort — nur beim Anlegen eines neuen Kontos (eigenständige Installation). ' +
+      'Das Konto ist sofort anmeldebereit, eine Bestätigungsmail entfällt.',
     minLength: 8,
     maxLength: 72,
   })

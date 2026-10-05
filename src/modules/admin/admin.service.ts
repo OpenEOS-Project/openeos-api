@@ -61,7 +61,7 @@ export interface UnassignedPrinterDeviceListItem {
 }
 import { EventStatus } from '../../database/entities/event.entity';
 import { GatewayService } from '../gateway/gateway.service';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   redigiereAdminOrganisation,
   redigiereAdminUser,
@@ -155,6 +155,7 @@ export class AdminService {
     if (!org) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -271,6 +272,7 @@ export class AdminService {
     if (org.supportPin !== accessDto.supportPin) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.SUPPORT_PIN_INVALID,
         message: 'Ungültiger Support-PIN',
       });
     }
@@ -361,6 +363,7 @@ export class AdminService {
     if (!user) {
       throw new NotFoundException({
         code: 'NOT_FOUND',
+        reason: ErrorReasons.USER_NOT_FOUND,
         message: 'Benutzer nicht gefunden',
       });
     }
@@ -381,6 +384,7 @@ export class AdminService {
     if (!user) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.USER_NOT_FOUND,
         message: 'Benutzer nicht gefunden',
       });
     }
@@ -467,6 +471,7 @@ export class AdminService {
     if (!invoice) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.INVOICE_NOT_FOUND,
         message: 'Rechnung nicht gefunden',
       });
     }
@@ -500,6 +505,7 @@ export class AdminService {
     if (!device) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.DEVICE_NOT_FOUND,
         message: 'Gerät nicht gefunden',
       });
     }
@@ -610,6 +616,7 @@ export class AdminService {
     if (!hardware) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.HARDWARE_NOT_FOUND,
         message: 'Hardware nicht gefunden',
       });
     }
@@ -628,6 +635,7 @@ export class AdminService {
     if (!hardware) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.HARDWARE_NOT_FOUND,
         message: 'Hardware nicht gefunden',
       });
     }
@@ -647,6 +655,7 @@ export class AdminService {
     if (activeAssignment) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.HARDWARE_HAS_ACTIVE_ASSIGNMENTS,
         message:
           'Hardware hat aktive Zuweisungen und kann nicht gelöscht werden',
       });
@@ -731,6 +740,7 @@ export class AdminService {
     if (!hardware) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.HARDWARE_NOT_FOUND,
         message: 'Hardware nicht gefunden',
       });
     }
@@ -738,6 +748,7 @@ export class AdminService {
     if (hardware.status !== RentalHardwareStatus.AVAILABLE) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.HARDWARE_NOT_AVAILABLE,
         message: 'Hardware ist nicht verfügbar',
       });
     }
@@ -800,6 +811,7 @@ export class AdminService {
     if (!assignment) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ASSIGNMENT_NOT_FOUND,
         message: 'Zuweisung nicht gefunden',
       });
     }
@@ -807,7 +819,8 @@ export class AdminService {
     if (assignment.status !== RentalAssignmentStatus.CONFIRMED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Zuweisung muss den Status "confirmed" haben',
+        reason: ErrorReasons.ASSIGNMENT_NOT_CONFIRMED,
+        message: 'Zuweisung muss den Status „confirmed“ haben',
       });
     }
 
@@ -898,6 +911,7 @@ export class AdminService {
     if (!assignment) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ASSIGNMENT_NOT_FOUND,
         message: 'Zuweisung nicht gefunden',
       });
     }
@@ -1066,18 +1080,21 @@ export class AdminService {
     if (!device) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.DEVICE_NOT_FOUND,
         message: 'Gerät nicht gefunden',
       });
     }
     if (device.type !== DeviceType.PRINTER_AGENT) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.DEVICE_NOT_PRINTER_AGENT,
         message: 'Nur Drucker-Agents können als Drucker zugewiesen werden',
       });
     }
     if (device.organizationId) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.DEVICE_ALREADY_ASSIGNED,
         message: 'Gerät ist bereits einer Organisation zugewiesen',
       });
     }
@@ -1087,6 +1104,7 @@ export class AdminService {
     if (!organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -1175,6 +1193,7 @@ export class AdminService {
     if (!printer) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRINTER_NOT_FOUND,
         message: 'Drucker nicht gefunden',
       });
     }
@@ -1197,6 +1216,7 @@ export class AdminService {
     if (!printer) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRINTER_NOT_FOUND,
         message: 'Drucker nicht gefunden',
       });
     }
@@ -1427,6 +1447,7 @@ export class AdminService {
     if (!config) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SUBSCRIPTION_CONFIG_NOT_FOUND,
         message: 'Subscription-Konfiguration nicht gefunden',
       });
     }
@@ -1471,6 +1492,7 @@ export class AdminService {
     if (!config) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SUBSCRIPTION_CONFIG_NOT_FOUND,
         message: 'Subscription-Konfiguration nicht gefunden',
       });
     }

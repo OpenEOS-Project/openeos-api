@@ -15,7 +15,7 @@ import {
   Event,
 } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   CreateCategoryDto,
   UpdateCategoryDto,
@@ -93,6 +93,7 @@ export class CategoriesService {
     if (!category) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.CATEGORY_NOT_FOUND,
         message: 'Kategorie nicht gefunden',
       });
     }
@@ -181,6 +182,7 @@ export class CategoriesService {
     if (!event) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.EVENT_NOT_FOUND,
         message: 'Event nicht gefunden',
       });
     }
@@ -201,6 +203,7 @@ export class CategoriesService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.EVENT_ACCESS_DENIED,
         message: 'Kein Zugriff auf dieses Event',
       });
     }
@@ -222,6 +225,7 @@ export class CategoriesService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.EVENT_ACCESS_DENIED,
         message: 'Kein Zugriff auf dieses Event',
       });
     }
@@ -232,6 +236,7 @@ export class CategoriesService {
     ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }
@@ -252,6 +257,7 @@ export class CategoriesService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.EVENT_ACCESS_DENIED,
         message: 'Kein Zugriff auf dieses Event',
       });
     }
@@ -259,6 +265,7 @@ export class CategoriesService {
     if (membership.role !== OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

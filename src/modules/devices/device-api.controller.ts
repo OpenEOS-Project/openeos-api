@@ -53,7 +53,7 @@ import {
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
 import { Public } from '../../common/decorators/public.decorator';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { CreateOrderDto, SelectedOptionDto } from '../orders/dto';
 import { CreatePaymentDto } from '../payments/dto';
 import { SumUpApiService } from '../sumup/sumup-api.service';
@@ -83,6 +83,7 @@ function requireOrganization(device: Device): string {
   if (!device.organizationId) {
     throw new ForbiddenException({
       code: ErrorCodes.FORBIDDEN,
+      reason: ErrorReasons.DEVICE_NOT_ASSIGNED,
       message: 'Gerät ist keiner Organisation zugeordnet',
     });
   }
@@ -148,6 +149,7 @@ export class DeviceApiController {
     if (!organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -440,6 +442,7 @@ export class DeviceApiController {
       if (!event) {
         throw new NotFoundException({
           code: ErrorCodes.NOT_FOUND,
+          reason: ErrorReasons.EVENT_NOT_FOUND,
           message: 'Event nicht gefunden',
         });
       }
@@ -450,6 +453,7 @@ export class DeviceApiController {
       ) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.EVENT_NOT_ACTIVE,
           message: 'Event ist nicht aktiv',
         });
       }
@@ -613,6 +617,7 @@ export class DeviceApiController {
     if (!order) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_NOT_FOUND,
         message: 'Bestellung nicht gefunden',
       });
     }
@@ -620,6 +625,7 @@ export class DeviceApiController {
     if (order.paymentStatus === PaymentStatus.PAID) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_ALREADY_PAID,
         message: 'Bestellung ist bereits vollständig bezahlt',
       });
     }
@@ -628,7 +634,9 @@ export class DeviceApiController {
     if (createDto.amount > remainingAmount + 0.01) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PAYMENT_EXCEEDS_REMAINING,
         message: `Zahlungsbetrag (${createDto.amount}) übersteigt den ausstehenden Betrag (${remainingAmount})`,
+        params: { amount: createDto.amount, remaining: remainingAmount },
       });
     }
 
@@ -735,6 +743,7 @@ export class DeviceApiController {
     if (!order) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_NOT_FOUND,
         message: 'Bestellung nicht gefunden',
       });
     }
@@ -742,6 +751,7 @@ export class DeviceApiController {
     if (order.paymentStatus === PaymentStatus.PAID) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_ALREADY_PAID,
         message: 'Bestellung ist bereits vollständig bezahlt',
       });
     }
@@ -755,6 +765,7 @@ export class DeviceApiController {
       if (!item) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.ORDER_ITEM_NOT_FOUND,
           message: `Artikel nicht gefunden: ${itemDto.orderItemId}`,
         });
       }
@@ -763,7 +774,9 @@ export class DeviceApiController {
       if (itemDto.quantity > unpaidQty) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.INSUFFICIENT_UNPAID_QUANTITY,
           message: `Nicht genug unbezahlte Menge für ${item.productName}`,
+          params: { product: item.productName },
         });
       }
 
@@ -776,7 +789,9 @@ export class DeviceApiController {
     if (Math.abs(createDto.amount - expectedAmount) > 0.01) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PAYMENT_AMOUNT_MISMATCH,
         message: `Betrag stimmt nicht überein. Erwartet: ${expectedAmount}, Erhalten: ${createDto.amount}`,
+        params: { expected: expectedAmount, received: createDto.amount },
       });
     }
 
@@ -870,6 +885,7 @@ export class DeviceApiController {
     if (!cashDrawerPrinterId) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.CASH_DRAWER_NOT_CONFIGURED,
         message: 'Keine Kassenschublade konfiguriert',
       });
     }
@@ -881,6 +897,7 @@ export class DeviceApiController {
     if (!printer) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRINTER_NOT_FOUND,
         message: 'Drucker nicht gefunden',
       });
     }
@@ -888,6 +905,7 @@ export class DeviceApiController {
     if (!printer.hasCashDrawer) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRINTER_HAS_NO_CASH_DRAWER,
         message: 'Drucker hat keine Kassenschublade',
       });
     }
@@ -895,6 +913,7 @@ export class DeviceApiController {
     if (!printer.isActive) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRINTER_INACTIVE,
         message: 'Drucker ist nicht aktiv',
       });
     }
@@ -921,6 +940,7 @@ export class DeviceApiController {
     if (!readerId) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.CARD_READER_NOT_LINKED,
         message: 'Kein Kartenleser mit diesem Gerät verknüpft',
       });
     }
@@ -931,6 +951,7 @@ export class DeviceApiController {
     if (!organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -940,6 +961,7 @@ export class DeviceApiController {
     if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SUMUP_NOT_CONFIGURED,
         message: 'SumUp ist nicht für diese Organisation konfiguriert',
       });
     }
@@ -965,6 +987,7 @@ export class DeviceApiController {
     if (!readerId) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.CARD_READER_NOT_LINKED,
         message: 'Kein Kartenleser mit diesem Gerät verknüpft',
       });
     }
@@ -975,6 +998,7 @@ export class DeviceApiController {
     if (!organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -984,6 +1008,7 @@ export class DeviceApiController {
     if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SUMUP_NOT_CONFIGURED,
         message: 'SumUp ist nicht für diese Organisation konfiguriert',
       });
     }
@@ -1017,6 +1042,7 @@ export class DeviceApiController {
     if (!readerId) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.CARD_READER_NOT_LINKED,
         message: 'Kein Kartenleser mit diesem Gerät verknüpft',
       });
     }
@@ -1027,6 +1053,7 @@ export class DeviceApiController {
     if (!organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -1036,6 +1063,7 @@ export class DeviceApiController {
     if (!sumupSettings?.apiKey || !sumupSettings?.merchantCode) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SUMUP_NOT_CONFIGURED,
         message: 'SumUp ist nicht für diese Organisation konfiguriert',
       });
     }
@@ -1120,6 +1148,7 @@ export class DeviceApiController {
     if (!order) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_NOT_FOUND,
         message: 'Bestellung nicht gefunden',
       });
     }
@@ -1130,6 +1159,7 @@ export class DeviceApiController {
     ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_CANNOT_BE_CANCELLED,
         message:
           'Bestellung kann nicht storniert werden (bereits abgeschlossen oder storniert)',
       });
@@ -1236,6 +1266,7 @@ export class DeviceApiController {
     if (!order) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_NOT_FOUND,
         message: 'Bestellung nicht gefunden',
       });
     }
@@ -1261,6 +1292,7 @@ export class DeviceApiController {
       if (!lastPayment) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.PAYMENT_NOT_FOUND,
           message: 'Keine Zahlung für diese Bestellung gefunden',
         });
       }
@@ -1295,6 +1327,7 @@ export class DeviceApiController {
     if (!stationId) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.STATION_NOT_CONFIGURED,
         message: 'Keine Station konfiguriert',
       });
     }
@@ -1391,6 +1424,7 @@ export class DeviceApiController {
     if (!product) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRODUCT_NOT_FOUND,
         message: 'Produkt nicht gefunden',
       });
     }
@@ -1398,7 +1432,9 @@ export class DeviceApiController {
     if (!product.isActive || !product.isAvailable) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRODUCT_UNAVAILABLE,
         message: `Produkt ${product.name} ist nicht verfügbar`,
+        params: { product: product.name },
       });
     }
 
@@ -1406,7 +1442,9 @@ export class DeviceApiController {
     if (product.trackInventory && product.stockQuantity < itemDto.quantity) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.INSUFFICIENT_STOCK_FOR_PRODUCT,
         message: `Nicht genügend Bestand für ${product.name}`,
+        params: { product: product.name },
       });
     }
 

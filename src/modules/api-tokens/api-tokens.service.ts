@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 
 import { ApiToken, User } from '../../database/entities';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import type { ApiScope } from './api-scopes';
 
 /** Am Anfang jedes Tokens, damit man ihn in einem Protokoll erkennt. */
@@ -149,6 +149,7 @@ export class ApiTokensService {
     if (!eintrag) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.API_TOKEN_NOT_FOUND,
         message: 'Token nicht gefunden',
       });
     }

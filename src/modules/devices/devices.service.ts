@@ -27,7 +27,7 @@ import {
 } from '../../database/entities/device.entity';
 import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   PaginationDto,
   PaginatedResult,
@@ -137,6 +137,7 @@ export class DevicesService {
     if (!device) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.DEVICE_NOT_FOUND,
         message: 'Gerät nicht gefunden',
       });
     }
@@ -297,6 +298,7 @@ export class DevicesService {
 
     throw new BadRequestException({
       code: ErrorCodes.VALIDATION_ERROR,
+      reason: ErrorReasons.PAIRING_CODE_UNAVAILABLE,
       message:
         'Derzeit kann kein Kopplungscode vergeben werden. Bitte später erneut versuchen.',
     });
@@ -393,6 +395,7 @@ export class DevicesService {
     if (!device) {
       throw new BadRequestException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.DEVICE_NOT_FOUND_OR_LINKED,
         message: 'Ungültiger Verifizierungscode oder Gerät bereits verknüpft',
       });
     }
@@ -430,6 +433,7 @@ export class DevicesService {
     if (!organization) {
       throw new BadRequestException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -481,6 +485,7 @@ export class DevicesService {
     if (!device) {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.DEVICE_TOKEN_INVALID,
         message: 'Ungültiger Device-Token',
       });
     }
@@ -528,6 +533,7 @@ export class DevicesService {
     if (!device) {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.DEVICE_TOKEN_INVALID,
         message: 'Ungültiger Device-Token',
       });
     }
@@ -535,6 +541,7 @@ export class DevicesService {
     if (device.status !== DeviceStatus.VERIFIED) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.DEVICE_NOT_VERIFIED,
         message: 'Gerät ist noch nicht verifiziert',
       });
     }
@@ -542,6 +549,7 @@ export class DevicesService {
     if (!device.organizationId) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.DEVICE_NOT_ASSIGNED,
         message: 'Gerät ist keiner Organisation zugeordnet',
       });
     }
@@ -565,6 +573,7 @@ export class DevicesService {
     if (!device) {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.DEVICE_TOKEN_INVALID,
         message: 'Ungültiger Device-Token',
       });
     }
@@ -607,6 +616,7 @@ export class DevicesService {
     if (!device) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.DEVICE_NOT_FOUND,
         message: 'Gerät nicht gefunden',
       });
     }
@@ -614,6 +624,7 @@ export class DevicesService {
     if (device.status === DeviceStatus.VERIFIED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.DEVICE_ALREADY_VERIFIED,
         message: 'Gerät ist bereits verifiziert',
       });
     }
@@ -621,6 +632,7 @@ export class DevicesService {
     if (device.verificationCode !== code) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.DEVICE_VERIFICATION_CODE_INVALID,
         message: 'Ungültiger Verifizierungscode',
       });
     }
@@ -759,6 +771,7 @@ export class DevicesService {
       if (member.pin && (await bcrypt.compare(pin, member.pin))) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.PIN_ALREADY_IN_USE,
           message:
             'Diese PIN wird bereits von einem anderen Mitglied verwendet',
         });
@@ -772,6 +785,7 @@ export class DevicesService {
     if (!membership) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.MEMBER_NOT_FOUND,
         message: 'Mitglied nicht gefunden',
       });
     }
@@ -799,6 +813,7 @@ export class DevicesService {
     if (!membership) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.MEMBER_NOT_FOUND,
         message: 'Mitglied nicht gefunden',
       });
     }
@@ -840,6 +855,7 @@ export class DevicesService {
 
     throw new BadRequestException({
       code: ErrorCodes.VALIDATION_ERROR,
+      reason: ErrorReasons.PIN_INVALID,
       message: 'Ungültige PIN',
     });
   }
@@ -855,6 +871,7 @@ export class DevicesService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -872,6 +889,7 @@ export class DevicesService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -883,6 +901,7 @@ export class DevicesService {
     if (!membership.permissions?.[permission]) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

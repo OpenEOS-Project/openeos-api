@@ -26,7 +26,7 @@ import {
 } from '../../database/entities/event.entity';
 import { DeploymentService } from '../../common/services/deployment.service';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   PaginationDto,
   PaginatedResult,
@@ -77,12 +77,14 @@ export class EventsService {
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.INVALID_DATE,
         message: 'Ungültiges Datum',
       });
     }
     if (endDate.getTime() < startDate.getTime()) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.EVENT_END_BEFORE_START,
         message: 'Das Ende der Veranstaltung darf nicht vor dem Beginn liegen',
       });
     }
@@ -114,7 +116,9 @@ export class EventsService {
     if (nextDays > paidDays) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.EVENT_PAID_DAYS_EXCEEDED,
         message: `Die Veranstaltung ist für ${paidDays} Tag(e) freigeschaltet und kann nicht auf ${nextDays} Tage verlängert werden`,
+        params: { paidDays, requestedDays: nextDays },
       });
     }
   }
@@ -183,6 +187,7 @@ export class EventsService {
     if (!event) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.EVENT_NOT_FOUND,
         message: 'Event nicht gefunden',
       });
     }
@@ -242,6 +247,7 @@ export class EventsService {
     if (event.status === EventStatus.ACTIVE) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.EVENT_ACTIVE_CANNOT_DELETE,
         message: 'Aktive Events können nicht gelöscht werden',
       });
     }
@@ -268,6 +274,7 @@ export class EventsService {
     if (event.status === EventStatus.ACTIVE) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.EVENT_ALREADY_ACTIVE,
         message: 'Event ist bereits aktiv',
       });
     }
@@ -437,6 +444,7 @@ export class EventsService {
     if (!sourceEvent) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SOURCE_EVENT_NOT_FOUND,
         message: 'Quell-Event nicht gefunden',
       });
     }
@@ -561,6 +569,7 @@ export class EventsService {
     if (!event) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.EVENT_NOT_FOUND,
         message: 'Event nicht gefunden',
       });
     }
@@ -583,6 +592,7 @@ export class EventsService {
     if (!event) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.EVENT_NOT_FOUND,
         message: 'Event nicht gefunden',
       });
     }
@@ -602,6 +612,7 @@ export class EventsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -623,6 +634,7 @@ export class EventsService {
     if (!membership.permissions?.[permission]) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }
@@ -639,6 +651,7 @@ export class EventsService {
     if (membership.role !== OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

@@ -9,7 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Device } from '../../database/entities';
 import { DeviceStatus } from '../../database/entities/device.entity';
-import { ErrorCodes } from '../constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../constants/error-codes';
 import type { AppRequest } from '../types/request.types';
 
 export const IS_DEVICE_AUTH_KEY = 'isDeviceAuth';
@@ -29,6 +29,7 @@ export class DeviceAuthGuard implements CanActivate {
     if (!deviceToken) {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.DEVICE_TOKEN_MISSING,
         message: 'Device-Token fehlt',
       });
     }
@@ -41,6 +42,7 @@ export class DeviceAuthGuard implements CanActivate {
     if (!device) {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.DEVICE_TOKEN_INVALID,
         message: 'Ungültiger Device-Token',
       });
     }
@@ -48,6 +50,7 @@ export class DeviceAuthGuard implements CanActivate {
     if (device.status !== DeviceStatus.VERIFIED) {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.DEVICE_NOT_VERIFIED,
         message: 'Gerät ist nicht verifiziert',
       });
     }

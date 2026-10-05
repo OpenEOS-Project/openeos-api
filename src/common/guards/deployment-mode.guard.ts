@@ -8,6 +8,7 @@ import { Reflector } from '@nestjs/core';
 
 import { SAAS_ONLY_KEY } from '../decorators/saas-only.decorator';
 import { DeploymentService } from '../services/deployment.service';
+import { ErrorReasons } from '../constants/error-codes';
 
 /**
  * Blendet die Endpunkte des gehosteten Angebots in einer eigenstaendigen
@@ -36,8 +37,9 @@ export class DeploymentModeGuard implements CanActivate {
     if (isSaasOnly) {
       throw new NotFoundException({
         code: 'NOT_FOUND',
+        reason: ErrorReasons.FEATURE_UNAVAILABLE_SELF_HOSTED,
         message:
-          'Diese Funktion ist in einer eigenstaendigen Installation nicht verfuegbar',
+          'Diese Funktion ist in einer eigenständigen Installation nicht verfügbar',
       });
     }
 

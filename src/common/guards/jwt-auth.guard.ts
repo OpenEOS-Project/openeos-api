@@ -9,7 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { ALLOW_PENDING_TWO_FACTOR_KEY } from '../decorators/allow-pending-two-factor.decorator';
 import { REQUIRES_SCOPE_KEY } from '../decorators/requires-scope.decorator';
-import { ErrorCodes } from '../constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../constants/error-codes';
 import { ApiTokensService } from '../../modules/api-tokens/api-tokens.service';
 import type { AppRequest } from '../types/request.types';
 
@@ -63,6 +63,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (!pruefung) {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.API_TOKEN_INVALID,
         message: 'Ungültiger oder abgelaufener API-Token',
       });
     }
@@ -75,6 +76,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (!verlangt) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.API_TOKEN_ENDPOINT_NOT_ALLOWED,
         message: 'Dieser Endpunkt ist für API-Tokens nicht freigegeben',
       });
     }
@@ -82,7 +84,9 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     if (!pruefung.scopes.includes(verlangt)) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
-        message: `API-Token fehlt die Berechtigung „${verlangt}"`,
+        reason: ErrorReasons.API_TOKEN_SCOPE_MISSING,
+        message: `API-Token fehlt die Berechtigung „${verlangt}“`,
+        params: { scope: verlangt },
       });
     }
 
@@ -106,6 +110,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       }
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.NOT_AUTHENTICATED,
         message: 'Nicht authentifiziert',
       });
     }
@@ -124,6 +129,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       if (!erlaubt) {
         throw new UnauthorizedException({
           code: ErrorCodes.UNAUTHORIZED,
+          reason: ErrorReasons.TWO_FACTOR_PENDING,
           message: 'Zweiter Faktor steht noch aus',
         });
       }

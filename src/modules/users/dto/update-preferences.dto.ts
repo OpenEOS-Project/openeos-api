@@ -33,7 +33,7 @@ export class DashboardWidgetSizeDto {
 
   @ApiPropertyOptional({
     example: 2,
-    description: 'Hoehe in Rasterzeilen (1–6)',
+    description: 'Höhe in Rasterzeilen (1–6)',
   })
   @IsInt()
   @Min(1)
@@ -54,7 +54,7 @@ export class DashboardPreferencesDto {
      Fehlt ein Eintrag, greift die Standardgroesse des Widget-Typs. */
   @ApiPropertyOptional({
     type: [DashboardWidgetSizeDto],
-    description: 'Kachelgroessen im Raster; ohne Eintrag gilt die Vorgabe',
+    description: 'Kachelgrößen im Raster; ohne Eintrag gilt die Vorgabe',
   })
   @IsOptional()
   @IsArray()

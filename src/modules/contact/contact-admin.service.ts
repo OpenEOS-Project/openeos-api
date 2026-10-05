@@ -6,7 +6,7 @@ import {
   ContactRequest,
   type ContactRequestKind,
 } from '../../database/entities';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 
 @Injectable()
 export class ContactAdminService {
@@ -41,6 +41,7 @@ export class ContactAdminService {
     if (!eintrag) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.CONTACT_MESSAGE_NOT_FOUND,
         message: 'Zuschrift nicht gefunden',
       });
     }

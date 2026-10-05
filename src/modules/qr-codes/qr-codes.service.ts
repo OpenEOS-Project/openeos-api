@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { QrCode, User, UserOrganization } from '../../database/entities';
 import { QrCodeType } from '../../database/entities/qr-code.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   PaginationDto,
   PaginatedResult,
@@ -128,6 +128,7 @@ export class QrCodesService {
     if (!qrCode) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.QR_CODE_NOT_FOUND,
         message: 'QR-Code nicht gefunden',
       });
     }
@@ -242,6 +243,7 @@ export class QrCodesService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -259,6 +261,7 @@ export class QrCodesService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -269,6 +272,7 @@ export class QrCodesService {
     ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

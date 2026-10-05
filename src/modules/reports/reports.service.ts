@@ -22,7 +22,7 @@ import { DeviceType } from '../../database/entities/device.entity';
 import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
 import { PrintJobStatus } from '../../database/entities/print-job.entity';
 import { QueryReportsDto, ReportExportFormat } from './dto';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { endOfDay } from '../../common/utils/date-range.util';
 
 export interface SalesReport {
@@ -869,6 +869,7 @@ export class ReportsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.NOT_ORGANIZATION_MEMBER,
         message: 'Sie sind kein Mitglied dieser Organisation',
       });
     }
@@ -888,6 +889,7 @@ export class ReportsService {
     ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

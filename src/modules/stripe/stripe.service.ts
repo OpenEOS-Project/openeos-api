@@ -6,7 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 
 /**
  * Duenner Mantel um das Stripe-SDK.
@@ -143,6 +143,7 @@ export class StripeService {
     if (!session.url) {
       throw new ServiceUnavailableException({
         code: ErrorCodes.STRIPE_NOT_CONFIGURED,
+        reason: ErrorReasons.STRIPE_NO_CHECKOUT_URL,
         message: 'Stripe hat keine Zahlungsseite zurückgegeben',
       });
     }
@@ -182,6 +183,7 @@ export class StripeService {
     if (!response.ok) {
       throw new ServiceUnavailableException({
         code: ErrorCodes.STRIPE_NOT_CONFIGURED,
+        reason: ErrorReasons.STRIPE_INVOICE_PDF_UNAVAILABLE,
         message: `Rechnungs-PDF konnte nicht geladen werden (HTTP ${response.status})`,
       });
     }
@@ -206,6 +208,7 @@ export class StripeService {
     if (!this.webhookSecret) {
       throw new ServiceUnavailableException({
         code: ErrorCodes.STRIPE_NOT_CONFIGURED,
+        reason: ErrorReasons.STRIPE_WEBHOOK_SECRET_MISSING,
         message: 'STRIPE_WEBHOOK_SECRET ist nicht konfiguriert',
       });
     }

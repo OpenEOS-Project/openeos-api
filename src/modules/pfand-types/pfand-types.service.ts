@@ -12,7 +12,7 @@ import {
   UserOrganization,
   OrganizationRole,
 } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { CreatePfandTypeDto, UpdatePfandTypeDto } from './dto';
 
 @Injectable()
@@ -78,6 +78,7 @@ export class PfandTypesService {
     if (!pfandType) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.DEPOSIT_TYPE_NOT_FOUND,
         message: 'Pfand-Typ nicht gefunden',
       });
     }
@@ -132,6 +133,7 @@ export class PfandTypesService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -151,6 +153,7 @@ export class PfandTypesService {
     ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

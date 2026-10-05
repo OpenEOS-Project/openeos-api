@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { User, RefreshToken, UserPreferences } from '../../database/entities';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   UpdateProfileDto,
   UpdatePreferencesDto,
@@ -125,6 +125,7 @@ export class UsersService {
       if (!isPasswordValid) {
         throw new BadRequestException({
           code: ErrorCodes.INVALID_CREDENTIALS,
+          reason: ErrorReasons.PASSWORD_INCORRECT,
           message: 'Passwort ist falsch',
         });
       }
@@ -137,6 +138,7 @@ export class UsersService {
     if (existingUser) {
       throw new ConflictException({
         code: ErrorCodes.USER_EXISTS,
+        reason: ErrorReasons.EMAIL_IN_USE,
         message: 'Diese E-Mail-Adresse wird bereits verwendet',
       });
     }
@@ -191,6 +193,7 @@ export class UsersService {
     if (!user.pendingEmail) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.NO_PENDING_EMAIL_CHANGE,
         message: 'Keine ausstehende E-Mail-Änderung',
       });
     }
@@ -302,6 +305,7 @@ export class UsersService {
     if (result.affected === 0) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SESSION_NOT_FOUND,
         message: 'Session nicht gefunden',
       });
     }
@@ -344,6 +348,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.USER_NOT_FOUND,
         message: 'Benutzer nicht gefunden',
       });
     }

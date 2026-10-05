@@ -32,6 +32,7 @@ import {
   AdminCreateRegistrationDto,
   AdminUpdateRegistrationDto,
 } from './dto';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 
 @Injectable()
 export class ShiftsService {
@@ -64,9 +65,12 @@ export class ShiftsService {
       where: { publicSlug: slug },
     });
     if (existingSlug) {
-      throw new BadRequestException(
-        'Der URL-Slug ist bereits vergeben. Bitte wähle einen anderen.',
-      );
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SHIFT_PLAN_SLUG_TAKEN,
+        message:
+          'Der URL-Slug ist bereits vergeben. Bitte wähle einen anderen.',
+      });
     }
 
     const plan = this.shiftPlanRepository.create({
@@ -108,7 +112,11 @@ export class ShiftsService {
     });
 
     if (!plan) {
-      throw new NotFoundException('Schichtplan nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_PLAN_NOT_FOUND,
+        message: 'Schichtplan nicht gefunden',
+      });
     }
 
     return plan;
@@ -126,7 +134,11 @@ export class ShiftsService {
         where: { publicSlug: dto.publicSlug },
       });
       if (existingSlug) {
-        throw new BadRequestException('Der URL-Slug ist bereits vergeben.');
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.SHIFT_PLAN_SLUG_TAKEN,
+          message: 'Der URL-Slug ist bereits vergeben.',
+        });
       }
       plan.publicSlug = dto.publicSlug;
     }
@@ -169,7 +181,11 @@ export class ShiftsService {
     const plan = await this.findOnePlan(organizationId, planId);
 
     if (plan.status === ShiftPlanStatus.PUBLISHED) {
-      throw new BadRequestException('Schichtplan ist bereits veröffentlicht');
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SHIFT_PLAN_ALREADY_PUBLISHED,
+        message: 'Schichtplan ist bereits veröffentlicht',
+      });
     }
 
     plan.status = ShiftPlanStatus.PUBLISHED;
@@ -234,7 +250,11 @@ export class ShiftsService {
     });
 
     if (!job || job.shiftPlan.organizationId !== organizationId) {
-      throw new NotFoundException('Job nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_JOB_NOT_FOUND,
+        message: 'Job nicht gefunden',
+      });
     }
 
     if (dto.name !== undefined) job.name = dto.name;
@@ -265,7 +285,11 @@ export class ShiftsService {
     });
 
     if (!job || job.shiftPlan.organizationId !== organizationId) {
-      throw new NotFoundException('Job nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_JOB_NOT_FOUND,
+        message: 'Job nicht gefunden',
+      });
     }
 
     await this.shiftJobRepository.remove(job);
@@ -284,7 +308,11 @@ export class ShiftsService {
     });
 
     if (!job || job.shiftPlan.organizationId !== organizationId) {
-      throw new NotFoundException('Job nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_JOB_NOT_FOUND,
+        message: 'Job nicht gefunden',
+      });
     }
 
     const shift = this.shiftRepository.create({
@@ -308,7 +336,11 @@ export class ShiftsService {
     });
 
     if (!job || job.shiftPlan.organizationId !== organizationId) {
-      throw new NotFoundException('Job nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_JOB_NOT_FOUND,
+        message: 'Job nicht gefunden',
+      });
     }
 
     return this.shiftRepository.find({
@@ -329,7 +361,11 @@ export class ShiftsService {
     });
 
     if (!shift || shift.job.shiftPlan.organizationId !== organizationId) {
-      throw new NotFoundException('Schicht nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_NOT_FOUND,
+        message: 'Schicht nicht gefunden',
+      });
     }
 
     if (dto.date !== undefined) shift.date = new Date(dto.date);
@@ -348,7 +384,11 @@ export class ShiftsService {
     });
 
     if (!shift || shift.job.shiftPlan.organizationId !== organizationId) {
-      throw new NotFoundException('Schicht nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_NOT_FOUND,
+        message: 'Schicht nicht gefunden',
+      });
     }
 
     await this.shiftRepository.remove(shift);
@@ -365,7 +405,11 @@ export class ShiftsService {
     });
 
     if (!job || job.shiftPlan.organizationId !== organizationId) {
-      throw new NotFoundException('Job nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_JOB_NOT_FOUND,
+        message: 'Job nicht gefunden',
+      });
     }
 
     const createdShifts: Shift[] = [];
@@ -418,7 +462,11 @@ export class ShiftsService {
     });
 
     if (!shift || shift.job.shiftPlan.organizationId !== organizationId) {
-      throw new NotFoundException('Schicht nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_NOT_FOUND,
+        message: 'Schicht nicht gefunden',
+      });
     }
 
     const reg = this.registrationRepository.create({
@@ -492,12 +540,18 @@ export class ShiftsService {
         !targetShift ||
         targetShift.job.shiftPlan.organizationId !== organizationId
       ) {
-        throw new NotFoundException('Ziel-Schicht nicht gefunden');
+        throw new NotFoundException({
+          code: ErrorCodes.NOT_FOUND,
+          reason: ErrorReasons.SHIFT_NOT_FOUND,
+          message: 'Ziel-Schicht nicht gefunden',
+        });
       }
       if (targetShift.job.shiftPlanId !== reg.shift?.job?.shiftPlanId) {
-        throw new BadRequestException(
-          'Schicht muss zum selben Schichtplan gehören',
-        );
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.SHIFT_WRONG_PLAN,
+          message: 'Schicht muss zum selben Schichtplan gehören',
+        });
       }
       reg.shiftId = targetShift.id;
       shiftMoved = true;
@@ -538,7 +592,11 @@ export class ShiftsService {
     baseUrl?: string,
   ): Promise<ShiftChangeProposal> {
     if (!ops.length) {
-      throw new BadRequestException('Mindestens eine Änderung erforderlich');
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SHIFT_CHANGE_REQUIRED,
+        message: 'Mindestens eine Änderung erforderlich',
+      });
     }
 
     // Anchor: any current registration in the group, used to validate the
@@ -551,7 +609,11 @@ export class ShiftsService {
       !anchor ||
       anchor.shift?.job?.shiftPlan?.organizationId !== organizationId
     ) {
-      throw new NotFoundException('Anmeldung nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_REGISTRATION_NOT_FOUND,
+        message: 'Anmeldung nicht gefunden',
+      });
     }
     const planId = anchor.shift.job.shiftPlanId;
     const planName = anchor.shift.job.shiftPlan.name;
@@ -567,9 +629,11 @@ export class ShiftsService {
           relations: ['shift', 'shift.job', 'shift.job.shiftPlan'],
         });
         if (!reg || reg.registrationGroupId !== registrationGroupId) {
-          throw new BadRequestException(
-            'Zu entfernende Anmeldung gehört nicht zur Gruppe',
-          );
+          throw new BadRequestException({
+            code: ErrorCodes.VALIDATION_ERROR,
+            reason: ErrorReasons.SHIFT_REGISTRATION_WRONG_GROUP,
+            message: 'Zu entfernende Anmeldung gehört nicht zur Gruppe',
+          });
         }
         removeLines.push(this.formatShiftLine(reg.shift));
       } else if (op.type === 'add') {
@@ -578,13 +642,19 @@ export class ShiftsService {
           relations: ['job', 'job.shiftPlan'],
         });
         if (!sh || sh.job.shiftPlanId !== planId) {
-          throw new BadRequestException(
-            'Hinzuzufügende Schicht gehört nicht zum Plan',
-          );
+          throw new BadRequestException({
+            code: ErrorCodes.VALIDATION_ERROR,
+            reason: ErrorReasons.SHIFT_WRONG_PLAN,
+            message: 'Hinzuzufügende Schicht gehört nicht zum Plan',
+          });
         }
         addLines.push(this.formatShiftLine(sh));
       } else {
-        throw new BadRequestException('Unbekannter Vorschlag-Op-Typ');
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.SHIFT_PROPOSAL_INVALID,
+          message: 'Unbekannter Vorschlag-Op-Typ',
+        });
       }
     }
 
@@ -634,10 +704,18 @@ export class ShiftsService {
       relations: ['shiftPlan'],
     });
     if (!proposal) {
-      throw new NotFoundException('Vorschlag nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_PROPOSAL_NOT_FOUND,
+        message: 'Vorschlag nicht gefunden',
+      });
     }
     if (proposal.status !== ShiftChangeProposalStatus.PENDING) {
-      throw new BadRequestException('Vorschlag wurde bereits bearbeitet');
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SHIFT_PROPOSAL_ALREADY_HANDLED,
+        message: 'Vorschlag wurde bereits bearbeitet',
+      });
     }
 
     const planSlug = proposal.shiftPlan?.publicSlug || null;
@@ -713,9 +791,12 @@ export class ShiftsService {
     );
 
     if (reg.status !== ShiftRegistrationStatus.PENDING_APPROVAL) {
-      throw new BadRequestException(
-        'Nur Anmeldungen mit Status "wartet auf Bestätigung" können bestätigt werden',
-      );
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SHIFT_REGISTRATION_NOT_PENDING,
+        message:
+          'Nur Anmeldungen mit Status „wartet auf Bestätigung“ können bestätigt werden',
+      });
     }
 
     reg.status = ShiftRegistrationStatus.CONFIRMED;
@@ -995,9 +1076,11 @@ export class ShiftsService {
     });
 
     if (!plan) {
-      throw new NotFoundException(
-        'Schichtplan nicht gefunden oder nicht veröffentlicht',
-      );
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_PLAN_NOT_FOUND,
+        message: 'Schichtplan nicht gefunden oder nicht veröffentlicht',
+      });
     }
 
     return plan;
@@ -1021,16 +1104,20 @@ export class ShiftsService {
     });
 
     if (shifts.length !== shiftIds.length) {
-      throw new BadRequestException(
-        'Eine oder mehrere Schichten wurden nicht gefunden',
-      );
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SHIFT_NOT_FOUND,
+        message: 'Eine oder mehrere Schichten wurden nicht gefunden',
+      });
     }
 
     for (const shift of shifts) {
       if (shift.job.shiftPlanId !== plan.id) {
-        throw new BadRequestException(
-          'Schicht gehört nicht zu diesem Schichtplan',
-        );
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.SHIFT_WRONG_PLAN,
+          message: 'Schicht gehört nicht zu diesem Schichtplan',
+        });
       }
 
       // Check if shift is full (only count confirmed registrations)
@@ -1039,9 +1126,12 @@ export class ShiftsService {
       ).length;
 
       if (confirmedCount >= shift.requiredWorkers) {
-        throw new BadRequestException(
-          `Schicht "${shift.job.name}" ist bereits voll belegt`,
-        );
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.SHIFT_FULL,
+          message: `Schicht „${shift.job.name}“ ist bereits voll belegt`,
+          params: { shift: shift.job.name },
+        });
       }
     }
 
@@ -1066,9 +1156,12 @@ export class ShiftsService {
         .getCount();
 
       if (existingCount + shiftIds.length > plan.settings.maxShiftsPerPerson) {
-        throw new BadRequestException(
-          `Du kannst dich maximal für ${plan.settings.maxShiftsPerPerson} Schichten anmelden`,
-        );
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.SHIFT_LIMIT_REACHED,
+          message: `Du kannst dich maximal für ${plan.settings.maxShiftsPerPerson} Schichten anmelden`,
+          params: { max: plan.settings.maxShiftsPerPerson },
+        });
       }
     }
 
@@ -1128,7 +1221,11 @@ export class ShiftsService {
     });
 
     if (!registration) {
-      throw new NotFoundException('Ungültiger Verifizierungslink');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_LINK_INVALID,
+        message: 'Ungültiger Verifizierungslink',
+      });
     }
 
     if (registration.emailVerifiedAt) {
@@ -1255,7 +1352,11 @@ export class ShiftsService {
     });
 
     if (!reg || reg.shift.job.shiftPlan.organizationId !== organizationId) {
-      throw new NotFoundException('Anmeldung nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_REGISTRATION_NOT_FOUND,
+        message: 'Anmeldung nicht gefunden',
+      });
     }
 
     return reg;
@@ -1349,7 +1450,12 @@ export class ShiftsService {
         'jobs.shifts.registrations',
       ],
     });
-    if (!plan) throw new NotFoundException('Schichtplan nicht gefunden');
+    if (!plan)
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_PLAN_NOT_FOUND,
+        message: 'Schichtplan nicht gefunden',
+      });
 
     const registrations = await this.registrationRepository
       .createQueryBuilder('reg')
@@ -1387,10 +1493,18 @@ export class ShiftsService {
       relations: ['shift', 'shift.job'],
     });
     if (!reg || !reg.email || reg.email.trim().toLowerCase() !== link.email) {
-      throw new NotFoundException('Anmeldung nicht gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_REGISTRATION_NOT_FOUND,
+        message: 'Anmeldung nicht gefunden',
+      });
     }
     if (reg.shift?.job?.shiftPlanId !== link.shiftPlanId) {
-      throw new BadRequestException('Schicht gehört nicht zu diesem Plan');
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SHIFT_WRONG_PLAN,
+        message: 'Schicht gehört nicht zu diesem Plan',
+      });
     }
     await this.registrationRepository.delete({ id: reg.id });
   }
@@ -1408,16 +1522,23 @@ export class ShiftsService {
       relations: ['job', 'job.shiftPlan', 'registrations'],
     });
     if (!shift || shift.job.shiftPlan.id !== link.shiftPlanId) {
-      throw new BadRequestException('Schicht gehört nicht zu diesem Plan');
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SHIFT_WRONG_PLAN,
+        message: 'Schicht gehört nicht zu diesem Plan',
+      });
     }
 
     const confirmedCount = (shift.registrations ?? []).filter(
       (r) => r.status === ShiftRegistrationStatus.CONFIRMED,
     ).length;
     if (confirmedCount >= shift.requiredWorkers) {
-      throw new BadRequestException(
-        `Schicht "${shift.job.name}" ist bereits voll belegt`,
-      );
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SHIFT_FULL,
+        message: `Schicht „${shift.job.name}“ ist bereits voll belegt`,
+        params: { shift: shift.job.name },
+      });
     }
 
     // Anchor on any existing registration of this helper so contact details
@@ -1432,7 +1553,11 @@ export class ShiftsService {
       .orderBy('reg.createdAt', 'DESC')
       .getOne();
     if (!anchor)
-      throw new NotFoundException('Keine bestehende Anmeldung gefunden');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_REGISTRATION_NOT_FOUND,
+        message: 'Keine bestehende Anmeldung gefunden',
+      });
 
     // Prevent duplicates: same shift already booked by this helper.
     const already = await this.registrationRepository.findOne({
@@ -1465,9 +1590,17 @@ export class ShiftsService {
   private async findValidMagicLink(token: string): Promise<HelperMagicLink> {
     const link = await this.magicLinkRepository.findOne({ where: { token } });
     if (!link)
-      throw new NotFoundException('Link ungültig oder bereits abgelaufen');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_LINK_INVALID,
+        message: 'Link ungültig oder bereits abgelaufen',
+      });
     if (link.expiresAt.getTime() < Date.now()) {
-      throw new NotFoundException('Link abgelaufen');
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SHIFT_LINK_EXPIRED,
+        message: 'Link abgelaufen',
+      });
     }
     if (!link.usedAt) {
       link.usedAt = new Date();
