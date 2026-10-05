@@ -16,7 +16,7 @@ import {
   UserOrganization,
   OrganizationRole,
 } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { CreateDiscountVoucherDto, UpdateDiscountVoucherDto } from './dto';
 
 @Injectable()
@@ -90,6 +90,7 @@ export class DiscountVouchersService {
     if (!voucher) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.DISCOUNT_VOUCHER_NOT_FOUND,
         message: 'Rabatt-Bon nicht gefunden',
       });
     }
@@ -159,6 +160,7 @@ export class DiscountVouchersService {
     if (amount === null || amount === undefined) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.DISCOUNT_VOUCHER_AMOUNT_REQUIRED,
         message: 'Ein fester Rabatt-Bon benötigt einen Betrag',
       });
     }
@@ -176,6 +178,7 @@ export class DiscountVouchersService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -195,6 +198,7 @@ export class DiscountVouchersService {
     ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { RequestUser } from '../decorators/current-user.decorator';
-import { ErrorCodes } from '../constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../constants/error-codes';
 import type { AppRequest } from '../types/request.types';
 
 @Injectable()
@@ -17,6 +17,7 @@ export class OrganizationGuard implements CanActivate {
     if (!user) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.NOT_AUTHENTICATED,
         message: 'Nicht authentifiziert',
       });
     }
@@ -30,6 +31,7 @@ export class OrganizationGuard implements CanActivate {
     if (!organizationId) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_NOT_SPECIFIED,
         message: 'Organisation nicht angegeben',
       });
     }
@@ -39,6 +41,7 @@ export class OrganizationGuard implements CanActivate {
     if (!isMember) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.NOT_ORGANIZATION_MEMBER,
         message: 'Kein Mitglied dieser Organisation',
       });
     }

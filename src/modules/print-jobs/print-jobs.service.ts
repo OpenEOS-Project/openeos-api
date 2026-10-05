@@ -18,7 +18,7 @@ import {
 } from '../../database/entities';
 import { PrintJobStatus } from '../../database/entities/print-job.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   PaginatedResult,
   createPaginatedResult,
@@ -68,6 +68,7 @@ export class PrintJobsService {
     if (!printer) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRINTER_NOT_FOUND,
         message: 'Drucker nicht gefunden',
       });
     }
@@ -75,6 +76,7 @@ export class PrintJobsService {
     if (!printer.isActive) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRINTER_INACTIVE,
         message: 'Drucker ist deaktiviert',
       });
     }
@@ -202,6 +204,7 @@ export class PrintJobsService {
     if (!job) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRINT_JOB_NOT_FOUND,
         message: 'Druckauftrag nicht gefunden',
       });
     }
@@ -221,6 +224,7 @@ export class PrintJobsService {
     if (job.status !== PrintJobStatus.FAILED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRINT_JOB_NOT_FAILED,
         message: 'Nur fehlgeschlagene Druckaufträge können wiederholt werden',
       });
     }
@@ -228,7 +232,9 @@ export class PrintJobsService {
     if (job.attempts >= this.MAX_RETRY_ATTEMPTS) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRINT_JOB_RETRY_LIMIT,
         message: `Maximale Anzahl an Wiederholungen (${this.MAX_RETRY_ATTEMPTS}) erreicht`,
+        params: { max: this.MAX_RETRY_ATTEMPTS },
       });
     }
 
@@ -274,6 +280,7 @@ export class PrintJobsService {
     if (job.status === PrintJobStatus.COMPLETED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRINT_JOB_COMPLETED,
         message: 'Abgeschlossene Druckaufträge können nicht abgebrochen werden',
       });
     }
@@ -309,6 +316,7 @@ export class PrintJobsService {
     if (!printer) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRINTER_NOT_FOUND,
         message: 'Drucker nicht gefunden',
       });
     }
@@ -316,6 +324,7 @@ export class PrintJobsService {
     if (!printer.isActive) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRINTER_INACTIVE,
         message: 'Drucker ist deaktiviert',
       });
     }
@@ -470,6 +479,7 @@ export class PrintJobsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -487,6 +497,7 @@ export class PrintJobsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -497,6 +508,7 @@ export class PrintJobsService {
     ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

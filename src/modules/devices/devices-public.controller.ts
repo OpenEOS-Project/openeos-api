@@ -13,7 +13,7 @@ import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { DevicesService } from './devices.service';
 import { RegisterDeviceDto, InitDeviceDto } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 
 @ApiTags('Devices')
 @Controller('devices')
@@ -26,6 +26,7 @@ export class DevicesPublicController {
     if (!token) {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.DEVICE_TOKEN_MISSING,
         message: 'Device-Token erforderlich',
       });
     }
@@ -71,6 +72,7 @@ export class DevicesPublicController {
     if (!code || code.length !== 6) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.DEVICE_VERIFICATION_CODE_INVALID,
         message: 'Ungültiger Verifizierungscode',
       });
     }
@@ -79,6 +81,7 @@ export class DevicesPublicController {
     if (!result) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.DEVICE_NOT_FOUND_OR_LINKED,
         message: 'Gerät nicht gefunden oder bereits verknüpft',
       });
     }

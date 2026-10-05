@@ -8,7 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { Role, hasRole } from '../constants/roles.enum';
 import { RequestUser } from '../decorators/current-user.decorator';
-import { ErrorCodes } from '../constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../constants/error-codes';
 import type { AppRequest } from '../types/request.types';
 
 @Injectable()
@@ -31,6 +31,7 @@ export class RolesGuard implements CanActivate {
     if (!user) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine Berechtigung',
       });
     }
@@ -45,6 +46,7 @@ export class RolesGuard implements CanActivate {
     if (!organizationId) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_NOT_SPECIFIED,
         message: 'Organisation nicht angegeben',
       });
     }
@@ -53,6 +55,7 @@ export class RolesGuard implements CanActivate {
     if (!userOrg) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.NOT_ORGANIZATION_MEMBER,
         message: 'Kein Mitglied dieser Organisation',
       });
     }
@@ -64,6 +67,7 @@ export class RolesGuard implements CanActivate {
     if (!hasRequiredRole) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichende Berechtigung',
       });
     }

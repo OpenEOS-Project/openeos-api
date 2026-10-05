@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import type SumUp from '@sumup/sdk';
 import { Organization, User, UserOrganization } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { SumUpApiService } from './sumup-api.service';
 import type { SumUpCredentials } from './interfaces/sumup.interfaces';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
@@ -38,6 +38,7 @@ export class SumUpService {
     if (!organization) {
       throw new BadRequestException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -265,6 +266,7 @@ export class SumUpService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -282,6 +284,7 @@ export class SumUpService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -293,6 +296,7 @@ export class SumUpService {
     if (!membership.permissions?.[permission]) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

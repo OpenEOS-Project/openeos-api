@@ -13,6 +13,7 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { SetupDto, SetupMode } from './dto';
 import { DeploymentService } from '../../common/services/deployment.service';
 import type { DeploymentMode } from '../../config/configuration';
+import { ErrorReasons } from '../../common/constants/error-codes';
 
 const BCRYPT_ROUNDS = 12;
 
@@ -105,6 +106,7 @@ export class SetupService {
     if (mode === SetupMode.SINGLE && !setupDto.organizationName) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
+        reason: ErrorReasons.ORGANIZATION_NAME_REQUIRED,
         message: 'Organisationsname ist bei Single-Modus erforderlich',
       });
     }

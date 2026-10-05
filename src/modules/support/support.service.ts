@@ -14,7 +14,7 @@ import {
   User,
   UserOrganization,
 } from '../../database/entities';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { SendSupportMessageDto } from './dto';
 import { SupportMessageDto, SupportThreadSummaryDto } from './support.types';
 import { TelegramSupportService } from './telegram-support.service';
@@ -423,6 +423,7 @@ export class SupportService {
     if (!body) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.MESSAGE_EMPTY,
         message: 'Nachricht darf nicht leer sein',
       });
     }
@@ -438,6 +439,7 @@ export class SupportService {
     if (!organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -455,6 +457,7 @@ export class SupportService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }

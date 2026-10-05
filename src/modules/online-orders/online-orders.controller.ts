@@ -20,7 +20,7 @@ import {
   CreateOnlinePaymentDto,
 } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 
 @ApiTags('Online Orders')
 @ApiSecurity('X-Session-Token')
@@ -34,6 +34,7 @@ export class OnlineOrdersController {
     if (!token) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.SESSION_TOKEN_REQUIRED,
         message: 'Session-Token erforderlich',
       });
     }

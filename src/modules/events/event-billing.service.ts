@@ -19,7 +19,7 @@ import {
 } from '../../database/entities/organization.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { User } from '../../database/entities';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { countEventDays } from '../../common/utils/event-schedule.util';
 import { StripeService } from '../stripe/stripe.service';
@@ -112,6 +112,7 @@ export class EventBillingService {
     if (!organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -128,6 +129,7 @@ export class EventBillingService {
     if (!event) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.EVENT_NOT_FOUND,
         message: 'Event nicht gefunden',
       });
     }
@@ -330,6 +332,7 @@ export class EventBillingService {
     if (isEventBillingUnlocked(event.billingStatus)) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.EVENT_ALREADY_PAID,
         message: 'Veranstaltung ist bereits freigeschaltet',
       });
     }
@@ -337,6 +340,7 @@ export class EventBillingService {
     if (organization.billingMode !== 'invoice') {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ONLINE_PAYMENT_COMING_SOON,
         message: 'Online-Zahlung folgt in Kürze',
       });
     }
@@ -441,6 +445,7 @@ export class EventBillingService {
     if (isEventBillingUnlocked(event.billingStatus)) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.EVENT_ALREADY_PAID,
         message: 'Veranstaltung ist bereits freigeschaltet',
       });
     }
@@ -703,6 +708,7 @@ export class EventBillingService {
     ) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.INVOICE_NOT_FOUND,
         message: 'Rechnung nicht gefunden',
       });
     }
@@ -710,6 +716,7 @@ export class EventBillingService {
     if (!invoice.invoice_pdf) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.INVOICE_PDF_NOT_AVAILABLE,
         message: 'Für diese Rechnung liegt noch kein PDF vor',
       });
     }

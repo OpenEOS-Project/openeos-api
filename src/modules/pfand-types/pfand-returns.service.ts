@@ -11,7 +11,7 @@ import {
   PfandReturn,
   PfandReturnLine,
 } from '../../database/entities/pfand-return.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { GatewayService } from '../gateway/gateway.service';
 import { CreatePfandReturnDto } from './dto';
 
@@ -57,6 +57,7 @@ export class PfandReturnsService {
       if (!type) {
         throw new NotFoundException({
           code: ErrorCodes.NOT_FOUND,
+          reason: ErrorReasons.DEPOSIT_TYPE_NOT_FOUND,
           message: `Pfand-Typ ${line.pfandTypeId} nicht gefunden`,
         });
       }
@@ -73,6 +74,7 @@ export class PfandReturnsService {
     if (totalAmount <= 0) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.DEPOSIT_RETURN_AMOUNT_INVALID,
         message: 'Rückgabebetrag muss größer als 0 sein',
       });
     }

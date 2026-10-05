@@ -22,7 +22,7 @@ import { Organization } from '../../database/entities/organization.entity';
 import { taxRatesFor } from '../../common/constants/tax-rates';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   PaginationDto,
   PaginatedResult,
@@ -127,6 +127,7 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRODUCT_NOT_FOUND,
         message: 'Produkt nicht gefunden',
       });
     }
@@ -232,6 +233,7 @@ export class ProductsService {
     if (!product.trackInventory) {
       throw new ForbiddenException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRODUCT_STOCK_NOT_TRACKED,
         message: 'Dieses Produkt hat keine Bestandsverfolgung',
       });
     }
@@ -530,6 +532,7 @@ export class ProductsService {
     if (!event) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.EVENT_NOT_FOUND,
         message: 'Event nicht gefunden',
       });
     }
@@ -550,6 +553,7 @@ export class ProductsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.EVENT_ACCESS_DENIED,
         message: 'Kein Zugriff auf dieses Event',
       });
     }
@@ -582,7 +586,9 @@ export class ProductsService {
     if (!allowed.some((option) => option.rate === Number(taxRate))) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TAX_RATE_NOT_ALLOWED,
         message: `Steuersatz ${taxRate} % ist für diese Organisation nicht zulässig`,
+        params: { rate: taxRate },
       });
     }
   }
@@ -601,6 +607,7 @@ export class ProductsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.EVENT_ACCESS_DENIED,
         message: 'Kein Zugriff auf dieses Event',
       });
     }
@@ -611,6 +618,7 @@ export class ProductsService {
     ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }
@@ -631,6 +639,7 @@ export class ProductsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.EVENT_ACCESS_DENIED,
         message: 'Kein Zugriff auf dieses Event',
       });
     }
@@ -638,6 +647,7 @@ export class ProductsService {
     if (membership.role !== OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

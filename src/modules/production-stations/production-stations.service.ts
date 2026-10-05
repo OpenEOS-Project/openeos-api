@@ -15,7 +15,7 @@ import {
   Printer,
 } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { CreateProductionStationDto, UpdateProductionStationDto } from './dto';
 
 @Injectable()
@@ -94,6 +94,7 @@ export class ProductionStationsService {
     if (!station) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRODUCTION_STATION_NOT_FOUND,
         message: 'Produktionsstandort nicht gefunden',
       });
     }
@@ -125,6 +126,7 @@ export class ProductionStationsService {
       if (updateDto.handoffStationId === stationId) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.PRODUCTION_STATION_SELF_HANDOFF,
           message: 'Ein Standort kann nicht an sich selbst übergeben',
         });
       }
@@ -166,6 +168,7 @@ export class ProductionStationsService {
     if (!printer) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRINTER_NOT_FOUND,
         message:
           'Drucker nicht gefunden oder gehört nicht zur selben Organisation',
       });
@@ -183,6 +186,7 @@ export class ProductionStationsService {
     if (!target) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.HANDOFF_STATION_NOT_FOUND,
         message:
           'Übergabe-Standort nicht gefunden oder gehört nicht zum selben Event',
       });
@@ -197,6 +201,7 @@ export class ProductionStationsService {
     if (!event) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.EVENT_NOT_FOUND,
         message: 'Event nicht gefunden',
       });
     }
@@ -217,6 +222,7 @@ export class ProductionStationsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.EVENT_ACCESS_DENIED,
         message: 'Kein Zugriff auf dieses Event',
       });
     }
@@ -238,6 +244,7 @@ export class ProductionStationsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.EVENT_ACCESS_DENIED,
         message: 'Kein Zugriff auf dieses Event',
       });
     }
@@ -248,6 +255,7 @@ export class ProductionStationsService {
     ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }
@@ -268,6 +276,7 @@ export class ProductionStationsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.EVENT_ACCESS_DENIED,
         message: 'Kein Zugriff auf dieses Event',
       });
     }
@@ -275,6 +284,7 @@ export class ProductionStationsService {
     if (membership.role !== OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

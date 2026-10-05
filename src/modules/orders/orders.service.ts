@@ -31,7 +31,7 @@ import {
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import { EventStatus } from '../../database/entities/event.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 import {
   PaginatedResult,
@@ -104,6 +104,7 @@ export class OrdersService {
       if (!event) {
         throw new NotFoundException({
           code: ErrorCodes.NOT_FOUND,
+          reason: ErrorReasons.EVENT_NOT_FOUND,
           message: 'Event nicht gefunden',
         });
       }
@@ -114,6 +115,7 @@ export class OrdersService {
       ) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.EVENT_NOT_ACTIVE,
           message: 'Event ist nicht aktiv',
         });
       }
@@ -321,6 +323,7 @@ export class OrdersService {
     if (!order) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_NOT_FOUND,
         message: 'Bestellung nicht gefunden',
       });
     }
@@ -344,6 +347,7 @@ export class OrdersService {
     ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_NOT_EDITABLE,
         message:
           'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
       });
@@ -377,6 +381,7 @@ export class OrdersService {
     if (order.paymentStatus !== PaymentStatus.UNPAID) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_PAID_CANNOT_DELETE,
         message: 'Bezahlte Bestellungen können nicht gelöscht werden',
       });
     }
@@ -408,6 +413,7 @@ export class OrdersService {
     ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_NOT_EDITABLE,
         message:
           'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
       });
@@ -440,6 +446,7 @@ export class OrdersService {
     ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_NOT_EDITABLE,
         message:
           'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
       });
@@ -449,6 +456,7 @@ export class OrdersService {
     if (!item) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_ITEM_NOT_FOUND,
         message: 'Bestellposition nicht gefunden',
       });
     }
@@ -456,6 +464,7 @@ export class OrdersService {
     if (item.status !== OrderItemStatus.PENDING) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_ITEM_NOT_PENDING,
         message: 'Nur unbearbeitete Positionen können geändert werden',
       });
     }
@@ -474,7 +483,9 @@ export class OrdersService {
           if (quantityDiff > 0 && product.stockQuantity < quantityDiff) {
             throw new BadRequestException({
               code: ErrorCodes.VALIDATION_ERROR,
+              reason: ErrorReasons.INSUFFICIENT_STOCK_FOR_PRODUCT,
               message: `Nicht genügend Bestand für ${product.name}`,
+              params: { product: product.name },
             });
           }
 
@@ -557,6 +568,7 @@ export class OrdersService {
     ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_NOT_EDITABLE,
         message:
           'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
       });
@@ -566,6 +578,7 @@ export class OrdersService {
     if (!item) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_ITEM_NOT_FOUND,
         message: 'Bestellposition nicht gefunden',
       });
     }
@@ -573,6 +586,7 @@ export class OrdersService {
     if (item.paidQuantity > 0) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_ITEM_PAID_CANNOT_REMOVE,
         message: 'Bereits bezahlte Positionen können nicht entfernt werden',
       });
     }
@@ -605,6 +619,7 @@ export class OrdersService {
     if (!item) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_ITEM_NOT_FOUND,
         message: 'Bestellposition nicht gefunden',
       });
     }
@@ -612,6 +627,7 @@ export class OrdersService {
     if (item.status === OrderItemStatus.CANCELLED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_ITEM_CANCELLED,
         message: 'Stornierte Position kann nicht als fertig markiert werden',
       });
     }
@@ -631,6 +647,7 @@ export class OrdersService {
     if (!item) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_ITEM_NOT_FOUND,
         message: 'Bestellposition nicht gefunden',
       });
     }
@@ -638,6 +655,7 @@ export class OrdersService {
     if (!item.order || item.order.organizationId !== organizationId) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORDER_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Bestellung',
       });
     }
@@ -645,6 +663,7 @@ export class OrdersService {
     if (item.status === OrderItemStatus.CANCELLED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_ITEM_CANCELLED,
         message: 'Stornierte Position kann nicht als fertig markiert werden',
       });
     }
@@ -657,6 +676,7 @@ export class OrdersService {
     if (!order) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_NOT_FOUND,
         message: 'Bestellung nicht gefunden',
       });
     }
@@ -678,6 +698,7 @@ export class OrdersService {
     if (!item) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_ITEM_NOT_FOUND,
         message: 'Bestellposition nicht gefunden',
       });
     }
@@ -738,6 +759,7 @@ export class OrdersService {
     if (order.status === OrderStatus.COMPLETED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_ALREADY_COMPLETED,
         message: 'Bestellung ist bereits abgeschlossen',
       });
     }
@@ -745,6 +767,7 @@ export class OrdersService {
     if (order.status === OrderStatus.CANCELLED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_CANCELLED_CANNOT_COMPLETE,
         message: 'Stornierte Bestellung kann nicht abgeschlossen werden',
       });
     }
@@ -752,6 +775,7 @@ export class OrdersService {
     if (order.paymentStatus !== PaymentStatus.PAID) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_NOT_FULLY_PAID,
         message: 'Bestellung muss vollständig bezahlt sein',
       });
     }
@@ -780,6 +804,7 @@ export class OrdersService {
     if (order.status === OrderStatus.COMPLETED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_COMPLETED_CANNOT_CANCEL,
         message: 'Abgeschlossene Bestellungen können nicht storniert werden',
       });
     }
@@ -787,6 +812,7 @@ export class OrdersService {
     if (order.status === OrderStatus.CANCELLED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_ALREADY_CANCELLED,
         message: 'Bestellung ist bereits storniert',
       });
     }
@@ -899,6 +925,7 @@ export class OrdersService {
     if (!product) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRODUCT_NOT_FOUND,
         message: 'Produkt nicht gefunden',
       });
     }
@@ -906,7 +933,9 @@ export class OrdersService {
     if (!product.isActive || !product.isAvailable) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRODUCT_UNAVAILABLE,
         message: `Produkt ${product.name} ist nicht verfügbar`,
+        params: { product: product.name },
       });
     }
 
@@ -914,7 +943,9 @@ export class OrdersService {
     if (product.trackInventory && product.stockQuantity < itemDto.quantity) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.INSUFFICIENT_STOCK_FOR_PRODUCT,
         message: `Nicht genügend Bestand für ${product.name}`,
+        params: { product: product.name },
       });
     }
 
@@ -1129,6 +1160,7 @@ export class OrdersService {
     if (!order) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_NOT_FOUND,
         message: 'Bestellung nicht gefunden',
       });
     }
@@ -1254,6 +1286,7 @@ export class OrdersService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }

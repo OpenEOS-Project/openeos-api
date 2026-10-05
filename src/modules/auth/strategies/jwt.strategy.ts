@@ -8,6 +8,10 @@ import type { Request } from 'express';
 import { Repository } from 'typeorm';
 import { User } from '../../../database/entities';
 import { gesperrterTokenSchluessel } from '../token-blocklist';
+import {
+  ErrorCodes,
+  ErrorReasons,
+} from '../../../common/constants/error-codes';
 
 // Falls back to the httpOnly `accessToken` cookie set by AuthController when
 // no Authorization header is present, so browser clients no longer need to
@@ -77,7 +81,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       token &&
       (await this.cacheManager.get(gesperrterTokenSchluessel(token)))
     ) {
-      throw new UnauthorizedException('Sitzung wurde beendet');
+      throw new UnauthorizedException({
+        code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.SESSION_REVOKED,
+        message: 'Sitzung wurde beendet',
+      });
     }
 
     const user = await this.userRepository.findOne({
@@ -86,15 +94,27 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
 
     if (!user) {
-      throw new UnauthorizedException('Benutzer nicht gefunden');
+      throw new UnauthorizedException({
+        code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.USER_NOT_FOUND,
+        message: 'Benutzer nicht gefunden',
+      });
     }
 
     if (!user.isActive) {
-      throw new UnauthorizedException('Konto ist deaktiviert');
+      throw new UnauthorizedException({
+        code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.ACCOUNT_INACTIVE,
+        message: 'Konto ist deaktiviert',
+      });
     }
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
-      throw new UnauthorizedException('Konto ist vorübergehend gesperrt');
+      throw new UnauthorizedException({
+        code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.ACCOUNT_TEMPORARILY_LOCKED,
+        message: 'Konto ist vorübergehend gesperrt',
+      });
     }
 
     // Hydrate the shape the OrganizationGuard / RolesGuard expect.

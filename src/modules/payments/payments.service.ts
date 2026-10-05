@@ -22,7 +22,7 @@ import {
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
 import { PaymentStatus } from '../../database/entities/order.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   PaginatedResult,
   createPaginatedResult,
@@ -67,6 +67,7 @@ export class PaymentsService {
     if (!order) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_NOT_FOUND,
         message: 'Bestellung nicht gefunden',
       });
     }
@@ -74,6 +75,7 @@ export class PaymentsService {
     if (order.paymentStatus === PaymentStatus.PAID) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_ALREADY_PAID,
         message: 'Bestellung ist bereits vollständig bezahlt',
       });
     }
@@ -82,7 +84,9 @@ export class PaymentsService {
     if (createDto.amount > remainingAmount) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PAYMENT_EXCEEDS_REMAINING,
         message: `Zahlungsbetrag (${createDto.amount}) übersteigt den ausstehenden Betrag (${remainingAmount})`,
+        params: { amount: createDto.amount, remaining: remainingAmount },
       });
     }
 
@@ -160,6 +164,7 @@ export class PaymentsService {
     if (!order) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_NOT_FOUND,
         message: 'Bestellung nicht gefunden',
       });
     }
@@ -174,6 +179,7 @@ export class PaymentsService {
       if (!orderItem) {
         throw new NotFoundException({
           code: ErrorCodes.NOT_FOUND,
+          reason: ErrorReasons.ORDER_ITEM_NOT_FOUND,
           message: `Bestellposition ${splitItem.orderItemId} nicht gefunden`,
         });
       }
@@ -182,7 +188,9 @@ export class PaymentsService {
       if (splitItem.quantity > unpaidQuantity) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.INSUFFICIENT_UNPAID_QUANTITY,
           message: `Nicht genügend unbezahlte Menge für ${orderItem.productName} (${unpaidQuantity} verfügbar)`,
+          params: { product: orderItem.productName },
         });
       }
 
@@ -201,7 +209,12 @@ export class PaymentsService {
     if (Math.abs(calculatedTotal - splitDto.amount) > tolerance) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PAYMENT_AMOUNT_MISMATCH,
         message: `Berechneter Betrag (${calculatedTotal.toFixed(2)}) stimmt nicht mit dem Zahlungsbetrag (${splitDto.amount}) überein`,
+        params: {
+          expected: calculatedTotal.toFixed(2),
+          received: splitDto.amount,
+        },
       });
     }
 
@@ -345,6 +358,7 @@ export class PaymentsService {
     if (!payment || payment.order.organizationId !== organizationId) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PAYMENT_NOT_FOUND,
         message: 'Zahlung nicht gefunden',
       });
     }
@@ -364,6 +378,7 @@ export class PaymentsService {
     if (payment.status === PaymentTransactionStatus.REFUNDED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PAYMENT_ALREADY_REFUNDED,
         message: 'Zahlung wurde bereits erstattet',
       });
     }
@@ -371,6 +386,7 @@ export class PaymentsService {
     if (payment.status !== PaymentTransactionStatus.CAPTURED) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PAYMENT_NOT_REFUNDABLE,
         message: 'Nur abgeschlossene Zahlungen können erstattet werden',
       });
     }
@@ -426,6 +442,7 @@ export class PaymentsService {
     if (!order) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_NOT_FOUND,
         message: 'Bestellung nicht gefunden',
       });
     }
@@ -496,6 +513,7 @@ export class PaymentsService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }

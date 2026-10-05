@@ -11,6 +11,7 @@ import cookieParser from 'cookie-parser';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters';
+import { validationException } from './common/pipes';
 import {
   TransformInterceptor,
   LoggingInterceptor,
@@ -117,6 +118,8 @@ async function bootstrap() {
       transformOptions: {
         enableImplicitConversion: true,
       },
+      // Field and constraint per error, so clients can show their own text.
+      exceptionFactory: validationException,
     }),
   );
 

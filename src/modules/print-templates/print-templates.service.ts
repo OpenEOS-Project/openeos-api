@@ -11,7 +11,7 @@ import { Repository } from 'typeorm';
 import { PrintTemplate, User, UserOrganization } from '../../database/entities';
 import { PrintTemplateType } from '../../database/entities/print-template.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   PaginationDto,
   PaginatedResult,
@@ -124,6 +124,7 @@ export class PrintTemplatesService {
     if (!template) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRINT_TEMPLATE_NOT_FOUND,
         message: 'Druckvorlage nicht gefunden',
       });
     }
@@ -240,6 +241,7 @@ export class PrintTemplatesService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -256,6 +258,7 @@ export class PrintTemplatesService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -263,6 +266,7 @@ export class PrintTemplatesService {
     if (membership.role !== OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

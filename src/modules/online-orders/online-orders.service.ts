@@ -33,7 +33,7 @@ import {
   PaymentProvider,
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   StartSessionDto,
   AddCartItemDto,
@@ -94,6 +94,7 @@ export class OnlineOrdersService {
       if (!qrCode) {
         throw new NotFoundException({
           code: ErrorCodes.NOT_FOUND,
+          reason: ErrorReasons.QR_CODE_NOT_FOUND,
           message: 'QR-Code nicht gefunden oder nicht aktiv',
         });
       }
@@ -134,6 +135,7 @@ export class OnlineOrdersService {
     } else {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.QR_CODE_OR_ORGANIZATION_REQUIRED,
         message: 'Entweder code oder organizationId ist erforderlich',
       });
     }
@@ -179,6 +181,7 @@ export class OnlineOrdersService {
     if (!session) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_SESSION_NOT_FOUND,
         message: 'Sitzung nicht gefunden',
       });
     }
@@ -188,6 +191,7 @@ export class OnlineOrdersService {
       await this.sessionRepository.save(session);
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_SESSION_EXPIRED,
         message: 'Sitzung abgelaufen',
       });
     }
@@ -232,6 +236,7 @@ export class OnlineOrdersService {
     if (!session.eventId) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.NO_EVENT_ASSIGNED,
         message: 'Kein Event zugeordnet',
       });
     }
@@ -248,6 +253,7 @@ export class OnlineOrdersService {
     if (!product) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRODUCT_NOT_FOUND_OR_UNAVAILABLE,
         message: 'Produkt nicht gefunden oder nicht verfügbar',
       });
     }
@@ -256,6 +262,7 @@ export class OnlineOrdersService {
     if (product.trackInventory && product.stockQuantity < addDto.quantity) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.INSUFFICIENT_STOCK,
         message: 'Nicht genügend Bestand verfügbar',
       });
     }
@@ -302,6 +309,7 @@ export class OnlineOrdersService {
     if (itemIndex < 0 || itemIndex >= session.cart.items.length) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.CART_ITEM_NOT_FOUND,
         message: 'Artikel nicht im Warenkorb',
       });
     }
@@ -342,6 +350,7 @@ export class OnlineOrdersService {
     if (session.cart.items.length === 0) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.EMPTY_CART,
         message: 'Warenkorb ist leer',
       });
     }
@@ -473,6 +482,7 @@ export class OnlineOrdersService {
     if (!order) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.NO_OPEN_ORDER,
         message: 'Keine offene Bestellung gefunden',
       });
     }
@@ -484,6 +494,7 @@ export class OnlineOrdersService {
     if (!organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }
@@ -501,6 +512,7 @@ export class OnlineOrdersService {
         if (!settings?.clientId || !settings?.clientSecret) {
           throw new BadRequestException({
             code: ErrorCodes.VALIDATION_ERROR,
+            reason: ErrorReasons.PAYPAL_NOT_CONFIGURED,
             message: 'PayPal ist für diese Organisation nicht konfiguriert',
           });
         }
@@ -577,9 +589,11 @@ export class OnlineOrdersService {
       default:
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.PAYMENT_METHOD_UNSUPPORTED,
           // Dem Typ nach `never` (alle Werte sind oben behandelt); zur
           // Laufzeit steht hier, was der Client tatsaechlich geschickt hat.
           message: `Nicht unterstützte Zahlungsmethode: ${payDto.paymentMethod as string}`,
+          params: { method: payDto.paymentMethod as string },
         });
     }
 
@@ -601,6 +615,7 @@ export class OnlineOrdersService {
     if (!payment || payment.order.onlineSessionId !== session.id) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PAYMENT_NOT_FOUND,
         message: 'Zahlung nicht gefunden',
       });
     }
@@ -617,6 +632,7 @@ export class OnlineOrdersService {
       if (!organization) {
         throw new NotFoundException({
           code: ErrorCodes.NOT_FOUND,
+          reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
           message: 'Organisation nicht gefunden',
         });
       }
@@ -625,6 +641,7 @@ export class OnlineOrdersService {
       if (!settings?.clientId || !settings?.clientSecret) {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.PAYPAL_NOT_CONFIGURED,
           message: 'PayPal ist für diese Organisation nicht konfiguriert',
         });
       }

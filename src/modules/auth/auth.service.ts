@@ -24,7 +24,7 @@ import {
   LoginMagicLink,
 } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { TwoFactorService } from './two-factor.service';
@@ -129,8 +129,9 @@ export class AuthService {
     if (this.deployment.isSelfHosted) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.SELF_REGISTRATION_DISABLED,
         message:
-          'Selbstregistrierung ist in dieser Installation nicht moeglich. ' +
+          'Selbstregistrierung ist in dieser Installation nicht möglich. ' +
           'Bitte wenden Sie sich an die Administration.',
       });
     }
@@ -300,6 +301,7 @@ export class AuthService {
     if (!user) {
       throw new BadRequestException({
         code: ErrorCodes.INVALID_TOKEN,
+        reason: ErrorReasons.VERIFICATION_LINK_INVALID,
         message: 'Ungültiger oder abgelaufener Bestätigungslink',
       });
     }
@@ -310,6 +312,7 @@ export class AuthService {
     ) {
       throw new BadRequestException({
         code: ErrorCodes.TOKEN_EXPIRED,
+        reason: ErrorReasons.VERIFICATION_LINK_EXPIRED,
         message: 'Bestätigungslink ist abgelaufen',
       });
     }
@@ -357,6 +360,7 @@ export class AuthService {
       throw new UnauthorizedException({
         code: ErrorCodes.ACCOUNT_LOCKED,
         message: `Konto ist für ${remainingMinutes} Minuten gesperrt`,
+        params: { minutes: remainingMinutes },
       });
     }
 
@@ -461,6 +465,7 @@ export class AuthService {
     if (!storedToken) {
       throw new UnauthorizedException({
         code: ErrorCodes.INVALID_TOKEN,
+        reason: ErrorReasons.REFRESH_TOKEN_INVALID,
         message: 'Ungültiger Refresh-Token',
       });
     }
@@ -470,6 +475,7 @@ export class AuthService {
       await this.refreshTokenRepository.remove(storedToken);
       throw new UnauthorizedException({
         code: ErrorCodes.TOKEN_EXPIRED,
+        reason: ErrorReasons.REFRESH_TOKEN_EXPIRED,
         message: 'Refresh-Token ist abgelaufen',
       });
     }
@@ -478,6 +484,7 @@ export class AuthService {
     if (storedToken.revokedAt) {
       throw new UnauthorizedException({
         code: ErrorCodes.TOKEN_REVOKED,
+        reason: ErrorReasons.REFRESH_TOKEN_REVOKED,
         message: 'Refresh-Token wurde widerrufen',
       });
     }
@@ -517,6 +524,7 @@ export class AuthService {
     if (!rotated.affected) {
       throw new UnauthorizedException({
         code: ErrorCodes.INVALID_TOKEN,
+        reason: ErrorReasons.REFRESH_TOKEN_INVALID,
         message: 'Ungültiger Refresh-Token',
       });
     }
@@ -638,6 +646,7 @@ export class AuthService {
     if (!user) {
       throw new BadRequestException({
         code: ErrorCodes.INVALID_TOKEN,
+        reason: ErrorReasons.RESET_TOKEN_INVALID,
         message: 'Ungültiger oder abgelaufener Reset-Token',
       });
     }
@@ -648,6 +657,7 @@ export class AuthService {
     ) {
       throw new BadRequestException({
         code: ErrorCodes.TOKEN_EXPIRED,
+        reason: ErrorReasons.RESET_TOKEN_EXPIRED,
         message: 'Reset-Token ist abgelaufen',
       });
     }
@@ -684,6 +694,7 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.USER_NOT_FOUND,
         message: 'Benutzer nicht gefunden',
       });
     }
@@ -700,6 +711,7 @@ export class AuthService {
       if (!isPasswordValid) {
         throw new BadRequestException({
           code: ErrorCodes.INVALID_CREDENTIALS,
+          reason: ErrorReasons.PASSWORD_INCORRECT,
           message: 'Aktuelles Passwort ist falsch',
         });
       }
@@ -721,6 +733,7 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.USER_NOT_FOUND,
         message: 'Benutzer nicht gefunden',
       });
     }
@@ -791,6 +804,7 @@ export class AuthService {
     const ungueltig = () =>
       new UnauthorizedException({
         code: ErrorCodes.INVALID_TOKEN,
+        reason: ErrorReasons.MAGIC_LINK_INVALID,
         message: 'Dieser Anmeldelink ist ungültig oder abgelaufen',
       });
 
@@ -826,6 +840,7 @@ export class AuthService {
       throw new UnauthorizedException({
         code: ErrorCodes.ACCOUNT_LOCKED,
         message: `Konto ist für ${remainingMinutes} Minuten gesperrt`,
+        params: { minutes: remainingMinutes },
       });
     }
 

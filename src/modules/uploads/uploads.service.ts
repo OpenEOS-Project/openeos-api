@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { UploadCategory } from './dto';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 
 const OWNER_ID = /^[A-Za-z0-9-]{1,64}$/;
 
@@ -89,6 +89,7 @@ export class UploadsService {
     if (!uploadPath) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.UPLOAD_INVALID_PATH,
         message: 'Ungültiger Speicherort',
       });
     }
@@ -160,6 +161,7 @@ export class UploadsService {
     if (!UPLOAD_DIRECTORIES.has(dir)) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.UPLOAD_INVALID_CATEGORY,
         message: 'Ungültige Kategorie',
       });
     }
@@ -207,6 +209,7 @@ export class UploadsService {
     if (!file) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.UPLOAD_FILE_MISSING,
         message: 'Keine Datei hochgeladen',
       });
     }
@@ -214,14 +217,18 @@ export class UploadsService {
     if (file.size > this.maxFileSize) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.UPLOAD_FILE_TOO_LARGE,
         message: `Datei zu groß. Maximal ${this.maxFileSize / 1024 / 1024}MB erlaubt`,
+        params: { maxMb: this.maxFileSize / 1024 / 1024 },
       });
     }
 
     if (!this.allowedMimeTypes.includes(file.mimetype)) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.UPLOAD_FILE_TYPE_INVALID,
         message: `Ungültiger Dateityp. Erlaubt: ${this.allowedMimeTypes.join(', ')}`,
+        params: { allowed: this.allowedMimeTypes.join(', ') },
       });
     }
   }

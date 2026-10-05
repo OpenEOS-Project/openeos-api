@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ErrorReasons } from '../../../common/constants/error-codes';
 
 interface PayPalOrderResponse {
   id: string;
@@ -114,7 +115,8 @@ export class PayPalService {
     if (!/^[A-Za-z0-9-]{1,64}$/.test(paypalOrderId)) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
-        message: 'Ungueltige PayPal-Bestellnummer',
+        reason: ErrorReasons.PAYPAL_ORDER_ID_INVALID,
+        message: 'Ungültige PayPal-Bestellnummer',
       });
     }
   }

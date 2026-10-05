@@ -9,7 +9,7 @@ import { Repository } from 'typeorm';
 import { RentalAssignment, RentalHardware } from '../../database/entities';
 import { RentalAssignmentStatus } from '../../database/entities/rental-assignment.entity';
 import { RentalHardwareStatus } from '../../database/entities/rental-hardware.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { QueryRentalsDto } from './dto';
 import { endOfDay } from '../../common/utils/date-range.util';
 
@@ -86,6 +86,7 @@ export class RentalsService {
     if (!assignment) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.RENTAL_ASSIGNMENT_NOT_FOUND,
         message: 'Vermietungszuweisung nicht gefunden',
       });
     }
@@ -102,7 +103,8 @@ export class RentalsService {
     if (assignment.status !== RentalAssignmentStatus.PENDING) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Zuweisung kann nur im Status "Ausstehend" bestätigt werden',
+        reason: ErrorReasons.RENTAL_ASSIGNMENT_NOT_PENDING,
+        message: 'Zuweisung kann nur im Status „Ausstehend“ bestätigt werden',
       });
     }
 
@@ -124,7 +126,8 @@ export class RentalsService {
     if (assignment.status !== RentalAssignmentStatus.PENDING) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Zuweisung kann nur im Status "Ausstehend" abgelehnt werden',
+        reason: ErrorReasons.RENTAL_ASSIGNMENT_NOT_PENDING,
+        message: 'Zuweisung kann nur im Status „Ausstehend“ abgelehnt werden',
       });
     }
 

@@ -21,7 +21,7 @@ import {
 } from '../../database/entities/printer.entity';
 import { DeviceType } from '../../database/entities/device.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   PaginationDto,
   PaginatedResult,
@@ -114,6 +114,7 @@ export class PrintersService {
     if (!printer) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRINTER_NOT_FOUND,
         message: 'Drucker nicht gefunden',
       });
     }
@@ -282,6 +283,7 @@ export class PrintersService {
     if (!printer) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRINTER_NOT_FOUND,
         message: 'Drucker nicht gefunden',
       });
     }
@@ -367,6 +369,7 @@ export class PrintersService {
     if (!device) {
       throw new BadRequestException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.DEVICE_NOT_FOUND,
         message: 'Gerät nicht gefunden',
       });
     }
@@ -374,6 +377,7 @@ export class PrintersService {
     if (device.type !== DeviceType.PRINTER_AGENT) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.DEVICE_NOT_PRINTER_AGENT,
         message: 'Gerät ist kein Printer Agent',
       });
     }
@@ -381,6 +385,7 @@ export class PrintersService {
     if (device.organizationId !== organizationId) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.DEVICE_WRONG_ORGANIZATION,
         message: 'Gerät gehört nicht zu dieser Organisation',
       });
     }
@@ -410,6 +415,7 @@ export class PrintersService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -427,6 +433,7 @@ export class PrintersService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
@@ -438,6 +445,7 @@ export class PrintersService {
     if (!membership.permissions?.[permission]) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }

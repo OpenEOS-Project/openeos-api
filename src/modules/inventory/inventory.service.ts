@@ -18,7 +18,7 @@ import {
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { InventoryCountStatus } from '../../database/entities/inventory-count.entity';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   CreateInventoryCountDto,
   UpdateInventoryCountDto,
@@ -98,6 +98,7 @@ export class InventoryService {
     if (!count) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.INVENTORY_NOT_FOUND,
         message: 'Inventur nicht gefunden',
       });
     }
@@ -173,6 +174,7 @@ export class InventoryService {
     if (count.status === InventoryCountStatus.COMPLETED) {
       throw new BadRequestException({
         code: ErrorCodes.INVENTORY_ALREADY_COMPLETED,
+        reason: ErrorReasons.INVENTORY_COMPLETED_CANNOT_DELETE,
         message: 'Abgeschlossene Inventur kann nicht gelöscht werden',
       });
     }
@@ -191,6 +193,7 @@ export class InventoryService {
     if (count.status !== InventoryCountStatus.DRAFT) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.INVENTORY_NOT_DRAFT,
         message: 'Inventur kann nur im Entwurfsstatus gestartet werden',
       });
     }
@@ -198,6 +201,7 @@ export class InventoryService {
     if (count.items.length === 0) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.INVENTORY_EMPTY,
         message: 'Inventur hat keine Artikel zum Zählen',
       });
     }
@@ -222,7 +226,8 @@ export class InventoryService {
     if (count.status !== InventoryCountStatus.IN_PROGRESS) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Inventur muss im Status "In Bearbeitung" sein',
+        reason: ErrorReasons.INVENTORY_NOT_IN_PROGRESS,
+        message: 'Inventur muss im Status „In Bearbeitung“ sein',
       });
     }
 
@@ -233,7 +238,9 @@ export class InventoryService {
     if (uncounted.length > 0) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.INVENTORY_ITEMS_UNCOUNTED,
         message: `${uncounted.length} Artikel wurden noch nicht gezählt`,
+        params: { count: uncounted.length },
       });
     }
 
@@ -271,6 +278,7 @@ export class InventoryService {
     if (count.status === InventoryCountStatus.COMPLETED) {
       throw new BadRequestException({
         code: ErrorCodes.INVENTORY_ALREADY_COMPLETED,
+        reason: ErrorReasons.INVENTORY_COMPLETED_CANNOT_CANCEL,
         message: 'Abgeschlossene Inventur kann nicht abgebrochen werden',
       });
     }
@@ -297,6 +305,7 @@ export class InventoryService {
     if (count.status !== InventoryCountStatus.DRAFT) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.INVENTORY_NOT_DRAFT,
         message: 'Artikel können nur im Entwurfsstatus hinzugefügt werden',
       });
     }
@@ -308,6 +317,7 @@ export class InventoryService {
     if (!product) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.PRODUCT_NOT_FOUND,
         message: 'Produkt nicht gefunden',
       });
     }
@@ -317,6 +327,7 @@ export class InventoryService {
     if (existing) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.INVENTORY_PRODUCT_ALREADY_ADDED,
         message: 'Produkt ist bereits in der Inventur',
       });
     }
@@ -347,6 +358,7 @@ export class InventoryService {
     if (count.status !== InventoryCountStatus.DRAFT) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.INVENTORY_NOT_DRAFT,
         message: 'Artikel können nur im Entwurfsstatus hinzugefügt werden',
       });
     }
@@ -408,7 +420,8 @@ export class InventoryService {
     if (count.status !== InventoryCountStatus.IN_PROGRESS) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Zählung nur im Status "In Bearbeitung" möglich',
+        reason: ErrorReasons.INVENTORY_NOT_IN_PROGRESS,
+        message: 'Zählung nur im Status „In Bearbeitung“ möglich',
       });
     }
 
@@ -416,6 +429,7 @@ export class InventoryService {
     if (!item) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.INVENTORY_ITEM_NOT_FOUND,
         message: 'Artikel nicht gefunden',
       });
     }
@@ -505,6 +519,7 @@ export class InventoryService {
     if (!movement) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.STOCK_MOVEMENT_NOT_FOUND,
         message: 'Lagerbewegung nicht gefunden',
       });
     }
@@ -525,6 +540,7 @@ export class InventoryService {
     if (!event) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.EVENT_NOT_FOUND,
         message: 'Event nicht gefunden',
       });
     }
@@ -536,6 +552,7 @@ export class InventoryService {
     if (!membership) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.NOT_ORGANIZATION_MEMBER,
         message: 'Sie sind kein Mitglied dieser Organisation',
       });
     }
@@ -546,6 +563,7 @@ export class InventoryService {
     ) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
         message: 'Keine ausreichenden Berechtigungen',
       });
     }
@@ -565,6 +583,7 @@ export class InventoryService {
     if (!count) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.INVENTORY_NOT_FOUND,
         message: 'Inventur nicht gefunden',
       });
     }

@@ -16,10 +16,28 @@ interface ErrorDetail {
   message: string;
 }
 
-interface ErrorResponse {
+type ErrorParams = Record<string, string | number | boolean>;
+
+/**
+ * Body of every error response.
+ *
+ * - `code`: general error class (VALIDATION_ERROR, NOT_FOUND, …) — stable,
+ *   existing clients branch on it.
+ * - `reason`: optional, the specific case (e.g. SHIFT_NOT_FOUND, see
+ *   ErrorReasons). Clients translate `reason` first, then `code`.
+ * - `message`: German text, kept as fallback for clients without
+ *   translations.
+ * - `params`: optional values contained in `message` (names, amounts,
+ *   limits) so clients can build their own sentence.
+ * - `details`: per-field validation errors (`field`, `code`, `message`) or
+ *   upstream information (e.g. SUMUP_HTTP_401).
+ */
+export interface ErrorResponse {
   error: {
     code: string;
+    reason?: string;
     message: string;
+    params?: ErrorParams;
     details?: ErrorDetail[];
     requestId?: string;
     timestamp: string;
@@ -43,6 +61,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let errorCode: string = ErrorCodes.INTERNAL_ERROR;
     let message: string = ErrorMessages[ErrorCodes.INTERNAL_ERROR];
     let details: ErrorDetail[] | undefined;
+    let reason: string | undefined;
+    let params: ErrorParams | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -75,6 +95,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
         if (responseObj.details && Array.isArray(responseObj.details)) {
           details = responseObj.details as ErrorDetail[];
         }
+
+        if (typeof responseObj.reason === 'string' && responseObj.reason) {
+          reason = responseObj.reason;
+        }
+        params = this.pickParams(responseObj.params);
       } else if (typeof exceptionResponse === 'string') {
         message = exceptionResponse;
       }
@@ -127,7 +152,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const errorResponse: ErrorResponse = {
       error: {
         code: errorCode,
+        ...(reason ? { reason } : {}),
         message,
+        ...(params ? { params } : {}),
         requestId,
         timestamp: new Date().toISOString(),
       },
@@ -138,6 +165,24 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     response.status(status).json(errorResponse);
+  }
+
+  /** Only flat primitive values; anything else is dropped. */
+  private pickParams(value: unknown): ErrorParams | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
+    }
+    const picked: ErrorParams = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (
+        typeof entry === 'string' ||
+        typeof entry === 'number' ||
+        typeof entry === 'boolean'
+      ) {
+        picked[key] = entry;
+      }
+    }
+    return Object.keys(picked).length > 0 ? picked : undefined;
   }
 
   private mapStatusToErrorCode(

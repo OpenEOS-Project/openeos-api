@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Invoice, Organization } from '../../database/entities';
 import { InvoiceStatus } from '../../database/entities/invoice.entity';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { QueryInvoicesDto } from './dto';
 import { endOfDay } from '../../common/utils/date-range.util';
 
@@ -69,6 +69,7 @@ export class InvoicesService {
     if (!invoice) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.INVOICE_NOT_FOUND,
         message: 'Rechnung nicht gefunden',
       });
     }
@@ -85,6 +86,7 @@ export class InvoicesService {
     if (!invoice) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.INVOICE_NOT_FOUND,
         message: 'Rechnung nicht gefunden',
       });
     }
@@ -119,6 +121,7 @@ export class InvoicesService {
     if (!invoice) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.INVOICE_NOT_FOUND,
         message: 'Rechnung nicht gefunden',
       });
     }
@@ -160,6 +163,7 @@ export class InvoicesService {
     if (!organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
         message: 'Organisation nicht gefunden',
       });
     }

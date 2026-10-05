@@ -4,9 +4,79 @@ import {
   ArgumentMetadata,
   BadRequestException,
 } from '@nestjs/common';
-import { validate } from 'class-validator';
+import { validate, type ValidationError } from 'class-validator';
 import { plainToInstance, type ClassConstructor } from 'class-transformer';
-import { ErrorCodes } from '../constants/error-codes';
+import { ErrorCodes, ErrorMessages } from '../constants/error-codes';
+
+/** class-validator constraint -> stable detail code. */
+const CONSTRAINT_CODES: Record<string, string> = {
+  isEmail: 'INVALID_EMAIL',
+  isNotEmpty: 'REQUIRED',
+  isDefined: 'REQUIRED',
+  minLength: 'TOO_SHORT',
+  maxLength: 'TOO_LONG',
+  isUuid: 'INVALID_UUID',
+  isUUID: 'INVALID_UUID',
+  isNumber: 'INVALID_NUMBER',
+  isInt: 'INVALID_INTEGER',
+  isString: 'INVALID_STRING',
+  isBoolean: 'INVALID_BOOLEAN',
+  isArray: 'INVALID_ARRAY',
+  isEnum: 'INVALID_ENUM',
+  min: 'TOO_SMALL',
+  max: 'TOO_LARGE',
+  isDate: 'INVALID_DATE',
+  isDateString: 'INVALID_DATE_STRING',
+  whitelistValidation: 'NOT_ALLOWED',
+};
+
+export interface ValidationErrorDetail {
+  field: string;
+  code: string;
+  message: string;
+}
+
+/**
+ * One detail per failed constraint, nested properties as dotted path
+ * (`items.0.quantity`). `code` is stable; `message` is the text from the
+ * DTO (German where the DTO sets one, class-validator's English default
+ * otherwise).
+ */
+export function flattenValidationErrors(
+  errors: ValidationError[],
+  parentPath = '',
+): ValidationErrorDetail[] {
+  const details: ValidationErrorDetail[] = [];
+  for (const error of errors) {
+    const field = parentPath
+      ? `${parentPath}.${error.property}`
+      : error.property;
+    for (const [constraint, message] of Object.entries(
+      error.constraints ?? {},
+    )) {
+      details.push({
+        field,
+        code: CONSTRAINT_CODES[constraint] ?? constraint.toUpperCase(),
+        message,
+      });
+    }
+    if (error.children?.length) {
+      details.push(...flattenValidationErrors(error.children, field));
+    }
+  }
+  return details;
+}
+
+/** The exception the global ValidationPipe throws (see main.ts). */
+export function validationException(
+  errors: ValidationError[],
+): BadRequestException {
+  return new BadRequestException({
+    code: ErrorCodes.VALIDATION_ERROR,
+    message: ErrorMessages[ErrorCodes.VALIDATION_ERROR],
+    details: flattenValidationErrors(errors),
+  });
+}
 
 @Injectable()
 export class CustomValidationPipe implements PipeTransform {
@@ -24,17 +94,7 @@ export class CustomValidationPipe implements PipeTransform {
     });
 
     if (errors.length > 0) {
-      const details = errors.map((error) => ({
-        field: error.property,
-        code: this.getValidationCode(error),
-        message: Object.values(error.constraints || {}).join(', '),
-      }));
-
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        message: 'Validierung fehlgeschlagen',
-        details,
-      });
+      throw validationException(errors);
     }
 
     return object;
@@ -49,37 +109,5 @@ export class CustomValidationPipe implements PipeTransform {
       Object,
     ];
     return !types.includes(metatype);
-  }
-
-  private getValidationCode(error: {
-    constraints?: Record<string, string>;
-  }): string {
-    const constraints = error.constraints || {};
-    const constraintKeys = Object.keys(constraints);
-
-    if (constraintKeys.length === 0) {
-      return 'INVALID';
-    }
-
-    // Map common validators to error codes
-    const codeMap: Record<string, string> = {
-      isEmail: 'INVALID_EMAIL',
-      isNotEmpty: 'REQUIRED',
-      minLength: 'TOO_SHORT',
-      maxLength: 'TOO_LONG',
-      isUuid: 'INVALID_UUID',
-      isNumber: 'INVALID_NUMBER',
-      isInt: 'INVALID_INTEGER',
-      isString: 'INVALID_STRING',
-      isBoolean: 'INVALID_BOOLEAN',
-      isArray: 'INVALID_ARRAY',
-      isEnum: 'INVALID_ENUM',
-      min: 'TOO_SMALL',
-      max: 'TOO_LARGE',
-      isDate: 'INVALID_DATE',
-      isDateString: 'INVALID_DATE_STRING',
-    };
-
-    return codeMap[constraintKeys[0]] || constraintKeys[0].toUpperCase();
   }
 }
