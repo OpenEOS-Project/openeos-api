@@ -5,13 +5,56 @@ import {
   Logger,
 } from '@nestjs/common';
 import SumUp from '@sumup/sdk';
-import { ErrorCodes } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorMessages } from '../../common/constants/error-codes';
 
 // SumUp SDK's APIError has { status, error, response } but is not exported separately
 interface SumUpAPIError extends Error {
   status: number;
   error: unknown;
   response: Response;
+}
+
+/** Upstream statuses that mean the stored API key / merchant code is wrong. */
+const CREDENTIAL_STATUSES = new Set([401, 403]);
+
+/**
+ * The error a SumUp failure is reported with. Invalid credentials get their
+ * own code so the UI can say what to fix; everything else stays
+ * SUMUP_API_ERROR with the SumUp error type as message (the POS matches on
+ * it, e.g. READER_BUSY). The upstream status is passed along in `details`.
+ * The response status stays 400 either way — a 401 would log the user out.
+ */
+export function sumUpErrorResponse(
+  status: number | undefined,
+  type: string | undefined,
+  detail: string | undefined,
+  fallbackMessage: string,
+): BadRequestException {
+  const details =
+    status !== undefined
+      ? [
+          {
+            code: `SUMUP_HTTP_${status}`,
+            message: detail || type || fallbackMessage,
+          },
+        ]
+      : undefined;
+
+  if (status !== undefined && CREDENTIAL_STATUSES.has(status)) {
+    return new BadRequestException({
+      code: ErrorCodes.SUMUP_INVALID_CREDENTIALS,
+      message: ErrorMessages[ErrorCodes.SUMUP_INVALID_CREDENTIALS],
+      errorType: type,
+      details,
+    });
+  }
+
+  return new BadRequestException({
+    code: ErrorCodes.SUMUP_API_ERROR,
+    message: type || detail || fallbackMessage,
+    errorType: type,
+    details,
+  });
 }
 
 function isSumUpAPIError(err: unknown): err is SumUpAPIError {
@@ -124,11 +167,12 @@ export class SumUpApiService {
         `SumUp API error [${context}]: status=${sumupErr.status} type=${sumupErr.type} detail=${sumupErr.detail} message=${message}`,
       );
 
-      throw new BadRequestException({
-        code: ErrorCodes.SUMUP_API_ERROR,
-        message: sumupErr.type || sumupErr.detail || `SumUp: ${message}`,
-        errorType: sumupErr.type,
-      });
+      throw sumUpErrorResponse(
+        sumupErr.status,
+        sumupErr.type,
+        sumupErr.detail,
+        `SumUp: ${message}`,
+      );
     }
   }
 
@@ -346,10 +390,12 @@ export class SumUpApiService {
     if (!response.ok) {
       const error = await response.text();
       this.logger.error(`SumUp online checkout failed: ${error}`);
-      throw new BadRequestException({
-        code: ErrorCodes.SUMUP_API_ERROR,
-        message: `SumUp online checkout failed: ${response.status}`,
-      });
+      throw sumUpErrorResponse(
+        response.status,
+        undefined,
+        undefined,
+        `SumUp online checkout failed: ${response.status}`,
+      );
     }
 
     const result = (await response.json()) as {
