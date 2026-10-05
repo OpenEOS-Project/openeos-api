@@ -15,7 +15,9 @@ import {
   UserOrganization,
 } from '../../database/entities/user-organization.entity';
 import { DeploymentService } from '../../common/services/deployment.service';
+import { Invitation } from '../../database/entities/invitation.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { DevicesService } from '../devices/devices.service';
 import { AddMemberDto } from './dto';
 import { OrganizationsService } from './organizations.service';
 
@@ -32,6 +34,8 @@ interface Options {
   existingUser?: User | null;
   selfHosted?: boolean;
   target?: Partial<UserOrganization>;
+  invitation?: Partial<Invitation>;
+  adminCount?: number;
 }
 
 function setup(options: Options) {
@@ -51,6 +55,7 @@ function setup(options: Options) {
   } as UserOrganization;
 
   const savedMemberships: Partial<UserOrganization>[] = [];
+  const removed: unknown[] = [];
   const userOrganizationRepository = {
     findOne: jest.fn(
       ({ where }: { where: { userId?: string; id?: string } }) => {
@@ -73,8 +78,39 @@ function setup(options: Options) {
       return Promise.resolve(membership);
     }),
     findOneOrFail: jest.fn(() => Promise.resolve(savedMemberships.at(-1))),
-    count: jest.fn(() => Promise.resolve(2)),
+    count: jest.fn(() => Promise.resolve(options.adminCount ?? 2)),
+    remove: jest.fn((membership: unknown) => {
+      removed.push(membership);
+      return Promise.resolve(membership);
+    }),
   } as unknown as Repository<UserOrganization>;
+
+  const invitationRepository = {
+    findOne: jest.fn(() =>
+      Promise.resolve(
+        options.invitation
+          ? {
+              organization: { name: 'Verein' },
+              isExpired: () => false,
+              isAccepted: () => false,
+              ...options.invitation,
+            }
+          : null,
+      ),
+    ),
+    remove: jest.fn((invitation: unknown) => {
+      removed.push(invitation);
+      return Promise.resolve(invitation);
+    }),
+  } as unknown as Repository<Invitation>;
+  const sentMails: unknown[] = [];
+  const emailService = {
+    sendInvitationEmail: jest.fn((...args: unknown[]) => {
+      sentMails.push(args);
+      return Promise.resolve();
+    }),
+  };
+  const configService = { get: jest.fn(() => undefined) };
 
   const deployment = {
     isSelfHosted: options.selfHosted ?? true,
@@ -85,15 +121,15 @@ function setup(options: Options) {
     none,
     userRepository,
     userOrganizationRepository,
+    invitationRepository,
     none,
+    emailService as never,
     none,
-    none,
-    none,
-    none,
+    configService as never,
     deployment,
   );
 
-  return { service, createdUsers, savedMemberships };
+  return { service, createdUsers, savedMemberships, removed, sentMails };
 }
 
 const newAccount: AddMemberDto = {
@@ -115,6 +151,26 @@ async function expectCode(
     expect(error.getResponse().code).toBe(code);
   });
 }
+
+/* Diese Version liefert noch keine `reason`-Felder; die Faelle werden an
+   der Meldung unterschieden. */
+const ErrorReasons = {
+  ADMIN_REQUIRED_TO_GRANT_ADMIN: /Admin-Rolle vergeben/,
+  ADMIN_REQUIRED_TO_EDIT_ADMIN: /Admins bearbeiten/,
+  PERMISSIONS_EXCEED_OWN: /Berechtigungen/,
+};
+
+async function expectReason(promise: Promise<unknown>, reason: RegExp) {
+  await expect(promise).rejects.toBeInstanceOf(ForbiddenException);
+  await promise.catch((error: { getResponse: () => { message: string } }) => {
+    expect(error.getResponse().message).toMatch(reason);
+  });
+}
+
+const MANAGER = {
+  actorRole: OrganizationRole.MEMBER,
+  actorPermissions: { members: true, products: true },
+};
 
 describe('AddMemberDto', () => {
   const check = async (password: string) => {
@@ -310,5 +366,281 @@ describe('OrganizationsService.updateMember', () => {
       reports: true,
       members: true,
     });
+  });
+});
+
+describe('OrganizationsService.updateMember (role and permission changes)', () => {
+  it('does not let non-admins revoke permissions they lack', async () => {
+    const { service, savedMemberships } = setup({
+      ...MANAGER,
+      target: {
+        id: 'm1',
+        role: OrganizationRole.MEMBER,
+        permissions: { reports: true, products: true },
+      },
+    });
+
+    await expectReason(
+      service.updateMember(ORG_ID, 'm1', { permissions: {} }, ACTOR),
+      ErrorReasons.PERMISSIONS_EXCEED_OWN,
+    );
+
+    await service.updateMember(
+      ORG_ID,
+      'm1',
+      { permissions: { reports: true } },
+      ACTOR,
+    );
+    expect(savedMemberships[0].permissions).toEqual({ reports: true });
+  });
+
+  it('treats truthy non-boolean values as granted', async () => {
+    const { service } = setup({
+      ...MANAGER,
+      target: { id: 'm1', role: OrganizationRole.MEMBER, permissions: {} },
+    });
+
+    await expectReason(
+      service.updateMember(
+        ORG_ID,
+        'm1',
+        { permissions: { reports: 1 } as unknown as OrganizationPermissions },
+        ACTOR,
+      ),
+      ErrorReasons.PERMISSIONS_EXCEED_OWN,
+    );
+  });
+
+  it('keeps the last admin even when someone else demotes them', async () => {
+    const { service, savedMemberships } = setup({
+      actorRole: OrganizationRole.ADMIN,
+      adminCount: 1,
+      target: {
+        id: 'm1',
+        userId: 'someone-else',
+        role: OrganizationRole.ADMIN,
+        permissions: {},
+      },
+    });
+
+    await expectCode(
+      service.updateMember(
+        ORG_ID,
+        'm1',
+        { role: OrganizationRole.MEMBER },
+        ACTOR,
+      ),
+      BadRequestException,
+      ErrorCodes.FORBIDDEN,
+    );
+    expect(savedMemberships).toHaveLength(0);
+  });
+
+  it('lets an admin step down while another admin remains', async () => {
+    const { service, savedMemberships } = setup({
+      actorRole: OrganizationRole.ADMIN,
+      adminCount: 2,
+      target: {
+        id: 'm1',
+        userId: ACTOR.id,
+        role: OrganizationRole.ADMIN,
+        permissions: {},
+      },
+    });
+
+    await service.updateMember(
+      ORG_ID,
+      'm1',
+      { role: OrganizationRole.MEMBER },
+      ACTOR,
+    );
+    expect(savedMemberships[0].role).toBe(OrganizationRole.MEMBER);
+  });
+});
+
+describe('OrganizationsService.removeMember', () => {
+  it('does not let non-admins remove admins', async () => {
+    const { service, removed } = setup({
+      ...MANAGER,
+      target: { id: 'm1', role: OrganizationRole.ADMIN, permissions: {} },
+    });
+
+    await expectReason(
+      service.removeMember(ORG_ID, 'm1', ACTOR),
+      ErrorReasons.ADMIN_REQUIRED_TO_EDIT_ADMIN,
+    );
+    expect(removed).toHaveLength(0);
+  });
+
+  it('does not let non-admins remove members with more permissions', async () => {
+    const { service, removed } = setup({
+      ...MANAGER,
+      target: {
+        id: 'm1',
+        role: OrganizationRole.MEMBER,
+        permissions: { products: true, reports: true },
+      },
+    });
+
+    await expectReason(
+      service.removeMember(ORG_ID, 'm1', ACTOR),
+      ErrorReasons.PERMISSIONS_EXCEED_OWN,
+    );
+    expect(removed).toHaveLength(0);
+  });
+
+  it('lets non-admins remove members within their own permissions', async () => {
+    const { service, removed } = setup({
+      ...MANAGER,
+      target: {
+        id: 'm1',
+        role: OrganizationRole.MEMBER,
+        permissions: { products: true, reports: false },
+      },
+    });
+
+    await service.removeMember(ORG_ID, 'm1', ACTOR);
+    expect(removed).toHaveLength(1);
+  });
+
+  it('lets admins remove admins but never the last one', async () => {
+    const target = { id: 'm1', role: OrganizationRole.ADMIN, permissions: {} };
+
+    const twoAdmins = setup({ actorRole: OrganizationRole.ADMIN, target });
+    await twoAdmins.service.removeMember(ORG_ID, 'm1', ACTOR);
+    expect(twoAdmins.removed).toHaveLength(1);
+
+    const lastAdmin = setup({
+      actorRole: OrganizationRole.ADMIN,
+      adminCount: 1,
+      target,
+    });
+    await expectCode(
+      lastAdmin.service.removeMember(ORG_ID, 'm1', ACTOR),
+      BadRequestException,
+      ErrorCodes.FORBIDDEN,
+    );
+    expect(lastAdmin.removed).toHaveLength(0);
+  });
+});
+
+describe('OrganizationsService invitations', () => {
+  it.each([
+    [
+      'an admin invitation',
+      { role: OrganizationRole.ADMIN, permissions: {} },
+      ErrorReasons.ADMIN_REQUIRED_TO_EDIT_ADMIN,
+    ],
+    [
+      'an invitation with more permissions',
+      { role: OrganizationRole.MEMBER, permissions: { reports: true } },
+      ErrorReasons.PERMISSIONS_EXCEED_OWN,
+    ],
+  ])(
+    'does not let non-admins cancel or resend %s',
+    async (_label, invitation, reason) => {
+      const { service, removed, sentMails } = setup({
+        ...MANAGER,
+        invitation: { id: 'i1', ...invitation },
+      });
+
+      await expectReason(service.cancelInvitation(ORG_ID, 'i1', ACTOR), reason);
+      await expectReason(service.resendInvitation(ORG_ID, 'i1', ACTOR), reason);
+      expect(removed).toHaveLength(0);
+      expect(sentMails).toHaveLength(0);
+    },
+  );
+
+  it('lets non-admins cancel and resend invitations within their permissions', async () => {
+    const { service, removed, sentMails } = setup({
+      ...MANAGER,
+      invitation: {
+        id: 'i1',
+        email: 'x@example.com',
+        role: OrganizationRole.MEMBER,
+        permissions: { products: true },
+      },
+    });
+
+    await service.resendInvitation(ORG_ID, 'i1', ACTOR);
+    await service.cancelInvitation(ORG_ID, 'i1', ACTOR);
+    expect(sentMails).toHaveLength(1);
+    expect(removed).toHaveLength(1);
+  });
+});
+
+describe('DevicesService member PINs', () => {
+  function setupPins(target: Partial<UserOrganization>) {
+    const actorMembership = {
+      userId: ACTOR.id,
+      role: MANAGER.actorRole,
+      permissions: MANAGER.actorPermissions,
+    } as UserOrganization;
+    const saved: Partial<UserOrganization>[] = [];
+    const repository = {
+      findOne: jest.fn(({ where }: { where: { userId: string } }) =>
+        Promise.resolve(
+          where.userId === ACTOR.id
+            ? actorMembership
+            : where.userId === target.userId
+              ? { ...target }
+              : null,
+        ),
+      ),
+      find: jest.fn(() => Promise.resolve([])),
+      save: jest.fn((membership: Partial<UserOrganization>) => {
+        saved.push(membership);
+        return Promise.resolve(membership);
+      }),
+    } as unknown as Repository<UserOrganization>;
+
+    const none = undefined as never;
+    const service = new DevicesService(
+      none,
+      repository,
+      none,
+      none,
+      none,
+      none,
+    );
+    return { service, saved };
+  }
+
+  it.each([
+    [
+      'an admin',
+      { role: OrganizationRole.ADMIN, permissions: {} },
+      ErrorReasons.ADMIN_REQUIRED_TO_EDIT_ADMIN,
+    ],
+    [
+      'a member with more permissions',
+      { role: OrganizationRole.MEMBER, permissions: { reports: true } },
+      ErrorReasons.PERMISSIONS_EXCEED_OWN,
+    ],
+  ])(
+    'does not let non-admins set or remove the PIN of %s',
+    async (_label, target, reason) => {
+      const { service, saved } = setupPins({ userId: 'u1', ...target });
+
+      await expectReason(
+        service.setMemberPin(ORG_ID, 'u1', '1234', ACTOR),
+        reason,
+      );
+      await expectReason(service.removeMemberPin(ORG_ID, 'u1', ACTOR), reason);
+      expect(saved).toHaveLength(0);
+    },
+  );
+
+  it('lets non-admins manage PINs within their permissions', async () => {
+    const { service, saved } = setupPins({
+      userId: 'u1',
+      role: OrganizationRole.MEMBER,
+      permissions: { products: true },
+    });
+
+    await service.setMemberPin(ORG_ID, 'u1', '1234', ACTOR);
+    await service.removeMemberPin(ORG_ID, 'u1', ACTOR);
+    expect(saved).toHaveLength(2);
+    expect(saved[1].pin).toBeNull();
   });
 });
