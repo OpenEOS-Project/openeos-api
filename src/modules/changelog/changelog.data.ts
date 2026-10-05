@@ -27,7 +27,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'On your own server, for one organisation, with no fees — with a guide in the handbook.',
     },
     text: {
-      de: 'OpenEOS lässt sich jetzt kostenlos auf einem eigenen Server betreiben. Diese Variante ist bewusst schlank: eine Organisation, in der Sie alles verwalten, ohne Abrechnung und ohne Selbstregistrierung — neue Mitglieder legen Sie selbst mit einem Startpasswort an. Wie man das mit Docker einrichtet, sichert und aktualisiert, steht im Handbuch unter „Selbst betreiben". Am gehosteten Angebot unter openeos.de ändert sich nichts.',
+      de: 'OpenEOS lässt sich jetzt kostenlos auf einem eigenen Server betreiben. Diese Variante ist bewusst schlank: eine Organisation, in der Sie alles verwalten, ohne Abrechnung und ohne Selbstregistrierung — neue Mitglieder legen Sie selbst mit einem Startpasswort an. Wie man das mit Docker einrichtet, sichert und aktualisiert, steht im Handbuch unter „Selbst betreiben“. Am gehosteten Angebot unter openeos.de ändert sich nichts.',
       en: 'OpenEOS can now be run on your own server free of charge. This edition is deliberately lean: one organisation in which you manage everything, with no billing and no self-registration — you create new members yourself with a starting password. How to set it up with Docker, back it up and update it is described in the handbook under "Self-hosting". Nothing changes for the hosted service at openeos.de.',
     },
   },
@@ -43,7 +43,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Device settings now let you choose which station a screen shows.',
     },
     text: {
-      de: 'Ein Bildschirm im Stationsmodus meldete bisher „keine Station konfiguriert", ohne dass sich das irgendwo ändern ließ. In den Einstellungen des Geräts stehen jetzt die Stationen der laufenden Veranstaltung zur Auswahl; danach zeigt der Bildschirm die Bestellungen dieser Station.',
+      de: 'Ein Bildschirm im Stationsmodus meldete bisher „keine Station konfiguriert“, ohne dass sich das irgendwo ändern ließ. In den Einstellungen des Geräts stehen jetzt die Stationen der laufenden Veranstaltung zur Auswahl; danach zeigt der Bildschirm die Bestellungen dieser Station.',
       en: 'A screen in station mode used to report "no station configured" with no way to change that. The device settings now offer the stations of the running event; once one is chosen, the screen shows that station\'s orders.',
     },
   },
@@ -75,7 +75,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Card payments stopped working? Please enter your SumUp or PayPal key again.',
     },
     text: {
-      de: 'Beim Speichern der Organisationseinstellungen konnte ein hinterlegter SumUp- oder PayPal-Schlüssel unbrauchbar werden — die Kartenzahlung an der Kasse schlug danach fehl. Das ist behoben, und Zugangsdaten werden insgesamt zurückhaltender an die Oberfläche gegeben. Falls die Kartenzahlung bei Ihnen seitdem nicht mehr funktioniert, tragen Sie den Schlüssel unter „Integrationen" einmal neu ein.',
+      de: 'Beim Speichern der Organisationseinstellungen konnte ein hinterlegter SumUp- oder PayPal-Schlüssel unbrauchbar werden — die Kartenzahlung an der Kasse schlug danach fehl. Das ist behoben, und Zugangsdaten werden insgesamt zurückhaltender an die Oberfläche gegeben. Falls die Kartenzahlung bei Ihnen seitdem nicht mehr funktioniert, tragen Sie den Schlüssel unter „Integrationen“ einmal neu ein.',
       en: 'Saving the organisation settings could leave a stored SumUp or PayPal key unusable, after which card payments at the till failed. This is fixed, and credentials are now handed to the interface far more sparingly. If card payments have not worked for you since, enter the key once more under "Integrations".',
     },
   },
@@ -91,7 +91,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'The organisation description was lost on saving — fixed.',
     },
     text: {
-      de: 'Die Beschreibung der Organisation wurde beim Speichern nicht übernommen. Außerdem fehlte Betreibern mit eigener Organisation der Reiter „Organisation" in den Einstellungen. Beides ist behoben.',
+      de: 'Die Beschreibung der Organisation wurde beim Speichern nicht übernommen. Außerdem fehlte Betreibern mit eigener Organisation der Reiter „Organisation“ in den Einstellungen. Beides ist behoben.',
       en: 'The organisation description was not kept when saving, and operators with their own organisation did not see the "Organisation" tab in the settings. Both are fixed.',
     },
   },
@@ -171,7 +171,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'The session list shows browser and system, marks this device and no longer grows endlessly.',
     },
     text: {
-      de: 'Unter Einstellungen → Sicherheit stand bisher bei jeder Anmeldung „Unbekanntes Gerät", und die Liste wurde ständig länger. Jetzt sehen Sie Browser und Betriebssystem, das Gerät, an dem Sie gerade sitzen, ist markiert, und jede Anmeldung erscheint nur einmal. „Alle anderen abmelden" lässt die eigene Sitzung bestehen.',
+      de: 'Unter Einstellungen → Sicherheit stand bisher bei jeder Anmeldung „Unbekanntes Gerät“, und die Liste wurde ständig länger. Jetzt sehen Sie Browser und Betriebssystem, das Gerät, an dem Sie gerade sitzen, ist markiert, und jede Anmeldung erscheint nur einmal. „Alle anderen abmelden“ lässt die eigene Sitzung bestehen.',
       en: 'Settings → Security used to list every sign-in as "Unknown device", and the list kept growing. You now see browser and operating system, the device you are using is marked, and each sign-in appears only once. "Sign out all others" keeps your own session.',
     },
   },
@@ -199,7 +199,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Small fixes in sign-in and settings',
     },
     kurz: {
-      de: 'Fehlermeldungen in Ihrer Sprache, und „Speichern" wird nach dem Speichern wieder grau.',
+      de: 'Fehlermeldungen in Ihrer Sprache, und „Speichern“ wird nach dem Speichern wieder grau.',
       en: 'Error messages in your language, and "Save" greys out again after saving.',
     },
     text: {
@@ -215,11 +215,11 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Tills and screens connect again',
     },
     kurz: {
-      de: 'Geräte wurden dauerhaft als „offline" angezeigt — das ist behoben.',
+      de: 'Geräte wurden dauerhaft als „offline“ angezeigt — das ist behoben.',
       en: 'Devices were permanently shown as offline — fixed.',
     },
     text: {
-      de: 'Kassen und Anzeigen konnten ihre Live-Verbindung nicht aufbauen und wurden dauerhaft als „offline" angezeigt, während die Bedienung selbst weiterlief. Bestellungen erreichten Küche und Anzeigen dadurch nicht sofort. Die Verbindung steht wieder; die Geräte müssen die Seite einmal neu laden.',
+      de: 'Kassen und Anzeigen konnten ihre Live-Verbindung nicht aufbauen und wurden dauerhaft als „offline“ angezeigt, während die Bedienung selbst weiterlief. Bestellungen erreichten Küche und Anzeigen dadurch nicht sofort. Die Verbindung steht wieder; die Geräte müssen die Seite einmal neu laden.',
       en: 'Tills and screens could not open their live connection and were permanently shown as offline, even though they otherwise worked. Orders therefore did not reach the kitchen and the screens straight away. The connection works again; devices need to reload the page once.',
     },
   },
@@ -427,7 +427,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Activate by card or direct debit; the invoice follows automatically.',
     },
     text: {
-      de: 'Veranstaltungen werden jetzt direkt per Karte oder Lastschrift bezahlt. Die Rechnung kommt automatisch per E-Mail und liegt zusätzlich unter „Rechnungen" zum Herunterladen bereit.',
+      de: 'Veranstaltungen werden jetzt direkt per Karte oder Lastschrift bezahlt. Die Rechnung kommt automatisch per E-Mail und liegt zusätzlich unter „Rechnungen“ zum Herunterladen bereit.',
       en: 'Events are now paid by card or direct debit. The invoice arrives by email automatically and is also available for download under "Invoices".',
     },
   },
