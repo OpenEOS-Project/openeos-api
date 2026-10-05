@@ -130,7 +130,7 @@ export class TwoFactorService {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.TWO_FACTOR_SETUP_NOT_STARTED,
-        message: 'Bitte starten Sie zuerst die 2FA-Einrichtung',
+        message: 'Bitte starte zuerst die 2FA-Einrichtung',
       });
     }
 
@@ -562,7 +562,7 @@ export class TwoFactorService {
     if (otp.hasExceededAttempts()) {
       throw new BadRequestException({
         code: ErrorCodes.TOO_MANY_ATTEMPTS,
-        message: 'Zu viele Versuche. Bitte fordern Sie einen neuen Code an.',
+        message: 'Zu viele Versuche. Bitte fordere einen neuen Code an.',
       });
     }
 

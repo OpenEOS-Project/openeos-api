@@ -855,7 +855,7 @@ export class OrganizationsService {
       throw new ConflictException({
         code: ErrorCodes.MEMBER_ALREADY_EXISTS,
         reason: ErrorReasons.ALREADY_MEMBER,
-        message: 'Sie sind bereits Mitglied dieser Organisation',
+        message: 'Du bist bereits Mitglied dieser Organisation',
       });
     }
 

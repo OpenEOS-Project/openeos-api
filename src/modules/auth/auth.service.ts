@@ -397,7 +397,7 @@ export class AuthService {
     if (!user.emailVerifiedAt) {
       throw new ForbiddenException({
         code: ErrorCodes.EMAIL_NOT_VERIFIED,
-        message: 'Bitte bestätigen Sie zuerst Ihre E-Mail-Adresse',
+        message: 'Bitte bestätige zuerst deine E-Mail-Adresse',
       });
     }
 

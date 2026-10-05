@@ -870,7 +870,7 @@ export class ReportsService {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
         reason: ErrorReasons.NOT_ORGANIZATION_MEMBER,
-        message: 'Sie sind kein Mitglied dieser Organisation',
+        message: 'Du bist kein Mitglied dieser Organisation',
       });
     }
 
