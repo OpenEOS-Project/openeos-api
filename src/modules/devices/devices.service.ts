@@ -28,6 +28,7 @@ import {
 import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { assertCanManage } from '../organizations/member-access.util';
 import {
   PaginationDto,
   PaginatedResult,
@@ -759,7 +760,25 @@ export class DevicesService {
     pin: string,
     currentUser: User,
   ): Promise<void> {
-    await this.checkPermission(organizationId, currentUser.id, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser.id,
+      'members',
+    );
+
+    const membership = await this.userOrganizationRepository.findOne({
+      where: { organizationId, userId },
+    });
+
+    if (!membership) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.MEMBER_NOT_FOUND,
+        message: 'Mitglied nicht gefunden',
+      });
+    }
+
+    assertCanManage(actor, membership);
 
     // Check PIN uniqueness within organization
     const members = await this.userOrganizationRepository.find({
@@ -778,18 +797,6 @@ export class DevicesService {
       }
     }
 
-    const membership = await this.userOrganizationRepository.findOne({
-      where: { organizationId, userId },
-    });
-
-    if (!membership) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.MEMBER_NOT_FOUND,
-        message: 'Mitglied nicht gefunden',
-      });
-    }
-
     const hashedPin = await bcrypt.hash(pin, 10);
     membership.pin = hashedPin;
     await this.userOrganizationRepository.save(membership);
@@ -804,7 +811,11 @@ export class DevicesService {
     userId: string,
     currentUser: User,
   ): Promise<void> {
-    await this.checkPermission(organizationId, currentUser.id, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser.id,
+      'members',
+    );
 
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
@@ -817,6 +828,8 @@ export class DevicesService {
         message: 'Mitglied nicht gefunden',
       });
     }
+
+    assertCanManage(actor, membership);
 
     membership.pin = null;
     await this.userOrganizationRepository.save(membership);
@@ -881,7 +894,7 @@ export class DevicesService {
     organizationId: string,
     userId: string,
     permission: 'products' | 'events' | 'devices' | 'members' | 'shiftPlans',
-  ): Promise<void> {
+  ): Promise<UserOrganization> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });
@@ -895,7 +908,7 @@ export class DevicesService {
     }
 
     if (membership.role === OrganizationRole.ADMIN) {
-      return;
+      return membership;
     }
 
     if (!membership.permissions?.[permission]) {
@@ -905,5 +918,7 @@ export class DevicesService {
         message: 'Keine ausreichenden Berechtigungen',
       });
     }
+
+    return membership;
   }
 }

@@ -21,6 +21,7 @@ import {
   OrganizationPermissions,
 } from '../../database/entities/user-organization.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { assertCanGrant, assertCanManage } from './member-access.util';
 import {
   PaginationDto,
   PaginatedResult,
@@ -412,7 +413,7 @@ export class OrganizationsService {
       currentUser,
       'members',
     );
-    this.assertCanGrant(actor, addMemberDto.role, addMemberDto.permissions);
+    assertCanGrant(actor, addMemberDto.role, addMemberDto.permissions);
 
     const wantsNewAccount = addMemberDto.password !== undefined;
     if (wantsNewAccount && actor.role !== OrganizationRole.ADMIN) {
@@ -505,25 +506,20 @@ export class OrganizationsService {
       });
     }
 
-    if (actor.role !== OrganizationRole.ADMIN) {
-      if (member.role === OrganizationRole.ADMIN) {
-        throw new ForbiddenException({
-          code: ErrorCodes.FORBIDDEN,
-          reason: ErrorReasons.ADMIN_REQUIRED_TO_EDIT_ADMIN,
-          message: 'Nur Admins können Admins bearbeiten',
-        });
-      }
-      this.assertCanGrant(
-        actor,
-        updateDto.role ?? member.role,
-        updateDto.permissions,
-        member.permissions,
-      );
+    // Admins only by admins; other members keep rights the actor lacks
+    if (member.role === OrganizationRole.ADMIN) {
+      assertCanManage(actor, member);
     }
+    assertCanGrant(
+      actor,
+      updateDto.role ?? member.role,
+      updateDto.permissions,
+      member.permissions,
+    );
 
-    // Prevent self-demotion from admin
+    // Keep at least one admin — also when someone else demotes the last one
     if (
-      member.userId === currentUser.id &&
+      member.role === OrganizationRole.ADMIN &&
       updateDto.role &&
       updateDto.role !== OrganizationRole.ADMIN
     ) {
@@ -564,7 +560,11 @@ export class OrganizationsService {
     currentUser: User,
   ): Promise<void> {
     // Check if current user is admin or has members permission
-    await this.checkPermission(organizationId, currentUser, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser,
+      'members',
+    );
 
     const member = await this.userOrganizationRepository.findOne({
       where: { id: memberId, organizationId },
@@ -578,6 +578,8 @@ export class OrganizationsService {
         message: 'Mitglied nicht gefunden',
       });
     }
+
+    assertCanManage(actor, member);
 
     // Prevent removing last admin
     if (member.role === OrganizationRole.ADMIN) {
@@ -613,7 +615,7 @@ export class OrganizationsService {
       currentUser,
       'members',
     );
-    this.assertCanGrant(actor, createDto.role, createDto.permissions);
+    assertCanGrant(actor, createDto.role, createDto.permissions);
 
     const organization = await this.organizationRepository.findOneOrFail({
       where: { id: organizationId },
@@ -718,7 +720,7 @@ export class OrganizationsService {
     invitationId: string,
     user: User,
   ): Promise<void> {
-    await this.checkPermission(organizationId, user, 'members');
+    const actor = await this.checkPermission(organizationId, user, 'members');
 
     const invitation = await this.invitationRepository.findOne({
       where: { id: invitationId, organizationId },
@@ -732,6 +734,8 @@ export class OrganizationsService {
       });
     }
 
+    assertCanManage(actor, invitation);
+
     await this.invitationRepository.remove(invitation);
 
     this.logger.log(`Invitation cancelled: ${invitationId}`);
@@ -742,7 +746,11 @@ export class OrganizationsService {
     invitationId: string,
     currentUser: User,
   ): Promise<void> {
-    await this.checkPermission(organizationId, currentUser, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser,
+      'members',
+    );
 
     const invitation = await this.invitationRepository.findOne({
       where: { id: invitationId, organizationId },
@@ -756,6 +764,8 @@ export class OrganizationsService {
         message: 'Einladung nicht gefunden',
       });
     }
+
+    assertCanManage(actor, invitation);
 
     if (invitation.isExpired()) {
       throw new BadRequestException({
@@ -906,44 +916,6 @@ export class OrganizationsService {
   }
 
   // Helper methods
-  /**
-   * Verhindert, dass ein Mitglied mit Mitgliederrecht mehr vergibt, als es
-   * selbst hat: keine Admin-Rolle und nur Modulrechte, die es selbst besitzt.
-   * Admins (und Super-Admins) duerfen alles vergeben. Rechte, die das
-   * bearbeitete Mitglied bereits hat, gelten nicht als neu vergeben.
-   */
-  private assertCanGrant(
-    actor: UserOrganization,
-    role: OrganizationRole,
-    permissions: OrganizationPermissions | undefined,
-    alreadyHeld: OrganizationPermissions = {},
-  ): void {
-    if (actor.role === OrganizationRole.ADMIN) return;
-
-    if (role === OrganizationRole.ADMIN) {
-      throw new ForbiddenException({
-        code: ErrorCodes.FORBIDDEN,
-        reason: ErrorReasons.ADMIN_REQUIRED_TO_GRANT_ADMIN,
-        message: 'Nur Admins können die Admin-Rolle vergeben',
-      });
-    }
-
-    const own = actor.permissions ?? {};
-    const exceeding = Object.entries(permissions ?? {}).filter(
-      ([key, granted]) =>
-        granted === true &&
-        !own[key as keyof OrganizationPermissions] &&
-        !alreadyHeld[key as keyof OrganizationPermissions],
-    );
-    if (exceeding.length > 0) {
-      throw new ForbiddenException({
-        code: ErrorCodes.FORBIDDEN,
-        reason: ErrorReasons.PERMISSIONS_EXCEED_OWN,
-        message: 'Es können nur eigene Berechtigungen weitergegeben werden',
-      });
-    }
-  }
-
   async checkMembership(
     organizationId: string,
     user: User,
