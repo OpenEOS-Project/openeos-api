@@ -15,13 +15,7 @@ import {
 import { ApiTags, ApiOperation, ApiHeader } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import {
-  Repository,
-  Between,
-  MoreThanOrEqual,
-  In,
-  type FindOptionsWhere,
-} from 'typeorm';
+import { Repository, In, type FindOptionsWhere } from 'typeorm';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
 import { CurrentDevice } from '../../common/decorators';
 import { DevicesService } from './devices.service';
@@ -79,6 +73,7 @@ import { PfandReturnsService } from '../pfand-types/pfand-returns.service';
 import { CreatePfandReturnDto } from '../pfand-types/dto';
 import { isPfandChargedForFulfillment } from '../../common/utils/pfand-policy';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
+import { saveOrderWithNumbers } from '../orders/order-numbering';
 
 /**
  * Helper to ensure device has an organization.
@@ -471,47 +466,39 @@ export class DeviceApiController {
       }
     }
 
-    // Generate order number
-    const orderNumber = await this.generateOrderNumber(organizationId);
-    const dailyNumber = await this.getDailyNumber(
-      organizationId,
-      createDto.eventId || null,
-    );
-
     // Match the POS, which treats an unset serviceMode as table service
     // (Bedienung, default). The backend used to default unset → counter, so a
     // Bedienung order on an unconfigured device was charged Pfand and lost its
     // table number even though the POS showed it as table service (no Pfand).
     const serviceMode = device.settings?.serviceMode || 'table';
 
-    const order = this.orderRepository.create({
-      organizationId,
-      eventId: createDto.eventId || null,
-      orderNumber,
-      dailyNumber,
-      // Table numbers only apply in table-service mode; a counter device never
-      // carries one (otherwise a stray table number shows up on the kitchen
-      // ticket of a counter order).
-      tableNumber:
-        serviceMode === 'table' ? createDto.tableNumber || null : null,
-      customerName: createDto.customerName || null,
-      customerPhone: createDto.customerPhone || null,
-      notes: createDto.notes || null,
-      priority: createDto.priority || undefined,
-      source: createDto.source || OrderSource.POS,
-      fulfillmentType:
-        serviceMode === 'table'
-          ? OrderFulfillmentType.TABLE_SERVICE
-          : OrderFulfillmentType.COUNTER_PICKUP,
-      discountAmount: createDto.discountAmount || 0,
-      discountReason: createDto.discountReason || null,
-      tipAmount: createDto.tipAmount || 0,
-      createdByDeviceId: device.id,
-      status: OrderStatus.OPEN,
-      paymentStatus: PaymentStatus.UNPAID,
-    });
-
-    await this.orderRepository.save(order);
+    // Order number and daily number are allocated together with the insert.
+    const order = await saveOrderWithNumbers(
+      this.orderRepository,
+      { organizationId, eventId: createDto.eventId || null },
+      {
+        // Table numbers only apply in table-service mode; a counter device never
+        // carries one (otherwise a stray table number shows up on the kitchen
+        // ticket of a counter order).
+        tableNumber:
+          serviceMode === 'table' ? createDto.tableNumber || null : null,
+        customerName: createDto.customerName || null,
+        customerPhone: createDto.customerPhone || null,
+        notes: createDto.notes || null,
+        priority: createDto.priority || undefined,
+        source: createDto.source || OrderSource.POS,
+        fulfillmentType:
+          serviceMode === 'table'
+            ? OrderFulfillmentType.TABLE_SERVICE
+            : OrderFulfillmentType.COUNTER_PICKUP,
+        discountAmount: createDto.discountAmount || 0,
+        discountReason: createDto.discountReason || null,
+        tipAmount: createDto.tipAmount || 0,
+        createdByDeviceId: device.id,
+        status: OrderStatus.OPEN,
+        paymentStatus: PaymentStatus.UNPAID,
+      },
+    );
 
     // Resolve the Pfand policy for this order's fulfillment type (e.g. no
     // deposit for table service).
@@ -1571,44 +1558,6 @@ export class DeviceApiController {
     }
 
     await this.orderRepository.save(order);
-  }
-
-  private async generateOrderNumber(organizationId: string): Promise<string> {
-    const date = new Date();
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const count = await this.orderRepository.count({
-      where: {
-        organizationId,
-        createdAt: Between(startOfDay, endOfDay),
-      },
-    });
-
-    return `${dateStr}-${String(count + 1).padStart(4, '0')}`;
-  }
-
-  private async getDailyNumber(
-    organizationId: string,
-    eventId: string | null,
-  ): Promise<number> {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const count = await this.orderRepository.count({
-      where: {
-        organizationId,
-        eventId: eventId || undefined,
-        createdAt: MoreThanOrEqual(startOfDay),
-      },
-    });
-
-    return count + 1;
   }
 
   /**

@@ -136,6 +136,23 @@ export function toDateKey(date: Date | string, timeZone: string): string {
   return `${wall.year}-${pad(wall.month)}-${pad(wall.day)}`;
 }
 
+/**
+ * Kalendertag eines Zeitpunkts in einer Zeitzone samt seiner Grenzen:
+ * `start` ist Mitternacht dieses Tages, `end` Mitternacht des Folgetages
+ * (exklusiv). An Tagen mit Zeitumstellung ist der Tag 23 bzw. 25 Stunden lang.
+ */
+export function dayBoundsInZone(
+  date: Date | string,
+  timeZone: string,
+): { key: string; start: Date; end: Date } {
+  const day = dayNumber(toWallClock(toDate(date), timeZone));
+  return {
+    key: toDateKey(date, timeZone),
+    start: fromWallClock(dayToWallClock(day, 0, 0), timeZone),
+    end: fromWallClock(dayToWallClock(day + 1, 0, 0), timeZone),
+  };
+}
+
 /** 'YYYY-MM-DD' in die Tageszahl, mit der sich rechnen laesst. */
 function dateKeyToDayNumber(dateKey: string): number | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);

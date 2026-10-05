@@ -131,8 +131,20 @@ describe('EventsShopCheckoutController.createOrderFromCheckout', () => {
       organizationRepository: {
         findOne: resolved({ id: 'org-1', settings: { vatExempt } }),
       },
-      getNextDailyNumber: resolved(1),
       orderRepository: {
+        // saveOrderWithNumbers: lock + MAX queries, then insert.
+        manager: {
+          transaction: <T>(work: (manager: unknown) => Promise<T>) =>
+            work({
+              query: resolved([{ max: null }]),
+              findOne: resolved({ id: 'org-1', settings: {} }),
+              create: (_entity: unknown, o: Partial<Order>) => ({
+                id: 'order-1',
+                ...o,
+              }),
+              save: (o: Order) => Promise.resolve(o),
+            }),
+        },
         create: (o: Partial<Order>) => ({ id: 'order-1', ...o }),
         save: jest.fn((o: Order) => {
           savedOrders.push({ ...o } as Order);

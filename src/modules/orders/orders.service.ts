@@ -9,12 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import {
-  Repository,
-  Between,
-  MoreThanOrEqual,
-  SelectQueryBuilder,
-} from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -56,6 +51,7 @@ import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { GatewayService } from '../gateway/gateway.service';
 import { endOfDay } from '../../common/utils/date-range.util';
+import { saveOrderWithNumbers } from './order-numbering';
 
 export interface OrderStats {
   count: number;
@@ -134,34 +130,26 @@ export class OrdersService {
       }
     }
 
-    // Generate order number
-    const orderNumber = await this.generateOrderNumber(organizationId);
-    const dailyNumber = await this.getDailyNumber(
-      organizationId,
-      createDto.eventId || null,
+    // Order number and daily number are allocated together with the insert.
+    const order = await saveOrderWithNumbers(
+      this.orderRepository,
+      { organizationId, eventId: createDto.eventId || null },
+      {
+        tableNumber: createDto.tableNumber || null,
+        customerName: createDto.customerName || null,
+        customerPhone: createDto.customerPhone || null,
+        notes: createDto.notes || null,
+        priority: createDto.priority || undefined,
+        source: createDto.source || OrderSource.POS,
+        fulfillmentType:
+          createDto.fulfillmentType || OrderFulfillmentType.COUNTER_PICKUP,
+        discountAmount: createDto.discountAmount || 0,
+        discountReason: createDto.discountReason || null,
+        createdByUserId: user.id,
+        status: OrderStatus.OPEN,
+        paymentStatus: PaymentStatus.UNPAID,
+      },
     );
-
-    const order = this.orderRepository.create({
-      organizationId,
-      eventId: createDto.eventId || null,
-      orderNumber,
-      dailyNumber,
-      tableNumber: createDto.tableNumber || null,
-      customerName: createDto.customerName || null,
-      customerPhone: createDto.customerPhone || null,
-      notes: createDto.notes || null,
-      priority: createDto.priority || undefined,
-      source: createDto.source || OrderSource.POS,
-      fulfillmentType:
-        createDto.fulfillmentType || OrderFulfillmentType.COUNTER_PICKUP,
-      discountAmount: createDto.discountAmount || 0,
-      discountReason: createDto.discountReason || null,
-      createdByUserId: user.id,
-      status: OrderStatus.OPEN,
-      paymentStatus: PaymentStatus.UNPAID,
-    });
-
-    await this.orderRepository.save(order);
 
     // Add items if provided
     if (createDto.items && createDto.items.length > 0) {
@@ -1253,45 +1241,6 @@ export class OrdersService {
     }
 
     await this.orderRepository.save(order);
-  }
-
-  private async generateOrderNumber(organizationId: string): Promise<string> {
-    const date = new Date();
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-
-    // Get count of orders for today
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const count = await this.orderRepository.count({
-      where: {
-        organizationId,
-        createdAt: Between(startOfDay, endOfDay),
-      },
-    });
-
-    return `${dateStr}-${String(count + 1).padStart(4, '0')}`;
-  }
-
-  private async getDailyNumber(
-    organizationId: string,
-    eventId: string | null,
-  ): Promise<number> {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const count = await this.orderRepository.count({
-      where: {
-        organizationId,
-        eventId: eventId || undefined,
-        createdAt: MoreThanOrEqual(startOfDay),
-      },
-    });
-
-    return count + 1;
   }
 
   private async checkMembership(

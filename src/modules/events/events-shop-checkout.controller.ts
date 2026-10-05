@@ -52,6 +52,7 @@ import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { EmailService } from '../email/email.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
+import { saveOrderWithNumbers } from '../orders/order-numbering';
 import { escapeHtml } from '../email/email-template';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 
@@ -600,9 +601,6 @@ export class EventsShopCheckoutController {
       ? await this.categoryRepository.find({ where: { id: In(categoryIds) } })
       : [];
 
-    const dailyNumber = await this.getNextDailyNumber(checkout.organizationId);
-    const orderNumber = `S-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${dailyNumber.toString().padStart(4, '0')}`;
-
     const total = Number(checkout.totalAmount);
     const fee = Number(checkout.serviceFee || 0);
     const subtotal = Number((total - fee).toFixed(2));
@@ -619,27 +617,32 @@ export class EventsShopCheckoutController {
       ? ` · An den Tisch ${checkout.tableNumber ?? '-'}`
       : ' · Abholung';
 
-    const order = this.orderRepository.create({
-      organizationId: checkout.organizationId,
-      eventId: checkout.eventId,
-      orderNumber,
-      dailyNumber,
-      tableNumber: orderTableNumber,
-      customerName,
-      status: OrderStatus.OPEN,
-      paymentStatus: OrderPaymentStatus.PAID,
-      fulfillmentType: orderFulfillmentType,
-      source: OrderSource.ONLINE,
-      subtotal,
-      total,
-      paidAmount: total,
-      tipAmount: 0,
-      discountAmount: 0,
-      // Wird nach dem Anlegen der Positionen berechnet (unten).
-      taxTotal: 0,
-      notes: `Shop-Bestellung (online bezahlt) · ${checkout.email}${fulfillmentNote}${feeNote}`,
-    });
-    await this.orderRepository.save(order);
+    // Order number (S-YYYYMMDD-NNNN) and daily number are allocated
+    // together with the insert.
+    const order = await saveOrderWithNumbers(
+      this.orderRepository,
+      {
+        organizationId: checkout.organizationId,
+        eventId: checkout.eventId,
+        prefix: 'S-',
+      },
+      {
+        tableNumber: orderTableNumber,
+        customerName,
+        status: OrderStatus.OPEN,
+        paymentStatus: OrderPaymentStatus.PAID,
+        fulfillmentType: orderFulfillmentType,
+        source: OrderSource.ONLINE,
+        subtotal,
+        total,
+        paidAmount: total,
+        tipAmount: 0,
+        discountAmount: 0,
+        // Wird nach dem Anlegen der Positionen berechnet (unten).
+        taxTotal: 0,
+        notes: `Shop-Bestellung (online bezahlt) · ${checkout.email}${fulfillmentNote}${feeNote}`,
+      },
+    );
 
     const items = checkout.items.map((line) => {
       const product = products.find((p) => p.id === line.productId);
@@ -735,16 +738,5 @@ export class EventsShopCheckoutController {
       );
 
     return order;
-  }
-
-  private async getNextDailyNumber(organizationId: string): Promise<number> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const count = await this.orderRepository
-      .createQueryBuilder('o')
-      .where('o.organization_id = :orgId', { orgId: organizationId })
-      .andWhere('o.created_at >= :today', { today })
-      .getCount();
-    return count + 1;
   }
 }
