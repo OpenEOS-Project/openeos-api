@@ -18,7 +18,7 @@ export function assertTestEventOrderLimitNotReached(
   if (currentOrderCount >= maxOrders) {
     throw new ForbiddenException({
       code: ErrorCodes.TEST_LIMIT_REACHED,
-      message: `Test-Limit erreicht (${maxOrders} Bestellungen). Schalten Sie die Veranstaltung frei, um weiter zu kassieren.`,
+      message: `Test-Limit erreicht (${maxOrders} Bestellungen). Schalte die Veranstaltung frei, um weiter zu kassieren.`,
       params: { maxOrders },
     });
   }
