@@ -27,7 +27,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'On your own server, for one organisation, with no fees — with a guide in the handbook.',
     },
     text: {
-      de: 'OpenEOS lässt sich jetzt kostenlos auf einem eigenen Server betreiben. Diese Variante ist bewusst schlank: eine Organisation, in der Sie alles verwalten, ohne Abrechnung und ohne Selbstregistrierung — neue Mitglieder legen Sie selbst mit einem Startpasswort an. Wie man das mit Docker einrichtet, sichert und aktualisiert, steht im Handbuch unter „Selbst betreiben“. Am gehosteten Angebot unter openeos.de ändert sich nichts.',
+      de: 'OpenEOS lässt sich jetzt kostenlos auf einem eigenen Server betreiben. Diese Variante ist bewusst schlank: eine Organisation, in der du alles verwaltest, ohne Abrechnung und ohne Selbstregistrierung — neue Mitglieder legst du selbst mit einem Startpasswort an. Wie man das mit Docker einrichtet, sichert und aktualisiert, steht im Handbuch unter „Selbst betreiben“. Am gehosteten Angebot unter openeos.de ändert sich nichts.',
       en: 'OpenEOS can now be run on your own server free of charge. This edition is deliberately lean: one organisation in which you manage everything, with no billing and no self-registration — you create new members yourself with a starting password. How to set it up with Docker, back it up and update it is described in the handbook under "Self-hosting". Nothing changes for the hosted service at openeos.de.',
     },
   },
@@ -39,7 +39,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Assign a kitchen screen to a station',
     },
     kurz: {
-      de: 'In den Geräteeinstellungen wählen Sie, welche Station ein Bildschirm zeigt.',
+      de: 'In den Geräteeinstellungen wählst du, welche Station ein Bildschirm zeigt.',
       en: 'Device settings now let you choose which station a screen shows.',
     },
     text: {
@@ -59,7 +59,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Turning off two-factor sign-in is now confirmed with a current code.',
     },
     text: {
-      de: 'Um die Zwei-Faktor-Anmeldung abzuschalten oder neue Wiederherstellungscodes zu erzeugen, geben Sie jetzt einen aktuellen Code aus Ihrer App, per E-Mail oder einen Wiederherstellungscode ein. So kann niemand den Schutz abschalten, nur weil an einem Gerät noch jemand angemeldet ist.',
+      de: 'Um die Zwei-Faktor-Anmeldung abzuschalten oder neue Wiederherstellungscodes zu erzeugen, gibst du jetzt einen aktuellen Code aus deiner App, per E-Mail oder einen Wiederherstellungscode ein. So kann niemand den Schutz abschalten, nur weil an einem Gerät noch jemand angemeldet ist.',
       en: 'To turn off two-factor sign-in or create new recovery codes you now enter a current code from your app, by email, or a recovery code. That way nobody can remove the protection just because a device was left signed in.',
     },
   },
@@ -75,7 +75,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Card payments stopped working? Please enter your SumUp or PayPal key again.',
     },
     text: {
-      de: 'Beim Speichern der Organisationseinstellungen konnte ein hinterlegter SumUp- oder PayPal-Schlüssel unbrauchbar werden — die Kartenzahlung an der Kasse schlug danach fehl. Das ist behoben, und Zugangsdaten werden insgesamt zurückhaltender an die Oberfläche gegeben. Falls die Kartenzahlung bei Ihnen seitdem nicht mehr funktioniert, tragen Sie den Schlüssel unter „Integrationen“ einmal neu ein.',
+      de: 'Beim Speichern der Organisationseinstellungen konnte ein hinterlegter SumUp- oder PayPal-Schlüssel unbrauchbar werden — die Kartenzahlung an der Kasse schlug danach fehl. Das ist behoben, und Zugangsdaten werden insgesamt zurückhaltender an die Oberfläche gegeben. Falls die Kartenzahlung bei dir seitdem nicht mehr funktioniert, trage den Schlüssel unter „Integrationen“ einmal neu ein.',
       en: 'Saving the organisation settings could leave a stored SumUp or PayPal key unusable, after which card payments at the till failed. This is fixed, and credentials are now handed to the interface far more sparingly. If card payments have not worked for you since, enter the key once more under "Integrations".',
     },
   },
@@ -107,7 +107,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Changing the language no longer sends you back to the start page.',
     },
     text: {
-      de: 'Wer in den Einstellungen die Sprache umstellte, landete bisher auf der Startseite. Jetzt bleibt die Seite offen, auf der Sie gerade sind.',
+      de: 'Wer in den Einstellungen die Sprache umstellte, landete bisher auf der Startseite. Jetzt bleibt die Seite offen, auf der du gerade bist.',
       en: 'Changing the language in the settings used to send you back to the start page. The page you are on now stays open.',
     },
   },
@@ -151,11 +151,11 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'A message with a shift confirmation',
     },
     kurz: {
-      de: 'Was Sie beim Bestätigen einer Schicht schreiben, steht jetzt in der E-Mail an den Helfer.',
+      de: 'Was du beim Bestätigen einer Schicht schreibst, steht jetzt in der E-Mail an den Helfer.',
       en: 'What you write when confirming a shift now appears in the email to the helper.',
     },
     text: {
-      de: 'Beim Bestätigen einer Schichtanmeldung ließ sich eine Nachricht eingeben, sie kam aber nie an. Jetzt steht sie in der Bestätigungsmail an den Helfer, zusammen mit Ihrem Namen.',
+      de: 'Beim Bestätigen einer Schichtanmeldung ließ sich eine Nachricht eingeben, sie kam aber nie an. Jetzt steht sie in der Bestätigungsmail an den Helfer, zusammen mit deinem Namen.',
       en: 'When confirming a shift registration you could enter a message, but it never arrived. It now appears in the confirmation email to the helper, together with your name.',
     },
   },
@@ -171,7 +171,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'The session list shows browser and system, marks this device and no longer grows endlessly.',
     },
     text: {
-      de: 'Unter Einstellungen → Sicherheit stand bisher bei jeder Anmeldung „Unbekanntes Gerät“, und die Liste wurde ständig länger. Jetzt sehen Sie Browser und Betriebssystem, das Gerät, an dem Sie gerade sitzen, ist markiert, und jede Anmeldung erscheint nur einmal. „Alle anderen abmelden“ lässt die eigene Sitzung bestehen.',
+      de: 'Unter Einstellungen → Sicherheit stand bisher bei jeder Anmeldung „Unbekanntes Gerät“, und die Liste wurde ständig länger. Jetzt siehst du Browser und Betriebssystem, das Gerät, an dem du gerade sitzt, ist markiert, und jede Anmeldung erscheint nur einmal. „Alle anderen abmelden“ lässt die eigene Sitzung bestehen.',
       en: 'Settings → Security used to list every sign-in as "Unknown device", and the list kept growing. You now see browser and operating system, the device you are using is marked, and each sign-in appears only once. "Sign out all others" keeps your own session.',
     },
   },
@@ -199,7 +199,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Small fixes in sign-in and settings',
     },
     kurz: {
-      de: 'Fehlermeldungen in Ihrer Sprache, und „Speichern“ wird nach dem Speichern wieder grau.',
+      de: 'Fehlermeldungen in deiner Sprache, und „Speichern“ wird nach dem Speichern wieder grau.',
       en: 'Error messages in your language, and "Save" greys out again after saving.',
     },
     text: {
@@ -267,7 +267,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'A reply in the support chat now notifies you by email.',
     },
     text: {
-      de: 'Wenn wir auf eine Support-Anfrage antworten, bekommen Sie eine E-Mail mit einem Auszug und einem Link in den Chat. Bisher musste man von sich aus nachsehen, ob schon etwas da war.',
+      de: 'Wenn wir auf eine Support-Anfrage antworten, bekommst du eine E-Mail mit einem Auszug und einem Link in den Chat. Bisher musste man von sich aus nachsehen, ob schon etwas da war.',
       en: 'When we reply to a support request you now receive an email with an excerpt and a link into the chat. Previously you had to go and look for yourself.',
     },
   },
@@ -283,7 +283,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Access ends the moment you sign out — on that device only.',
     },
     text: {
-      de: 'Nach dem Abmelden war der Zugang technisch noch bis zu einer Stunde gültig. Jetzt endet er sofort. Betroffen ist nur das Gerät, an dem Sie sich abmelden — an der Kasse abzumelden wirft niemanden im Büro hinaus.',
+      de: 'Nach dem Abmelden war der Zugang technisch noch bis zu einer Stunde gültig. Jetzt endet er sofort. Betroffen ist nur das Gerät, an dem du dich abmeldest — an der Kasse abzumelden wirft niemanden im Büro hinaus.',
       en: 'After signing out, access technically remained valid for up to an hour. It now ends at once, and only for the device you sign out from — signing out at the till does not throw anyone out of the office.',
     },
   },
@@ -311,11 +311,11 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Connect screens with a code',
     },
     kurz: {
-      de: 'Fernseher und Tablets zeigen eine Zahl — die geben Sie in OpenEOS ein, fertig.',
+      de: 'Fernseher und Tablets zeigen eine Zahl — die gibst du in OpenEOS ein, fertig.',
       en: 'TVs and tablets show a number — enter it in OpenEOS and you are done.',
     },
     text: {
-      de: 'Ein Fernseher oder Tablet zeigt beim Start eine sechsstellige Zahl. Diese Zahl geben Sie in OpenEOS ein — fertig. Wer ein Handy dabei hat, scannt stattdessen den QR-Code auf dem Bildschirm. Ein Kabel oder eine Einrichtung am Gerät selbst ist nicht nötig.',
+      de: 'Ein Fernseher oder Tablet zeigt beim Start eine sechsstellige Zahl. Diese Zahl gibst du in OpenEOS ein — fertig. Wer ein Handy dabei hat, scannt stattdessen den QR-Code auf dem Bildschirm. Ein Kabel oder eine Einrichtung am Gerät selbst ist nicht nötig.',
       en: 'A TV or tablet shows a six-digit number when it starts. Enter that number in OpenEOS and you are done. With a phone to hand, scan the QR code on the screen instead. Nothing needs to be set up on the device itself.',
     },
   },
@@ -331,7 +331,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Light or dark, large text, your own heading — set per screen.',
     },
     text: {
-      de: 'Für jeden Bildschirm lässt sich einstellen, wie er aussieht: hell oder dunkel, normale oder große Schrift für weit entfernte Monitore, eine eigene Überschrift und ein eigener Begrüßungstext. Änderungen erscheinen sofort auf dem Bildschirm — Sie müssen nicht hingehen.',
+      de: 'Für jeden Bildschirm lässt sich einstellen, wie er aussieht: hell oder dunkel, normale oder große Schrift für weit entfernte Monitore, eine eigene Überschrift und ein eigener Begrüßungstext. Änderungen erscheinen sofort auf dem Bildschirm — du musst nicht hingehen.',
       en: 'Every screen can be set up individually: light or dark, normal or large text for monitors further away, its own header and its own welcome message. Changes appear on the screen straight away — no need to walk over to it.',
     },
   },
@@ -363,7 +363,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Request a link by email instead of typing a password.',
     },
     text: {
-      de: 'Sie können sich einen Anmeldelink per E-Mail schicken lassen, statt ein Passwort einzugeben. Der Link gilt 15 Minuten und funktioniert genau einmal. Ein Passwort können Sie weiterhin verwenden — und wer sich neu anmeldet, braucht gar keines mehr zu vergeben.',
+      de: 'Du kannst dir einen Anmeldelink per E-Mail schicken lassen, statt ein Passwort einzugeben. Der Link gilt 15 Minuten und funktioniert genau einmal. Ein Passwort kannst du weiterhin verwenden — und wer sich neu anmeldet, braucht gar keines mehr zu vergeben.',
       en: 'You can have a sign-in link emailed to you instead of typing a password. The link is valid for 15 minutes and works exactly once. Passwords still work — and new accounts no longer need one at all.',
     },
   },
@@ -379,7 +379,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'The second factor is now actually enforced.',
     },
     text: {
-      de: 'Wer die Anmeldung mit zusätzlichem Code eingerichtet hatte, wurde beim Anmelden nicht danach gefragt — das Passwort allein genügte. Das ist behoben: Der Code wird jetzt verlangt, bevor die Anmeldung abgeschlossen ist. Wenn Sie ein Gerät als vertrauenswürdig markiert haben, bleibt es dabei.',
+      de: 'Wer die Anmeldung mit zusätzlichem Code eingerichtet hatte, wurde beim Anmelden nicht danach gefragt — das Passwort allein genügte. Das ist behoben: Der Code wird jetzt verlangt, bevor die Anmeldung abgeschlossen ist. Wenn du ein Gerät als vertrauenswürdig markiert hast, bleibt es dabei.',
       en: 'Anyone who had set up sign-in with an extra code was never asked for it — the password alone was enough. Fixed: the code is now required before sign-in completes. Devices you marked as trusted stay trusted.',
     },
   },
@@ -411,7 +411,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Try up to 25 orders at no cost.',
     },
     text: {
-      de: 'Eine Veranstaltung lässt sich im Testmodus mit bis zu 25 Bestellungen ausprobieren, ohne etwas zu bezahlen. Erst wenn Sie darüber hinaus verkaufen wollen, wird sie freigeschaltet.',
+      de: 'Eine Veranstaltung lässt sich im Testmodus mit bis zu 25 Bestellungen ausprobieren, ohne etwas zu bezahlen. Erst wenn du darüber hinaus verkaufen willst, wird sie freigeschaltet.',
       en: 'An event can be tried in test mode with up to 25 orders at no cost. Only when you want to sell beyond that does it need activating.',
     },
   },
