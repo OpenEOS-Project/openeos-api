@@ -418,6 +418,7 @@ export class OrganizationsService {
     if (wantsNewAccount && actor.role !== OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ADMIN_REQUIRED_FOR_START_PASSWORD,
         message: 'Nur Admins können Konten mit Startpasswort anlegen',
       });
     }
@@ -433,6 +434,7 @@ export class OrganizationsService {
          gilt. Bestehende Konten werden ohne Passwort hinzugefuegt. */
       throw new ConflictException({
         code: ErrorCodes.USER_EXISTS,
+        reason: ErrorReasons.MEMBER_ACCOUNT_EXISTS,
         message:
           'Zu dieser E-Mail-Adresse gibt es bereits ein Konto. ' +
           'Bitte ohne Startpasswort hinzufügen.',
@@ -507,6 +509,7 @@ export class OrganizationsService {
       if (member.role === OrganizationRole.ADMIN) {
         throw new ForbiddenException({
           code: ErrorCodes.FORBIDDEN,
+          reason: ErrorReasons.ADMIN_REQUIRED_TO_EDIT_ADMIN,
           message: 'Nur Admins können Admins bearbeiten',
         });
       }
@@ -920,6 +923,7 @@ export class OrganizationsService {
     if (role === OrganizationRole.ADMIN) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ADMIN_REQUIRED_TO_GRANT_ADMIN,
         message: 'Nur Admins können die Admin-Rolle vergeben',
       });
     }
@@ -934,6 +938,7 @@ export class OrganizationsService {
     if (exceeding.length > 0) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.PERMISSIONS_EXCEED_OWN,
         message: 'Es können nur eigene Berechtigungen weitergegeben werden',
       });
     }
