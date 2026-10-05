@@ -46,6 +46,7 @@ import { PayPalService } from '../payments/providers/paypal.service';
 import { SumUpService } from '../sumup/sumup.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
+import { saveOrderWithNumbers } from '../orders/order-numbering';
 
 @Injectable()
 export class OnlineOrdersService {
@@ -345,33 +346,24 @@ export class OnlineOrdersService {
       });
     }
 
-    // Generate order number
-    const orderNumber = await this.generateOrderNumber(session.organizationId);
-    const dailyNumber = await this.getDailyNumber(
-      session.organizationId,
-      session.eventId,
+    // Create order (order number and daily number are allocated with it)
+    const order = await saveOrderWithNumbers(
+      this.orderRepository,
+      { organizationId: session.organizationId, eventId: session.eventId },
+      {
+        tableNumber: session.tableNumber,
+        customerName: submitDto.customerName || session.customerName || null,
+        notes: submitDto.notes || null,
+        status: OrderStatus.OPEN,
+        paymentStatus: PaymentStatus.UNPAID,
+        source: OrderSource.QR_ORDER,
+        fulfillmentType:
+          session.qrCode?.type === QrCodeType.TABLE
+            ? OrderFulfillmentType.TABLE_SERVICE
+            : OrderFulfillmentType.COUNTER_PICKUP,
+        onlineSessionId: session.id,
+      },
     );
-
-    // Create order
-    const order = this.orderRepository.create({
-      organizationId: session.organizationId,
-      eventId: session.eventId,
-      orderNumber,
-      dailyNumber,
-      tableNumber: session.tableNumber,
-      customerName: submitDto.customerName || session.customerName || null,
-      notes: submitDto.notes || null,
-      status: OrderStatus.OPEN,
-      paymentStatus: PaymentStatus.UNPAID,
-      source: OrderSource.QR_ORDER,
-      fulfillmentType:
-        session.qrCode?.type === QrCodeType.TABLE
-          ? OrderFulfillmentType.TABLE_SERVICE
-          : OrderFulfillmentType.COUNTER_PICKUP,
-      onlineSessionId: session.id,
-    });
-
-    await this.orderRepository.save(order);
 
     // Create order items
     let subtotal = 0;
@@ -698,36 +690,5 @@ export class OnlineOrdersService {
 
   private generateSessionToken(): string {
     return `sess_${uuidv4().replace(/-/g, '')}`;
-  }
-
-  private async generateOrderNumber(organizationId: string): Promise<string> {
-    const date = new Date();
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-
-    const count = await this.orderRepository.count({
-      where: { organizationId },
-    });
-
-    return `${dateStr}-${String(count + 1).padStart(4, '0')}`;
-  }
-
-  private async getDailyNumber(
-    organizationId: string,
-    eventId: string | null,
-  ): Promise<number> {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const queryBuilder = this.orderRepository
-      .createQueryBuilder('order')
-      .where('order.organizationId = :organizationId', { organizationId })
-      .andWhere('order.createdAt >= :startOfDay', { startOfDay });
-
-    if (eventId) {
-      queryBuilder.andWhere('order.eventId = :eventId', { eventId });
-    }
-
-    const count = await queryBuilder.getCount();
-    return count + 1;
   }
 }

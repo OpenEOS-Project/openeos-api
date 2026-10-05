@@ -53,6 +53,8 @@ export const ErrorCodes = {
   // SumUp Errors
   SUMUP_NOT_CONFIGURED: 'SUMUP_NOT_CONFIGURED',
   SUMUP_API_ERROR: 'SUMUP_API_ERROR',
+  // SumUp rejected the stored API key / merchant code (upstream 401/403).
+  SUMUP_INVALID_CREDENTIALS: 'SUMUP_INVALID_CREDENTIALS',
 
   // Integration Errors
   INTEGRATION_NOT_FOUND: 'INTEGRATION_NOT_FOUND',
@@ -116,6 +118,8 @@ export const ErrorMessages: Record<ErrorCode, string> = {
 
   [ErrorCodes.SUMUP_NOT_CONFIGURED]: 'SumUp ist nicht konfiguriert',
   [ErrorCodes.SUMUP_API_ERROR]: 'SumUp API Fehler',
+  [ErrorCodes.SUMUP_INVALID_CREDENTIALS]:
+    'SumUp hat die Zugangsdaten abgelehnt. Bitte API-Schlüssel und Händlercode prüfen.',
 
   [ErrorCodes.INTEGRATION_NOT_FOUND]: 'Integration nicht gefunden',
   [ErrorCodes.INTEGRATION_DISABLED]: 'Integration ist nicht aktiviert',

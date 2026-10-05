@@ -10,6 +10,8 @@ export default () => ({
   port: parseInt(process.env.PORT || '3000', 10),
   apiPrefix: process.env.API_PREFIX || 'api',
   apiVersion: parseInt(process.env.API_VERSION || '1', 10),
+  // Reverse proxies whose X-Forwarded-For is trusted — see trust-proxy.util.ts.
+  trustProxy: process.env.TRUST_PROXY,
 
   database: {
     host: process.env.DATABASE_HOST || 'localhost',

@@ -431,6 +431,7 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `JWT_EXPIRES_IN` | JWT Ablaufzeit | 30m |
 | `REFRESH_TOKEN_EXPIRES_IN` | Refresh Token Ablauf | 7d |
 | `CORS_ORIGINS` | Erlaubte Origins | http://localhost:3001 |
+| `TRUST_PROXY` | Vertrauenswürdige Reverse-Proxys für X-Forwarded-For (Hop-Anzahl, IPs/CIDRs oder `false`) | loopback, linklocal, uniquelocal |
 | `UPLOAD_DIR` | Upload-Verzeichnis | ./uploads |
 
 Siehe `.env.example` für alle verfügbaren Variablen.
