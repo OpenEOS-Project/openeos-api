@@ -403,12 +403,37 @@ export class OrganizationsService {
     currentUser: User,
   ): Promise<UserOrganization> {
     // Check if current user is admin or has members permission
-    await this.checkPermission(organizationId, currentUser, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser,
+      'members',
+    );
+    this.assertCanGrant(actor, addMemberDto.role, addMemberDto.permissions);
+
+    const wantsNewAccount = addMemberDto.password !== undefined;
+    if (wantsNewAccount && actor.role !== OrganizationRole.ADMIN) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Nur Admins können Konten mit Startpasswort anlegen',
+      });
+    }
 
     // Find user by email
     let user = await this.userRepository.findOne({
       where: { email: addMemberDto.email.toLowerCase() },
     });
+
+    if (user && wantsNewAccount && this.deployment.isSelfHosted) {
+      /* Ein Startpasswort fuer ein bestehendes Konto wuerde sonst still
+         ignoriert — wer es weitergibt, gaebe ein Passwort weiter, das nicht
+         gilt. Bestehende Konten werden ohne Passwort hinzugefuegt. */
+      throw new ConflictException({
+        code: ErrorCodes.USER_EXISTS,
+        message:
+          'Zu dieser E-Mail-Adresse gibt es bereits ein Konto. ' +
+          'Bitte ohne Startpasswort hinzufügen.',
+      });
+    }
 
     if (!user) {
       user = await this.createMemberAccount(addMemberDto);
@@ -455,7 +480,11 @@ export class OrganizationsService {
     currentUser: User,
   ): Promise<UserOrganization> {
     // Check if current user is admin or has members permission
-    await this.checkPermission(organizationId, currentUser, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser,
+      'members',
+    );
 
     const member = await this.userOrganizationRepository.findOne({
       where: { id: memberId, organizationId },
@@ -467,6 +496,21 @@ export class OrganizationsService {
         code: ErrorCodes.NOT_FOUND,
         message: 'Mitglied nicht gefunden',
       });
+    }
+
+    if (actor.role !== OrganizationRole.ADMIN) {
+      if (member.role === OrganizationRole.ADMIN) {
+        throw new ForbiddenException({
+          code: ErrorCodes.FORBIDDEN,
+          message: 'Nur Admins können Admins bearbeiten',
+        });
+      }
+      this.assertCanGrant(
+        actor,
+        updateDto.role ?? member.role,
+        updateDto.permissions,
+        member.permissions,
+      );
     }
 
     // Prevent self-demotion from admin
@@ -553,7 +597,12 @@ export class OrganizationsService {
     currentUser: User,
   ): Promise<Invitation> {
     // Check if current user is admin or has members permission
-    await this.checkPermission(organizationId, currentUser, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser,
+      'members',
+    );
+    this.assertCanGrant(actor, createDto.role, createDto.permissions);
 
     const organization = await this.organizationRepository.findOneOrFail({
       where: { id: organizationId },
@@ -837,6 +886,42 @@ export class OrganizationsService {
   }
 
   // Helper methods
+  /**
+   * Verhindert, dass ein Mitglied mit Mitgliederrecht mehr vergibt, als es
+   * selbst hat: keine Admin-Rolle und nur Modulrechte, die es selbst besitzt.
+   * Admins (und Super-Admins) duerfen alles vergeben. Rechte, die das
+   * bearbeitete Mitglied bereits hat, gelten nicht als neu vergeben.
+   */
+  private assertCanGrant(
+    actor: UserOrganization,
+    role: OrganizationRole,
+    permissions: OrganizationPermissions | undefined,
+    alreadyHeld: OrganizationPermissions = {},
+  ): void {
+    if (actor.role === OrganizationRole.ADMIN) return;
+
+    if (role === OrganizationRole.ADMIN) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Nur Admins können die Admin-Rolle vergeben',
+      });
+    }
+
+    const own = actor.permissions ?? {};
+    const exceeding = Object.entries(permissions ?? {}).filter(
+      ([key, granted]) =>
+        granted === true &&
+        !own[key as keyof OrganizationPermissions] &&
+        !alreadyHeld[key as keyof OrganizationPermissions],
+    );
+    if (exceeding.length > 0) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Es können nur eigene Berechtigungen weitergegeben werden',
+      });
+    }
+  }
+
   async checkMembership(
     organizationId: string,
     user: User,
