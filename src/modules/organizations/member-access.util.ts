@@ -83,7 +83,7 @@ export function assertCanManage(actor: Holder, target: Holder): void {
       code: ErrorCodes.FORBIDDEN,
       reason: ErrorReasons.PERMISSIONS_EXCEED_OWN,
       message:
-        'Mitglieder mit Berechtigungen, die Sie selbst nicht haben, können nur Admins verwalten',
+        'Mitglieder mit Berechtigungen, die du selbst nicht hast, können nur Admins verwalten',
     });
   }
 }

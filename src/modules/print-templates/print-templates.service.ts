@@ -215,7 +215,7 @@ export class PrintTemplatesService {
         <p>1x Beispielprodukt</p>
         <p>2x Weiteres Produkt</p>
         <hr/>
-        <p style="text-align: center;">Danke für Ihren Einkauf!</p>
+        <p style="text-align: center;">Danke für deinen Einkauf!</p>
       </div>
     `;
   }

@@ -398,16 +398,16 @@ export class EmailService {
     recipientName: string;
     preview: string;
   }): Promise<boolean> {
-    const subject = 'Antwort auf Ihre Support-Anfrage';
+    const subject = 'Antwort auf deine Support-Anfrage';
     const html = this.getBaseTemplate(`
       <h1>Wir haben geantwortet</h1>
       <p>Hallo ${escapeHtml(options.recipientName)},</p>
-      <p>auf Ihre Support-Anfrage gibt es eine Antwort:</p>
+      <p>auf deine Support-Anfrage gibt es eine Antwort:</p>
       <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333;">${escapeHtmlMitUmbruechen(options.preview)}</p>
       <p style="margin: 24px 0;">
         <a href="${this.appUrl}/support" style="background: #111; color: #fff; padding: 10px 18px; border-radius: 6px; text-decoration: none;">Antwort im Support-Chat lesen</a>
       </p>
-      <p style="color: #666; font-size: 14px;">Dort können Sie direkt zurückschreiben.</p>
+      <p style="color: #666; font-size: 14px;">Dort kannst du direkt zurückschreiben.</p>
     `);
 
     return this.sendEmail({ to: options.to, subject, html });
@@ -481,9 +481,9 @@ export class EmailService {
     const roleLabel = role === 'admin' ? 'Administrator' : 'Mitglied';
     const subject = `Einladung: ${organizationName}`;
     const html = this.getBaseTemplate(`
-      <h1>Sie wurden eingeladen!</h1>
-      <p><strong>${escapeHtml(inviterName)}</strong> hat Sie als <strong>${roleLabel}</strong> zur Organisation <strong>${escapeHtml(organizationName)}</strong> eingeladen.</p>
-      <p>Klicken Sie auf den folgenden Button, um die Einladung anzunehmen:</p>
+      <h1>Du wurdest eingeladen!</h1>
+      <p><strong>${escapeHtml(inviterName)}</strong> hat dich als <strong>${roleLabel}</strong> zur Organisation <strong>${escapeHtml(organizationName)}</strong> eingeladen.</p>
+      <p>Klicke auf den folgenden Button, um die Einladung anzunehmen:</p>
       <p style="text-align: center; margin: 30px 0;">
         <a href="${acceptUrl}" style="background: #2563eb; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
           Einladung annehmen
@@ -494,7 +494,7 @@ export class EmailService {
         <a href="${acceptUrl}" style="color: #2563eb;">${acceptUrl}</a>
       </p>
       <p style="color: #666; font-size: 14px;">
-        Die Einladung ist 7 Tage gültig. Falls Sie diese Einladung nicht erwartet haben, können Sie sie ignorieren.
+        Die Einladung ist 7 Tage gültig. Falls du diese Einladung nicht erwartet hast, kannst du sie ignorieren.
       </p>
     `);
 
