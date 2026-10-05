@@ -21,6 +21,7 @@ import {
   OrganizationPermissions,
 } from '../../database/entities/user-organization.entity';
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { assertCanGrant, assertCanManage } from './member-access.util';
 import {
   PaginationDto,
   PaginatedResult,
@@ -348,12 +349,37 @@ export class OrganizationsService {
     currentUser: User,
   ): Promise<UserOrganization> {
     // Check if current user is admin or has members permission
-    await this.checkPermission(organizationId, currentUser, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser,
+      'members',
+    );
+    assertCanGrant(actor, addMemberDto.role, addMemberDto.permissions);
+
+    const wantsNewAccount = addMemberDto.password !== undefined;
+    if (wantsNewAccount && actor.role !== OrganizationRole.ADMIN) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        message: 'Nur Admins können Konten mit Startpasswort anlegen',
+      });
+    }
 
     // Find user by email
     let user = await this.userRepository.findOne({
       where: { email: addMemberDto.email.toLowerCase() },
     });
+
+    if (user && wantsNewAccount && this.deployment.isSelfHosted) {
+      /* Ein Startpasswort fuer ein bestehendes Konto wuerde sonst still
+         ignoriert — wer es weitergibt, gaebe ein Passwort weiter, das nicht
+         gilt. Bestehende Konten werden ohne Passwort hinzugefuegt. */
+      throw new ConflictException({
+        code: ErrorCodes.USER_EXISTS,
+        message:
+          'Zu dieser E-Mail-Adresse gibt es bereits ein Konto. ' +
+          'Bitte ohne Startpasswort hinzufügen.',
+      });
+    }
 
     if (!user) {
       user = await this.createMemberAccount(addMemberDto);
@@ -400,7 +426,11 @@ export class OrganizationsService {
     currentUser: User,
   ): Promise<UserOrganization> {
     // Check if current user is admin or has members permission
-    await this.checkPermission(organizationId, currentUser, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser,
+      'members',
+    );
 
     const member = await this.userOrganizationRepository.findOne({
       where: { id: memberId, organizationId },
@@ -414,9 +444,20 @@ export class OrganizationsService {
       });
     }
 
-    // Prevent self-demotion from admin
+    // Admins only by admins; other members keep rights the actor lacks
+    if (member.role === OrganizationRole.ADMIN) {
+      assertCanManage(actor, member);
+    }
+    assertCanGrant(
+      actor,
+      updateDto.role ?? member.role,
+      updateDto.permissions,
+      member.permissions,
+    );
+
+    // Keep at least one admin — also when someone else demotes the last one
     if (
-      member.userId === currentUser.id &&
+      member.role === OrganizationRole.ADMIN &&
       updateDto.role &&
       updateDto.role !== OrganizationRole.ADMIN
     ) {
@@ -456,7 +497,11 @@ export class OrganizationsService {
     currentUser: User,
   ): Promise<void> {
     // Check if current user is admin or has members permission
-    await this.checkPermission(organizationId, currentUser, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser,
+      'members',
+    );
 
     const member = await this.userOrganizationRepository.findOne({
       where: { id: memberId, organizationId },
@@ -469,6 +514,8 @@ export class OrganizationsService {
         message: 'Mitglied nicht gefunden',
       });
     }
+
+    assertCanManage(actor, member);
 
     // Prevent removing last admin
     if (member.role === OrganizationRole.ADMIN) {
@@ -498,7 +545,12 @@ export class OrganizationsService {
     currentUser: User,
   ): Promise<Invitation> {
     // Check if current user is admin or has members permission
-    await this.checkPermission(organizationId, currentUser, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser,
+      'members',
+    );
+    assertCanGrant(actor, createDto.role, createDto.permissions);
 
     const organization = await this.organizationRepository.findOneOrFail({
       where: { id: organizationId },
@@ -602,7 +654,7 @@ export class OrganizationsService {
     invitationId: string,
     user: User,
   ): Promise<void> {
-    await this.checkPermission(organizationId, user, 'members');
+    const actor = await this.checkPermission(organizationId, user, 'members');
 
     const invitation = await this.invitationRepository.findOne({
       where: { id: invitationId, organizationId },
@@ -615,6 +667,8 @@ export class OrganizationsService {
       });
     }
 
+    assertCanManage(actor, invitation);
+
     await this.invitationRepository.remove(invitation);
 
     this.logger.log(`Invitation cancelled: ${invitationId}`);
@@ -625,7 +679,11 @@ export class OrganizationsService {
     invitationId: string,
     currentUser: User,
   ): Promise<void> {
-    await this.checkPermission(organizationId, currentUser, 'members');
+    const actor = await this.checkPermission(
+      organizationId,
+      currentUser,
+      'members',
+    );
 
     const invitation = await this.invitationRepository.findOne({
       where: { id: invitationId, organizationId },
@@ -638,6 +696,8 @@ export class OrganizationsService {
         message: 'Einladung nicht gefunden',
       });
     }
+
+    assertCanManage(actor, invitation);
 
     if (invitation.isExpired()) {
       throw new BadRequestException({

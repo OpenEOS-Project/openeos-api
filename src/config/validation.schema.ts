@@ -8,6 +8,9 @@ export const validationSchema = Joi.object({
   PORT: Joi.number().default(3000),
   API_PREFIX: Joi.string().default('api'),
   API_VERSION: Joi.number().default(1),
+  // Reverse proxies to trust for X-Forwarded-For (see trust-proxy.util.ts).
+  // Unset = loopback, link-local and private networks.
+  TRUST_PROXY: Joi.string().allow('').optional(),
 
   // Database
   DATABASE_HOST: Joi.string().default('localhost'),

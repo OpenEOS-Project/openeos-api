@@ -18,6 +18,7 @@ import {
 } from './common/interceptors';
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 import { RedactSecretsInterceptor } from './common/interceptors/redact-secrets.interceptor';
+import { parseTrustProxy } from './common/utils/trust-proxy.util';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -28,6 +29,14 @@ async function bootstrap() {
     rawBody: true,
   });
   const configService = app.get(ConfigService);
+
+  // Behind a reverse proxy (Traefik) the socket address is the proxy's.
+  // `trust proxy` makes req.ip the client address taken from
+  // X-Forwarded-For — but only from proxies we trust, so clients can not
+  // spoof it. Used by sessions, the audit log and the rate limiter.
+  const trustProxy = parseTrustProxy(configService.get<string>('trustProxy'));
+  if (trustProxy.warning) logger.warn(trustProxy.warning);
+  app.set('trust proxy', trustProxy.value);
 
   // Socket.io over Redis pub/sub — required so websocket broadcasts and
   // presence work when running more than one API replica.
