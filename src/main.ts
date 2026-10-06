@@ -82,7 +82,8 @@ async function bootstrap() {
   app.enableCors({
     // In dev, reflect any request origin (skip allow-list).
     origin: isDev ? true : corsOrigins,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    // PUT: Karte eines Tischbereichs (PUT /table-areas/:areaId/layout).
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
     allowedHeaders: [
       'Content-Type',
