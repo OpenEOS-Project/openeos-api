@@ -9,6 +9,7 @@ import {
 import type { Response, Request } from 'express';
 import * as Sentry from '@sentry/nestjs';
 import { ErrorCodes, ErrorMessages } from '../constants/error-codes';
+import { reportUser, stripQueryString } from '../utils/sentry-scrub.util';
 
 interface ErrorDetail {
   field?: string;
@@ -117,16 +118,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
       // Report 5xx errors to Sentry
       Sentry.withScope((scope) => {
-        scope.setTag('url', request.url);
+        scope.setTag('url', stripQueryString(request.url));
         scope.setTag('method', request.method);
         if (requestId) {
           scope.setTag('request_id', requestId);
         }
-        const user = (
-          request as Request & { user?: { id: string; email: string } }
-        ).user;
+        // Nur die Nutzer-ID — keine E-Mail, keine IP.
+        const user = reportUser(
+          (request as Request & { user?: { id: string } }).user,
+        );
         if (user) {
-          scope.setUser({ id: user.id, email: user.email });
+          scope.setUser(user);
         }
         Sentry.captureException(exception);
       });

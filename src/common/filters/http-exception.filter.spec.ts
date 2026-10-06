@@ -12,13 +12,17 @@ import {
 } from './http-exception.filter';
 import { ErrorCodes, ErrorReasons } from '../constants/error-codes';
 import { validationException } from '../pipes/validation.pipe';
+import * as Sentry from '@sentry/nestjs';
 
 jest.mock('@sentry/nestjs', () => ({
   withScope: jest.fn(),
   captureException: jest.fn(),
 }));
 
-function run(exception: unknown): { status: number; body: ErrorResponse } {
+function run(
+  exception: unknown,
+  requestOverrides: Record<string, unknown> = {},
+): { status: number; body: ErrorResponse } {
   const result = { status: 0, body: undefined as unknown as ErrorResponse };
   const response = {
     getHeader: () => undefined,
@@ -36,6 +40,7 @@ function run(exception: unknown): { status: number; body: ErrorResponse } {
     method: 'GET',
     url: '/api/test',
     ip: '127.0.0.1',
+    ...requestOverrides,
   };
   const host = {
     switchToHttp: () => ({
@@ -193,5 +198,23 @@ describe('HttpExceptionFilter', () => {
       code: 'INTERNAL_ERROR',
       message: 'Interner Serverfehler',
     });
+  });
+});
+
+describe('HttpExceptionFilter error reports', () => {
+  it('reports 5xx errors with user id only and without query string', () => {
+    const scope = { setTag: jest.fn(), setUser: jest.fn() };
+    (Sentry.withScope as unknown as jest.Mock).mockImplementation(
+      (callback: (s: typeof scope) => void) => callback(scope),
+    );
+
+    run(new Error('boom'), {
+      url: '/api/orders?token=secret',
+      user: { id: 'user-1', email: 'person@example.org' },
+    });
+
+    expect(scope.setUser).toHaveBeenCalledWith({ id: 'user-1' });
+    expect(scope.setTag).toHaveBeenCalledWith('url', '/api/orders');
+    expect(Sentry.captureException).toHaveBeenCalled();
   });
 });

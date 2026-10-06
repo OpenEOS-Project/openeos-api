@@ -1,5 +1,9 @@
 import * as Sentry from '@sentry/nestjs';
 import { nodeProfilingIntegration } from '@sentry/profiling-node';
+import {
+  scrubSentryBreadcrumb,
+  scrubSentryEvent,
+} from './common/utils/sentry-scrub.util';
 
 // Initialize Sentry before anything else
 Sentry.init({
@@ -29,12 +33,18 @@ Sentry.init({
   // Don't send errors in development unless DSN is set
   enabled: !!process.env.SENTRY_DSN,
 
-  // Add context to errors
+  // Datensparsamkeit: keine IP, keine Cookies, kein Request-Body. Was das
+  // SDK dennoch an Anfragedaten mitschickt, reduziert scrubSentryEvent auf
+  // Pfad, Methode, eine kleine Allowlist von Kopfzeilen und die Nutzer-ID.
+  sendDefaultPii: false,
+
   beforeSend(event) {
     // Don't send events in test environment
     if (process.env.NODE_ENV === 'test') {
       return null;
     }
-    return event;
+    return scrubSentryEvent(event);
   },
+  beforeSendTransaction: (event) => scrubSentryEvent(event),
+  beforeBreadcrumb: (breadcrumb) => scrubSentryBreadcrumb(breadcrumb),
 });
