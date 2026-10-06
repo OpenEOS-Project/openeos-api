@@ -29,6 +29,10 @@ export * from './discount-voucher.entity';
 export * from './pfand-type.entity';
 export * from './pfand-return.entity';
 
+// Tables
+export * from './table-area.entity';
+export * from './dining-table.entity';
+
 // Devices & Print
 export * from './device.entity';
 export * from './printer.entity';

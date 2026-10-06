@@ -22,6 +22,7 @@ import {
   OrderItem,
   Payment,
   ShopCheckout,
+  TableArea,
 } from '../../database/entities';
 
 @Module({
@@ -36,6 +37,7 @@ import {
       OrderItem,
       Payment,
       ShopCheckout,
+      TableArea,
     ]),
     forwardRef(() => GatewayModule),
     SumUpModule,

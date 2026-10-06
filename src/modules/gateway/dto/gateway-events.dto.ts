@@ -189,6 +189,12 @@ export interface MenuRefreshEvent {
   reason: string;
 }
 
+// Tables (Bereiche/Tische der Organisation geaendert)
+export interface TablesUpdatedEvent {
+  /** Betroffene Bereiche; fehlt, wenn sich die Bereichsliste selbst geaendert hat. */
+  areaIds?: string[];
+}
+
 // Event lifecycle
 export interface EventStatusChangedEvent {
   eventId: string;
@@ -263,6 +269,9 @@ export const GatewayEvents = {
   CATEGORY_DELETED: 'categoryDeleted',
   MENU_REFRESH: 'menuRefresh',
   EVENT_STATUS_CHANGED: 'eventStatusChanged',
+
+  // Tables
+  TABLES_UPDATED: 'tablesUpdated',
 
   // Kitchen (fallback for items without station)
   KITCHEN_ORDER_CANCELLED: 'kitchenOrderCancelled',

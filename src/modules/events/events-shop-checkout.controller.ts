@@ -53,6 +53,7 @@ import { EmailService } from '../email/email.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { saveOrderWithNumbers } from '../orders/order-numbering';
+import { findTableIdByLabel } from '../tables/table-lookup';
 import { escapeHtml } from '../email/email-template';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 
@@ -617,6 +618,16 @@ export class EventsShopCheckoutController {
       ? ` · An den Tisch ${checkout.tableNumber ?? '-'}`
       : ' · Abholung';
 
+    // Tisch best effort ueber die Bezeichnung zuordnen; ohne Treffer bleibt
+    // es bei der freien Tischnummer (strenge Pruefung erst mit Tischauswahl).
+    const orderTableId = orderTableNumber
+      ? await findTableIdByLabel(
+          this.orderRepository.manager,
+          checkout.organizationId,
+          orderTableNumber,
+        )
+      : null;
+
     // Order number (S-YYYYMMDD-NNNN) and daily number are allocated
     // together with the insert.
     const order = await saveOrderWithNumbers(
@@ -628,6 +639,7 @@ export class EventsShopCheckoutController {
       },
       {
         tableNumber: orderTableNumber,
+        tableId: orderTableId,
         customerName,
         status: OrderStatus.OPEN,
         paymentStatus: OrderPaymentStatus.PAID,

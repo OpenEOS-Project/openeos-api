@@ -77,6 +77,17 @@ export class Product extends SoftDeleteEntity {
   @Column({ name: 'image_url', type: 'varchar', length: 500, nullable: true })
   imageUrl: string | null;
 
+  /**
+   * Linien-Icon aus dem OpenEOS-Set (`oe:<name>`). Bestandswerte in
+   * `imageUrl` (`pos-icon:<id>`, Foto-URL) bleiben gueltig.
+   */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  icon: string | null;
+
+  /** Erscheint an der Kasse unter „Favoriten“. */
+  @Column({ name: 'is_favorite', type: 'boolean', default: false })
+  isFavorite: boolean;
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 

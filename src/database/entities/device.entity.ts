@@ -69,6 +69,8 @@ export interface DeviceSettings {
   printerMode?: PrinterMode;
   requirePin?: boolean;
   displayMode?: DisplayMode;
+  /** Standardbereich der Kasse (Tischwahl oeffnet diesen Bereich zuerst). */
+  tableAreaId?: string;
   /** For customer displays: the POS device whose live cart is mirrored */
   posDeviceId?: string;
   /** Aussehen und Inhalt — nur bei Anzeigen ausgewertet. */

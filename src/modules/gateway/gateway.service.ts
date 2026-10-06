@@ -21,6 +21,7 @@ import {
   DeviceStatusChangedEvent,
   PrinterConfigUpdateEvent,
   OpenCashDrawerEvent,
+  TablesUpdatedEvent,
 } from './dto';
 
 @Injectable()
@@ -355,6 +356,22 @@ export class GatewayService {
     this.appGateway.emitToOrganization(
       organizationId,
       GatewayEvents.MENU_REFRESH,
+      payload,
+    );
+  }
+
+  // Table Events
+
+  notifyTablesUpdated(organizationId: string, areaIds?: string[]) {
+    const payload: TablesUpdatedEvent = areaIds ? { areaIds } : {};
+
+    this.logger.debug(
+      `Emitting tablesUpdated for organization ${organizationId}`,
+    );
+
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.TABLES_UPDATED,
       payload,
     );
   }
