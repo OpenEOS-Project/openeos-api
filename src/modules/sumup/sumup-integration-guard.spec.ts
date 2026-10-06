@@ -167,6 +167,7 @@ describe('SumUp device endpoints (DeviceApiController)', () => {
       none,
       none,
       none,
+      none,
     );
     return { controller, api, paymentRepository };
   }

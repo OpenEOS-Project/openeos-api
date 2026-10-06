@@ -15,8 +15,9 @@ import {
   PaymentStatus,
 } from '../../database/entities/order.entity';
 import { Organization } from '../../database/entities/organization.entity';
+import { PaymentMethod } from '../../database/entities/payment.entity';
 import { Product } from '../../database/entities/product.entity';
-import { CreateOrderDto } from '../orders/dto';
+import { CreateDeviceOrderDto } from './dto';
 import { DeviceApiController } from './device-api.controller';
 import {
   CLIENT_REQUEST_INDEX,
@@ -414,7 +415,7 @@ class FakeDb {
 }
 
 function makeController(deps: Record<number, unknown>): DeviceApiController {
-  const args = Array.from({ length: 22 }, (_, i) => deps[i]);
+  const args = Array.from({ length: 23 }, (_, i) => deps[i]);
   return new (DeviceApiController as unknown as new (
     ...a: unknown[]
   ) => DeviceApiController)(...args);
@@ -425,15 +426,29 @@ function setupController(
     serviceMode?: 'table' | 'counter';
     tables?: Event['settings']['tables'];
     eventStatus?: EventStatus;
+    /** Kassiermodus der Veranstaltung; `null` = nicht gesetzt. Standard `tab`. */
+    orderingMode?: 'immediate' | 'tab' | null;
+    /** Kassiermodus der Organisation (Rückfall). */
+    orgOrderingMode?: 'immediate' | 'tab';
   } = {},
 ) {
   const db = new FakeDb();
+  const orderingMode =
+    options.orderingMode === undefined ? 'tab' : options.orderingMode;
   db.events.push({
     id: EVENT,
     organizationId: ORG,
     status: options.eventStatus ?? EventStatus.ACTIVE,
-    settings: options.tables ? { tables: options.tables } : {},
+    settings: {
+      ...(options.tables ? { tables: options.tables } : {}),
+      ...(orderingMode ? { orderingMode } : {}),
+    },
   });
+  if (options.orgOrderingMode) {
+    db.organizations[0].settings = {
+      pos: { orderingMode: options.orgOrderingMode },
+    };
+  }
   db.products.push({
     id: PRODUCT,
     eventId: EVENT,
@@ -462,6 +477,48 @@ function setupController(
     handleOrderCreated: jest.fn(() => Promise.resolve()),
   };
   const configService = { get: jest.fn(() => 25) };
+  // Zahlung mit der Anlage: wie PaymentsBatchService.settle, aber nur das,
+  // was die Bestellung betrifft (Status, bezahlter Betrag).
+  const paymentsBatchService = {
+    settle: jest.fn(
+      async (
+        manager: { findOne: (e: unknown, o: unknown) => Promise<Row | null> },
+        _org: string,
+        _device: string,
+        dto: { orderIds: string[]; amountReceived?: number },
+      ) => {
+        const orders: Row[] = [];
+        for (const id of dto.orderIds) {
+          const order = await manager.findOne(Order, { where: { id } });
+          if (!order)
+            throw new NotFoundException({ reason: 'ORDER_NOT_FOUND' });
+          orders.push(order);
+        }
+        const due = orders.reduce(
+          (sum, o) => sum + Number(o.total) - Number(o.paidAmount ?? 0),
+          0,
+        );
+        if (dto.amountReceived !== undefined && dto.amountReceived < due) {
+          throw new BadRequestException({ reason: 'PAYMENT_AMOUNT_MISMATCH' });
+        }
+        for (const order of orders) {
+          order.paidAmount = order.total;
+          order.paymentStatus = PaymentStatus.PAID;
+          order.status = OrderStatus.COMPLETED;
+          await db.save(Order, order);
+        }
+        return {
+          orders,
+          payments: [],
+          totalPaid: due,
+          change: 0,
+          adjusted: new Map(),
+          settledWithoutPayment: [],
+        };
+      },
+    ),
+    afterCommit: jest.fn(),
+  };
   // Konstruktor-Reihenfolge siehe DeviceApiController.
   const controller = makeController({
     1: eventRepository,
@@ -469,6 +526,7 @@ function setupController(
     14: gatewayService,
     15: orderPrintService,
     21: configService,
+    22: paymentsBatchService,
   });
 
   const device = {
@@ -486,16 +544,17 @@ function setupController(
     device,
     gatewayService,
     orderPrintService,
+    paymentsBatchService,
     response,
   };
 }
 
-function dto(extra: Partial<CreateOrderDto> = {}): CreateOrderDto {
+function dto(extra: Partial<CreateDeviceOrderDto> = {}): CreateDeviceOrderDto {
   return {
     eventId: EVENT,
     items: [{ productId: PRODUCT, quantity: 2 }],
     ...extra,
-  } as CreateOrderDto;
+  } as CreateDeviceOrderDto;
 }
 
 describe('DeviceApiController.createOrder', () => {
@@ -661,6 +720,208 @@ describe('DeviceApiController.createOrder', () => {
     expect(db.orders).toHaveLength(0);
     expect(db.items).toHaveLength(0);
     expect(db.products[0].stockQuantity).toBe(10);
+  });
+});
+
+describe('DeviceApiController.createOrder — Kassiermodus (F8)', () => {
+  const pay = {
+    paymentMethod: PaymentMethod.CASH as const,
+    amountReceived: 10,
+  };
+
+  it.each([
+    ['event immediate', { orderingMode: 'immediate' as const }],
+    ['nothing set (default immediate)', { orderingMode: null }],
+    [
+      'event unset, organization immediate',
+      { orderingMode: null, orgOrderingMode: 'immediate' as const },
+    ],
+  ])(
+    '%s: an unpaid order is refused and nothing reaches kitchen or stations',
+    async (_name, options) => {
+      const {
+        db,
+        controller,
+        device,
+        gatewayService,
+        orderPrintService,
+        response,
+      } = setupController(options);
+
+      const call = controller.createOrder(device, dto(), response() as never);
+
+      expect(await reason(call)).toBe('ORDER_PAYMENT_REQUIRED');
+      expect(db.orders).toHaveLength(0);
+      expect(db.items).toHaveLength(0);
+      expect(db.products[0].stockQuantity).toBe(10);
+      expect(orderPrintService.handleOrderCreated).not.toHaveBeenCalled();
+      expect(gatewayService.notifyOrderCreated).not.toHaveBeenCalled();
+    },
+  );
+
+  it('event unset, organization tab: sending an unpaid round is allowed', async () => {
+    const { db, controller, device, response } = setupController({
+      orderingMode: null,
+      orgOrderingMode: 'tab',
+    });
+    const { data } = await controller.createOrder(
+      device,
+      dto(),
+      response() as never,
+    );
+    expect(data).toMatchObject({ paymentStatus: PaymentStatus.UNPAID });
+    expect(db.orders).toHaveLength(1);
+  });
+
+  it('the event overrides the organization', async () => {
+    const { controller, device, response } = setupController({
+      orderingMode: 'immediate',
+      orgOrderingMode: 'tab',
+    });
+    expect(
+      await reason(controller.createOrder(device, dto(), response() as never)),
+    ).toBe('ORDER_PAYMENT_REQUIRED');
+  });
+
+  it('immediate: order and payment in one go, kitchen ticket after the payment', async () => {
+    const {
+      db,
+      controller,
+      device,
+      gatewayService,
+      orderPrintService,
+      paymentsBatchService,
+      response,
+    } = setupController({ orderingMode: 'immediate' });
+
+    const { data } = await controller.createOrder(
+      device,
+      dto({ payment: pay }),
+      response() as never,
+    );
+
+    expect(data).toMatchObject({
+      total: 9,
+      paymentStatus: PaymentStatus.PAID,
+      status: OrderStatus.COMPLETED,
+    });
+    expect(db.orders).toHaveLength(1);
+    expect(paymentsBatchService.settle).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG,
+      'device-1',
+      expect.objectContaining({
+        paymentMethod: PaymentMethod.CASH,
+        amountReceived: 10,
+        orderIds: [data.id],
+      }),
+    );
+    // Erst nach der Transaktion: Bestellung melden, Küchenbon, dann Zahlung.
+    expect(gatewayService.notifyOrderCreated).toHaveBeenCalledTimes(1);
+    expect(orderPrintService.handleOrderCreated).toHaveBeenCalledTimes(1);
+    expect(paymentsBatchService.afterCommit).toHaveBeenCalledTimes(1);
+    const createdAt =
+      gatewayService.notifyOrderCreated.mock.invocationCallOrder[0];
+    const paidAt = paymentsBatchService.afterCommit.mock.invocationCallOrder[0];
+    expect(createdAt).toBeLessThan(paidAt);
+  });
+
+  it('immediate: a failed payment rolls the order back (no order, no ticket)', async () => {
+    const {
+      db,
+      controller,
+      device,
+      gatewayService,
+      orderPrintService,
+      response,
+    } = setupController({ orderingMode: 'immediate' });
+
+    const call = controller.createOrder(
+      device,
+      dto({
+        payment: { paymentMethod: PaymentMethod.CASH, amountReceived: 5 },
+      }),
+      response() as never,
+    );
+
+    expect(await reason(call)).toBe('PAYMENT_AMOUNT_MISMATCH');
+    expect(db.orders).toHaveLength(0);
+    expect(db.items).toHaveLength(0);
+    expect(db.products[0].stockQuantity).toBe(10);
+    expect(orderPrintService.handleOrderCreated).not.toHaveBeenCalled();
+    expect(gatewayService.notifyOrderCreated).not.toHaveBeenCalled();
+  });
+
+  it('immediate: other open orders of the table are settled in the same payment, the new one last', async () => {
+    const { db, controller, device, paymentsBatchService, response } =
+      setupController({ orderingMode: 'immediate' });
+    db.orders.push({
+      id: 'guest-order',
+      organizationId: ORG,
+      eventId: EVENT,
+      total: 6,
+      paidAmount: 0,
+      status: OrderStatus.OPEN,
+      paymentStatus: PaymentStatus.UNPAID,
+    });
+
+    const { data } = await controller.createOrder(
+      device,
+      dto({
+        payment: {
+          paymentMethod: PaymentMethod.CASH,
+          amountReceived: 20,
+          orderIds: ['guest-order'],
+        },
+      }),
+      response() as never,
+    );
+
+    expect(paymentsBatchService.settle.mock.calls[0][3].orderIds).toEqual([
+      'guest-order',
+      data.id,
+    ]);
+    expect(db.orders.every((o) => o.paymentStatus === PaymentStatus.PAID)).toBe(
+      true,
+    );
+  });
+
+  it('immediate: a fully discounted order needs no payment', async () => {
+    const { db, controller, device, response } = setupController({
+      orderingMode: 'immediate',
+    });
+    const { data } = await controller.createOrder(
+      device,
+      dto({ discountAmount: 9 }),
+      response() as never,
+    );
+    expect(data).toMatchObject({ paymentStatus: PaymentStatus.PAID });
+    expect(db.orders).toHaveLength(1);
+  });
+
+  it('retry with payment of an order that arrived unpaid pays it now', async () => {
+    const { db, controller, device, paymentsBatchService, response } =
+      setupController({ orderingMode: 'tab' });
+    const clientRequestId = '9d4c1f0e-6a51-4b9e-8a0c-1f2e3d4c5b6d';
+    const first = await controller.createOrder(
+      device,
+      dto({ clientRequestId }),
+      response() as never,
+    );
+    expect(first.data).toMatchObject({ paymentStatus: PaymentStatus.UNPAID });
+
+    const res = response();
+    const second = await controller.createOrder(
+      device,
+      dto({ clientRequestId, payment: pay }),
+      res as never,
+    );
+
+    expect(second.data.id).toBe(first.data.id);
+    expect(res.status).toHaveBeenCalledWith(HttpStatus.OK);
+    expect(second.data).toMatchObject({ paymentStatus: PaymentStatus.PAID });
+    expect(paymentsBatchService.afterCommit).toHaveBeenCalledTimes(1);
+    expect(db.orders).toHaveLength(1);
   });
 });
 
