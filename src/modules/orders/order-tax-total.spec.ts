@@ -55,10 +55,28 @@ describe('orderTaxTotal', () => {
  * recalculateOrderTotals exists twice (OrdersService and
  * DeviceApiController). Both must store the same totals.
  */
+type Recalc = (this: unknown, ...args: unknown[]) => Promise<void>;
+const recalcOf = (prototype: object) =>
+  (prototype as { recalculateOrderTotals: Recalc }).recalculateOrderTotals;
+
 describe.each([
-  ['OrdersService', OrdersService.prototype],
-  ['DeviceApiController', DeviceApiController.prototype],
-])('%s.recalculateOrderTotals', (_name, prototype) => {
+  [
+    'OrdersService',
+    (self: object, _manager: object, id: string) =>
+      recalcOf(OrdersService.prototype).call(self, id),
+  ],
+  [
+    // Laeuft in der Transaktion der Bestellanlage (EntityManager).
+    'DeviceApiController',
+    (self: object, manager: object, id: string, vatExempt?: boolean) =>
+      recalcOf(DeviceApiController.prototype).call(
+        self,
+        manager,
+        id,
+        vatExempt,
+      ),
+  ],
+])('%s.recalculateOrderTotals', (_name, invoke) => {
   function run(order: Order, vatExempt: boolean | undefined) {
     const saved: Order[] = [];
     const self = {
@@ -75,12 +93,11 @@ describe.each([
         ),
       },
     };
-    const recalc = (
-      prototype as unknown as {
-        recalculateOrderTotals: (this: unknown, id: string) => Promise<void>;
-      }
-    ).recalculateOrderTotals;
-    return recalc.call(self, order.id).then(() => saved[0]);
+    const manager = {
+      findOne: self.orderRepository.findOne,
+      save: self.orderRepository.save,
+    };
+    return invoke(self, manager, order.id, vatExempt).then(() => saved[0]);
   }
 
   function order(): Order {
