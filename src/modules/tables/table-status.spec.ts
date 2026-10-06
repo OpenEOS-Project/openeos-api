@@ -56,6 +56,7 @@ describe('aggregateTableStatus', () => {
       label: '12',
       areaId: null,
       status: 'busy',
+      waitReason: null,
       openAmount: 25,
       itemCount: 5,
       orderIds: ['a', 'b'],
@@ -91,6 +92,7 @@ describe('aggregateTableStatus', () => {
     ]);
     expect(entry).toMatchObject({
       status: 'wait',
+      waitReason: 'guest',
       openAmount: 0,
       waitingSince: '2026-10-06T18:05:00.000Z',
     });
@@ -118,6 +120,7 @@ describe('aggregateTableStatus', () => {
     ]);
     expect(entry).toMatchObject({
       status: 'wait',
+      waitReason: 'ready',
       waitingSince: '2026-10-06T18:20:00.000Z',
     });
   });
@@ -151,10 +154,23 @@ describe('aggregateTableStatus', () => {
     ]);
     expect(entry).toMatchObject({
       status: 'wait',
+      waitReason: 'guest',
       openAmount: 10,
       orderIds: ['busy', 'ready', 'guest'],
       waitingSince: '2026-10-06T18:10:00.000Z',
     });
+  });
+
+  it('reports ready as wait reason once the guest order is acknowledged', () => {
+    const [entry] = aggregateTableStatus([
+      row({
+        source: 'qr_order',
+        paymentStatus: 'paid',
+        acknowledgedAt: '2026-10-06T18:06:00.000Z',
+        readySince: '2026-10-06T18:25:00.000Z',
+      }),
+    ]);
+    expect(entry).toMatchObject({ status: 'wait', waitReason: 'ready' });
   });
 
   it('groups by upper(trim(table number)) and uses the matched table', () => {

@@ -17,12 +17,20 @@ import { tableKey } from './tables.constants';
  */
 export type TableStatusValue = 'busy' | 'wait';
 
+/**
+ * Grund fuer `wait`: `guest` = unquittierte Gastbestellung (a), `ready` =
+ * fertige Position muss an den Tisch (b). Gilt beides, hat `guest` Vorrang
+ * (das Oeffnen des Tisches quittiert sie, danach bleibt ggf. `ready`).
+ */
+export type TableWaitReason = 'guest' | 'ready';
+
 export interface TableStatusEntry {
   key: string;
   tableId: string | null;
   label: string;
   areaId: string | null;
   status: TableStatusValue;
+  waitReason: TableWaitReason | null;
   openAmount: number;
   itemCount: number;
   orderIds: string[];
@@ -167,6 +175,8 @@ interface Group {
   latestLabel: string;
   latestAt: Date | null;
   wait: boolean;
+  guestWaiting: boolean;
+  readyWaiting: boolean;
   busy: boolean;
   openAmount: number;
   itemCount: number;
@@ -204,6 +214,8 @@ export function aggregateTableStatus(
         latestLabel: row.tableNumber.trim(),
         latestAt: null,
         wait: false,
+        guestWaiting: false,
+        readyWaiting: false,
         busy: false,
         openAmount: 0,
         itemCount: 0,
@@ -239,10 +251,12 @@ export function aggregateTableStatus(
     }
     if (guest) {
       group.wait = true;
+      group.guestWaiting = true;
       group.waitingSince = minDate(group.waitingSince, createdAt);
     }
     if (ready) {
       group.wait = true;
+      group.readyWaiting = true;
       group.waitingSince = minDate(group.waitingSince, toDate(row.readySince));
     }
 
@@ -263,6 +277,11 @@ export function aggregateTableStatus(
       label: group.matchedLabel ?? group.latestLabel,
       areaId: group.areaId,
       status: group.wait ? 'wait' : 'busy',
+      waitReason: group.guestWaiting
+        ? 'guest'
+        : group.readyWaiting
+          ? 'ready'
+          : null,
       openAmount: Math.round(Math.max(group.openAmount, 0) * 100) / 100,
       itemCount: group.itemCount,
       orderIds: group.orderIds,
