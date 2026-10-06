@@ -183,6 +183,7 @@ describe('EventsShopCheckoutController.createOrderFromCheckout', () => {
         handleOrderCreated: resolved(undefined),
         handlePaymentReceived: resolved(undefined),
       },
+      gatewayService: { notifyOrderCreated: jest.fn() },
     };
     const checkout = {
       organizationId: 'org-1',
@@ -202,7 +203,11 @@ describe('EventsShopCheckoutController.createOrderFromCheckout', () => {
       }
     ).createOrderFromCheckout;
     const order = await create.call(self, checkout);
-    return { order, items: savedItems[0] };
+    return {
+      order,
+      items: savedItems[0],
+      notifyOrderCreated: self.gatewayService.notifyOrderCreated,
+    };
   }
 
   it('snapshots the product tax rates and stores the contained VAT', async () => {
@@ -216,5 +221,20 @@ describe('EventsShopCheckoutController.createOrderFromCheckout', () => {
   it('stores 0 for VAT-exempt organizations', async () => {
     const { order } = await run(true);
     expect(order.taxTotal).toBe(0);
+  });
+
+  it('announces the guest order to POS devices', async () => {
+    const { notifyOrderCreated } = await run(false);
+    expect(notifyOrderCreated).toHaveBeenCalledWith(
+      'org-1',
+      'event-1',
+      expect.objectContaining({
+        id: 'order-1',
+        items: [
+          expect.objectContaining({ productName: 'Bier' }),
+          expect.objectContaining({ productName: 'Wurst' }),
+        ],
+      }),
+    );
   });
 });
