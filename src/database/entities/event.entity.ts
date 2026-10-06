@@ -83,6 +83,19 @@ export interface ShopDaySetting {
   end: string;
 }
 
+export type EventTableMode = 'none' | 'free' | 'predefined';
+
+export const EVENT_TABLE_MODES: readonly EventTableMode[] = [
+  'none',
+  'free',
+  'predefined',
+];
+
+export interface EventTablesSettings {
+  mode: EventTableMode;
+  areaIds?: string[] | null;
+}
+
 export interface EventSettings {
   orderNumberPrefix?: string;
   /**
@@ -91,6 +104,12 @@ export interface EventSettings {
    * macht im Sommer Deckel und beim Weihnachtsmarkt Barverkauf.
    */
   orderingMode?: 'immediate' | 'tab';
+  /**
+   * Tischbetrieb an der Kasse. Fehlt der Block, gilt `free` (freie
+   * Tischnummer, wie bisher). `areaIds` schraenkt bei `predefined` die
+   * Bereiche ein; null/fehlend = alle Bereiche der Organisation.
+   */
+  tables?: EventTablesSettings;
   enableOnlineOrdering?: boolean;
   enableTableService?: boolean;
   enableTakeaway?: boolean;

@@ -12,6 +12,7 @@ import { Event } from './event.entity';
 import { User } from './user.entity';
 import { Device } from './device.entity';
 import { OnlineOrderSession } from './online-order-session.entity';
+import { DiningTable } from './dining-table.entity';
 import { OrderItem } from './order-item.entity';
 import { Payment } from './payment.entity';
 import { numericTransformer } from '../transformers/numeric.transformer';
@@ -66,8 +67,25 @@ export class Order extends BaseEntity {
   @Column({ name: 'daily_number', type: 'int' })
   dailyNumber: number;
 
-  @Column({ name: 'table_number', type: 'varchar', length: 20, nullable: true })
+  /**
+   * Tischbezeichnung als Snapshot (Anzeige, Bons, Gruppierung ueber
+   * `upper(trim(table_number))`). Bei Umbenennung eines Tisches werden nur
+   * offene Bestellungen nachgezogen.
+   */
+  @Column({ name: 'table_number', type: 'varchar', length: 50, nullable: true })
   tableNumber: string | null;
+
+  /** Vordefinierter Tisch, best effort; null bei freier Nummer/Altdaten. */
+  @Column({ name: 'table_id', type: 'uuid', nullable: true })
+  tableId: string | null;
+
+  /** Wann die Kasse eine Gastbestellung (Shop/QR) quittiert hat. */
+  @Column({
+    name: 'acknowledged_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  acknowledgedAt: Date | null;
 
   @Column({
     name: 'customer_name',
@@ -270,6 +288,10 @@ export class Order extends BaseEntity {
   })
   @JoinColumn({ name: 'created_by_device_id' })
   createdByDevice: Device | null;
+
+  @ManyToOne(() => DiningTable, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'table_id' })
+  table: DiningTable | null;
 
   @ManyToOne(() => OnlineOrderSession, (session) => session.orders, {
     onDelete: 'SET NULL',
