@@ -107,6 +107,24 @@ export class CreateOrderDto {
   tableNumber?: string;
 
   @ApiPropertyOptional({
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description:
+      'Vordefinierter Tisch (nur Geräte-API). Pflicht im Tischmodus „predefined“, im Modus „free“ best effort.',
+  })
+  @IsOptional()
+  @IsUUID()
+  tableId?: string;
+
+  @ApiPropertyOptional({
+    example: '0b6c1f2e-4f7a-4d8e-9b1a-2c3d4e5f6a7b',
+    description:
+      'Vom Gerät je Anlageversuch vergebene UUID (nur Geräte-API). Eine Wiederholung mit derselben ID liefert die bereits angelegte Bestellung (HTTP 200) statt einer zweiten.',
+  })
+  @IsOptional()
+  @IsUUID()
+  clientRequestId?: string;
+
+  @ApiPropertyOptional({
     example: 'Max Mustermann',
     description: 'Name des Kunden',
   })
@@ -153,7 +171,8 @@ export class CreateOrderDto {
 
   @ApiPropertyOptional({
     example: 'counter_pickup',
-    description: 'Erfüllungstyp der Bestellung',
+    description:
+      'Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät.',
     enum: OrderFulfillmentType,
   })
   @IsOptional()
