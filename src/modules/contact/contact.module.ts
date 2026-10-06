@@ -6,10 +6,9 @@ import { ContactController } from './contact.controller';
 import { ContactAdminController } from './contact-admin.controller';
 import { ContactAdminService } from './contact-admin.service';
 import { ContactService } from './contact.service';
-import { SupportModule } from '../support';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ContactRequest]), SupportModule],
+  imports: [TypeOrmModule.forFeature([ContactRequest])],
   controllers: [ContactController, ContactAdminController],
   providers: [ContactService, ContactAdminService],
 })

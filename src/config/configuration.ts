@@ -110,7 +110,8 @@ export default () => ({
   },
 
   support: {
-    telegramBotToken: process.env.SUPPORT_TELEGRAM_BOT_TOKEN || '',
-    telegramChatId: process.env.SUPPORT_TELEGRAM_CHAT_ID || '',
+    // Eigene Adresse fuer Support-Nachrichten und Kontaktanfragen. Leer:
+    // es gilt die allgemeine Admin-Adresse (siehe PlatformSettingsService).
+    notifyEmail: process.env.SUPPORT_NOTIFY_EMAIL || '',
   },
 });

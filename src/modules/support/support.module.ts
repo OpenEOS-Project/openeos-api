@@ -10,7 +10,6 @@ import {
 import { SupportController } from './support.controller';
 import { SupportAdminController } from './support-admin.controller';
 import { SupportService } from './support.service';
-import { TelegramSupportService } from './telegram-support.service';
 
 @Module({
   imports: [
@@ -23,7 +22,7 @@ import { TelegramSupportService } from './telegram-support.service';
     ]),
   ],
   controllers: [SupportController, SupportAdminController],
-  providers: [SupportService, TelegramSupportService],
-  exports: [SupportService, TelegramSupportService],
+  providers: [SupportService],
+  exports: [SupportService],
 })
 export class SupportModule {}
