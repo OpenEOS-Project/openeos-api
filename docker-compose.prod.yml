@@ -72,9 +72,9 @@ services:
       TEST_EVENT_MAX_ORDERS: ${TEST_EVENT_MAX_ORDERS:-25}
       OPENREGISTER_API_KEY: ${OPENREGISTER_API_KEY:-}
 
-      # Support-Chat: Telegram-Brücke (Forum-Gruppe mit Topics)
-      SUPPORT_TELEGRAM_BOT_TOKEN: ${SUPPORT_TELEGRAM_BOT_TOKEN:-}
-      SUPPORT_TELEGRAM_CHAT_ID: ${SUPPORT_TELEGRAM_CHAT_ID:-}
+      # Benachrichtigung über Support-Nachrichten und Kontaktanfragen
+      # (leer: allgemeine Admin-Adresse)
+      SUPPORT_NOTIFY_EMAIL: ${SUPPORT_NOTIFY_EMAIL:-}
 
       # Zeitzone für stundenbasierte Auswertungen
       REPORT_TIMEZONE: ${REPORT_TIMEZONE:-Europe/Berlin}

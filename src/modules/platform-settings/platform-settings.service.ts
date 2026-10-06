@@ -19,6 +19,12 @@ export interface AdminNotificationSettings {
   notifyOn: AdminNotifyOnSettings;
 }
 
+/** Event types that use the dedicated support address (SUPPORT_NOTIFY_EMAIL). */
+const SUPPORT_NOTIFY_TYPES: readonly (keyof AdminNotifyOnSettings)[] = [
+  'supportMessage',
+  'contactRequest',
+];
+
 const DEFAULT_NOTIFICATION_SETTINGS: AdminNotificationSettings = {
   email: null,
   notifyOn: {
@@ -88,6 +94,10 @@ export class PlatformSettingsService {
    *
    * Resolution order: configured settings email → ADMIN_NOTIFY_EMAIL →
    * ADMIN_EMAIL (both already folded into `email.adminNotifyEmail`).
+   *
+   * Support messages and website contact requests go to SUPPORT_NOTIFY_EMAIL
+   * first if it is set — the support inbox may differ from the general admin
+   * address. The toggle applies either way.
    */
   async resolveNotificationTarget(
     type: keyof AdminNotifyOnSettings,
@@ -97,10 +107,13 @@ export class PlatformSettingsService {
       return null;
     }
 
+    const supportEmail = SUPPORT_NOTIFY_TYPES.includes(type)
+      ? this.configService.get<string>('support.notifyEmail')
+      : undefined;
     const fallbackEmail = this.configService.get<string>(
       'email.adminNotifyEmail',
     );
-    const email = settings.email || fallbackEmail || null;
+    const email = supportEmail || settings.email || fallbackEmail || null;
 
     return email || null;
   }

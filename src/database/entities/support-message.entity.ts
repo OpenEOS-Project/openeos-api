@@ -14,9 +14,8 @@ export type SupportMessageDirection = 'inbound' | 'outbound';
 
 /**
  * Eine Nachricht im Support-Chat einer Organisation. `inbound` = vom Kunden
- * (Vereinsmitglied) gesendet, `outbound` = vom Plattform-Support. Nachrichten
- * werden nach Telegram gespiegelt (ein Thema je Organisation), daher die
- * optionale `telegramMessageId`.
+ * (Vereinsmitglied) gesendet, `outbound` = vom Plattform-Support. Die
+ * Nachrichten bleiben in OpenEOS; beantwortet wird im Super-Admin-Bereich.
  */
 @Entity('support_messages')
 @Index(['organizationId', 'createdAt'])
@@ -35,9 +34,6 @@ export class SupportMessage {
 
   @Column({ type: 'text' })
   body: string;
-
-  @Column({ name: 'telegram_message_id', type: 'bigint', nullable: true })
-  telegramMessageId: string | null;
 
   @Column({ name: 'read_by_admin_at', type: 'timestamptz', nullable: true })
   readByAdminAt: Date | null;

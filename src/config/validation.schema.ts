@@ -92,7 +92,6 @@ export const validationSchema = Joi.object({
   TEST_EVENT_MAX_ORDERS: Joi.number().default(25),
   OPENREGISTER_API_KEY: Joi.string().allow('').default(''),
 
-  // Support-Chat Telegram-Bridge (optional)
-  SUPPORT_TELEGRAM_BOT_TOKEN: Joi.string().allow('').default(''),
-  SUPPORT_TELEGRAM_CHAT_ID: Joi.string().allow('').default(''),
+  // Empfänger für Support-Nachrichten und Kontaktanfragen (optional)
+  SUPPORT_NOTIFY_EMAIL: Joi.string().allow('').default(''),
 });

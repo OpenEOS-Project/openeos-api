@@ -428,7 +428,7 @@ export class EmailService {
         <tr><td style="padding: 6px 0; color: #666;">Von:</td><td style="padding: 6px 0;"><strong>${escapeHtml(options.senderName)}</strong></td></tr>
       </table>
       <p style="background: #f5f5f5; border-radius: 6px; padding: 12px 16px; color: #333;">${escapeHtml(options.preview)}</p>
-      <p style="color: #666; font-size: 14px;">Antworten kannst du im Super-Admin-Bereich unter Support oder direkt im Telegram-Topic der Organisation.</p>
+      <p style="color: #666; font-size: 14px;">Antworten kannst du im Super-Admin-Bereich unter Support.</p>
     `);
 
     return this.sendEmail({ to: options.to, subject, html });

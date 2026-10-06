@@ -17,7 +17,6 @@ import {
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { SendSupportMessageDto } from './dto';
 import { SupportMessageDto, SupportThreadSummaryDto } from './support.types';
-import { TelegramSupportService } from './telegram-support.service';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 
@@ -38,7 +37,9 @@ interface SupportThreadRow {
 
 /**
  * Support-Chat: ein fortlaufender Thread je Organisation zwischen
- * Vereinsmitgliedern und dem Plattform-Support, gespiegelt nach Telegram.
+ * Vereinsmitgliedern und dem Plattform-Support. Die Nachrichten bleiben in
+ * OpenEOS; der Support wird per E-Mail benachrichtigt und antwortet im
+ * Super-Admin-Bereich.
  */
 @Injectable()
 export class SupportService {
@@ -55,7 +56,6 @@ export class SupportService {
     private readonly eventRepository: Repository<Event>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    private readonly telegramSupportService: TelegramSupportService,
     private readonly emailService: EmailService,
     private readonly platformSettingsService: PlatformSettingsService,
   ) {}
@@ -102,25 +102,6 @@ export class SupportService {
       body,
     });
     await this.supportMessageRepository.save(message);
-
-    try {
-      const priority = await this.isPrioritySupport(organization);
-      const telegramMessageId =
-        await this.telegramSupportService.notifyInboundMessage(
-          organization,
-          user.fullName,
-          body,
-          priority,
-        );
-      if (telegramMessageId) {
-        message.telegramMessageId = String(telegramMessageId);
-        await this.supportMessageRepository.save(message);
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Telegram-Weiterleitung fehlgeschlagen für Organisation ${organizationId}: ${(error as Error).message}`,
-      );
-    }
 
     // Admin-E-Mail nur für die ERSTE ungelesene Nachricht eines Schwungs —
     // solange der Admin nicht gelesen hat, lösen Folgenachrichten keine Mail aus.
@@ -232,7 +213,7 @@ export class SupportService {
     organizationId: string,
     dto: SendSupportMessageDto,
   ): Promise<SupportMessageDto> {
-    const organization = await this.getOrganizationOrFail(organizationId);
+    await this.getOrganizationOrFail(organizationId);
     const body = this.assertNonEmptyBody(dto.body);
 
     const message = this.supportMessageRepository.create({
@@ -242,24 +223,6 @@ export class SupportService {
       body,
     });
     await this.supportMessageRepository.save(message);
-
-    try {
-      const priority = await this.isPrioritySupport(organization);
-      const telegramMessageId =
-        await this.telegramSupportService.mirrorAdminReply(
-          organization,
-          body,
-          priority,
-        );
-      if (telegramMessageId) {
-        message.telegramMessageId = String(telegramMessageId);
-        await this.supportMessageRepository.save(message);
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Telegram-Spiegelung fehlgeschlagen für Organisation ${organizationId}: ${(error as Error).message}`,
-      );
-    }
 
     await this.benachrichtigeFragestellerUeberAntwort(
       organizationId,
