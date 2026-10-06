@@ -18,8 +18,12 @@ import {
   Product,
   Order,
   OrderItem,
+  TableArea,
 } from '../../database/entities';
 import {
+  EVENT_TABLE_MODES,
+  EventSettings,
+  EventTableMode,
   EventStatus,
   EVENT_PAID_BILLING_STATUSES,
   isEventBillingUnlocked,
@@ -55,6 +59,8 @@ export class EventsService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(OrderItem)
     private readonly orderItemRepository: Repository<OrderItem>,
+    @InjectRepository(TableArea)
+    private readonly tableAreaRepository: Repository<TableArea>,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
     private readonly deployment: DeploymentService,
@@ -135,6 +141,11 @@ export class EventsService {
     // ein eintaegiger Zeitraum, der Shop hat dann rund um die Uhr offen.
     const endDate = createDto.endDate ? new Date(createDto.endDate) : startDate;
     this.assertChronological(startDate, endDate);
+    const settings = await this.withTablesSettings(
+      organizationId,
+      {},
+      (createDto.settings || {}) as EventSettings,
+    );
 
     const event = this.eventRepository.create({
       organizationId,
@@ -143,7 +154,7 @@ export class EventsService {
       startDate,
       endDate,
       status: EventStatus.INACTIVE,
-      settings: createDto.settings || {},
+      settings,
     });
 
     await this.eventRepository.save(event);
@@ -225,12 +236,30 @@ export class EventsService {
     if (updateDto.name) event.name = updateDto.name;
     if (updateDto.description !== undefined)
       event.description = updateDto.description;
-    if (updateDto.settings)
-      event.settings = { ...event.settings, ...updateDto.settings };
+    let settingsChanged = false;
+    if (updateDto.settings) {
+      const next = await this.withTablesSettings(
+        organizationId,
+        event.settings ?? {},
+        updateDto.settings as EventSettings,
+      );
+      settingsChanged =
+        JSON.stringify(next) !== JSON.stringify(event.settings ?? {});
+      event.settings = next;
+    }
 
     await this.eventRepository.save(event);
 
     this.logger.log(`Event updated: ${event.name} (${event.id})`);
+
+    // Kassen laden Tischmodus, Kassiermodus usw. neu.
+    if (settingsChanged) {
+      this.gatewayService.notifyMenuRefresh(
+        organizationId,
+        event.id,
+        'event-settings',
+      );
+    }
 
     return event;
   }
@@ -598,6 +627,72 @@ export class EventsService {
     }
 
     return event;
+  }
+
+  /**
+   * Fuehrt `patch` in `current` zusammen. Enthaelt `patch` den Block
+   * `tables` (Tischmodus + Bereiche), wird er geprueft und in Normalform
+   * `{ mode, areaIds }` gebracht; `tables: null` entfernt ihn (dann gilt
+   * wieder `free`). Bereiche muessen zur Organisation gehoeren. Ohne
+   * `tables` im Patch bleibt der gespeicherte Block unangetastet.
+   */
+  private async withTablesSettings(
+    organizationId: string,
+    current: EventSettings,
+    patch: EventSettings,
+  ): Promise<EventSettings> {
+    const next: EventSettings = { ...current, ...patch };
+    if (!('tables' in patch)) return next;
+
+    const raw = patch.tables as unknown;
+    if (raw === null || raw === undefined) {
+      delete next.tables;
+      return next;
+    }
+
+    const value = raw as { mode?: unknown; areaIds?: unknown };
+    if (
+      typeof raw !== 'object' ||
+      Array.isArray(raw) ||
+      !EVENT_TABLE_MODES.includes(value.mode as EventTableMode)
+    ) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TABLE_MODE_INVALID,
+        message:
+          'Wähle einen gültigen Tischmodus (keine, frei oder vordefiniert)',
+      });
+    }
+
+    let areaIds: string[] | null = null;
+    if (value.areaIds !== undefined && value.areaIds !== null) {
+      const uuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (
+        !Array.isArray(value.areaIds) ||
+        value.areaIds.some((id) => typeof id !== 'string' || !uuid.test(id))
+      ) {
+        throw this.tableAreaMissing();
+      }
+      areaIds = [...new Set(value.areaIds as string[])];
+      if (areaIds.length) {
+        const found = await this.tableAreaRepository.count({
+          where: { organizationId, id: In(areaIds) },
+        });
+        if (found !== areaIds.length) throw this.tableAreaMissing();
+      }
+    }
+
+    next.tables = { mode: value.mode as EventTableMode, areaIds };
+    return next;
+  }
+
+  private tableAreaMissing() {
+    return new BadRequestException({
+      code: ErrorCodes.VALIDATION_ERROR,
+      reason: ErrorReasons.TABLE_AREA_NOT_FOUND,
+      message: 'Mindestens ein gewählter Bereich existiert nicht mehr',
+    });
   }
 
   // Helper methods
