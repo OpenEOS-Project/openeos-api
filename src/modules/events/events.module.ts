@@ -7,6 +7,7 @@ import { EventBillingController } from './event-billing.controller';
 import { StripeWebhookController } from './stripe-webhook.controller';
 import { EventsService } from './events.service';
 import { EventBillingService } from './event-billing.service';
+import { TestOrderCleanupService } from './test-order-cleanup.service';
 import { GatewayModule } from '../gateway/gateway.module';
 import { SumUpModule } from '../sumup/sumup.module';
 import { StripeModule } from '../stripe/stripe.module';
@@ -52,7 +53,7 @@ import {
     EventBillingController,
     StripeWebhookController,
   ],
-  providers: [EventsService, EventBillingService],
+  providers: [EventsService, EventBillingService, TestOrderCleanupService],
   exports: [EventsService, EventBillingService],
 })
 export class EventsModule {}

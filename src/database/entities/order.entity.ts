@@ -95,6 +95,14 @@ export class Order extends BaseEntity {
   @Column({ name: 'client_request_id', type: 'uuid', nullable: true })
   clientRequestId: string | null;
 
+  /**
+   * Im Testmodus der Veranstaltung entstanden. Wird beim Anlegen gesetzt
+   * (saveOrderWithNumbers) und beim Aktivieren der Veranstaltung samt
+   * abhaengiger Daten geloescht (TestOrderCleanupService).
+   */
+  @Column({ name: 'is_test', type: 'boolean', default: false })
+  isTest: boolean;
+
   @Column({
     name: 'customer_name',
     type: 'varchar',

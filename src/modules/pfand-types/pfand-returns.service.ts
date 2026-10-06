@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { PfandType } from '../../database/entities/pfand-type.entity';
+import { Event, EventStatus } from '../../database/entities/event.entity';
 import {
   PfandReturn,
   PfandReturnLine,
@@ -79,9 +80,19 @@ export class PfandReturnsService {
       });
     }
 
+    // Im Testmodus gebucht: wird beim Aktivieren mit den Testbestellungen
+    // geloescht.
+    const event = context.eventId
+      ? await this.pfandReturnRepository.manager.findOne(Event, {
+          where: { id: context.eventId },
+          select: { id: true, status: true },
+        })
+      : null;
+
     const pfandReturn = this.pfandReturnRepository.create({
       organizationId,
       eventId: context.eventId ?? null,
+      isTest: event?.status === EventStatus.TEST,
       deviceId: context.deviceId ?? null,
       createdByUserId: context.userId ?? null,
       totalAmount,

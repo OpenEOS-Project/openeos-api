@@ -32,6 +32,7 @@ interface Row {
 class FakeDb {
   rows: Row[] = [];
   timeZones = new Map<string, string>();
+  eventStatuses = new Map<string, string>();
   lockCalls: unknown[][] = [];
   private locks = new Map<string, Promise<void>>();
 
@@ -60,6 +61,11 @@ class FakeDb {
           await previous;
           if (release) release.fn = unlock;
           return [];
+        }
+        if (sql.includes('SELECT status FROM events')) {
+          expect(sql).toContain('FOR SHARE');
+          const status = this.eventStatuses.get(String(params[0]));
+          return status ? [{ status }] : [];
         }
         if (sql.includes('MAX(o.daily_number)')) {
           const [org, eventId, start, end] = params as [
@@ -346,5 +352,39 @@ describe('saveOrderWithNumbers', () => {
       '20260925-0003',
     ]);
     expect(orders.map((o) => o.dailyNumber).sort()).toEqual([1, 2, 3]);
+  });
+
+  it('marks orders of an event in test mode as test orders', async () => {
+    const db = new FakeDb();
+    db.eventStatuses.set(EVENT, 'test');
+    const now = new Date('2026-09-24T10:00:00Z');
+
+    const order = await saveOrderWithNumbers(
+      db.repository(),
+      { organizationId: ORG, eventId: EVENT, now },
+      { createdAt: now },
+    );
+
+    expect(order.isTest).toBe(true);
+  });
+
+  it('does not mark orders of an active event or without event', async () => {
+    const db = new FakeDb();
+    db.eventStatuses.set(EVENT, 'active');
+    const now = new Date('2026-09-24T10:00:00Z');
+
+    const active = await saveOrderWithNumbers(
+      db.repository(),
+      { organizationId: ORG, eventId: EVENT, now },
+      { createdAt: now },
+    );
+    const withoutEvent = await saveOrderWithNumbers(
+      db.repository(),
+      { organizationId: ORG, eventId: null, now },
+      { createdAt: now },
+    );
+
+    expect(active.isTest).toBe(false);
+    expect(withoutEvent.isTest).toBe(false);
   });
 });
