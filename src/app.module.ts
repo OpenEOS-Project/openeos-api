@@ -50,6 +50,7 @@ import { SumUpModule } from './modules/sumup';
 import { ProductionStationsModule } from './modules/production-stations/production-stations.module';
 import { DiscountVouchersModule } from './modules/discount-vouchers';
 import { PfandTypesModule } from './modules/pfand-types';
+import { TablesModule } from './modules/tables';
 import { PlatformSettingsModule } from './modules/platform-settings';
 import { SupportModule } from './modules/support';
 import { ContactModule } from './modules/contact';
@@ -161,6 +162,7 @@ import { ChangelogModule } from './modules/changelog';
     ProductionStationsModule,
     DiscountVouchersModule,
     PfandTypesModule,
+    TablesModule,
     PlatformSettingsModule,
     SupportModule,
     ContactModule,
