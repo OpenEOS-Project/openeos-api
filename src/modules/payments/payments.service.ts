@@ -31,6 +31,7 @@ import { CreatePaymentDto, SplitPaymentDto, QueryPaymentsDto } from './dto';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { cashReceivedMetadata } from '../print-jobs/receipt-tax.util';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
+import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 
 @Injectable()
 export class PaymentsService {
@@ -321,13 +322,13 @@ export class PaymentsService {
 
     if (query.dateFrom) {
       queryBuilder.andWhere('payment.createdAt >= :dateFrom', {
-        dateFrom: query.dateFrom,
+        dateFrom: startOfDay(query.dateFrom),
       });
     }
 
     if (query.dateTo) {
       queryBuilder.andWhere('payment.createdAt <= :dateTo', {
-        dateTo: query.dateTo,
+        dateTo: endOfDay(query.dateTo),
       });
     }
 

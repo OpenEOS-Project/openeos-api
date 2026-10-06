@@ -10,6 +10,7 @@ import {
   ShiftRegistrationStatus,
 } from '../../database/entities';
 import { EmailService } from '../email/email.service';
+import { localDateKey } from '../../common/utils/date-range.util';
 
 @Injectable()
 export class ShiftReminderService {
@@ -57,7 +58,7 @@ export class ShiftReminderService {
     // Calculate the target date (today + reminderDays)
     const targetDate = new Date();
     targetDate.setDate(targetDate.getDate() + reminderDays);
-    const targetDateStr = targetDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    const targetDateStr = localDateKey(targetDate); // YYYY-MM-DD, local day
 
     // Find all shifts for this plan on the target date
     const shifts = await this.shiftRepository

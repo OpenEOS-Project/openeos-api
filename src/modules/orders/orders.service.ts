@@ -50,7 +50,7 @@ import { OrderPrintService } from '../print-jobs/order-print.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { GatewayService } from '../gateway/gateway.service';
-import { endOfDay } from '../../common/utils/date-range.util';
+import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 import { saveOrderWithNumbers } from './order-numbering';
 
 export interface OrderStats {
@@ -1069,7 +1069,10 @@ export class OrdersService {
 
     if (query.dateFrom) {
       queryBuilder.andWhere(`${alias}.createdAt >= :dateFrom`, {
-        dateFrom: query.dateFrom,
+        // Lokaler Tagesbeginn. Der rohe String '2026-09-12' wurde in der
+        // Datenbank als Mitternacht UTC gelesen (02:00 Uhr in Berlin) —
+        // Bestellungen nach Mitternacht fehlten unter "heute".
+        dateFrom: startOfDay(query.dateFrom),
       });
     }
 
