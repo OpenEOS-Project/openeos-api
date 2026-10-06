@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   OnlineOrderSession,
@@ -16,6 +16,7 @@ import { OnlineOrdersService } from './online-orders.service';
 import { PaymentsModule } from '../payments/payments.module';
 import { SumUpModule } from '../sumup/sumup.module';
 import { PrintJobsModule } from '../print-jobs/print-jobs.module';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { PrintJobsModule } from '../print-jobs/print-jobs.module';
     PaymentsModule,
     SumUpModule,
     PrintJobsModule,
+    forwardRef(() => GatewayModule),
   ],
   controllers: [OnlineOrdersController],
   providers: [OnlineOrdersService],

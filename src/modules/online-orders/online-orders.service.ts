@@ -3,6 +3,8 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -34,6 +36,8 @@ import {
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { GatewayService } from '../gateway/gateway.service';
+import { findTableIdByLabel } from '../tables/table-lookup';
 import {
   StartSessionDto,
   AddCartItemDto,
@@ -74,6 +78,8 @@ export class OnlineOrdersService {
     private readonly sumUpService: SumUpService,
     private readonly configService: ConfigService,
     private readonly orderPrintService: OrderPrintService,
+    @Inject(forwardRef(() => GatewayService))
+    private readonly gatewayService: GatewayService,
   ) {}
 
   async startSession(
@@ -355,12 +361,21 @@ export class OnlineOrdersService {
       });
     }
 
+    // Tisch best effort ueber die Bezeichnung zuordnen; ohne Treffer bleibt
+    // es bei der Tischnummer.
+    const tableId = await findTableIdByLabel(
+      this.orderRepository.manager,
+      session.organizationId,
+      session.tableNumber,
+    );
+
     // Create order (order number and daily number are allocated with it)
     const order = await saveOrderWithNumbers(
       this.orderRepository,
       { organizationId: session.organizationId, eventId: session.eventId },
       {
         tableNumber: session.tableNumber,
+        tableId,
         customerName: submitDto.customerName || session.customerName || null,
         notes: submitDto.notes || null,
         status: OrderStatus.OPEN,
@@ -447,10 +462,36 @@ export class OnlineOrdersService {
 
     this.logger.log(`Order submitted via online session: ${order.orderNumber}`);
 
-    return this.orderRepository.findOne({
+    const completeOrder = (await this.orderRepository.findOne({
       where: { id: order.id },
       relations: ['items'],
-    }) as Promise<Order>;
+    })) as Order;
+
+    // Kassen und Verwaltung sehen die Gastbestellung sofort (Tischstatus).
+    this.gatewayService.notifyOrderCreated(
+      completeOrder.organizationId,
+      completeOrder.eventId,
+      {
+        id: completeOrder.id,
+        orderNumber: completeOrder.orderNumber,
+        dailyNumber: completeOrder.dailyNumber,
+        tableNumber: completeOrder.tableNumber || undefined,
+        customerName: completeOrder.customerName || undefined,
+        status: completeOrder.status,
+        fulfillmentType: completeOrder.fulfillmentType,
+        source: completeOrder.source,
+        items: (completeOrder.items ?? []).map((item) => ({
+          id: item.id,
+          productName: item.productName,
+          quantity: item.quantity,
+          status: item.status,
+          notes: item.notes || undefined,
+          kitchenNotes: item.kitchenNotes || undefined,
+        })),
+      },
+    );
+
+    return completeOrder;
   }
 
   async getOrderStatus(sessionToken: string): Promise<Order[]> {
