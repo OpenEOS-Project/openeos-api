@@ -27,7 +27,7 @@ import {
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
 import { CurrentDevice } from '../../common/decorators';
 import { DevicesService } from './devices.service';
-import { VerifyPinDto } from './dto';
+import { CreateDeviceOrderDto, VerifyPinDto } from './dto';
 import {
   Device,
   Event,
@@ -62,7 +62,7 @@ import {
 } from '../../database/entities/payment.entity';
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
-import { CreateOrderDto, SelectedOptionDto } from '../orders/dto';
+import { SelectedOptionDto } from '../orders/dto';
 import { CreatePaymentDto } from '../payments/dto';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
@@ -81,6 +81,11 @@ import { PfandReturnsService } from '../pfand-types/pfand-returns.service';
 import { CreatePfandReturnDto } from '../pfand-types/dto';
 import { isPfandChargedForFulfillment } from '../../common/utils/pfand-policy';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
+import { resolveOrderingMode } from '../../common/utils/ordering-mode';
+import {
+  PaymentsBatchService,
+  type SettledBatch,
+} from '../payments/payments-batch.service';
 import { saveOrderWithNumbers } from '../orders/order-numbering';
 import {
   createDeviceTableLookup,
@@ -149,6 +154,7 @@ export class DeviceApiController {
     private readonly pfandTypesService: PfandTypesService,
     private readonly pfandReturnsService: PfandReturnsService,
     private readonly configService: ConfigService,
+    private readonly paymentsBatchService: PaymentsBatchService,
   ) {}
 
   @Get('organization')
@@ -512,11 +518,11 @@ export class DeviceApiController {
   @ApiOperation({
     summary: 'Create a new order from device',
     description:
-      'Tischbetrieb je Gerät und Veranstaltung (Spezifikation §2.3). Mit `clientRequestId` idempotent: eine Wiederholung liefert die bestehende Bestellung mit HTTP 200, ohne erneuten Küchenbon.',
+      'Tischbetrieb je Gerät und Veranstaltung (Spezifikation §2.3). Mit `clientRequestId` idempotent: eine Wiederholung liefert die bestehende Bestellung mit HTTP 200, ohne erneuten Küchenbon. Mit `payment` werden Bestellung und Zahlung in einer Transaktion gebucht; im Kassiermodus `immediate` ist das Pflicht (sonst 400 ORDER_PAYMENT_REQUIRED) — Küchenbon und Stationen bekommen die Bestellung dann erst nach der Zahlung.',
   })
   async createOrder(
     @CurrentDevice() device: Device,
-    @Body() createDto: CreateOrderDto,
+    @Body() createDto: CreateDeviceOrderDto,
     @Res({ passthrough: true }) response: Response,
   ) {
     const organizationId = requireOrganization(device);
@@ -531,7 +537,7 @@ export class DeviceApiController {
       );
       if (existing) {
         response.status(HttpStatus.OK);
-        return { data: existing };
+        return { data: await this.settleExisting(existing, createDto, device) };
       }
     }
 
@@ -576,7 +582,11 @@ export class DeviceApiController {
     // Bestellung, Positionen, Bestand und Summen in einer Transaktion:
     // scheitert eine Position (Bestand, Produkt), bleibt keine leere
     // Bestellung zurueck, die eine Wiederholung dann ausliefern wuerde.
-    let created: { order: Order; stockChanges: Product[] };
+    let created: {
+      order: Order;
+      stockChanges: Product[];
+      settled: SettledBatch | null;
+    };
     try {
       created = await this.orderRepository.manager.transaction(
         async (manager) => {
@@ -659,6 +669,29 @@ export class DeviceApiController {
             });
           }
 
+          // Zahlung gleich mit: Bestellung und Zahlung gelingen zusammen
+          // oder gar nicht. Die neue Bestellung ist die letzte (Trinkgeld,
+          // erhaltenes Bargeld).
+          if (createDto.payment) {
+            const { orderIds: others = [], ...payment } = createDto.payment;
+            const settled = await this.paymentsBatchService.settle(
+              manager,
+              organizationId,
+              device.id,
+              {
+                ...payment,
+                orderIds: [
+                  ...others.filter((id) => id !== completeOrder.id),
+                  completeOrder.id,
+                ],
+              },
+            );
+            const paidOrder =
+              settled.orders.find((o) => o.id === completeOrder.id) ??
+              completeOrder;
+            return { order: paidOrder, stockChanges, settled };
+          }
+
           // A fully-discounted order (total 0) has nothing to pay. Mark it
           // paid right away so the POS reaches the success screen without
           // sending a 0-amount payment (which the payment endpoint rejects).
@@ -666,9 +699,25 @@ export class DeviceApiController {
             completeOrder.paymentStatus = PaymentStatus.PAID;
             completeOrder.paidAmount = 0;
             await manager.save(completeOrder);
+            return { order: completeOrder, stockChanges, settled: null };
           }
 
-          return { order: completeOrder, stockChanges };
+          // „Sofort kassieren“: keine unbezahlte Bestellung aus der Kasse —
+          // sonst landet sie in Küche und Stationen, ohne dass jemand
+          // bezahlt hat (F8). Die Transaktion rollt alles zurück.
+          if (
+            resolveOrderingMode(event?.settings, organization?.settings) ===
+            'immediate'
+          ) {
+            throw new BadRequestException({
+              code: ErrorCodes.VALIDATION_ERROR,
+              reason: ErrorReasons.ORDER_PAYMENT_REQUIRED,
+              message:
+                'Im Kassiermodus „Sofort kassieren“ entsteht eine Bestellung erst mit ihrer Zahlung. Lade die Kasse neu und kassiere erneut.',
+            });
+          }
+
+          return { order: completeOrder, stockChanges, settled: null };
         },
       );
     } catch (error) {
@@ -680,7 +729,9 @@ export class DeviceApiController {
         );
         if (existing) {
           response.status(HttpStatus.OK);
-          return { data: existing };
+          return {
+            data: await this.settleExisting(existing, createDto, device),
+          };
         }
       }
       throw error;
@@ -763,7 +814,40 @@ export class DeviceApiController {
         );
     }
 
+    // Zahlungsereignisse und Kassenbon nach dem Küchenbon.
+    if (created.settled) {
+      this.paymentsBatchService.afterCommit(organizationId, created.settled);
+    }
+
     return { data: completeOrder };
+  }
+
+  /**
+   * Wiederholung einer Anlage (gleiche `clientRequestId`). Kam die erste
+   * Anfrage ohne Zahlung an (ältere Kasse) und bringt die Wiederholung
+   * eine mit, wird die Bestellung jetzt bezahlt — sonst bleibt alles, wie
+   * es ist.
+   */
+  private async settleExisting(
+    existing: Order,
+    createDto: CreateDeviceOrderDto,
+    device: Device,
+  ): Promise<Order> {
+    const open =
+      existing.paymentStatus === PaymentStatus.UNPAID ||
+      existing.paymentStatus === PaymentStatus.PARTLY_PAID;
+    if (!createDto.payment || !open) return existing;
+
+    const organizationId = requireOrganization(device);
+    const { orderIds: others = [], ...payment } = createDto.payment;
+    const settled = await this.orderRepository.manager.transaction((manager) =>
+      this.paymentsBatchService.settle(manager, organizationId, device.id, {
+        ...payment,
+        orderIds: [...others.filter((id) => id !== existing.id), existing.id],
+      }),
+    );
+    this.paymentsBatchService.afterCommit(organizationId, settled);
+    return settled.orders.find((o) => o.id === existing.id) ?? existing;
   }
 
   @Post('payments')
