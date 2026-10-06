@@ -39,6 +39,7 @@ import {
 import { CreateEventDto, UpdateEventDto, CopyProductsDto } from './dto';
 import { GatewayService } from '../gateway/gateway.service';
 import { countEventDays } from '../../common/utils/event-schedule.util';
+import { TestOrderCleanupService } from './test-order-cleanup.service';
 
 @Injectable()
 export class EventsService {
@@ -64,6 +65,7 @@ export class EventsService {
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
     private readonly deployment: DeploymentService,
+    private readonly testOrderCleanupService: TestOrderCleanupService,
   ) {}
 
   private emitStatusChanged(event: Event): void {
@@ -323,13 +325,36 @@ export class EventsService {
       });
     }
 
-    const deactivatedSiblings = await this.deactivateActiveOrTestSiblings(
-      organizationId,
-      event.id,
-    );
+    /* Aktivieren loescht die Testbuchungen — Oberflaeche, Doku und AGB
+       versprechen das. Alles in einer Transaktion: schlaegt das Loeschen
+       fehl, bleibt auch der Status, wie er war. Die Zeile der
+       Veranstaltung wird exklusiv gesperrt; eine gleichzeitig angelegte
+       Bestellung (sperrt sie geteilt) landet so entweder vorher als
+       Testbestellung oder nachher als echte. */
+    const { deactivatedSiblings, purge } =
+      await this.eventRepository.manager.transaction(async (manager) => {
+        await manager.query(`SELECT id FROM events WHERE id = $1 FOR UPDATE`, [
+          event.id,
+        ]);
 
-    event.status = EventStatus.ACTIVE;
-    await this.eventRepository.save(event);
+        const purgeResult = await this.testOrderCleanupService.purge(
+          manager,
+          organizationId,
+          event.id,
+        );
+
+        const repository = manager.getRepository(Event);
+        const siblings = await this.deactivateActiveOrTestSiblings(
+          organizationId,
+          event.id,
+          repository,
+        );
+
+        event.status = EventStatus.ACTIVE;
+        await repository.save(event);
+
+        return { deactivatedSiblings: siblings, purge: purgeResult };
+      });
 
     this.logger.log(`Event activated: ${event.name} (${event.id})`);
 
@@ -337,6 +362,7 @@ export class EventsService {
     for (const sibling of deactivatedSiblings) {
       this.emitStatusChanged(sibling);
     }
+    this.testOrderCleanupService.notify(purge);
 
     return event;
   }
@@ -433,8 +459,9 @@ export class EventsService {
   private async deactivateActiveOrTestSiblings(
     organizationId: string,
     excludeEventId: string,
+    repository: Repository<Event> = this.eventRepository,
   ): Promise<Event[]> {
-    const siblings = await this.eventRepository.find({
+    const siblings = await repository.find({
       where: {
         organizationId,
         status: In([EventStatus.ACTIVE, EventStatus.TEST]),
@@ -448,7 +475,7 @@ export class EventsService {
     }
 
     if (toDeactivate.length > 0) {
-      await this.eventRepository.save(toDeactivate);
+      await repository.save(toDeactivate);
     }
 
     return toDeactivate;

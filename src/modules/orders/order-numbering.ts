@@ -1,6 +1,7 @@
 import { DeepPartial, EntityManager, Repository } from 'typeorm';
 import { Order } from '../../database/entities/order.entity';
 import { Organization } from '../../database/entities/organization.entity';
+import { EventStatus } from '../../database/entities/event.entity';
 import { dayBoundsInZone } from '../../common/utils/event-schedule.util';
 
 /**
@@ -157,13 +158,32 @@ export async function allocateOrderNumbers(
 
 export type NewOrderData = Omit<
   DeepPartial<Order>,
-  'orderNumber' | 'dailyNumber' | 'organizationId' | 'eventId'
+  'orderNumber' | 'dailyNumber' | 'organizationId' | 'eventId' | 'isTest'
 >;
+
+/** Steht die Veranstaltung gerade im Testmodus? Sperrt ihre Zeile geteilt. */
+async function isEventInTestMode(
+  manager: EntityManager,
+  eventId: string | null,
+): Promise<boolean> {
+  if (!eventId) return false;
+  const rows = await manager.query<{ status: EventStatus }[]>(
+    `SELECT status FROM events WHERE id = $1 FOR SHARE`,
+    [eventId],
+  );
+  return rows[0]?.status === EventStatus.TEST;
+}
 
 /**
  * Bestellung mit frisch vergebener Bestell- und Abholnummer anlegen.
  * Vergabe und Insert liegen in einer Transaktion unter einer Advisory-Lock
  * je Organisation; die Lock endet mit der Transaktion.
+ *
+ * Hier — an der einen Stelle, durch die jede Bestellung laeuft — wird auch
+ * `isTest` gesetzt: steht die Veranstaltung im Testmodus, ist es eine
+ * Testbestellung, die beim Aktivieren geloescht wird. Die Zeile der
+ * Veranstaltung wird dabei geteilt gesperrt, damit eine gleichzeitige
+ * Aktivierung (sperrt exklusiv) entweder vorher oder nachher greift.
  */
 export async function saveOrderWithNumbers(
   orderRepository: Repository<Order>,
@@ -176,11 +196,13 @@ export async function saveOrderWithNumbers(
       params.organizationId,
     ]);
     const numbers = await allocateOrderNumbers(manager, params);
+    const isTest = await isEventInTestMode(manager, params.eventId);
     const order = manager.create(Order, {
       ...data,
       organizationId: params.organizationId,
       eventId: params.eventId,
       ...numbers,
+      isTest,
     } as DeepPartial<Order>);
     return manager.save(order);
   });

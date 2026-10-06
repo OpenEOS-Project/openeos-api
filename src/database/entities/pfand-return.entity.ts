@@ -38,6 +38,10 @@ export class PfandReturn extends BaseEntity {
   @Column({ type: 'jsonb', default: [] })
   lines: PfandReturnLine[];
 
+  /** Im Testmodus gebucht; wird beim Aktivieren der Veranstaltung geloescht. */
+  @Column({ name: 'is_test', type: 'boolean', default: false })
+  isTest: boolean;
+
   // Relations
   @ManyToOne(() => Organization, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'organization_id' })

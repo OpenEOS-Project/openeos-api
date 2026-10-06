@@ -107,7 +107,7 @@ export class EventsController {
   @Post(':eventId/activate')
   @ApiOperation({
     summary:
-      'Aktiviert ein Event (deaktiviert das aktuell aktive Event der Organisation)',
+      'Aktiviert ein Event (deaktiviert das aktuell aktive Event der Organisation, löscht die im Testmodus entstandenen Bestellungen)',
   })
   async activate(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
