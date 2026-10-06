@@ -7,11 +7,11 @@ import {
 import { Observable } from 'rxjs';
 import * as Sentry from '@sentry/nestjs';
 import type { Request } from 'express';
+import { reportUser } from '../utils/sentry-scrub.util';
 
 interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
-    email: string;
   };
 }
 
@@ -21,12 +21,10 @@ export class SentryContextInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
     Sentry.withScope((scope) => {
-      // Set user context
-      if (request.user) {
-        scope.setUser({
-          id: request.user.id,
-          email: request.user.email,
-        });
+      // Set user context — nur die Nutzer-ID, keine E-Mail, keine IP.
+      const user = reportUser(request.user);
+      if (user) {
+        scope.setUser(user);
       }
 
       // Set organization context
