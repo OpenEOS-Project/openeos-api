@@ -565,6 +565,8 @@ export class EventsService {
         options: sourceProduct.options,
         printSettings: sourceProduct.printSettings,
         sortOrder: sourceProduct.sortOrder,
+        icon: sourceProduct.icon,
+        isFavorite: sourceProduct.isFavorite,
       });
       await this.productRepository.save(newProduct);
       productsCopied++;

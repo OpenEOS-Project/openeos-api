@@ -10,8 +10,16 @@ import {
   Min,
   Max,
   IsNumber,
+  Matches,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+/**
+ * `oe:<name>` (Linien-Icon aus dem OpenEOS-Set), `pos-icon:<id>` oder ein
+ * Emoji wie bisher bei Kategorien.
+ */
+export const PRODUCT_ICON_PATTERN =
+  /^(oe:[a-z0-9]+(-[a-z0-9]+)*|pos-icon:[A-Za-z0-9_-]+|[^\s:]{1,16})$/u;
 
 export class CreateProductDto {
   @ApiProperty({
@@ -62,6 +70,25 @@ export class CreateProductDto {
   @IsString()
   @MaxLength(500)
   imageUrl?: string;
+
+  @ApiPropertyOptional({
+    example: 'oe:beer',
+    description:
+      'Icon: `oe:<name>` aus dem OpenEOS-Set (oder `pos-icon:<id>`/Emoji wie bisher)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  @Matches(PRODUCT_ICON_PATTERN, { message: 'Ungültiges Icon' })
+  icon?: string;
+
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Favorit: erscheint an der Kasse unter „Favoriten“',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isFavorite?: boolean;
 
   @ApiPropertyOptional({
     example: true,
