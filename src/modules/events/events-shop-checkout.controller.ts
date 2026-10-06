@@ -10,6 +10,8 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -51,6 +53,7 @@ import { SumUpApiService } from '../sumup/sumup-api.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { EmailService } from '../email/email.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { GatewayService } from '../gateway/gateway.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { saveOrderWithNumbers } from '../orders/order-numbering';
 import { findTableIdByLabel } from '../tables/table-lookup';
@@ -107,6 +110,8 @@ export class EventsShopCheckoutController {
     private readonly emailService: EmailService,
     private readonly orderPrintService: OrderPrintService,
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => GatewayService))
+    private readonly gatewayService: GatewayService,
   ) {}
 
   private async loadShopEvent(eventId: string): Promise<Event> {
@@ -715,6 +720,31 @@ export class EventsShopCheckoutController {
       metadata: { receiptUrl: checkout.sumupCheckoutUrl ?? undefined },
     });
     await this.paymentRepository.save(payment);
+
+    // Kassen und Verwaltung sehen die Gastbestellung sofort (Tischstatus
+    // „wartet“, Bestellliste) statt erst beim naechsten Abfragen.
+    this.gatewayService.notifyOrderCreated(
+      order.organizationId,
+      order.eventId,
+      {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        dailyNumber: order.dailyNumber,
+        tableNumber: order.tableNumber || undefined,
+        customerName: order.customerName || undefined,
+        status: order.status,
+        fulfillmentType: order.fulfillmentType,
+        source: order.source,
+        items: items.map((item) => ({
+          id: item.id,
+          productName: item.productName,
+          quantity: item.quantity,
+          status: item.status,
+          notes: item.notes || undefined,
+          kitchenNotes: item.kitchenNotes || undefined,
+        })),
+      },
+    );
 
     // Print kitchen ticket + receipt for the paid shop order. There is no POS
     // device, so routing relies on the org print settings / production-station

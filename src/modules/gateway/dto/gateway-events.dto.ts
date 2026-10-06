@@ -116,6 +116,13 @@ export interface PrinterHeartbeatEvent {
   isOnline: boolean;
 }
 
+/** Drucker wechselt online/offline (fuer die Status-Pille der Kasse). */
+export interface PrinterStatusChangedEvent {
+  printerId: string;
+  isOnline: boolean;
+  lastSeenAt: string;
+}
+
 // Printer Agent Events (Server -> Agent)
 export interface PrinterJobEvent {
   jobId: string;
@@ -259,6 +266,7 @@ export const GatewayEvents = {
   CART_SNAPSHOT_REQUESTED: 'cartSnapshotRequested',
   PRINT_JOB_CREATED: 'printJobCreated',
   PRINT_JOB_STATUS_CHANGED: 'printJobStatusChanged',
+  PRINTER_STATUS_CHANGED: 'printerStatusChanged',
   PRINTER_JOB: 'printerJob',
   BROADCAST_MESSAGE: 'broadcastMessage',
 

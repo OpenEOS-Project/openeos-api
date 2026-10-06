@@ -257,10 +257,27 @@ export class PrintersService {
     // Always refresh last_seen_at so the admin UI knows the agent is reachable,
     // even if the underlying USB printer reports offline (e.g. cable unplugged).
     // Scoped to the reporting agent's organization.
+    const previous = await this.printerRepository.findOne({
+      where: { id: printerId, organizationId },
+      select: { id: true, isOnline: true },
+    });
+    if (!previous) return;
+
+    const lastSeenAt = new Date();
     await this.printerRepository.update(
       { id: printerId, organizationId },
-      { isOnline, lastSeenAt: new Date() },
+      { isOnline, lastSeenAt },
     );
+
+    // Kassen zeigen den Bondrucker als Status-Pille; nur Wechsel melden,
+    // nicht jeden Heartbeat.
+    if (previous.isOnline !== isOnline) {
+      this.gatewayService.notifyPrinterStatusChanged(organizationId, {
+        printerId,
+        isOnline,
+        lastSeenAt: lastSeenAt.toISOString(),
+      });
+    }
   }
 
   async testPrint(

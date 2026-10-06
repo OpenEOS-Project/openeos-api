@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Repository, SelectQueryBuilder } from 'typeorm';
+import { In, Repository, SelectQueryBuilder } from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -58,6 +58,36 @@ export interface OrderStats {
   revenue: number;
   avgReceipt: number;
   pfand: number;
+}
+
+/**
+ * Bestellstatus aus den Positionen (unveraendert die Regel aus
+ * updateOrderStatus): keine aktiven Positionen → open, alle ausgegeben →
+ * ready, sonst in_progress, sobald eine Position nicht mehr pending ist.
+ */
+export function orderStatusFromItems(
+  items: Pick<OrderItem, 'status'>[],
+  current: OrderStatus,
+): OrderStatus {
+  const activeItems = items.filter(
+    (i) => i.status !== OrderItemStatus.CANCELLED,
+  );
+  if (activeItems.length === 0) return OrderStatus.OPEN;
+  if (activeItems.every((i) => i.status === OrderItemStatus.DELIVERED)) {
+    return OrderStatus.READY;
+  }
+  if (activeItems.some((i) => i.status !== OrderItemStatus.PENDING)) {
+    return OrderStatus.IN_PROGRESS;
+  }
+  return current;
+}
+
+export interface DeliverItemsResult {
+  /** Von `ready` auf `delivered` gesetzte Positionen. */
+  delivered: { id: string; orderId: string; productName: string }[];
+  /** Waren schon serviert — kein Fehler (zwei Kassen gleichzeitig). */
+  skipped: string[];
+  orders: { id: string; status: OrderStatus }[];
 }
 
 @Injectable()
@@ -733,6 +763,167 @@ export class OrdersService {
     return updatedOrder;
   }
 
+  /**
+   * „Serviert“ an der Kasse (Spezifikation §3.4): Positionen `ready →
+   * delivered`, ohne Benutzer, fuer die Organisation des Geraets. Alles oder
+   * nichts: fremde/unbekannte Positionen → 404, nicht fertige → 400. Schon
+   * servierte Positionen werden uebersprungen. Station und Verwaltung nutzen
+   * weiter markItemDelivered.
+   */
+  async deliverItemsForDevice(
+    organizationId: string,
+    itemIds: string[],
+  ): Promise<DeliverItemsResult> {
+    const ids = Array.from(new Set(itemIds));
+    const now = new Date();
+
+    const outcome = await this.orderRepository.manager.transaction(
+      async (manager) => {
+        const items = await manager.find(OrderItem, {
+          where: { id: In(ids) },
+          lock: { mode: 'pessimistic_write' },
+        });
+        const orderIds = Array.from(new Set(items.map((i) => i.orderId)));
+        const orders = orderIds.length
+          ? await manager.find(Order, {
+              where: { id: In(orderIds), organizationId },
+            })
+          : [];
+        const orderById = new Map(orders.map((o) => [o.id, o]));
+
+        const found = new Map(
+          items.filter((i) => orderById.has(i.orderId)).map((i) => [i.id, i]),
+        );
+        const missing = ids.filter((id) => !found.has(id));
+        if (missing.length) {
+          throw new NotFoundException({
+            code: ErrorCodes.NOT_FOUND,
+            reason: ErrorReasons.ORDER_ITEM_NOT_FOUND,
+            message:
+              missing.length === 1
+                ? 'Diese Position gibt es nicht (mehr).'
+                : `${missing.length} Positionen gibt es nicht (mehr).`,
+            params: { itemIds: missing },
+          });
+        }
+
+        const notReady = [...found.values()].filter(
+          (i) =>
+            i.status !== OrderItemStatus.READY &&
+            i.status !== OrderItemStatus.DELIVERED,
+        );
+        if (notReady.length) {
+          throw new BadRequestException({
+            code: ErrorCodes.VALIDATION_ERROR,
+            reason: ErrorReasons.ORDER_ITEM_NOT_READY,
+            message:
+              notReady.length === 1
+                ? `${notReady[0].productName} ist noch nicht fertig und kann nicht serviert werden.`
+                : `${notReady.length} Positionen sind noch nicht fertig und können nicht serviert werden.`,
+            params: {
+              itemIds: notReady.map((i) => i.id),
+              products: notReady.map((i) => i.productName),
+            },
+          });
+        }
+
+        const toDeliver = [...found.values()].filter(
+          (i) => i.status === OrderItemStatus.READY,
+        );
+        const skipped = [...found.values()]
+          .filter((i) => i.status === OrderItemStatus.DELIVERED)
+          .map((i) => i.id);
+        for (const item of toDeliver) {
+          item.status = OrderItemStatus.DELIVERED;
+          item.deliveredAt = now;
+        }
+        if (toDeliver.length) await manager.save(toDeliver);
+
+        const changedOrders: Order[] = [];
+        for (const orderId of new Set(toDeliver.map((i) => i.orderId))) {
+          const order = await manager.findOne(Order, {
+            where: { id: orderId, organizationId },
+            relations: ['items'],
+          });
+          if (!order) continue;
+          const previous = order.status;
+          order.status = orderStatusFromItems(order.items, order.status);
+          // Wie markItemDelivered: alles ausgegeben und bezahlt → fertig.
+          if (
+            order.status === OrderStatus.READY &&
+            order.paymentStatus === PaymentStatus.PAID
+          ) {
+            order.status = OrderStatus.COMPLETED;
+            order.completedAt = now;
+          }
+          if (order.status !== previous) {
+            await manager.update(
+              Order,
+              { id: order.id },
+              { status: order.status, completedAt: order.completedAt },
+            );
+          }
+          changedOrders.push(order);
+        }
+
+        return {
+          toDeliver,
+          skipped,
+          orders: changedOrders,
+          orderById,
+        };
+      },
+    );
+
+    for (const item of outcome.toDeliver) {
+      const order = outcome.orderById.get(item.orderId);
+      this.gatewayService.notifyOrderItemStatusChanged(
+        organizationId,
+        order?.eventId ?? null,
+        {
+          orderId: item.orderId,
+          orderNumber: order?.orderNumber ?? '',
+          itemId: item.id,
+          productName: item.productName,
+          status: OrderItemStatus.DELIVERED,
+          previousStatus: OrderItemStatus.READY,
+        },
+      );
+    }
+    for (const order of outcome.orders) {
+      const before = outcome.orderById.get(order.id);
+      if (before && before.status !== order.status) {
+        this.gatewayService.notifyOrderUpdated(
+          organizationId,
+          order.eventId,
+          order.id,
+          {
+            status: order.status,
+            ...(order.status === OrderStatus.COMPLETED
+              ? { completedAt: order.completedAt }
+              : {}),
+          },
+        );
+      }
+    }
+
+    if (outcome.toDeliver.length) {
+      this.logger.log(
+        `Device delivered ${outcome.toDeliver.length} item(s) in ${outcome.orders.length} order(s)`,
+      );
+    }
+
+    return {
+      delivered: outcome.toDeliver.map((i) => ({
+        id: i.id,
+        orderId: i.orderId,
+        productName: i.productName,
+      })),
+      skipped: outcome.skipped,
+      orders: outcome.orders.map((o) => ({ id: o.id, status: o.status })),
+    };
+  }
+
   async callOrder(
     organizationId: string,
     orderId: string,
@@ -1135,6 +1326,7 @@ export class OrdersService {
     order: Order,
     item: OrderItem,
   ): Promise<Order> {
+    const previousStatus = item.status;
     item.status = OrderItemStatus.READY;
     item.readyAt = new Date();
     await this.orderItemRepository.save(item);
@@ -1144,6 +1336,20 @@ export class OrdersService {
     );
 
     await this.updateOrderStatus(order.id);
+
+    // Kassen zeigen den Tisch dann als „wartet“ (Spezifikation §2.4 b).
+    this.gatewayService.notifyOrderItemStatusChanged(
+      organizationId,
+      order.eventId,
+      {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        itemId: item.id,
+        productName: item.productName,
+        status: OrderItemStatus.READY,
+        previousStatus,
+      },
+    );
 
     return this.reloadOrder(organizationId, order.id);
   }
@@ -1258,19 +1464,7 @@ export class OrdersService {
 
     if (!order) return;
 
-    const activeItems = order.items.filter(
-      (i) => i.status !== OrderItemStatus.CANCELLED,
-    );
-
-    if (activeItems.length === 0) {
-      order.status = OrderStatus.OPEN;
-    } else if (
-      activeItems.every((i) => i.status === OrderItemStatus.DELIVERED)
-    ) {
-      order.status = OrderStatus.READY;
-    } else if (activeItems.some((i) => i.status !== OrderItemStatus.PENDING)) {
-      order.status = OrderStatus.IN_PROGRESS;
-    }
+    order.status = orderStatusFromItems(order.items, order.status);
 
     await this.orderRepository.save(order);
   }

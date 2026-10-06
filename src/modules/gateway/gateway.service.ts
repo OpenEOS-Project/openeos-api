@@ -9,6 +9,7 @@ import {
   PrintJobCreatedEvent,
   PrintJobStatusChangedEvent,
   PrinterJobEvent,
+  PrinterStatusChangedEvent,
   BroadcastMessageEvent,
   ProductUpdatedEvent,
   ProductDeletedEvent,
@@ -460,6 +461,23 @@ export class GatewayService {
       organizationId,
       deviceId,
       GatewayEvents.DEVICE_STATUS_CHANGED,
+      payload,
+    );
+  }
+
+  // Printer Status (online/offline wechselt; nur bei Aenderung)
+
+  notifyPrinterStatusChanged(
+    organizationId: string,
+    payload: PrinterStatusChangedEvent,
+  ) {
+    this.logger.debug(
+      `Emitting printerStatusChanged for printer ${payload.printerId}: ${payload.isOnline}`,
+    );
+
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.PRINTER_STATUS_CHANGED,
       payload,
     );
   }

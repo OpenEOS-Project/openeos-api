@@ -4,6 +4,7 @@ import { DevicesController } from './devices.controller';
 import { DevicesPublicController } from './devices-public.controller';
 import { DevicesLinkController } from './devices-link.controller';
 import { DeviceApiController } from './device-api.controller';
+import { DeviceTablesController } from './device-tables.controller';
 import { DevicesService } from './devices.service';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
 import { GatewayModule } from '../gateway/gateway.module';
@@ -28,6 +29,8 @@ import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 import { OrdersModule } from '../orders/orders.module';
 import { DiscountVouchersModule } from '../discount-vouchers';
 import { PfandTypesModule } from '../pfand-types';
+import { TablesModule } from '../tables/tables.module';
+import { PaymentsBatchService } from '../payments/payments-batch.service';
 
 @Module({
   imports: [
@@ -53,14 +56,18 @@ import { PfandTypesModule } from '../pfand-types';
     SumUpModule,
     DiscountVouchersModule,
     PfandTypesModule,
+    TablesModule,
   ],
   controllers: [
     DevicesController,
     DevicesPublicController,
     DevicesLinkController,
     DeviceApiController,
+    DeviceTablesController,
   ],
-  providers: [DevicesService, DeviceAuthGuard],
+  // PaymentsBatchService liegt bei den Zahlungen, wird aber nur von der
+  // Geraete-API genutzt (PaymentsModule bleibt so unberuehrt, api #12).
+  providers: [DevicesService, DeviceAuthGuard, PaymentsBatchService],
   exports: [DevicesService, DeviceAuthGuard],
 })
 export class DevicesModule {}

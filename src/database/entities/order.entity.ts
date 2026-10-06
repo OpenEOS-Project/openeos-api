@@ -87,6 +87,14 @@ export class Order extends BaseEntity {
   })
   acknowledgedAt: Date | null;
 
+  /**
+   * Von der Kasse je Anlageversuch vergebene UUID. Eine Wiederholung mit
+   * derselben ID liefert die bestehende Bestellung (eindeutig je
+   * Organisation, Index `UQ_orders_org_client_request`).
+   */
+  @Column({ name: 'client_request_id', type: 'uuid', nullable: true })
+  clientRequestId: string | null;
+
   @Column({
     name: 'customer_name',
     type: 'varchar',

@@ -55,10 +55,28 @@ describe('orderTaxTotal', () => {
  * recalculateOrderTotals exists twice (OrdersService and
  * DeviceApiController). Both must store the same totals.
  */
+type Recalc = (this: unknown, ...args: unknown[]) => Promise<void>;
+const recalcOf = (prototype: object) =>
+  (prototype as { recalculateOrderTotals: Recalc }).recalculateOrderTotals;
+
 describe.each([
-  ['OrdersService', OrdersService.prototype],
-  ['DeviceApiController', DeviceApiController.prototype],
-])('%s.recalculateOrderTotals', (_name, prototype) => {
+  [
+    'OrdersService',
+    (self: object, _manager: object, id: string) =>
+      recalcOf(OrdersService.prototype).call(self, id),
+  ],
+  [
+    // Laeuft in der Transaktion der Bestellanlage (EntityManager).
+    'DeviceApiController',
+    (self: object, manager: object, id: string, vatExempt?: boolean) =>
+      recalcOf(DeviceApiController.prototype).call(
+        self,
+        manager,
+        id,
+        vatExempt,
+      ),
+  ],
+])('%s.recalculateOrderTotals', (_name, invoke) => {
   function run(order: Order, vatExempt: boolean | undefined) {
     const saved: Order[] = [];
     const self = {
@@ -75,12 +93,11 @@ describe.each([
         ),
       },
     };
-    const recalc = (
-      prototype as unknown as {
-        recalculateOrderTotals: (this: unknown, id: string) => Promise<void>;
-      }
-    ).recalculateOrderTotals;
-    return recalc.call(self, order.id).then(() => saved[0]);
+    const manager = {
+      findOne: self.orderRepository.findOne,
+      save: self.orderRepository.save,
+    };
+    return invoke(self, manager, order.id, vatExempt).then(() => saved[0]);
   }
 
   function order(): Order {
@@ -166,6 +183,7 @@ describe('EventsShopCheckoutController.createOrderFromCheckout', () => {
         handleOrderCreated: resolved(undefined),
         handlePaymentReceived: resolved(undefined),
       },
+      gatewayService: { notifyOrderCreated: jest.fn() },
     };
     const checkout = {
       organizationId: 'org-1',
@@ -185,7 +203,11 @@ describe('EventsShopCheckoutController.createOrderFromCheckout', () => {
       }
     ).createOrderFromCheckout;
     const order = await create.call(self, checkout);
-    return { order, items: savedItems[0] };
+    return {
+      order,
+      items: savedItems[0],
+      notifyOrderCreated: self.gatewayService.notifyOrderCreated,
+    };
   }
 
   it('snapshots the product tax rates and stores the contained VAT', async () => {
@@ -199,5 +221,20 @@ describe('EventsShopCheckoutController.createOrderFromCheckout', () => {
   it('stores 0 for VAT-exempt organizations', async () => {
     const { order } = await run(true);
     expect(order.taxTotal).toBe(0);
+  });
+
+  it('announces the guest order to POS devices', async () => {
+    const { notifyOrderCreated } = await run(false);
+    expect(notifyOrderCreated).toHaveBeenCalledWith(
+      'org-1',
+      'event-1',
+      expect.objectContaining({
+        id: 'order-1',
+        items: [
+          expect.objectContaining({ productName: 'Bier' }),
+          expect.objectContaining({ productName: 'Wurst' }),
+        ],
+      }),
+    );
   });
 });

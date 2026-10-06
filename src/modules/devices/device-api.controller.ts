@@ -7,15 +7,23 @@ import {
   Query,
   UseGuards,
   ParseUUIDPipe,
+  Res,
+  HttpStatus,
   BadRequestException,
   NotFoundException,
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiHeader } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Repository, In, type FindOptionsWhere } from 'typeorm';
+import type { Response } from 'express';
+import {
+  Repository,
+  In,
+  type EntityManager,
+  type FindOptionsWhere,
+} from 'typeorm';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
 import { CurrentDevice } from '../../common/decorators';
 import { DevicesService } from './devices.service';
@@ -74,12 +82,17 @@ import { CreatePfandReturnDto } from '../pfand-types/dto';
 import { isPfandChargedForFulfillment } from '../../common/utils/pfand-policy';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 import { saveOrderWithNumbers } from '../orders/order-numbering';
+import {
+  createDeviceTableLookup,
+  isClientRequestConflict,
+  resolveDeviceOrderTable,
+} from './device-order-table';
 
 /**
  * Helper to ensure device has an organization.
  * Returns the organizationId as string (non-null).
  */
-function requireOrganization(device: Device): string {
+export function requireOrganization(device: Device): string {
   if (!device.organizationId) {
     throw new ForbiddenException({
       code: ErrorCodes.FORBIDDEN,
@@ -408,34 +421,124 @@ export class DeviceApiController {
 
   @Get('orders/open')
   @ApiOperation({
-    summary: 'Get open (unpaid/partly paid) orders for device organization',
+    summary: 'Get open (unpaid/partly paid) orders of the active/test event',
+    description:
+      'Offen = unbezahlt/teilbezahlt und weder storniert noch abgeschlossen. Ohne `eventId` gilt das aktive bzw. Test-Event der Organisation. `tableKey` (Tischbezeichnung, groß/klein egal) bzw. `tableId` schränken auf einen Tisch ein, `fulfillmentType` z. B. auf Theke (`counter_pickup`).',
   })
-  async getOpenOrders(@CurrentDevice() device: Device) {
+  @ApiQuery({ name: 'eventId', required: false })
+  @ApiQuery({ name: 'tableKey', required: false })
+  @ApiQuery({ name: 'tableId', required: false })
+  @ApiQuery({
+    name: 'fulfillmentType',
+    required: false,
+    enum: OrderFulfillmentType,
+  })
+  async getOpenOrders(
+    @CurrentDevice() device: Device,
+    @Query('eventId', new ParseUUIDPipe({ optional: true })) eventId?: string,
+    @Query('tableKey') tableKey?: string,
+    @Query('tableId', new ParseUUIDPipe({ optional: true })) tableId?: string,
+    @Query('fulfillmentType') fulfillmentType?: string,
+  ) {
     const organizationId = requireOrganization(device);
-    const orders = await this.orderRepository.find({
-      where: {
-        organizationId,
-        paymentStatus: In([PaymentStatus.UNPAID, PaymentStatus.PARTLY_PAID]),
-        status: In([OrderStatus.OPEN, OrderStatus.IN_PROGRESS]),
-      },
-      relations: ['items'],
-      order: { createdAt: 'DESC' },
-    });
+
+    // Frueher kamen hier alle offenen Bestellungen der Organisation ueber
+    // alle Events. Jetzt nur das angefragte bzw. das aktive/Test-Event.
+    const eventIds = eventId
+      ? (
+          await this.eventRepository.find({
+            where: { id: eventId, organizationId },
+            select: { id: true },
+          })
+        ).map((e) => e.id)
+      : (
+          await this.eventRepository.find({
+            where: {
+              organizationId,
+              status: In([EventStatus.ACTIVE, EventStatus.TEST]),
+            },
+            select: { id: true },
+          })
+        ).map((e) => e.id);
+    if (eventIds.length === 0) return { data: [] };
+
+    const query = this.orderRepository
+      .createQueryBuilder('o')
+      .leftJoinAndSelect('o.items', 'items')
+      .where('o.organizationId = :organizationId', { organizationId })
+      .andWhere('o.eventId IN (:...eventIds)', { eventIds })
+      .andWhere('o.paymentStatus IN (:...openPayment)', {
+        openPayment: [PaymentStatus.UNPAID, PaymentStatus.PARTLY_PAID],
+      })
+      .andWhere('o.status NOT IN (:...closedStatus)', {
+        closedStatus: [OrderStatus.CANCELLED, OrderStatus.COMPLETED],
+      });
+
+    const key = tableKey?.trim();
+    if (tableId) {
+      // Tisch per ID; Bestellungen ohne table_id (Altdaten, freie Nummer)
+      // gehoeren dazu, wenn ihre Nummer der Tischbezeichnung entspricht.
+      query.andWhere(
+        `(o.tableId = :tableId OR (o.tableId IS NULL AND upper(btrim(o.tableNumber)) = (
+           SELECT upper(t.label) FROM dining_tables t
+            WHERE t.id = :tableId AND t.organization_id = :organizationId
+         )))`,
+        { tableId },
+      );
+    }
+    if (key) {
+      query.andWhere('upper(btrim(o.tableNumber)) = upper(:tableKey)', {
+        tableKey: key,
+      });
+    }
+    if (
+      fulfillmentType === OrderFulfillmentType.COUNTER_PICKUP ||
+      fulfillmentType === OrderFulfillmentType.TABLE_SERVICE
+    ) {
+      query.andWhere('o.fulfillmentType = :fulfillmentType', {
+        fulfillmentType,
+      });
+    }
+
+    const orders = await query
+      .orderBy('o.createdAt', 'DESC')
+      .addOrderBy('items.sortOrder', 'ASC')
+      .getMany();
 
     return { data: orders };
   }
 
   @Post('orders')
-  @ApiOperation({ summary: 'Create a new order from device' })
+  @ApiOperation({
+    summary: 'Create a new order from device',
+    description:
+      'Tischbetrieb je Gerät und Veranstaltung (Spezifikation §2.3). Mit `clientRequestId` idempotent: eine Wiederholung liefert die bestehende Bestellung mit HTTP 200, ohne erneuten Küchenbon.',
+  })
   async createOrder(
     @CurrentDevice() device: Device,
     @Body() createDto: CreateOrderDto,
+    @Res({ passthrough: true }) response: Response,
   ) {
     const organizationId = requireOrganization(device);
+    const clientRequestId = createDto.clientRequestId ?? null;
+
+    // Wiederholung derselben Anlage: bestehende Bestellung zurueckgeben,
+    // nichts drucken, nichts melden.
+    if (clientRequestId) {
+      const existing = await this.findOrderByClientRequest(
+        organizationId,
+        clientRequestId,
+      );
+      if (existing) {
+        response.status(HttpStatus.OK);
+        return { data: existing };
+      }
+    }
 
     // Validate event
+    let event: Event | null = null;
     if (createDto.eventId) {
-      const event = await this.eventRepository.findOne({
+      event = await this.eventRepository.findOne({
         where: { id: createDto.eventId, organizationId },
       });
 
@@ -470,85 +573,147 @@ export class DeviceApiController {
       }
     }
 
-    // Match the POS, which treats an unset serviceMode as table service
-    // (Bedienung, default). The backend used to default unset → counter, so a
-    // Bedienung order on an unconfigured device was charged Pfand and lost its
-    // table number even though the POS showed it as table service (no Pfand).
-    const serviceMode = device.settings?.serviceMode || 'table';
+    // Bestellung, Positionen, Bestand und Summen in einer Transaktion:
+    // scheitert eine Position (Bestand, Produkt), bleibt keine leere
+    // Bestellung zurueck, die eine Wiederholung dann ausliefern wuerde.
+    let created: { order: Order; stockChanges: Product[] };
+    try {
+      created = await this.orderRepository.manager.transaction(
+        async (manager) => {
+          // Match the POS, which treats an unset serviceMode as table
+          // service (Bedienung, default). Counter devices and events without
+          // tables never carry a table number (otherwise a stray table
+          // number shows up on the kitchen ticket of a counter order).
+          const table = await resolveDeviceOrderTable(
+            {
+              serviceMode: device.settings?.serviceMode,
+              eventTables: event?.settings?.tables,
+              fulfillmentType: createDto.fulfillmentType,
+              tableId: createDto.tableId,
+              tableNumber: createDto.tableNumber,
+            },
+            createDeviceTableLookup(manager, organizationId),
+          );
 
-    // Order number and daily number are allocated together with the insert.
-    const order = await saveOrderWithNumbers(
-      this.orderRepository,
-      { organizationId, eventId: createDto.eventId || null },
-      {
-        // Table numbers only apply in table-service mode; a counter device never
-        // carries one (otherwise a stray table number shows up on the kitchen
-        // ticket of a counter order).
-        tableNumber:
-          serviceMode === 'table' ? createDto.tableNumber || null : null,
-        customerName: createDto.customerName || null,
-        customerPhone: createDto.customerPhone || null,
-        notes: createDto.notes || null,
-        priority: createDto.priority || undefined,
-        source: createDto.source || OrderSource.POS,
-        fulfillmentType:
-          serviceMode === 'table'
-            ? OrderFulfillmentType.TABLE_SERVICE
-            : OrderFulfillmentType.COUNTER_PICKUP,
-        discountAmount: createDto.discountAmount || 0,
-        discountReason: createDto.discountReason || null,
-        tipAmount: createDto.tipAmount || 0,
-        createdByDeviceId: device.id,
-        status: OrderStatus.OPEN,
-        paymentStatus: PaymentStatus.UNPAID,
-      },
-    );
+          // Order number and daily number are allocated together with the
+          // insert (savepoint inside this transaction).
+          const order = await saveOrderWithNumbers(
+            manager.getRepository(Order),
+            { organizationId, eventId: createDto.eventId || null },
+            {
+              tableNumber: table.tableNumber,
+              tableId: table.tableId,
+              customerName: createDto.customerName || null,
+              customerPhone: createDto.customerPhone || null,
+              notes: createDto.notes || null,
+              priority: createDto.priority || undefined,
+              source: createDto.source || OrderSource.POS,
+              fulfillmentType: table.fulfillmentType,
+              discountAmount: createDto.discountAmount || 0,
+              discountReason: createDto.discountReason || null,
+              tipAmount: createDto.tipAmount || 0,
+              createdByDeviceId: device.id,
+              clientRequestId,
+              status: OrderStatus.OPEN,
+              paymentStatus: PaymentStatus.UNPAID,
+            },
+          );
 
-    // Resolve the Pfand policy for this order's fulfillment type (e.g. no
-    // deposit for table service).
-    const orgForPfand = await this.organizationRepository.findOne({
-      where: { id: organizationId },
-    });
-    const chargePfand = isPfandChargedForFulfillment(
-      order.fulfillmentType,
-      orgForPfand?.settings,
-    );
+          // Resolve the Pfand policy for this order's fulfillment type
+          // (e.g. no deposit for table service).
+          const organization = await manager.findOne(Organization, {
+            where: { id: organizationId },
+          });
+          const chargePfand = isPfandChargedForFulfillment(
+            order.fulfillmentType,
+            organization?.settings,
+          );
 
-    // Add items if provided
-    if (createDto.items && createDto.items.length > 0) {
-      for (const itemDto of createDto.items) {
-        await this.addItemToOrder(order, itemDto, chargePfand);
+          const stockChanges: Product[] = [];
+          if (createDto.items && createDto.items.length > 0) {
+            for (const itemDto of createDto.items) {
+              await this.addItemToOrder(
+                manager,
+                order,
+                itemDto,
+                chargePfand,
+                stockChanges,
+              );
+            }
+            await this.recalculateOrderTotals(
+              manager,
+              order.id,
+              organization?.settings?.vatExempt,
+            );
+          }
+
+          const completeOrder = await manager.findOne(Order, {
+            where: { id: order.id },
+            relations: ['items'],
+          });
+          if (!completeOrder) {
+            throw new NotFoundException({
+              code: ErrorCodes.NOT_FOUND,
+              reason: ErrorReasons.ORDER_NOT_FOUND,
+              message: 'Bestellung nicht gefunden',
+            });
+          }
+
+          // A fully-discounted order (total 0) has nothing to pay. Mark it
+          // paid right away so the POS reaches the success screen without
+          // sending a 0-amount payment (which the payment endpoint rejects).
+          if (Number(completeOrder.total) <= 0) {
+            completeOrder.paymentStatus = PaymentStatus.PAID;
+            completeOrder.paidAmount = 0;
+            await manager.save(completeOrder);
+          }
+
+          return { order: completeOrder, stockChanges };
+        },
+      );
+    } catch (error) {
+      // Gleichzeitige Wiederholung: die andere Anfrage war schneller.
+      if (clientRequestId && isClientRequestConflict(error)) {
+        const existing = await this.findOrderByClientRequest(
+          organizationId,
+          clientRequestId,
+        );
+        if (existing) {
+          response.status(HttpStatus.OK);
+          return { data: existing };
+        }
       }
+      throw error;
+    }
 
-      // Recalculate totals
-      await this.recalculateOrderTotals(order.id);
+    const completeOrder = created.order;
+
+    // Notify POS terminals about stock changes (after commit).
+    if (completeOrder.eventId) {
+      for (const product of created.stockChanges) {
+        this.gatewayService.notifyProductUpdated(
+          organizationId,
+          completeOrder.eventId,
+          {
+            id: product.id,
+            name: product.name,
+            categoryId: product.categoryId,
+            price: Number(product.price),
+            isAvailable: product.isAvailable,
+            isActive: product.isActive,
+            stockQuantity: product.stockQuantity,
+            trackInventory: product.trackInventory,
+          },
+        );
+      }
     }
 
     this.logger.log(
-      `Device order created: ${order.orderNumber} (${order.id}) by device ${device.name}`,
+      `Device order created: ${completeOrder.orderNumber} (${completeOrder.id}) by device ${device.name}`,
     );
 
-    // Fetch the complete order with items
-    const completeOrder = await this.orderRepository.findOne({
-      where: { id: order.id },
-      relations: ['items'],
-    });
-
-    // A fully-discounted order (total 0) has nothing to pay. Mark it paid right
-    // away so the POS reaches the success screen without sending a 0-amount
-    // payment (which the payment endpoint rejects).
-    if (completeOrder && Number(completeOrder.total) <= 0) {
-      completeOrder.paymentStatus = PaymentStatus.PAID;
-      completeOrder.paidAmount = 0;
-      await this.orderRepository.save(completeOrder);
-    }
-
     // Print station tickets and notify admin order list
-    if (
-      completeOrder &&
-      completeOrder.items &&
-      completeOrder.items.length > 0
-    ) {
+    if (completeOrder.items && completeOrder.items.length > 0) {
       // Kitchen/station ticket printing is handled centrally by
       // OrderPrintService.handleOrderCreated below — it is template-driven and
       // respects the org's kitchenTicketPrinting settings (per_station splits
@@ -1404,7 +1569,18 @@ export class DeviceApiController {
 
   // Private helper methods
 
+  private findOrderByClientRequest(
+    organizationId: string,
+    clientRequestId: string,
+  ): Promise<Order | null> {
+    return this.orderRepository.findOne({
+      where: { organizationId, clientRequestId },
+      relations: ['items'],
+    });
+  }
+
   private async addItemToOrder(
+    manager: EntityManager,
     order: Order,
     itemDto: {
       productId: string;
@@ -1414,9 +1590,13 @@ export class DeviceApiController {
       selectedOptions?: SelectedOptionDto[];
       isRefill?: boolean;
     },
-    chargePfand = true,
+    chargePfand: boolean,
+    stockChanges: Product[],
   ): Promise<OrderItem> {
-    const product = await this.productRepository.findOne({
+    const productRepository = manager.getRepository(Product);
+    const orderItemRepository = manager.getRepository(OrderItem);
+
+    const product = await productRepository.findOne({
       where: { id: itemDto.productId, eventId: order.eventId! },
       relations: ['category', 'pfandType'],
     });
@@ -1468,7 +1648,7 @@ export class DeviceApiController {
     const pfandTypeId = depositAmount > 0 ? product.pfandTypeId : null;
 
     // Determine the next sort order
-    const existingItems = await this.orderItemRepository.count({
+    const existingItems = await orderItemRepository.count({
       where: { orderId: order.id },
     });
 
@@ -1478,7 +1658,7 @@ export class DeviceApiController {
       product.category?.productionStationId ||
       null;
 
-    const item = this.orderItemRepository.create({
+    const item = orderItemRepository.create({
       orderId: order.id,
       productId: product.id,
       categoryId: product.categoryId,
@@ -1501,40 +1681,26 @@ export class DeviceApiController {
       isRefill,
     });
 
-    await this.orderItemRepository.save(item);
+    await orderItemRepository.save(item);
 
-    // Update stock
+    // Update stock; POS terminals are notified after commit.
     if (product.trackInventory) {
       product.stockQuantity -= itemDto.quantity;
-      await this.productRepository.save(product);
-
-      // Notify POS terminals about stock change
-      const event = await this.eventRepository.findOne({
-        where: { id: order.eventId! },
-      });
-      if (event) {
-        this.gatewayService.notifyProductUpdated(
-          event.organizationId,
-          event.id,
-          {
-            id: product.id,
-            name: product.name,
-            categoryId: product.categoryId,
-            price: Number(product.price),
-            isAvailable: product.isAvailable,
-            isActive: product.isActive,
-            stockQuantity: product.stockQuantity,
-            trackInventory: product.trackInventory,
-          },
-        );
-      }
+      await productRepository.save(product);
+      const index = stockChanges.findIndex((p) => p.id === product.id);
+      if (index >= 0) stockChanges[index] = product;
+      else stockChanges.push(product);
     }
 
     return item;
   }
 
-  private async recalculateOrderTotals(orderId: string): Promise<void> {
-    const order = await this.orderRepository.findOne({
+  private async recalculateOrderTotals(
+    manager: EntityManager,
+    orderId: string,
+    vatExempt: boolean | undefined,
+  ): Promise<void> {
+    const order = await manager.findOne(Order, {
       where: { id: orderId },
       relations: ['items'],
     });
@@ -1567,17 +1733,9 @@ export class DeviceApiController {
 
     // Wie in OrdersService.recalculateOrderTotals: enthaltene Steuer,
     // dieselbe Rechnung wie auf dem Bon.
-    const organization = await this.organizationRepository.findOne({
-      where: { id: order.organizationId },
-      select: ['id', 'settings'],
-    });
-    order.taxTotal = orderTaxTotal(
-      order.items,
-      effectiveDiscount,
-      organization?.settings?.vatExempt,
-    );
+    order.taxTotal = orderTaxTotal(order.items, effectiveDiscount, vatExempt);
 
-    await this.orderRepository.save(order);
+    await manager.save(order);
   }
 
   private async updateOrderPaymentStatus(order: Order): Promise<void> {
