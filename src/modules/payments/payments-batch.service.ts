@@ -21,6 +21,8 @@ import {
   OrderItemStatus,
 } from '../../database/entities/order-item.entity';
 import { Organization } from '../../database/entities/organization.entity';
+import { Event } from '../../database/entities/event.entity';
+import { assertSumUpAllowedInMode } from '../../common/utils/sumup-test-mode.util';
 import {
   Payment,
   PaymentMethod,
@@ -201,6 +203,22 @@ export class PaymentsBatchService {
     }
     // Reihenfolge der Anfrage: die letzte bekommt Trinkgeld/Bargeld.
     const orders = dto.orderIds.map((id) => byId.get(id)!);
+
+    // Testbestellungen: keine echte SumUp-Kartenzahlung buchen.
+    if (dto.paymentMethod === PaymentMethod.SUMUP_TERMINAL) {
+      const eventIds = [
+        ...new Set(orders.map((o) => o.eventId).filter(Boolean)),
+      ] as string[];
+      if (eventIds.length) {
+        const events = await manager.find(Event, {
+          where: { id: In(eventIds) },
+          select: { id: true, status: true },
+        });
+        for (const event of events) {
+          assertSumUpAllowedInMode(event.status, dto.paymentMethod);
+        }
+      }
+    }
 
     const cancelled = orders.filter((o) => o.status === OrderStatus.CANCELLED);
     if (cancelled.length) {

@@ -75,6 +75,10 @@ import { PfandReturnsService } from '../pfand-types/pfand-returns.service';
 import { CreatePfandReturnDto } from '../pfand-types/dto';
 import { isPfandChargedForFulfillment } from '../../common/utils/pfand-policy';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
+import {
+  assertSumUpAllowedInMode,
+  currentEventStatus,
+} from '../../common/utils/sumup-test-mode.util';
 import { resolveOrderingMode } from '../../common/utils/ordering-mode';
 import {
   PaymentsBatchService,
@@ -593,6 +597,12 @@ export class DeviceApiController {
       }
     }
 
+    // Testmodus: keine echte SumUp-Kartenzahlung; Bar und manuelle Karte
+    // gehen weiter.
+    if (createDto.payment) {
+      assertSumUpAllowedInMode(event?.status, createDto.payment.paymentMethod);
+    }
+
     // Bestellung, Positionen, Bestand und Summen in einer Transaktion:
     // scheitert eine Position (Bestand, Produkt), bleibt keine leere
     // Bestellung zurueck, die eine Wiederholung dann ausliefern wuerde.
@@ -905,6 +915,7 @@ export class DeviceApiController {
 
     const provider = this.getProviderForMethod(createDto.paymentMethod);
     await this.assertProviderEnabled(organizationId, provider);
+    await this.assertSumUpAllowedForOrder(order, createDto.paymentMethod);
 
     const payment = this.paymentRepository.create({
       orderId: createDto.orderId,
@@ -1060,6 +1071,7 @@ export class DeviceApiController {
 
     const provider = this.getProviderForMethod(createDto.paymentMethod);
     await this.assertProviderEnabled(organizationId, provider);
+    await this.assertSumUpAllowedForOrder(order, createDto.paymentMethod);
 
     // Create payment
     const payment = this.paymentRepository.create({
@@ -1211,12 +1223,18 @@ export class DeviceApiController {
   // altem Stand oder ein direkter Aufruf soll trotzdem nichts ausloesen.
 
   @Post('sumup/checkout')
-  @ApiOperation({ summary: 'Initiate SumUp checkout on linked card reader' })
+  @ApiOperation({
+    summary: 'Initiate SumUp checkout on linked card reader',
+    description:
+      'Im Testmodus der Veranstaltung abgelehnt (400 SUMUP_DISABLED_IN_TEST_MODE): Testbestellungen lösen keine echten Kartenzahlungen aus. Status und Abbruch bleiben erreichbar.',
+  })
   async initiateSumupCheckout(
     @CurrentDevice() device: Device,
     @Body() body: { amount: number; currency?: string },
   ) {
     const organizationId = requireOrganization(device);
+    // Testmodus: keine echte Kartenzahlung (400 SUMUP_DISABLED_IN_TEST_MODE).
+    await this.assertSumUpAllowedForOrganization(organizationId);
     const readerId = device.settings?.sumupReaderId;
     if (!readerId) {
       throw new BadRequestException({
@@ -1867,6 +1885,33 @@ export class DeviceApiController {
       select: { id: true, settings: true },
     });
     assertIntegrationEnabled(organization?.settings, 'sumup');
+  }
+
+  /** Testmodus der Organisation: kein SumUp-Checkout am Lesegeraet. */
+  private async assertSumUpAllowedForOrganization(
+    organizationId: string,
+  ): Promise<void> {
+    const events = await this.eventRepository.find({
+      where: {
+        organizationId,
+        status: In([EventStatus.ACTIVE, EventStatus.TEST]),
+      },
+      select: { id: true, status: true },
+    });
+    assertSumUpAllowedInMode(currentEventStatus(events));
+  }
+
+  /** Testbestellung: keine SumUp-Zahlung buchen (Bar/Karte manuell gehen). */
+  private async assertSumUpAllowedForOrder(
+    order: Pick<Order, 'eventId'>,
+    method: PaymentMethod,
+  ): Promise<void> {
+    if (method !== PaymentMethod.SUMUP_TERMINAL || !order.eventId) return;
+    const event = await this.eventRepository.findOne({
+      where: { id: order.eventId },
+      select: { id: true, status: true },
+    });
+    assertSumUpAllowedInMode(event?.status, method);
   }
 
   private getProviderForMethod(method: PaymentMethod): PaymentProvider {

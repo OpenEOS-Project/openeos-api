@@ -16,6 +16,7 @@ import {
   PaymentStatus,
 } from '../../database/entities/order.entity';
 import { Organization } from '../../database/entities/organization.entity';
+import { Event, EventStatus } from '../../database/entities/event.entity';
 import {
   Payment,
   PaymentMethod,
@@ -50,6 +51,7 @@ class FakeDb {
   orders: Row[] = [];
   items: Row[] = [];
   payments: Row[] = [];
+  events: Row[] = [{ id: 'event-1', status: EventStatus.ACTIVE }];
   organization: Row = { id: ORG, settings: { vatExempt: false } };
   locks: unknown[] = [];
   private seq = 0;
@@ -58,6 +60,7 @@ class FakeDb {
     if (entity === Order) return this.orders;
     if (entity === OrderItem) return this.items;
     if (entity === Payment) return this.payments;
+    if (entity === Event) return this.events;
     throw new Error('unexpected entity');
   }
 
@@ -433,6 +436,37 @@ describe('PaymentsBatchService.payBatch', () => {
       }),
     );
   });
+
+  it('test mode: refuses SumUp terminal payments for test orders', async () => {
+    const { db, pay } = setup();
+    db.organization.settings = { integrations: { sumup: { enabled: true } } };
+    db.events[0].status = EventStatus.TEST;
+    db.orders.push(order('o1'));
+
+    await expect(
+      pay({ orderIds: ['o1'], paymentMethod: PaymentMethod.SUMUP_TERMINAL }),
+    ).rejects.toMatchObject({
+      response: { reason: 'SUMUP_DISABLED_IN_TEST_MODE' },
+    });
+    expect(db.payments).toHaveLength(0);
+    expect(byId(db.orders, 'o1').paymentStatus).toBe(PaymentStatus.UNPAID);
+  });
+
+  it.each([[PaymentMethod.CASH], [PaymentMethod.CARD]])(
+    'test mode: %s payments are still booked',
+    async (paymentMethod) => {
+      const { db, pay } = setup();
+      db.events[0].status = EventStatus.TEST;
+      db.orders.push(order('o1'));
+
+      await pay({
+        orderIds: ['o1'],
+        paymentMethod: paymentMethod as BatchPaymentDto['paymentMethod'],
+        amountReceived: 10,
+      });
+      expect(db.payments).toHaveLength(1);
+    },
+  );
 
   it('refuses SumUp when the integration is off', async () => {
     const { db, pay } = setup();

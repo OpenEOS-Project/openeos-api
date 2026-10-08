@@ -1028,3 +1028,74 @@ describe('DeviceApiController.getOpenOrders', () => {
     expect(param(where, 'fulfillmentType')).toBe('counter_pickup');
   });
 });
+
+describe('DeviceApiController.createOrder — SumUp im Testmodus', () => {
+  it('refuses a SumUp terminal payment while the event is in test mode', async () => {
+    const { db, controller, device, paymentsBatchService, response } =
+      setupController({
+        eventStatus: EventStatus.TEST,
+        orderingMode: 'immediate',
+      });
+
+    const call = controller.createOrder(
+      device,
+      dto({
+        payment: {
+          paymentMethod: PaymentMethod.SUMUP_TERMINAL,
+          providerTransactionId: 'tx-1',
+        },
+      }),
+      response() as never,
+    );
+
+    expect(await reason(call)).toBe('SUMUP_DISABLED_IN_TEST_MODE');
+    expect(db.orders).toHaveLength(0);
+    expect(db.products[0].stockQuantity).toBe(10);
+    expect(paymentsBatchService.settle).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [PaymentMethod.CASH, { amountReceived: 10 }],
+    [PaymentMethod.CARD, {}],
+  ])(
+    'test mode: %s payments still work (bar, Karte ohne Terminal)',
+    async (paymentMethod, extra) => {
+      const { db, controller, device, response } = setupController({
+        eventStatus: EventStatus.TEST,
+        orderingMode: 'immediate',
+      });
+
+      const { data } = await controller.createOrder(
+        device,
+        dto({
+          payment: {
+            paymentMethod,
+            ...extra,
+          } as CreateDeviceOrderDto['payment'],
+        }),
+        response() as never,
+      );
+
+      expect(data).toMatchObject({ paymentStatus: PaymentStatus.PAID });
+      expect(db.orders).toHaveLength(1);
+    },
+  );
+
+  it('live event: a SumUp terminal payment is booked', async () => {
+    const { controller, device, paymentsBatchService, response } =
+      setupController({ orderingMode: 'immediate' });
+
+    await controller.createOrder(
+      device,
+      dto({
+        payment: {
+          paymentMethod: PaymentMethod.SUMUP_TERMINAL,
+          providerTransactionId: 'tx-1',
+        },
+      }),
+      response() as never,
+    );
+
+    expect(paymentsBatchService.settle).toHaveBeenCalledTimes(1);
+  });
+});
