@@ -17,6 +17,7 @@ import {
 import {
   TableArea,
   TableAreaDecor,
+  TableAreaPoint,
 } from '../../database/entities/table-area.entity';
 import {
   Order,
@@ -37,10 +38,18 @@ import {
   PutTableAreaLayoutDto,
   ReorderTableAreasDto,
   TableAreaDecorDto,
+  TableAreaPointDto,
   UpdateDiningTableDto,
   UpdateTableAreaDto,
+  isShapeDecor,
 } from './dto';
-import { LABEL_MAX, tableKey } from './tables.constants';
+import {
+  LABEL_MAX,
+  LINE_POINTS_MIN,
+  POLYGON_POINTS_MIN,
+  SHAPE_POINTS_MAX,
+  tableKey,
+} from './tables.constants';
 import {
   TABLE_STATUS_SQL,
   TableStatusEntry,
@@ -219,10 +228,9 @@ export class TablesService {
       if (dto.width != null) area.width = dto.width;
       if (dto.height != null) area.height = dto.height;
       if (dto.gridSize != null) area.gridSize = dto.gridSize;
-      if (dto.decor) {
-        this.assertDecorInArea(area, dto.decor);
-        area.decor = dto.decor.map((d) => this.toDecor(d));
-      }
+      // Kleinere Karte: Punkte von Umriss, Waenden und Zonen an den Rand ziehen.
+      if (dto.width != null || dto.height != null) this.clampShapes(area);
+      this.applyShapes(area, dto);
       await this.saveArea(manager, area);
 
       // Kleinere Karte: Tische an den Rand ziehen statt abzulehnen.
@@ -342,9 +350,8 @@ export class TablesService {
       }
       if (changed.length) await tableRepo.save(changed);
 
-      if (dto.decor) {
-        this.assertDecorInArea(area, dto.decor);
-        area.decor = dto.decor.map((d) => this.toDecor(d));
+      if (dto.decor || dto.outline !== undefined) {
+        this.applyShapes(area, dto);
         await manager.getRepository(TableArea).save(area);
       }
 
@@ -631,20 +638,136 @@ export class TablesService {
     }
   }
 
+  /**
+   * Uebernimmt Deko (Rechtecke, Waende als Linienzug, Zonen) und Umriss
+   * nach Pruefung; `outline: null` setzt den Umriss zurueck (ganze Karte).
+   */
+  private applyShapes(
+    area: TableArea,
+    dto: { decor?: TableAreaDecorDto[]; outline?: TableAreaPointDto[] | null },
+  ): void {
+    if (dto.decor) {
+      this.assertDecorInArea(area, dto.decor);
+      area.decor = dto.decor.map((d) => this.toDecor(d));
+    }
+    if (dto.outline !== undefined) {
+      if (dto.outline) {
+        this.assertPoints(area, dto.outline, POLYGON_POINTS_MIN, 'outline');
+      }
+      area.outline = dto.outline?.length
+        ? dto.outline.map((p) => ({ x: p.x, y: p.y }))
+        : null;
+    }
+  }
+
   private assertDecorInArea(area: TableArea, decor: TableAreaDecorDto[]) {
-    for (const item of decor) this.assertInArea(area, item.x, item.y);
+    for (const item of decor) {
+      if (isShapeDecor(item)) {
+        const zone = item.type === 'zone';
+        if (zone && !item.zoneType) throw this.shapeInvalid('zone', 'type');
+        this.assertPoints(
+          area,
+          item.points,
+          zone ? POLYGON_POINTS_MIN : LINE_POINTS_MIN,
+          zone ? 'zone' : 'wall',
+        );
+      } else {
+        if (
+          [item.x, item.y, item.width, item.height, item.rotation].some(
+            (v) => typeof v !== 'number',
+          )
+        ) {
+          throw this.shapeInvalid('decor', 'rect');
+        }
+        this.assertInArea(area, item.x!, item.y!);
+      }
+    }
+  }
+
+  /** Punkte einer Form: Anzahl in Grenzen, jeder Punkt innerhalb der Karte. */
+  private assertPoints(
+    area: TableArea,
+    points: TableAreaPointDto[] | undefined,
+    min: number,
+    kind: 'outline' | 'wall' | 'zone',
+  ): void {
+    if (!Array.isArray(points) || points.length < min) {
+      throw this.shapeInvalid(kind, 'tooFewPoints', { min });
+    }
+    if (points.length > SHAPE_POINTS_MAX) {
+      throw this.shapeInvalid(kind, 'tooManyPoints', { max: SHAPE_POINTS_MAX });
+    }
+    for (const p of points) this.assertInArea(area, p.x, p.y);
+  }
+
+  private shapeInvalid(
+    kind: 'outline' | 'wall' | 'zone' | 'decor',
+    problem: 'tooFewPoints' | 'tooManyPoints' | 'type' | 'rect',
+    params: Record<string, number> = {},
+  ): BadRequestException {
+    const what = {
+      outline: 'Die Raumform',
+      wall: 'Eine Wand',
+      zone: 'Eine Zone',
+      decor: 'Ein Deko-Element',
+    }[kind];
+    const message = {
+      tooFewPoints: `${what} braucht mindestens ${params.min} Punkte`,
+      tooManyPoints: `${what} darf höchstens ${params.max} Punkte haben`,
+      type: 'Wähle einen Zonentyp: Küche, Gesperrt, Bar/Theke oder Sonstiges',
+      rect: `${what} braucht Position, Größe und Drehung`,
+    }[problem];
+    return new BadRequestException({
+      code: ErrorCodes.VALIDATION_ERROR,
+      reason: ErrorReasons.TABLE_AREA_SHAPE_INVALID,
+      message,
+      params: { kind, problem, ...params },
+    });
+  }
+
+  /** Nach Verkleinern der Karte: Punkte an den neuen Rand ziehen. */
+  private clampShapes(area: TableArea): void {
+    const clamp = (p: TableAreaPoint): TableAreaPoint => ({
+      x: Math.min(Math.max(p.x, 0), area.width),
+      y: Math.min(Math.max(p.y, 0), area.height),
+    });
+    if (area.outline) area.outline = area.outline.map(clamp);
+    area.decor = (area.decor ?? []).map((d) =>
+      'points' in d && Array.isArray(d.points)
+        ? { ...d, points: d.points.map(clamp) }
+        : d,
+    );
   }
 
   private toDecor(d: TableAreaDecorDto): TableAreaDecor {
+    const label = d.label ? { label: d.label } : {};
+    const points = (d.points ?? []).map((p) => ({ x: p.x, y: p.y }));
+    if (d.type === 'zone') {
+      return {
+        id: d.id,
+        type: 'zone',
+        zoneType: d.zoneType!,
+        points,
+        ...label,
+      };
+    }
+    if (isShapeDecor(d)) {
+      return {
+        id: d.id,
+        type: 'wall',
+        points,
+        ...(d.thickness ? { thickness: d.thickness } : {}),
+      };
+    }
     return {
       id: d.id,
       type: d.type,
-      x: d.x,
-      y: d.y,
-      width: d.width,
-      height: d.height,
-      rotation: d.rotation,
-      ...(d.label ? { label: d.label } : {}),
+      x: d.x!,
+      y: d.y!,
+      width: d.width!,
+      height: d.height!,
+      rotation: d.rotation!,
+      ...label,
     };
   }
 

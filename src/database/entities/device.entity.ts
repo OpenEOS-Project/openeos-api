@@ -34,6 +34,8 @@ export type PrinterMode =
   | 'category'
   | 'product';
 export type DisplayMode = 'customer' | 'station';
+export const TABLE_SELECT_VIEWS = ['number', 'list', 'map'] as const;
+export type TableSelectView = (typeof TABLE_SELECT_VIEWS)[number];
 
 /**
  * Aussehen und Inhalt einer Anzeige.
@@ -71,6 +73,16 @@ export interface DeviceSettings {
   displayMode?: DisplayMode;
   /** Standardbereich der Kasse (Tischwahl oeffnet diesen Bereich zuerst). */
   tableAreaId?: string;
+  /**
+   * Tischwahl an der Kasse: Ziffernblock (`number`), Liste nach Bereichen
+   * (`list`) oder Tischplan (`map`). Fest je Geraet — die Kasse schaltet
+   * nicht mehr selbst um. Fehlt der Wert, waehlt die Kasse: `map`, wenn der
+   * Standardbereich (`tableAreaId`) einen Tischplan hat (Tische mit Lage
+   * auf der Karte), sonst `list` bei vordefinierten Tischen. Bei
+   * freier Tischnummer (Event `tables.mode = free`) gilt immer der
+   * Ziffernblock.
+   */
+  tableSelectView?: TableSelectView;
   /** For customer displays: the POS device whose live cart is mirrored */
   posDeviceId?: string;
   /** Aussehen und Inhalt — nur bei Anzeigen ausgewertet. */

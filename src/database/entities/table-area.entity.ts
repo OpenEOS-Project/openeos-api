@@ -3,12 +3,22 @@ import { SoftDeleteEntity } from './base.entity';
 import { Organization } from './organization.entity';
 import { DiningTable } from './dining-table.entity';
 
-export type TableAreaDecorType = 'bar' | 'wall' | 'stage' | 'label';
+export type TableAreaDecorType = 'bar' | 'wall' | 'stage' | 'label' | 'zone';
+export type TableAreaZoneType = 'kitchen' | 'blocked' | 'bar' | 'other';
 
-/** Deko-Element auf der Karte eines Bereichs (Theke, Wand, Buehne, Beschriftung). */
-export interface TableAreaDecor {
+/** Punkt auf der Karte, in Einheiten des Bereichs. */
+export interface TableAreaPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * Rechteckiges Deko-Element (Theke, Wand, Buehne, Beschriftung) — das
+ * urspruengliche Format, bleibt gueltig.
+ */
+export interface TableAreaRectDecor {
   id: string;
-  type: TableAreaDecorType;
+  type: 'bar' | 'wall' | 'stage' | 'label';
   x: number;
   y: number;
   width: number;
@@ -16,6 +26,37 @@ export interface TableAreaDecor {
   rotation: number;
   label?: string;
 }
+
+/** Wand als Linienzug (>= 2 Punkte); erkennbar an `points`. */
+export interface TableAreaWallLine {
+  id: string;
+  type: 'wall';
+  points: TableAreaPoint[];
+  /** Staerke in Einheiten; fehlt → Darstellung mit 10. */
+  thickness?: number;
+}
+
+/**
+ * Zone (Polygon, >= 3 Punkte): Kueche, gesperrter Bereich, Bar/Theke,
+ * Sonstiges. Reine Darstellung — Tische gehoeren nie zu einer Zone.
+ */
+export interface TableAreaZone {
+  id: string;
+  type: 'zone';
+  zoneType: TableAreaZoneType;
+  points: TableAreaPoint[];
+  label?: string;
+}
+
+/**
+ * Element in `table_areas.decor` (jsonb). Abwaertskompatibel: alte
+ * Eintraege sind Rechtecke; `wall` mit `points` ist ein Linienzug,
+ * `zone` ein Polygon.
+ */
+export type TableAreaDecor =
+  | TableAreaRectDecor
+  | TableAreaWallLine
+  | TableAreaZone;
 
 /**
  * Bereich (Raum/Zone) mit eigener Tischkarte, z. B. „Zelt A“ oder
@@ -49,6 +90,13 @@ export class TableArea extends SoftDeleteEntity {
 
   @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
   decor: TableAreaDecor[];
+
+  /**
+   * Umriss des Raums als Polygon (>= 3 Punkte, in Einheiten). `null` =
+   * Rechteck der ganzen Karte (Bestand und Standard).
+   */
+  @Column({ type: 'jsonb', nullable: true, default: null })
+  outline: TableAreaPoint[] | null;
 
   // Relations
   @ManyToOne(() => Organization, { onDelete: 'CASCADE' })
