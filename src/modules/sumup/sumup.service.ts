@@ -5,10 +5,20 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import type SumUp from '@sumup/sdk';
-import { Organization, User, UserOrganization } from '../../database/entities';
+import {
+  Event,
+  Organization,
+  User,
+  UserOrganization,
+} from '../../database/entities';
+import { EventStatus } from '../../database/entities/event.entity';
+import {
+  assertSumUpAllowedInMode,
+  currentEventStatus,
+} from '../../common/utils/sumup-test-mode.util';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { SumUpApiService } from './sumup-api.service';
@@ -26,6 +36,8 @@ export class SumUpService {
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     private readonly sumUpApiService: SumUpApiService,
     private readonly configService: ConfigService,
+    @InjectRepository(Event)
+    private readonly eventRepository: Repository<Event>,
   ) {}
 
   private async getCredentials(
@@ -184,6 +196,15 @@ export class SumUpService {
     user: User,
   ): Promise<SumUp.Readers.CreateReaderCheckoutResponse> {
     await this.checkMembership(organizationId, user.id);
+    // Testmodus: keine echte Kartenzahlung am Lesegeraet.
+    const events = await this.eventRepository.find({
+      where: {
+        organizationId,
+        status: In([EventStatus.ACTIVE, EventStatus.TEST]),
+      },
+      select: { id: true, status: true },
+    });
+    assertSumUpAllowedInMode(currentEventStatus(events));
     const credentials = await this.getCredentials(organizationId);
 
     this.logger.log(

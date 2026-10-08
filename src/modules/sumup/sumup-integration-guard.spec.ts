@@ -1,8 +1,9 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 
 import { Device } from '../../database/entities/device.entity';
+import { Event, EventStatus } from '../../database/entities/event.entity';
 import { Organization } from '../../database/entities/organization.entity';
 import { Payment, PaymentMethod } from '../../database/entities/payment.entity';
 import { Order } from '../../database/entities/order.entity';
@@ -51,6 +52,13 @@ function sumupApiMock() {
   };
 }
 
+async function expectTestMode(call: Promise<unknown>): Promise<void> {
+  await expect(call).rejects.toBeInstanceOf(BadRequestException);
+  await expect(call).rejects.toMatchObject({
+    response: { reason: 'SUMUP_DISABLED_IN_TEST_MODE' },
+  });
+}
+
 async function expectDisabled(call: Promise<unknown>): Promise<void> {
   await expect(call).rejects.toBeInstanceOf(ForbiddenException);
   await expect(call).rejects.toMatchObject({
@@ -59,7 +67,10 @@ async function expectDisabled(call: Promise<unknown>): Promise<void> {
 }
 
 describe('SumUp admin endpoints (SumUpService)', () => {
-  function setup(enabled: boolean | undefined) {
+  function setup(
+    enabled: boolean | undefined,
+    events: { id: string; status: EventStatus }[] = [],
+  ) {
     const organizationRepository = {
       findOne: jest.fn(() => Promise.resolve(organization(enabled))),
     } as unknown as Repository<Organization>;
@@ -72,11 +83,15 @@ describe('SumUp admin endpoints (SumUpService)', () => {
     const config = {
       get: jest.fn(() => undefined),
     } as unknown as ConfigService;
+    const eventRepository = {
+      find: jest.fn(() => Promise.resolve(events)),
+    } as unknown as Repository<Event>;
     const service = new SumUpService(
       organizationRepository,
       userOrganizationRepository,
       api as unknown as SumUpApiService,
       config,
+      eventRepository,
     );
     return { service, api };
   }
@@ -110,6 +125,28 @@ describe('SumUp admin endpoints (SumUpService)', () => {
     await expect(service.listReaders(ORG_ID, user)).resolves.toEqual([]);
     expect(api.listReaders).toHaveBeenCalledWith('sup_sk_test_1234', 'MC123');
   });
+
+  it('refuses a reader checkout while the event is in test mode', async () => {
+    const { service, api } = setup(true, [
+      { id: 'e1', status: EventStatus.TEST },
+    ]);
+
+    await expectTestMode(
+      service.initiateCheckout(ORG_ID, 'r1', 10, 'EUR', user),
+    );
+    expect(api.initiateCheckout).not.toHaveBeenCalled();
+    // Kartenleser verwalten bleibt im Testmodus moeglich.
+    await expect(service.listReaders(ORG_ID, user)).resolves.toEqual([]);
+  });
+
+  it('starts a reader checkout for a live event', async () => {
+    const { service, api } = setup(true, [
+      { id: 'e1', status: EventStatus.ACTIVE },
+    ]);
+
+    await service.initiateCheckout(ORG_ID, 'r1', 10, 'EUR', user);
+    expect(api.initiateCheckout).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('SumUp device endpoints (DeviceApiController)', () => {
@@ -119,12 +156,21 @@ describe('SumUp device endpoints (DeviceApiController)', () => {
     settings: { sumupReaderId: 'reader-1' },
   } as unknown as Device;
 
-  function setup(enabled: boolean | undefined) {
+  function setup(
+    enabled: boolean | undefined,
+    eventStatus: EventStatus = EventStatus.ACTIVE,
+  ) {
     const organizationRepository = {
       findOne: jest.fn(() => Promise.resolve(organization(enabled))),
     };
+    const event = { id: 'event-1', status: eventStatus };
+    const eventRepository = {
+      find: jest.fn(() => Promise.resolve([event])),
+      findOne: jest.fn(() => Promise.resolve(event)),
+    };
     const order = {
       id: 'order-1',
+      eventId: 'event-1',
       orderNumber: 'A-1',
       total: 10,
       paidAmount: 0,
@@ -146,7 +192,7 @@ describe('SumUp device endpoints (DeviceApiController)', () => {
     const none = undefined as never;
     const controller = new DeviceApiController(
       organizationRepository as unknown as Repository<Organization>,
-      none,
+      eventRepository as unknown as Repository<Event>,
       none,
       none,
       orderRepository as unknown as Repository<Order>,
@@ -241,6 +287,45 @@ describe('SumUp device endpoints (DeviceApiController)', () => {
     });
     expect(response.data.settings.sumup?.apiKey).toBe('****1234');
   });
+
+  it('test mode: no reader checkout, status and abort stay reachable', async () => {
+    const { controller, api } = setup(true, EventStatus.TEST);
+
+    await expectTestMode(
+      controller.initiateSumupCheckout(device, { amount: 10 }),
+    );
+    expect(api.initiateCheckout).not.toHaveBeenCalled();
+    await controller.getSumupStatus(device, 'tx-1');
+    await controller.terminateSumupCheckout(device);
+    expect(api.terminateCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it('test mode: refuses to book a SumUp terminal payment for a test order', async () => {
+    const { controller, paymentRepository } = setup(true, EventStatus.TEST);
+
+    await expectTestMode(
+      controller.createPayment(device, {
+        orderId: 'order-1',
+        amount: 10,
+        paymentMethod: PaymentMethod.SUMUP_TERMINAL,
+      }),
+    );
+    expect(paymentRepository.save).not.toHaveBeenCalled();
+  });
+
+  it.each([[PaymentMethod.CASH], [PaymentMethod.CARD]])(
+    'test mode: still books %s payments',
+    async (paymentMethod) => {
+      const { controller, paymentRepository } = setup(true, EventStatus.TEST);
+
+      await controller.createPayment(device, {
+        orderId: 'order-1',
+        amount: 10,
+        paymentMethod,
+      });
+      expect(paymentRepository.save).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('books a SumUp terminal payment when SumUp is enabled', async () => {
     const { controller, paymentRepository } = setup(true);

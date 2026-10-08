@@ -1,7 +1,12 @@
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual } from 'typeorm';
+import {
+  MoreThanOrEqual,
+  type ObjectLiteral,
+  Repository,
+  type SelectQueryBuilder,
+} from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -18,6 +23,7 @@ import {
 } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { OrderStatus } from '../../database/entities/order.entity';
+import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { DeviceType } from '../../database/entities/device.entity';
 import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
 import { PrintJobStatus } from '../../database/entities/print-job.entity';
@@ -100,6 +106,33 @@ export interface StockMovementReport {
   closingStock: number;
 }
 
+/**
+ * Abgleich der Produkt- und Kategorieberichte mit dem Umsatz netto.
+ *
+ * Produktzeilen = Warenwert netto: verkauft minus storniert minus
+ * erstattete Mengen, nach anteiligem Bestellrabatt, ohne Pfand und
+ * Trinkgeld. Was keiner Position gehoert, steht als eigene Zeile:
+ *
+ *   Summe Produkte + Erstattungen ohne Position + Trinkgeld = Umsatz netto
+ *
+ * Kulanz-Erstattungen ohne Positionsbezug (freier Betrag) werden bewusst
+ * nicht anteilig auf die Produkte verteilt: der Gegenbeleg nennt kein
+ * Produkt, eine Verteilung wuerde eine Zuordnung erfinden (5 € Kulanz
+ * fuer kalten Kaffee wuerden die Bratwurst mindern) und Mengen liessen
+ * sich ohnehin nicht abziehen. Erstattungen nach Positionen mindern
+ * dagegen genau das Produkt, Menge und Betrag.
+ */
+export interface NetSalesSummary {
+  /** Warenwert netto aller Positionen (ungerundete Summe, auf Cent). */
+  itemsRevenue: number;
+  /** Kulanz-Erstattungen ohne Positionsbezug (negativ). */
+  unassignedRefunds: number;
+  /** Trinkgeld abzueglich erstattetem Trinkgeld. */
+  tips: number;
+  /** Umsatz netto wie im Verkaufsbericht (`totalRevenue`). */
+  netRevenue: number;
+}
+
 type CsvZelle = string | number | boolean | null | undefined;
 
 /** Kulanz-Erstattungen je Bestellung (negativ), ohne Pfand. */
@@ -108,6 +141,27 @@ export const GOODWILL_NET = `COALESCE((SELECT SUM(rf.amount - rf.pfand_amount) F
 const GOODWILL_PFAND = `COALESCE((SELECT SUM(rf.pfand_amount) FROM refunds rf WHERE rf.order_id = order.id AND rf.kind = 'refund'), 0)`;
 /** Kulanz-Erstattungen je Bestellung (negativ), inkl. Pfand. */
 const GOODWILL_GROSS = `COALESCE((SELECT SUM(rf.amount) FROM refunds rf WHERE rf.order_id = order.id AND rf.kind = 'refund'), 0)`;
+/** Warenanteil der Kulanz-Erstattungen (negativ, ohne Pfand und Trinkgeld). */
+const GOODWILL_GOODS = `COALESCE((SELECT SUM(rf.amount - rf.pfand_amount - rf.tip_amount) FROM refunds rf WHERE rf.order_id = order.id AND rf.kind = 'refund'), 0)`;
+/** Trinkgeldanteil der Kulanz-Erstattungen (negativ). */
+const GOODWILL_TIP = `COALESCE((SELECT SUM(rf.tip_amount) FROM refunds rf WHERE rf.order_id = order.id AND rf.kind = 'refund'), 0)`;
+/**
+ * Anteil des Warenwerts, der nach Rabatt bei der Bestellung bleibt —
+ * dieselbe Rechnung wie beim Gegenbeleg (`discountFactor`).
+ * `total − Pfand − Trinkgeld` ist der Warenwert nach Rabatt.
+ */
+const NET_FACTOR = `(CASE WHEN order.subtotal > 0 THEN (order.total - order.pfandTotal - order.tipAmount) / order.subtotal ELSE 0 END)`;
+/** Noch nicht erstatteter Anteil einer Position (Kulanz nach Positionen). */
+const OPEN_SHARE = `(CASE WHEN item.quantity > 0 THEN CAST(item.quantity - item.refundedQuantity AS numeric) / item.quantity ELSE 0 END)`;
+/** Erstatteter Anteil einer Position. */
+const REFUNDED_SHARE = `(CASE WHEN item.quantity > 0 THEN CAST(item.refundedQuantity AS numeric) / item.quantity ELSE 0 END)`;
+/** Warenwert netto einer Position (Rabatt anteilig, erstattete Menge ab). */
+export const ITEM_NET_REVENUE = `(item.totalPrice * ${OPEN_SHARE} * ${NET_FACTOR})`;
+/** Verkaufte Menge netto (erstattete Menge ab). */
+export const ITEM_NET_QUANTITY = `(item.quantity - item.refundedQuantity)`;
+
+const round2 = (value: number): number => Math.round(value * 100) / 100;
+
 /** Erstattungen je Zahlung (negativ, alle Arten — Geldfluss). */
 export const PAYMENT_REFUNDS = `COALESCE((SELECT SUM(rf.amount) FROM refunds rf WHERE rf.payment_id = payment.id), 0)`;
 
@@ -151,6 +205,46 @@ export class ReportsService {
     const tz =
       this.configService.get<string>('REPORT_TIMEZONE') || 'Europe/Berlin';
     return /^[A-Za-z0-9_+/-]+$/.test(tz) ? tz : 'Europe/Berlin';
+  }
+
+  /** Veranstaltung und Zeitraum (Bestelldatum), wie in allen Umsatzberichten. */
+  private applyOrderFilters<T extends ObjectLiteral>(
+    queryBuilder: SelectQueryBuilder<T>,
+    { eventId, startDate, endDate }: QueryReportsDto,
+  ): SelectQueryBuilder<T> {
+    if (eventId) {
+      queryBuilder.andWhere('order.eventId = :eventId', { eventId });
+    }
+    if (startDate && endDate) {
+      queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
+        startDate: startOfDay(startDate),
+        endDate: endOfDay(endDate),
+      });
+    } else if (startDate) {
+      queryBuilder.andWhere('order.createdAt >= :startDate', {
+        startDate: startOfDay(startDate),
+      });
+    } else if (endDate) {
+      queryBuilder.andWhere('order.createdAt <= :endDate', {
+        endDate: endOfDay(endDate),
+      });
+    }
+    return queryBuilder;
+  }
+
+  /** Positionen nicht stornierter Bestellungen, ohne stornierte Positionen. */
+  private soldItemsQuery(organizationId: string, queryDto: QueryReportsDto) {
+    const queryBuilder = this.orderItemRepository
+      .createQueryBuilder('item')
+      .innerJoin('item.order', 'order')
+      .where('order.organizationId = :organizationId', { organizationId })
+      .andWhere('order.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: [OrderStatus.CANCELLED],
+      })
+      .andWhere('item.status <> :cancelledItem', {
+        cancelledItem: OrderItemStatus.CANCELLED,
+      });
+    return this.applyOrderFilters(queryBuilder, queryDto);
   }
 
   async getSalesReport(
@@ -230,31 +324,10 @@ export class ReportsService {
       .select('SUM(ret.totalAmount)', 'pfandReturned')
       .getRawOne<{ pfandReturned: string | null }>();
 
-    // Get total items sold
-    const itemsQueryBuilder = this.orderItemRepository
-      .createQueryBuilder('item')
-      .innerJoin('item.order', 'order')
-      .where('order.organizationId = :organizationId', { organizationId })
-      .andWhere('order.status NOT IN (:...excludedStatuses)', {
-        excludedStatuses: [OrderStatus.CANCELLED],
-      });
-
-    if (eventId) {
-      itemsQueryBuilder.andWhere('order.eventId = :eventId', { eventId });
-    }
-
-    if (startDate && endDate) {
-      itemsQueryBuilder.andWhere(
-        'order.createdAt BETWEEN :startDate AND :endDate',
-        {
-          startDate: startOfDay(startDate),
-          endDate: endOfDay(endDate),
-        },
-      );
-    }
-
-    const itemsResult = await itemsQueryBuilder
-      .select('SUM(item.quantity)', 'totalItems')
+    // Verkaufte Artikel netto: ohne stornierte Positionen, erstattete
+    // Mengen ab — dieselbe Menge wie im Produktbericht.
+    const itemsResult = await this.soldItemsQuery(organizationId, queryDto)
+      .select(`SUM(${ITEM_NET_QUANTITY})`, 'totalItems')
       .getRawOne<{ totalItems: string | null }>();
 
     // Cancelled orders, same filters — mirrors the queries above but flips
@@ -309,34 +382,20 @@ export class ReportsService {
     };
   }
 
+  /**
+   * Produkte netto: verkaufte Menge minus storniert und erstattet, Umsatz
+   * als Warenwert nach anteiligem Rabatt, ohne Pfand und Trinkgeld.
+   * Kulanz ohne Positionsbezug und Trinkgeld stehen im Abgleich
+   * (`getNetSalesSummary`), nicht in den Zeilen.
+   */
   async getProductsReport(
     organizationId: string,
     queryDto: QueryReportsDto,
     user: User,
   ): Promise<ProductReport[]> {
     await this.checkPermission(organizationId, user.id);
-    const { eventId, startDate, endDate } = queryDto;
 
-    const queryBuilder = this.orderItemRepository
-      .createQueryBuilder('item')
-      .innerJoin('item.order', 'order')
-      .where('order.organizationId = :organizationId', { organizationId })
-      .andWhere('order.status NOT IN (:...excludedStatuses)', {
-        excludedStatuses: [OrderStatus.CANCELLED],
-      });
-
-    if (eventId) {
-      queryBuilder.andWhere('order.eventId = :eventId', { eventId });
-    }
-
-    if (startDate && endDate) {
-      queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
-        startDate: startOfDay(startDate),
-        endDate: endOfDay(endDate),
-      });
-    }
-
-    const results = await queryBuilder
+    const results = await this.soldItemsQuery(organizationId, queryDto)
       // Quote the aliases — Postgres folds unquoted identifiers to lower case,
       // so getRawMany() would return `productname`/`quantitysold` and the
       // camelCase mapping below would read undefined (empty product, qty 0).
@@ -344,16 +403,16 @@ export class ReportsService {
         'item.productId as "productId"',
         'item.productName as "productName"',
         'item.categoryName as "categoryName"',
-        'SUM(item.quantity) as "quantitySold"',
-        'SUM(item.totalPrice) as "revenue"',
+        `SUM(${ITEM_NET_QUANTITY}) as "quantitySold"`,
+        `SUM(${ITEM_NET_REVENUE}) as "revenue"`,
         'AVG(item.unitPrice) as "averagePrice"',
       ])
       .groupBy('item.productId')
       .addGroupBy('item.productName')
       .addGroupBy('item.categoryName')
       // Top-Produkte nach verkaufter Menge (bei Gleichstand nach Umsatz)
-      .orderBy('SUM(item.quantity)', 'DESC')
-      .addOrderBy('SUM(item.totalPrice)', 'DESC')
+      .orderBy(`SUM(${ITEM_NET_QUANTITY})`, 'DESC')
+      .addOrderBy(`SUM(${ITEM_NET_REVENUE})`, 'DESC')
       .getRawMany<{
         productId: string;
         productName: string;
@@ -368,9 +427,55 @@ export class ReportsService {
       productName: r.productName,
       categoryName: r.categoryName,
       quantitySold: Number(r.quantitySold || 0),
-      revenue: Number(r.revenue || 0),
+      revenue: round2(Number(r.revenue || 0)),
       averagePrice: Number(r.averagePrice || 0),
     }));
+  }
+
+  /**
+   * Abgleich Produkte/Kategorien ↔ Umsatz netto (siehe `NetSalesSummary`).
+   * Gleiche Filter wie die Berichte; Erstattungen zaehlen zur Bestellung
+   * (Bestelldatum), wie im Verkaufsbericht.
+   */
+  async getNetSalesSummary(
+    organizationId: string,
+    queryDto: QueryReportsDto,
+    user: User,
+  ): Promise<NetSalesSummary> {
+    await this.checkPermission(organizationId, user.id);
+
+    const ordersQb = this.orderRepository
+      .createQueryBuilder('order')
+      .where('order.organizationId = :organizationId', { organizationId })
+      .andWhere('order.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: [OrderStatus.CANCELLED],
+      });
+    const orderTotals = await this.applyOrderFilters(ordersQb, queryDto)
+      .select([
+        `SUM(order.total - order.pfandTotal + ${GOODWILL_NET}) as "netRevenue"`,
+        `SUM(order.tipAmount + ${GOODWILL_TIP}) as "tips"`,
+        `SUM(${GOODWILL_GOODS}) as "goodwillGoods"`,
+      ])
+      .getRawOne<{
+        netRevenue: string | null;
+        tips: string | null;
+        goodwillGoods: string | null;
+      }>();
+
+    const itemTotals = await this.soldItemsQuery(organizationId, queryDto)
+      .select([
+        `SUM(${ITEM_NET_REVENUE}) as "itemsRevenue"`,
+        `SUM(item.totalPrice * ${REFUNDED_SHARE} * ${NET_FACTOR}) as "attributed"`,
+      ])
+      .getRawOne<{ itemsRevenue: string | null; attributed: string | null }>();
+
+    return netSalesSummary({
+      netRevenue: Number(orderTotals?.netRevenue || 0),
+      tips: Number(orderTotals?.tips || 0),
+      goodwillGoods: Number(orderTotals?.goodwillGoods || 0),
+      itemsRevenue: Number(itemTotals?.itemsRevenue || 0),
+      attributedRefunds: Number(itemTotals?.attributed || 0),
+    });
   }
 
   async getPaymentsReport(
@@ -579,51 +684,24 @@ export class ReportsService {
     });
   }
 
+  /** Kategorien netto — gleiche Rechnung wie der Produktbericht. */
   async getCategoriesReport(
     organizationId: string,
     queryDto: QueryReportsDto,
     user: User,
   ): Promise<CategoryReport[]> {
     await this.checkPermission(organizationId, user.id);
-    const { eventId, startDate, endDate } = queryDto;
 
-    const queryBuilder = this.orderItemRepository
-      .createQueryBuilder('item')
-      .innerJoin('item.order', 'order')
-      .where('order.organizationId = :organizationId', { organizationId })
-      .andWhere('order.status NOT IN (:...excludedStatuses)', {
-        excludedStatuses: [OrderStatus.CANCELLED],
-      });
-
-    if (eventId) {
-      queryBuilder.andWhere('order.eventId = :eventId', { eventId });
-    }
-
-    if (startDate && endDate) {
-      queryBuilder.andWhere('order.createdAt BETWEEN :startDate AND :endDate', {
-        startDate: startOfDay(startDate),
-        endDate: endOfDay(endDate),
-      });
-    } else if (startDate) {
-      queryBuilder.andWhere('order.createdAt >= :startDate', {
-        startDate: startOfDay(startDate),
-      });
-    } else if (endDate) {
-      queryBuilder.andWhere('order.createdAt <= :endDate', {
-        endDate: endOfDay(endDate),
-      });
-    }
-
-    const results = await queryBuilder
+    const results = await this.soldItemsQuery(organizationId, queryDto)
       .select([
         'item.categoryId as "categoryId"',
         'item.categoryName as "name"',
-        'SUM(item.quantity) as "quantity"',
-        'SUM(item.totalPrice) as "revenue"',
+        `SUM(${ITEM_NET_QUANTITY}) as "quantity"`,
+        `SUM(${ITEM_NET_REVENUE}) as "revenue"`,
       ])
       .groupBy('item.categoryId')
       .addGroupBy('item.categoryName')
-      .orderBy('SUM(item.totalPrice)', 'DESC')
+      .orderBy(`SUM(${ITEM_NET_REVENUE})`, 'DESC')
       .getRawMany<{
         categoryId: string;
         name: string;
@@ -635,7 +713,7 @@ export class ReportsService {
       categoryId: r.categoryId,
       name: r.name,
       quantity: Number(r.quantity || 0),
-      revenue: Number(r.revenue || 0),
+      revenue: round2(Number(r.revenue || 0)),
     }));
   }
 
@@ -1091,4 +1169,25 @@ export class ReportsService {
 
     return eintraege.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
   }
+}
+
+/**
+ * Abgleich aus den Summen der Abfragen. `goodwillGoods` ist der Warenanteil
+ * aller Kulanz-Erstattungen (negativ), `attributedRefunds` der Teil davon,
+ * der ueber erstattete Mengen bei den Produkten abgezogen ist (positiv) —
+ * der Rest sind die Erstattungen ohne Position.
+ */
+export function netSalesSummary(input: {
+  netRevenue: number;
+  tips: number;
+  goodwillGoods: number;
+  itemsRevenue: number;
+  attributedRefunds: number;
+}): NetSalesSummary {
+  return {
+    itemsRevenue: round2(input.itemsRevenue),
+    unassignedRefunds: round2(input.goodwillGoods + input.attributedRefunds),
+    tips: round2(input.tips),
+    netRevenue: round2(input.netRevenue),
+  };
 }
