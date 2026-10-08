@@ -210,6 +210,21 @@ export class Order extends BaseEntity {
   })
   discountReason: string | null;
 
+  /**
+   * Summe aller Erstattungen (positiv). Der Ursprungsbeleg (`total`,
+   * `paidAmount`) bleibt unveraendert; was erstattet wurde, steht als
+   * eigener Gegenbeleg in `refunds`.
+   */
+  @Column({
+    name: 'refunded_amount',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+    transformer: numericTransformer,
+  })
+  refundedAmount: number;
+
   /** Total deposit ("Pfand") charged on this order. Part of `total`, excluded from revenue/tax. */
   @Column({
     name: 'pfand_total',

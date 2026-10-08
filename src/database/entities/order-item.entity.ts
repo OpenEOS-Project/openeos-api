@@ -93,6 +93,10 @@ export class OrderItem extends BaseEntity {
   @Column({ name: 'paid_quantity', type: 'int', default: 0 })
   paidQuantity: number;
 
+  /** Erstattete Menge ohne Storno (Kulanz); storniert wird ueber `status`. */
+  @Column({ name: 'refunded_quantity', type: 'int', default: 0 })
+  refundedQuantity: number;
+
   @Column({
     name: 'prepared_at',
     type: 'timestamp with time zone',

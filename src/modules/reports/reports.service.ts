@@ -102,6 +102,15 @@ export interface StockMovementReport {
 
 type CsvZelle = string | number | boolean | null | undefined;
 
+/** Kulanz-Erstattungen je Bestellung (negativ), ohne Pfand. */
+export const GOODWILL_NET = `COALESCE((SELECT SUM(rf.amount - rf.pfand_amount) FROM refunds rf WHERE rf.order_id = order.id AND rf.kind = 'refund'), 0)`;
+/** Pfandanteil der Kulanz-Erstattungen (negativ). */
+const GOODWILL_PFAND = `COALESCE((SELECT SUM(rf.pfand_amount) FROM refunds rf WHERE rf.order_id = order.id AND rf.kind = 'refund'), 0)`;
+/** Kulanz-Erstattungen je Bestellung (negativ), inkl. Pfand. */
+const GOODWILL_GROSS = `COALESCE((SELECT SUM(rf.amount) FROM refunds rf WHERE rf.order_id = order.id AND rf.kind = 'refund'), 0)`;
+/** Erstattungen je Zahlung (negativ, alle Arten — Geldfluss). */
+export const PAYMENT_REFUNDS = `COALESCE((SELECT SUM(rf.amount) FROM refunds rf WHERE rf.payment_id = payment.id), 0)`;
+
 @Injectable()
 export class ReportsService {
   private readonly logger = new Logger(ReportsService.name);
@@ -182,10 +191,12 @@ export class ReportsService {
       .select([
         // Revenue excludes Pfand (deposits are a pass-through, not turnover).
         // Aliases are quoted so Postgres preserves their camelCase.
-        'SUM(order.total - order.pfandTotal) as "totalRevenue"',
+        // Kulanz-Erstattungen (Gegenbelege ohne Storno) mindern den Umsatz;
+        // Storno-Erstattungen stecken schon in der gesunkenen Summe.
+        `SUM(order.total - order.pfandTotal + ${GOODWILL_NET}) as "totalRevenue"`,
         'COUNT(order.id) as "totalOrders"',
-        'AVG(order.total - order.pfandTotal) as "averageOrderValue"',
-        'SUM(order.pfandTotal) as "pfandCollected"',
+        `AVG(order.total - order.pfandTotal + ${GOODWILL_NET}) as "averageOrderValue"`,
+        `SUM(order.pfandTotal + ${GOODWILL_PFAND}) as "pfandCollected"`,
       ])
       .getRawOne<{
         totalRevenue: string | null;
@@ -376,8 +387,12 @@ export class ReportsService {
       .where('order.organizationId = :organizationId', { organizationId })
       // Only money that actually arrived — pending/failed payments would
       // inflate the breakdown (same rule as the device revenue stats).
-      .andWhere('payment.status = :paymentStatus', {
-        paymentStatus: PaymentTransactionStatus.CAPTURED,
+      // Erstattete Zahlungen zaehlen mit, die Erstattungen werden abgezogen.
+      .andWhere('payment.status IN (:...paymentStatuses)', {
+        paymentStatuses: [
+          PaymentTransactionStatus.CAPTURED,
+          PaymentTransactionStatus.REFUNDED,
+        ],
       });
 
     if (eventId) {
@@ -399,7 +414,7 @@ export class ReportsService {
         // Entity property is paymentMethod (column payment_method)
         'payment.paymentMethod as method',
         'COUNT(payment.id) as count',
-        'SUM(payment.amount) as total',
+        `SUM(payment.amount + ${PAYMENT_REFUNDS}) as total`,
       ])
       .groupBy('payment.paymentMethod')
       .getRawMany<{
@@ -457,7 +472,7 @@ export class ReportsService {
         `${localDate} as date`,
         `${localHour} as hour`,
         'COUNT(order.id) as orders',
-        'SUM(order.total) as revenue',
+        `SUM(order.total + ${GOODWILL_GROSS}) as revenue`,
       ])
       .groupBy(localDate)
       .addGroupBy(localHour)
@@ -542,10 +557,10 @@ export class ReportsService {
         'order.source as channel',
         'COUNT(order.id) as orders',
         // Revenue excludes Pfand, same convention as getSalesReport.
-        'SUM(order.total - order.pfandTotal) as revenue',
+        `SUM(order.total - order.pfandTotal + ${GOODWILL_NET}) as revenue`,
       ])
       .groupBy('order.source')
-      .orderBy('SUM(order.total - order.pfandTotal)', 'DESC')
+      .orderBy(`SUM(order.total - order.pfandTotal + ${GOODWILL_NET})`, 'DESC')
       .getRawMany<{
         channel: string;
         orders: string | null;
@@ -664,11 +679,11 @@ export class ReportsService {
         'order.createdByDeviceId as "deviceId"',
         'device.name as "name"',
         'COUNT(order.id) as "orders"',
-        'SUM(order.total - order.pfandTotal) as "revenue"',
+        `SUM(order.total - order.pfandTotal + ${GOODWILL_NET}) as "revenue"`,
       ])
       .groupBy('order.createdByDeviceId')
       .addGroupBy('device.name')
-      .orderBy('SUM(order.total - order.pfandTotal)', 'DESC')
+      .orderBy(`SUM(order.total - order.pfandTotal + ${GOODWILL_NET})`, 'DESC')
       .getRawMany<{
         deviceId: string;
         name: string | null;

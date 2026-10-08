@@ -11,8 +11,11 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
+import { RefundsService } from '../refunds/refunds.service';
+import { OrderHistoryService } from '../refunds/order-history.service';
+import { CancelItemsDto, CreateRefundDto } from '../refunds/dto/refund.dto';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
 import {
@@ -28,7 +31,11 @@ import {
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/orders')
 export class OrdersController {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly refundsService: RefundsService,
+    private readonly orderHistoryService: OrderHistoryService,
+  ) {}
 
   @Post()
   create(
@@ -183,17 +190,110 @@ export class OrdersController {
 
   @Post(':orderId/cancel')
   @HttpCode(HttpStatus.OK)
-  cancelOrder(
+  @ApiOperation({
+    summary: 'Ganze Bestellung stornieren (nur unbezahlt)',
+    description:
+      'Bezahlte Bestellungen: 400 ORDER_PAID_REFUND_REQUIRED — stattdessen Erstattung mit `mode: full, cancelItems: true`. Recht „Bestellungen“ oder Admin.',
+  })
+  async cancelOrder(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() cancelDto: CancelOrderDto,
     @CurrentUser() user: User,
   ) {
-    return this.ordersService.cancelOrder(
+    const actor = await this.refundsService.resolveAdminActor(
       organizationId,
-      orderId,
-      cancelDto,
       user,
     );
+    await this.refundsService.cancelOrder(actor, orderId, cancelDto);
+    return this.ordersService.findOne(organizationId, orderId, user);
+  }
+
+  @Get(':orderId/history')
+  @ApiOperation({
+    summary:
+      'Bestellung im Detail wie in der Kasse: Positionen, Zahlungen, Erstattungen, Verlauf',
+  })
+  async getHistory(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @CurrentUser() user: User,
+  ) {
+    await this.ordersService.findOne(organizationId, orderId, user);
+    return this.orderHistoryService.detail(organizationId, orderId);
+  }
+
+  @Post(':orderId/cancel-items')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Positionen stornieren (ohne Erstattung), wie an der Kasse',
+  })
+  async cancelItems(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: CancelItemsDto,
+    @CurrentUser() user: User,
+  ) {
+    const actor = await this.refundsService.resolveAdminActor(
+      organizationId,
+      user,
+    );
+    await this.refundsService.cancelItems(actor, orderId, dto);
+    return this.orderHistoryService.detail(organizationId, orderId);
+  }
+
+  @Post(':orderId/refunds')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Erstattung mit Gegenbeleg (gleiche Regeln wie an der Kasse)',
+  })
+  async createRefund(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() dto: CreateRefundDto,
+    @CurrentUser() user: User,
+  ) {
+    const actor = await this.refundsService.resolveAdminActor(
+      organizationId,
+      user,
+    );
+    const outcome = await this.refundsService.createRefund(actor, orderId, dto);
+    return {
+      refunds: outcome.refunds.map((r) => ({
+        id: r.id,
+        refundNumber: r.refundNumber,
+        amount: Number(r.amount),
+        paymentMethod: r.paymentMethod,
+        status: r.status,
+        printed: (r as typeof r & { printed?: boolean }).printed ?? false,
+      })),
+      order: await this.orderHistoryService.detail(organizationId, orderId),
+    };
+  }
+
+  @Post(':orderId/refunds/:refundId/reprint')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Gegenbeleg nachdrucken' })
+  async reprintRefund(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('refundId', ParseUUIDPipe) refundId: string,
+    @CurrentUser() user: User,
+  ) {
+    await this.ordersService.findOne(organizationId, orderId, user);
+    const printed = await this.refundsService.reprintRefund(
+      {
+        organizationId,
+        deviceId: null,
+        deviceName: null,
+        userId: user.id,
+        actorName:
+          `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || null,
+        cashDrawerPrinterId: null,
+      },
+      orderId,
+      refundId,
+    );
+    return { success: true, printed };
   }
 }

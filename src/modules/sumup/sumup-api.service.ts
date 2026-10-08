@@ -111,8 +111,13 @@ interface SumUpClient {
   transactions: {
     get(
       merchantCode: string,
-      query: { client_transaction_id?: string },
+      query: { client_transaction_id?: string; id?: string },
     ): Promise<SumUp.Transactions.TransactionFull>;
+    /** `POST /v0.1/me/refund/{txn_id}`, Betrag in Euro (ohne = voll). */
+    refund(
+      txnId: string,
+      body?: SumUp.Transactions.RefundTransactionParams,
+    ): Promise<void>;
   };
 }
 
@@ -144,10 +149,38 @@ export class SumUpApiService {
     };
 
     if (typeof body === 'object' && body !== null) {
-      const errors = (body as { errors?: { type?: string; detail?: string } })
-        .errors;
+      // Je nach Endpunkt: { errors: { type, detail } }, ein Array
+      // [{ error_code, message }] oder { error_code, message } direkt.
+      const raw = body as {
+        errors?: unknown;
+        error_code?: string;
+        message?: string;
+        detail?: string;
+      };
+      const first = Array.isArray(body)
+        ? (body[0] as { error_code?: string; message?: string } | undefined)
+        : Array.isArray(raw.errors)
+          ? (raw.errors[0] as { code?: string; detail?: string } | undefined)
+          : undefined;
+      const errors = (
+        raw.errors && !Array.isArray(raw.errors) ? raw.errors : undefined
+      ) as { type?: string; detail?: string } | undefined;
       if (errors?.type) result.type = errors.type;
       if (errors?.detail) result.detail = errors.detail;
+      if (!result.type && first) {
+        const entry = first as {
+          error_code?: string;
+          code?: string;
+          message?: string;
+          detail?: string;
+        };
+        result.type = entry.error_code ?? entry.code;
+        result.detail = entry.message ?? entry.detail;
+      }
+      if (!result.type && raw.error_code) result.type = raw.error_code;
+      if (!result.detail && (raw.message || raw.detail)) {
+        result.detail = raw.message ?? raw.detail;
+      }
     }
 
     return result;
@@ -241,6 +274,65 @@ export class SumUpApiService {
     } catch {
       return { status: null };
     }
+  }
+
+  /**
+   * Erstattet (ganz oder teilweise) eine Kartenzahlung ueber die SumUp-API.
+   *
+   * Die Kasse speichert an der Zahlung die `client_transaction_id` des
+   * Lesegeraet-Checkouts; der Erstattungs-Endpunkt braucht dagegen die
+   * Transaktions-ID. Sie wird deshalb zuerst ueber
+   * `GET /v2.1/merchants/{merchant_code}/transactions?client_transaction_id=`
+   * aufgeloest (faellt zurueck auf `?id=`, falls schon eine Transaktions-ID
+   * gespeichert ist), dann folgt `POST /v0.1/me/refund/{txn_id}` mit
+   * `{ amount }` in Euro. Antwort 204 ohne Inhalt.
+   *
+   * Fehler kommen als SUMUP_API_ERROR / SUMUP_INVALID_CREDENTIALS mit dem
+   * SumUp-Status in `details` (z. B. 404 unbekannte Transaktion, 409 nicht
+   * erstattbar, 422 Betrag ueber dem erstattbaren Rest / zu wenig Guthaben).
+   */
+  async refundTransaction(
+    apiKey: string,
+    merchantCode: string,
+    reference: string,
+    amount: number,
+  ): Promise<{ transactionId: string; transactionCode: string | null }> {
+    const client = this.createClient(apiKey);
+    const txn = await this.execute(async () => {
+      try {
+        return await client.transactions.get(merchantCode, {
+          client_transaction_id: reference,
+        });
+      } catch (error) {
+        if (isSumUpAPIError(error) && error.status === 404) {
+          return client.transactions.get(merchantCode, { id: reference });
+        }
+        throw error;
+      }
+    }, 'refundTransaction (lookup)');
+    const transactionId = txn?.id;
+    if (!transactionId) {
+      throw sumUpErrorResponse(
+        404,
+        'TRANSACTION_NOT_FOUND',
+        'Transaktion bei SumUp nicht gefunden',
+        'SumUp: Transaktion nicht gefunden',
+      );
+    }
+    await this.execute(
+      () =>
+        client.transactions.refund(transactionId, {
+          amount: Math.round(amount * 100) / 100,
+        }),
+      'refundTransaction',
+    );
+    this.logger.log(
+      `SumUp refund of ${amount.toFixed(2)} for transaction ${transactionId}`,
+    );
+    return {
+      transactionId,
+      transactionCode: txn.transaction_code ?? null,
+    };
   }
 
   async updateReader(

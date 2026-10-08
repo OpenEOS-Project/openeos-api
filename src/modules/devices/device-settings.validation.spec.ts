@@ -41,3 +41,26 @@ describe('dropNullSettings', () => {
     ).toEqual({ serviceMode: 'table', tableAreaId: 'a1' });
   });
 });
+
+describe('refundPermission („Stornieren & Erstatten“)', () => {
+  it.each([['allowed'], ['pin'], ['disabled'], [null], [undefined]])(
+    'accepts %p',
+    (value) => {
+      expect(() =>
+        assertDeviceSettings({ refundPermission: value } as never),
+      ).not.toThrow();
+    },
+  );
+
+  it.each([['yes'], [true], [1]])('rejects %p', (value) => {
+    expect(() =>
+      assertDeviceSettings({ refundPermission: value } as never),
+    ).toThrow(BadRequestException);
+  });
+
+  it('null falls back to the default (allowed)', () => {
+    expect(
+      dropNullSettings({ refundPermission: null, soundEnabled: true } as never),
+    ).toEqual({ soundEnabled: true });
+  });
+});
