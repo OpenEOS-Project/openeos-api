@@ -434,6 +434,18 @@ export class RefundsService {
         actor.organizationId,
         orderId,
       );
+      if (order.status !== OrderStatus.CANCELLED) {
+        const held = cents(order.paidAmount) - cents(order.refundedAmount || 0);
+        if (held > 0) {
+          throw new BadRequestException({
+            code: ErrorCodes.VALIDATION_ERROR,
+            reason: ErrorReasons.ORDER_PAID_REFUND_REQUIRED,
+            message:
+              'Die Bestellung ist (teilweise) bezahlt. Storniere sie mit Erstattung.',
+            params: { refundAmount: held / 100 },
+          });
+        }
+      }
       if (
         order.status === OrderStatus.CANCELLED ||
         order.status === OrderStatus.COMPLETED
@@ -443,16 +455,6 @@ export class RefundsService {
           reason: ErrorReasons.ORDER_CANNOT_BE_CANCELLED,
           message:
             'Bestellung kann nicht storniert werden (bereits abgeschlossen oder storniert)',
-        });
-      }
-      const held = cents(order.paidAmount) - cents(order.refundedAmount || 0);
-      if (held > 0) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          reason: ErrorReasons.ORDER_PAID_REFUND_REQUIRED,
-          message:
-            'Die Bestellung ist (teilweise) bezahlt. Storniere sie mit Erstattung.',
-          params: { refundAmount: held / 100 },
         });
       }
       const active = items.filter(
