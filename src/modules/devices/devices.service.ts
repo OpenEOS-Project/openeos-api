@@ -41,6 +41,10 @@ import {
   InitDeviceDto,
   LinkDeviceDto,
 } from './dto';
+import {
+  assertDeviceSettings,
+  dropNullSettings,
+} from './device-settings.validation';
 import { GatewayService } from '../gateway/gateway.service';
 
 @Injectable()
@@ -68,6 +72,7 @@ export class DevicesService {
     user: User,
   ): Promise<Device> {
     await this.checkPermission(organizationId, user.id, 'devices');
+    assertDeviceSettings(createDto.settings);
 
     // Generate unique device token
     const deviceToken = this.generateDeviceToken();
@@ -77,7 +82,7 @@ export class DevicesService {
       name: createDto.name,
       type: createDto.type,
       deviceToken,
-      settings: createDto.settings || {},
+      settings: dropNullSettings(createDto.settings || {}),
       isActive: true,
     });
 
@@ -153,6 +158,7 @@ export class DevicesService {
     user: User,
   ): Promise<Device> {
     await this.checkPermission(organizationId, user.id, 'devices');
+    assertDeviceSettings(updateDto.settings);
 
     const device = await this.findOne(organizationId, deviceId, user);
     const previousName = device.name;
@@ -169,7 +175,7 @@ export class DevicesService {
     Object.assign(device, uebrige);
 
     if (neueSettings) {
-      device.settings = {
+      device.settings = dropNullSettings({
         ...(device.settings ?? {}),
         ...neueSettings,
         // Das Aussehen ist selbst ein Objekt und braucht denselben Schutz.
@@ -181,7 +187,7 @@ export class DevicesService {
               },
             }
           : {}),
-      };
+      });
     }
 
     await this.deviceRepository.save(device);

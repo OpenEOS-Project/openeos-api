@@ -505,6 +505,209 @@ describe('TablesService', () => {
     });
   });
 
+  describe('walls, zones and outline', () => {
+    const wall = {
+      id: 'w1',
+      type: 'wall' as const,
+      points: [
+        { x: 0, y: 0 },
+        { x: 1200, y: 0 },
+        { x: 1200, y: 640 },
+      ],
+      thickness: 12,
+    };
+    const zone = {
+      id: 'z1',
+      type: 'zone' as const,
+      zoneType: 'kitchen' as const,
+      label: 'Küche',
+      points: [
+        { x: 0, y: 600 },
+        { x: 300, y: 600 },
+        { x: 300, y: 800 },
+        { x: 0, y: 800 },
+      ],
+    };
+    const bar = {
+      id: 'd1',
+      type: 'bar' as const,
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 40,
+      rotation: 0,
+    };
+    const outline = [
+      { x: 0, y: 0 },
+      { x: 1200, y: 0 },
+      { x: 1200, y: 640 },
+      { x: 1040, y: 800 },
+      { x: 0, y: 800 },
+    ];
+
+    it('stores polyline walls, zones and rectangles side by side', async () => {
+      const ctx = setup();
+      const area = await withArea(ctx);
+      await ctx.service.putLayout(
+        ORG,
+        area.id,
+        { tables: [], decor: [bar, wall, zone], outline },
+        USER,
+      );
+      expect(ctx.areas.rows[0].decor).toEqual([bar, wall, zone]);
+      expect(ctx.areas.rows[0].outline).toEqual(outline);
+      expect(ctx.gateway.notifyTablesUpdated).toHaveBeenLastCalledWith(ORG, [
+        area.id,
+      ]);
+    });
+
+    it('keeps a rectangular wall (no points) as before', async () => {
+      const ctx = setup();
+      const area = await withArea(ctx);
+      const rectWall = { ...bar, id: 'd2', type: 'wall' as const };
+      await ctx.service.putLayout(
+        ORG,
+        area.id,
+        { tables: [], decor: [rectWall] },
+        USER,
+      );
+      expect(ctx.areas.rows[0].decor).toEqual([rectWall]);
+    });
+
+    it('resets the outline with null and leaves it alone when omitted', async () => {
+      const ctx = setup();
+      const area = await withArea(ctx);
+      await ctx.service.updateArea(ORG, area.id, { outline }, USER);
+      await ctx.service.updateArea(ORG, area.id, { name: 'Zelt B' }, USER);
+      expect(ctx.areas.rows[0].outline).toEqual(outline);
+      await ctx.service.updateArea(ORG, area.id, { outline: null }, USER);
+      expect(ctx.areas.rows[0].outline).toBeNull();
+    });
+
+    it('rejects points outside the area', async () => {
+      const ctx = setup();
+      const area = await withArea(ctx);
+      await expectError(
+        ctx.service.putLayout(
+          ORG,
+          area.id,
+          {
+            tables: [],
+            decor: [
+              {
+                ...wall,
+                points: [
+                  { x: 0, y: 0 },
+                  { x: 1201, y: 0 },
+                ],
+              },
+            ],
+          },
+          USER,
+        ),
+        BadRequestException,
+        'TABLE_OUT_OF_AREA',
+      );
+      await expectError(
+        ctx.service.updateArea(
+          ORG,
+          area.id,
+          { outline: [...outline.slice(0, 4), { x: 0, y: 801 }] },
+          USER,
+        ),
+        BadRequestException,
+        'TABLE_OUT_OF_AREA',
+      );
+      expect(ctx.areas.rows[0].decor).toEqual([]);
+    });
+
+    it('requires 3 points per zone and outline, 2 per wall', async () => {
+      const ctx = setup();
+      const area = await withArea(ctx);
+      const two = zone.points.slice(0, 2);
+      const error = await expectError(
+        ctx.service.putLayout(
+          ORG,
+          area.id,
+          { tables: [], decor: [{ ...zone, points: two }] },
+          USER,
+        ),
+        BadRequestException,
+        'TABLE_AREA_SHAPE_INVALID',
+      );
+      expect(error.getResponse()).toEqual(
+        expect.objectContaining({
+          params: { kind: 'zone', problem: 'tooFewPoints', min: 3 },
+        }),
+      );
+      await expectError(
+        ctx.service.updateArea(ORG, area.id, { outline: two }, USER),
+        BadRequestException,
+        'TABLE_AREA_SHAPE_INVALID',
+      );
+      await expectError(
+        ctx.service.putLayout(
+          ORG,
+          area.id,
+          { tables: [], decor: [{ ...wall, points: two.slice(0, 1) }] },
+          USER,
+        ),
+        BadRequestException,
+        'TABLE_AREA_SHAPE_INVALID',
+      );
+    });
+
+    it('rejects more than 100 points', async () => {
+      const ctx = setup();
+      const area = await withArea(ctx);
+      const many = Array.from({ length: 101 }, (_, i) => ({ x: i, y: i }));
+      await expectError(
+        ctx.service.putLayout(
+          ORG,
+          area.id,
+          { tables: [], decor: [{ ...wall, points: many }] },
+          USER,
+        ),
+        BadRequestException,
+        'TABLE_AREA_SHAPE_INVALID',
+      );
+    });
+
+    it('pulls outline and shape points in when the area shrinks', async () => {
+      const ctx = setup();
+      const area = await withArea(ctx);
+      await ctx.service.putLayout(
+        ORG,
+        area.id,
+        { tables: [], decor: [bar, wall], outline },
+        USER,
+      );
+      await ctx.service.updateArea(
+        ORG,
+        area.id,
+        { width: 1000, height: 700 },
+        USER,
+      );
+      const row = ctx.areas.rows[0] as unknown as TableArea;
+      expect(row.outline).toEqual([
+        { x: 0, y: 0 },
+        { x: 1000, y: 0 },
+        { x: 1000, y: 640 },
+        { x: 1000, y: 700 },
+        { x: 0, y: 700 },
+      ]);
+      expect(row.decor[1]).toEqual({
+        ...wall,
+        points: [
+          { x: 0, y: 0 },
+          { x: 1000, y: 0 },
+          { x: 1000, y: 640 },
+        ],
+      });
+      expect(row.decor[0]).toEqual(bar);
+    });
+  });
+
   describe('rename', () => {
     it('updates the table number of open orders only', async () => {
       const ctx = setup();

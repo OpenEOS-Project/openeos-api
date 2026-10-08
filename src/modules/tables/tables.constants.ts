@@ -9,6 +9,14 @@ export const AREA_SIZE_MAX = 5000;
 export const GRID_SIZE_MIN = 5;
 export const GRID_SIZE_MAX = 100;
 export const DECOR_MAX = 100;
+/** Hoechstens so viele Punkte je Wand, Zone oder Umriss. */
+export const SHAPE_POINTS_MAX = 100;
+/** Wand (Linienzug) braucht 2, Zone und Umriss (Polygon) 3 Punkte. */
+export const LINE_POINTS_MIN = 2;
+export const POLYGON_POINTS_MIN = 3;
+/** Wandstaerke in Einheiten. */
+export const WALL_THICKNESS_MIN = 2;
+export const WALL_THICKNESS_MAX = 100;
 export const BULK_MAX = 100;
 
 /** Mindestens ein Zeichen, keine Steuerzeichen. */

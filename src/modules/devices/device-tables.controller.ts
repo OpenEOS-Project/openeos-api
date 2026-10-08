@@ -146,6 +146,7 @@ export class DeviceTablesController {
           height: area.height,
           gridSize: area.gridSize,
           decor: area.decor,
+          outline: area.outline ?? null,
           tables: area.tables.map((t) => ({
             id: t.id,
             areaId: t.areaId,
