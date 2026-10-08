@@ -1,5 +1,5 @@
 import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { ReportsService } from './reports.service';
 import { GatewayService } from '../gateway/gateway.service';
@@ -110,6 +110,26 @@ export class ReportsController {
       user,
     );
     return { data: report };
+  }
+
+  @Get('net-summary')
+  @Roles(Role.MEMBER)
+  @ApiOperation({
+    summary: 'Abgleich Produkte/Kategorien mit dem Umsatz netto',
+    description:
+      'Produkt- und Kategoriezeilen zeigen den Warenwert netto (Storno und erstattete Mengen ab, Rabatt anteilig, ohne Pfand und Trinkgeld). Hier steht, was keiner Position gehört: `itemsRevenue` + `unassignedRefunds` (Kulanz-Erstattungen ohne Position, negativ) + `tips` = `netRevenue` (wie `totalRevenue` im Verkaufsbericht). Die Summe der gerundeten Zeilen kann bei Rabatten um Cent von `itemsRevenue` abweichen.',
+  })
+  async getNetSalesSummary(
+    @CurrentOrganization() organizationId: string,
+    @Query() queryDto: QueryReportsDto,
+    @CurrentUser() user: User,
+  ) {
+    const summary = await this.reportsService.getNetSalesSummary(
+      organizationId,
+      queryDto,
+      user,
+    );
+    return { data: summary };
   }
 
   @Get('devices')

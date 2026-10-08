@@ -21,13 +21,21 @@ import {
   OrderHistoryService,
   applyHistoryFilters,
 } from './order-history.service';
-import { GOODWILL_NET, PAYMENT_REFUNDS } from '../reports/reports.service';
+import {
+  GOODWILL_NET,
+  PAYMENT_REFUNDS,
+  ReportsService,
+} from '../reports/reports.service';
 import { OrdersService } from '../orders/orders.service';
 import type { QueryOrdersDto } from '../orders/dto';
 import {
+  Category,
   Event,
   Organization,
+  PfandReturn,
   PrintJob,
+  Product,
+  StockMovement,
   PrintTemplate,
   Printer,
   ProductionStation,
@@ -857,6 +865,124 @@ describeWithDb('RefundsService against Postgres', () => {
     expect((await filtered.getMany()).map((o) => o.id).sort()).toEqual(
       [a.orderId, b.orderId].sort(),
     );
+  });
+
+  it('product and category reports are net and add up to the net revenue', async () => {
+    const w = await world();
+    const userId = randomUUID();
+    await q(
+      `INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Rita', 'Report')`,
+      [userId, `r-${userId}@example.com`],
+    );
+    await q(
+      `INSERT INTO user_organizations (user_id, organization_id, role, permissions)
+       VALUES ($1, $2, 'admin', '{}')`,
+      [userId, w.orgId],
+    );
+    // Jede Bestellung: 3x Burger (10) + 2x Pils (4, Pfand 2) = 38 Ware.
+    // A: Verkauf ohne alles.
+    await order(w);
+    // B: Teilerstattung nach Position (1 Burger, Kulanz ohne Storno).
+    const b = await order(w);
+    await service.createRefund(w.actor, b.orderId, {
+      mode: 'items',
+      items: [{ orderItemId: b.burgerItemId, quantity: 1 }],
+      reasonCode: 'quality',
+    });
+    // C: Storno einer bezahlten Position mit Erstattung (1 Pils + Pfand).
+    const c = await order(w);
+    await service.createRefund(w.actor, c.orderId, {
+      mode: 'items',
+      cancelItems: true,
+      items: [{ orderItemId: c.pilsItemId, quantity: 1 }],
+      reasonCode: 'wrong_order',
+    });
+    // D: Kulanz ohne Positionsbezug (freier Betrag).
+    const d = await order(w);
+    await service.createRefund(w.actor, d.orderId, {
+      mode: 'amount',
+      amount: 5,
+      reasonCode: 'customer_request',
+    });
+    // E: 10 % Rabatt (3,80), 2 € Trinkgeld, 1 Burger erstattet (9,00).
+    const e = await order(w, { discount: 3.8, tip: 2 });
+    await service.createRefund(w.actor, e.orderId, {
+      mode: 'items',
+      items: [{ orderItemId: e.burgerItemId, quantity: 1 }],
+      reasonCode: 'quality',
+    });
+    // F: unbezahlt, 1 Burger storniert (ohne Erstattung).
+    const f = await order(w, { pay: null });
+    await service.cancelItems(w.actor, f.orderId, {
+      items: [{ orderItemId: f.burgerItemId, quantity: 1 }],
+      reasonCode: 'customer_request',
+    });
+    // H: erst 5 € Kulanz, dann der Rest komplett erstattet — Produkte
+    // stehen bei 0, die 5 € zaehlen nicht doppelt.
+    const h = await order(w);
+    await service.createRefund(w.actor, h.orderId, {
+      mode: 'amount',
+      amount: 5,
+      reasonCode: 'other',
+    });
+    await service.createRefund(w.actor, h.orderId, {
+      mode: 'full',
+      reasonCode: 'other',
+    });
+    // G: ganz storniert — zaehlt nirgends.
+    const g = await order(w, { pay: null });
+    await service.cancelOrder(w.actor, g.orderId, {});
+
+    const reports = new ReportsService(
+      ds.getRepository(Order),
+      ds.getRepository(OrderItem),
+      ds.getRepository(Payment),
+      ds.getRepository(Product),
+      ds.getRepository(Category),
+      ds.getRepository(StockMovement),
+      ds.getRepository(PfandReturn),
+      ds.getRepository(UserOrganization),
+      ds.getRepository(Device),
+      ds.getRepository(Printer),
+      ds.getRepository(PrintJob),
+      { get: () => undefined } as never,
+    );
+    const user = { id: userId } as User;
+    const query = { eventId: w.eventId };
+
+    const products = await reports.getProductsReport(w.orgId, query, user);
+    const byName = Object.fromEntries(products.map((p) => [p.productName, p]));
+    // Burger: 3 + 2 + 3 + 3 + 2 (je 9 nach Rabatt) + 2 = 15 Stueck
+    expect(byName.Burger.quantitySold).toBe(15);
+    expect(byName.Burger.revenue).toBe(30 + 20 + 30 + 30 + 18 + 20);
+    // Pils: 2 + 2 + 1 (Storno) + 2 + 2 (je 3,60) + 2 = 11 Stueck
+    expect(byName.Pils.quantitySold).toBe(11);
+    expect(byName.Pils.revenue).toBe(43.2);
+
+    const categories = await reports.getCategoriesReport(w.orgId, query, user);
+    expect(categories).toEqual([
+      expect.objectContaining({ name: 'Essen', quantity: 26, revenue: 191.2 }),
+    ]);
+
+    const summary = await reports.getNetSalesSummary(w.orgId, query, user);
+    expect(summary).toEqual({
+      itemsRevenue: 191.2,
+      unassignedRefunds: -5,
+      tips: 2,
+      netRevenue: 188.2,
+    });
+
+    // Konsistenz: Produkte + Erstattungen ohne Position + Trinkgeld =
+    // Umsatz netto des Verkaufsberichts.
+    const sales = await reports.getSalesReport(w.orgId, query, user);
+    expect(sales.totalRevenue).toBe(188.2);
+    expect(sales.totalItemsSold).toBe(26);
+    const productSum = products.reduce((sum, p) => sum + p.revenue, 0);
+    expect(
+      Math.round(
+        (productSum + summary.unassignedRefunds + summary.tips) * 100,
+      ) / 100,
+    ).toBe(sales.totalRevenue);
   });
 
   it('admin list and stats: one status per order, net revenue', async () => {
