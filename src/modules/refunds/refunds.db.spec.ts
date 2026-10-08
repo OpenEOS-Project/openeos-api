@@ -892,6 +892,9 @@ describeWithDb('RefundsService against Postgres', () => {
     expect(
       (list.data[0] as Order & { displayStatus: string }).displayStatus,
     ).toBe('partly_refunded');
+    expect(
+      (list.data[0] as Order & { paymentMethods: string[] }).paymentMethods,
+    ).toEqual(['cash']);
     const stats = await orders.getStats(w.orgId, user, {
       eventId: w.eventId,
     } as QueryOrdersDto);

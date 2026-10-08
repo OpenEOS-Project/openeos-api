@@ -290,9 +290,24 @@ export class OrdersService {
 
     const [items, total] = await queryBuilder.getManyAndCount();
 
-    // Ein Status je Bestellung, gleich wie in der Kasse.
+    // Ein Status je Bestellung und die Zahlarten, gleich wie in der Kasse.
+    const methods = items.length
+      ? await this.orderRepository.manager.query<
+          { order_id: string; methods: string[] }[]
+        >(
+          `SELECT order_id, array_agg(DISTINCT payment_method::text) AS methods
+           FROM payments
+           WHERE order_id = ANY($1::uuid[]) AND status IN ('captured', 'refunded')
+           GROUP BY order_id`,
+          [items.map((o) => o.id)],
+        )
+      : [];
+    const methodsOf = new Map(methods.map((m) => [m.order_id, m.methods]));
     const withStatus = items.map((order) =>
-      Object.assign(order, { displayStatus: displayStatusOf(order) }),
+      Object.assign(order, {
+        displayStatus: displayStatusOf(order),
+        paymentMethods: methodsOf.get(order.id) ?? [],
+      }),
     );
     return createPaginatedResult(withStatus, total, page, limit);
   }
