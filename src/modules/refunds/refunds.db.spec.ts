@@ -14,6 +14,8 @@ import {
 } from '../../database/entities';
 import { GatewayService } from '../gateway/gateway.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { PrintJobsService } from '../print-jobs/print-jobs.service';
+import { PrintRoutingService } from '../print-jobs/print-routing.service';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import {
   OrderHistoryService,
@@ -22,7 +24,15 @@ import {
 import { GOODWILL_NET, PAYMENT_REFUNDS } from '../reports/reports.service';
 import { OrdersService } from '../orders/orders.service';
 import type { QueryOrdersDto } from '../orders/dto';
-import { User } from '../../database/entities';
+import {
+  Event,
+  Organization,
+  PrintJob,
+  PrintTemplate,
+  Printer,
+  ProductionStation,
+  User,
+} from '../../database/entities';
 import { RefundsService, type RefundActor } from './refunds.service';
 
 /**
@@ -892,11 +902,99 @@ describeWithDb('RefundsService against Postgres', () => {
     expect(
       (list.data[0] as Order & { displayStatus: string }).displayStatus,
     ).toBe('partly_refunded');
+    expect(
+      (list.data[0] as Order & { paymentMethods: string[] }).paymentMethods,
+    ).toEqual(['cash']);
     const stats = await orders.getStats(w.orgId, user, {
       eventId: w.eventId,
     } as QueryOrdersDto);
     // 2 x 42 brutto inkl. Pfand, minus 2 Kulanz
     expect(stats.revenue).toBe(82);
     expect(stats.count).toBe(2);
+  });
+
+  it('prints the counter-receipt and the kitchen storno ticket as print jobs', async () => {
+    const w = await world();
+    const [printer] = await q<{ id: string }>(
+      `INSERT INTO printers (organization_id, name, type, connection_type, device_id, is_active)
+       VALUES ($1, 'Bon', 'receipt', 'network', $2, true) RETURNING id`,
+      [w.orgId, w.deviceId],
+    );
+    await q(
+      `UPDATE devices SET settings = jsonb_build_object('defaultPrinterId', $2::text) WHERE id = $1`,
+      [w.deviceId, printer.id],
+    );
+    const agent = {
+      sendPrintJobToAgent: jest.fn(() => Promise.resolve(false)),
+    };
+    const printJobs = new PrintJobsService(
+      ds.getRepository(PrintJob),
+      ds.getRepository(Printer),
+      ds.getRepository(PrintTemplate),
+      ds.getRepository(UserOrganization),
+      agent as unknown as GatewayService,
+    );
+    const routing = new PrintRoutingService(
+      ds.getRepository(Device),
+      ds.getRepository(ProductionStation),
+      ds.getRepository(Organization),
+      ds.getRepository(OrderItem),
+    );
+    const realPrint = new OrderPrintService(
+      ds.getRepository(Organization),
+      ds.getRepository(OrderItem),
+      ds.getRepository(Device),
+      ds.getRepository(Event),
+      printJobs,
+      routing,
+    );
+    const printing = new RefundsService(
+      ds,
+      ds.getRepository(UserOrganization),
+      ds.getRepository(Refund),
+      ds.getRepository(OrderEvent),
+      ds.getRepository(Order),
+      sumup as unknown as SumUpApiService,
+      realPrint,
+      gateway as unknown as GatewayService,
+      history,
+    );
+    const o = await order(w);
+    const outcome = await printing.createRefund(w.actor, o.orderId, {
+      mode: 'items',
+      cancelItems: true,
+      items: [{ orderItemId: o.burgerItemId, quantity: 1 }],
+      reasonCode: 'wrong_order',
+    });
+    expect((outcome.refunds[0] as Refund & { printed?: boolean }).printed).toBe(
+      true,
+    );
+    // Storno-Bon geht asynchron raus.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const jobs = await q<{ data: Record<string, unknown> }>(
+      `SELECT payload->'data' AS data FROM print_jobs WHERE order_id = $1 ORDER BY created_at`,
+      [o.orderId],
+    );
+    const sent = agent.sendPrintJobToAgent.mock.calls.map(
+      (call) =>
+        (call as unknown as [string, string, { templateName: string }])[2]
+          .templateName,
+    );
+    expect(sent.sort()).toEqual(['cancellation_ticket', 'refund_receipt']);
+    const receipt = jobs.find((j) => j.data.refund_number)!.data;
+    expect(receipt).toMatchObject({
+      refund_kind: 'cancellation',
+      total: -10,
+      payment_label: 'Bar',
+      reason: 'Falsch bestellt',
+      items: [{ quantity: 1, name: 'Burger', total: -10 }],
+      tax_lines: [{ rate: 19, gross: -10, tax: -1.6, net: -8.4 }],
+    });
+    expect(typeof receipt.order_number).toBe('string');
+    const ticket = jobs.find((j) => !j.data.refund_number)!.data;
+    expect(ticket).toMatchObject({
+      items: [{ quantity: 1, name: 'Burger', options: [] }],
+      reason: 'Falsch bestellt',
+    });
   });
 });
