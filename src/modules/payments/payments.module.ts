@@ -12,6 +12,7 @@ import {
   UserOrganization,
 } from '../../database/entities';
 import { PrintJobsModule } from '../print-jobs/print-jobs.module';
+import { RefundsModule } from '../refunds/refunds.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PrintJobsModule } from '../print-jobs/print-jobs.module';
       UserOrganization,
     ]),
     PrintJobsModule,
+    RefundsModule,
   ],
   controllers: [PaymentsController],
   providers: [PaymentsService, PayPalService],

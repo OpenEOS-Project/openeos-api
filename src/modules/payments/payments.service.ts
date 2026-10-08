@@ -367,67 +367,6 @@ export class PaymentsService {
     return payment;
   }
 
-  async refund(
-    organizationId: string,
-    paymentId: string,
-    user: User,
-  ): Promise<Payment> {
-    await this.checkMembership(organizationId, user.id);
-
-    const payment = await this.findOne(organizationId, paymentId, user);
-
-    if (payment.status === PaymentTransactionStatus.REFUNDED) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.PAYMENT_ALREADY_REFUNDED,
-        message: 'Zahlung wurde bereits erstattet',
-      });
-    }
-
-    if (payment.status !== PaymentTransactionStatus.CAPTURED) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.PAYMENT_NOT_REFUNDABLE,
-        message: 'Nur abgeschlossene Zahlungen können erstattet werden',
-      });
-    }
-
-    // Update payment status
-    payment.status = PaymentTransactionStatus.REFUNDED;
-    await this.paymentRepository.save(payment);
-
-    // Update order paid amount
-    const order = await this.orderRepository.findOne({
-      where: { id: payment.orderId },
-      relations: ['items'],
-    });
-
-    if (order) {
-      order.paidAmount = Number(order.paidAmount) - Number(payment.amount);
-      if (order.paidAmount < 0) order.paidAmount = 0;
-
-      // Revert paid quantities for split payments
-      if (payment.itemPayments && payment.itemPayments.length > 0) {
-        for (const itemPayment of payment.itemPayments) {
-          const orderItem = order.items.find(
-            (i) => i.id === itemPayment.orderItemId,
-          );
-          if (orderItem) {
-            orderItem.paidQuantity -= itemPayment.quantity;
-            if (orderItem.paidQuantity < 0) orderItem.paidQuantity = 0;
-            await this.orderItemRepository.save(orderItem);
-          }
-        }
-      }
-
-      await this.updateOrderPaymentStatus(order);
-    }
-
-    this.logger.log(`Payment refunded: ${payment.id}`);
-
-    return this.findOne(organizationId, paymentId, user);
-  }
-
   async getPaymentsByOrder(
     organizationId: string,
     orderId: string,

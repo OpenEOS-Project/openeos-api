@@ -49,8 +49,10 @@ describe('SumUpApiService error mapping', () => {
 
     expect(response.code).toBe(ErrorCodes.SUMUP_INVALID_CREDENTIALS);
     expect(response.message).toMatch(/Zugangsdaten/);
+    // Fehlertext aus dem Body ({ error_code, message }).
+    expect(response.errorType).toBe('NOT_AUTHORIZED');
     expect(response.details).toEqual([
-      { code: 'SUMUP_HTTP_401', message: 'SumUp: 401 status code' },
+      { code: 'SUMUP_HTTP_401', message: 'invalid token' },
     ]);
   });
 

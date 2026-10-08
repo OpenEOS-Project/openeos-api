@@ -48,6 +48,16 @@ import {
 } from './dto';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
+import { Refund } from '../../database/entities/refund.entity';
+import {
+  ORDER_DISPLAY_STATUSES,
+  displayStatusOf,
+} from '../refunds/refund-calc';
+import {
+  applyHistoryFilters,
+  parseList,
+} from '../refunds/order-history.service';
+import { HISTORY_PAYMENT_FILTERS } from '../refunds/dto/refund.dto';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { GatewayService } from '../gateway/gateway.service';
 import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
@@ -280,7 +290,11 @@ export class OrdersService {
 
     const [items, total] = await queryBuilder.getManyAndCount();
 
-    return createPaginatedResult(items, total, page, limit);
+    // Ein Status je Bestellung, gleich wie in der Kasse.
+    const withStatus = items.map((order) =>
+      Object.assign(order, { displayStatus: displayStatusOf(order) }),
+    );
+    return createPaginatedResult(withStatus, total, page, limit);
   }
 
   /**
@@ -325,10 +339,26 @@ export class OrdersService {
         pfand: string;
       }>();
 
+    // Kulanz-Erstattungen (ohne Storno) mindern den Umsatz; Storno-
+    // Erstattungen stecken schon in der gesunkenen Bestellsumme.
+    const refundQb = this.orderRepository
+      .createQueryBuilder('ord')
+      .innerJoin(Refund, 'rf', 'rf.orderId = ord.id')
+      .where('ord.organizationId = :organizationId', { organizationId });
+    this.applyOrderFilters(refundQb, 'ord', query);
+    const refundRaw = await refundQb
+      .andWhere('ord.status != :cancelledStatus', {
+        cancelledStatus: OrderStatus.CANCELLED,
+      })
+      .andWhere(`rf.kind = 'refund'`)
+      .select('COALESCE(SUM(rf.amount), 0)', 'amount')
+      .addSelect('COALESCE(SUM(rf.pfandAmount), 0)', 'pfand')
+      .getRawOne<{ amount: string; pfand: string }>();
+
     const count = Number(raw?.count || 0);
     const countedCount = Number(raw?.countedCount || 0);
-    const revenue = Number(raw?.revenue || 0);
-    const pfand = Number(raw?.pfand || 0);
+    const revenue = Number(raw?.revenue || 0) + Number(refundRaw?.amount || 0);
+    const pfand = Number(raw?.pfand || 0) + Number(refundRaw?.pfand || 0);
 
     return {
       count,
@@ -1073,6 +1103,20 @@ export class OrdersService {
         // Datenbank als Mitternacht UTC gelesen (02:00 Uhr in Berlin) —
         // Bestellungen nach Mitternacht fehlten unter "heute".
         dateFrom: startOfDay(query.dateFrom),
+      });
+    }
+
+    if (query.q || query.displayStatus || query.paymentMethod) {
+      applyHistoryFilters(queryBuilder, alias, {
+        q: query.q ?? null,
+        displayStatuses: parseList(query.displayStatus, ORDER_DISPLAY_STATUSES),
+        paymentMethods: parseList(query.paymentMethod, HISTORY_PAYMENT_FILTERS),
+      });
+    }
+
+    if (query.deviceId) {
+      queryBuilder.andWhere(`${alias}.createdByDeviceId = :filterDeviceId`, {
+        filterDeviceId: query.deviceId,
       });
     }
 

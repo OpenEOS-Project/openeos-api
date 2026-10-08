@@ -62,6 +62,14 @@ export interface DisplayAppearance {
   autoClearSeconds?: number;
 }
 
+/**
+ * „Stornieren & Erstatten“ an der Kasse: `allowed` (Standard), `pin` (nur
+ * nach PIN eines Mitglieds mit Recht „Bestellungen“ oder Admin),
+ * `disabled`.
+ */
+export const REFUND_PERMISSIONS = ['allowed', 'pin', 'disabled'] as const;
+export type RefundPermissionSetting = (typeof REFUND_PERMISSIONS)[number];
+
 export interface DeviceSettings {
   defaultPrinterId?: string;
   soundEnabled?: boolean;
@@ -83,6 +91,8 @@ export interface DeviceSettings {
    * Ziffernblock.
    */
   tableSelectView?: TableSelectView;
+  /** Stornieren & Erstatten an dieser Kasse (fehlt = `allowed`). */
+  refundPermission?: RefundPermissionSetting | null;
   /** For customer displays: the POS device whose live cart is mirrored */
   posDeviceId?: string;
   /** Aussehen und Inhalt — nur bei Anzeigen ausgewertet. */

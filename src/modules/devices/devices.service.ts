@@ -738,10 +738,17 @@ export class DevicesService {
 
     const revenueResult = await this.paymentRepository
       .createQueryBuilder('payment')
-      .select('COALESCE(SUM(payment.amount), 0)', 'total')
+      // Abzueglich Erstattungen (erstattete Zahlungen zaehlen mit).
+      .select(
+        `COALESCE(SUM(payment.amount + COALESCE((SELECT SUM(rf.amount) FROM refunds rf WHERE rf.payment_id = payment.id), 0)), 0)`,
+        'total',
+      )
       .where('payment.processed_by_device_id = :deviceId', { deviceId })
-      .andWhere('payment.status = :status', {
-        status: PaymentTransactionStatus.CAPTURED,
+      .andWhere('payment.status IN (:...statuses)', {
+        statuses: [
+          PaymentTransactionStatus.CAPTURED,
+          PaymentTransactionStatus.REFUNDED,
+        ],
       })
       .getRawOne<{ total: string }>();
 

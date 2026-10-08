@@ -31,6 +31,7 @@ import { DiscountVouchersModule } from '../discount-vouchers';
 import { PfandTypesModule } from '../pfand-types';
 import { TablesModule } from '../tables/tables.module';
 import { PaymentsBatchService } from '../payments/payments-batch.service';
+import { RefundsModule } from '../refunds/refunds.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { PaymentsBatchService } from '../payments/payments-batch.service';
     DiscountVouchersModule,
     PfandTypesModule,
     TablesModule,
+    RefundsModule,
   ],
   controllers: [
     DevicesController,

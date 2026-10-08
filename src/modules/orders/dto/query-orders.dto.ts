@@ -1,5 +1,7 @@
 import {
   IsOptional,
+  IsString,
+  MaxLength,
   IsUUID,
   IsEnum,
   IsDateString,
@@ -101,4 +103,37 @@ export class QueryOrdersDto extends PaginationDto {
   // transform runs, in which case `value === 'true'` would wrongly be false.
   @Transform(({ value }) => value === true || value === 'true')
   includeItems?: boolean;
+
+  @ApiPropertyOptional({
+    example: 'Burger',
+    description: 'Suche: Bestell-/Tagesnummer, Tisch, Name oder Produkt',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({
+    example: 'unpaid,refunded',
+    description:
+      'Status wie in der Kasse (kommagetrennt): in_kitchen, ready, completed, unpaid, cancelled, partly_refunded, refunded',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  displayStatus?: string;
+
+  @ApiPropertyOptional({
+    example: 'cash,sumup',
+    description: 'Zahlart (kommagetrennt): cash, card, sumup, discount',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  paymentMethod?: string;
+
+  @ApiPropertyOptional({ description: 'Nur Bestellungen dieses Geräts' })
+  @IsOptional()
+  @IsUUID()
+  deviceId?: string;
 }

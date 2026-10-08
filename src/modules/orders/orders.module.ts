@@ -14,6 +14,7 @@ import {
 } from '../../database/entities';
 import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 import { GatewayModule } from '../gateway/gateway.module';
+import { RefundsModule } from '../refunds/refunds.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { GatewayModule } from '../gateway/gateway.module';
     ]),
     PrintJobsModule,
     forwardRef(() => GatewayModule),
+    RefundsModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

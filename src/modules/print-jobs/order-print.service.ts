@@ -3,12 +3,51 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Device } from '../../database/entities/device.entity';
 import { Organization } from '../../database/entities/organization.entity';
-import { OrderItem } from '../../database/entities/order-item.entity';
+import {
+  OrderItem,
+  OrderItemStatus,
+} from '../../database/entities/order-item.entity';
 import { Order } from '../../database/entities/order.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
 import { PrintJobsService } from './print-jobs.service';
 import { PrintRoutingService } from './print-routing.service';
 import { buildReceiptTax, cashChange } from './receipt-tax.util';
+import type { Refund } from '../../database/entities/refund.entity';
+import {
+  CANCELLATION_TICKET_TEMPLATE,
+  REFUND_RECEIPT_TEMPLATE,
+} from './builtin-templates';
+
+/** Rueckgabeweg auf dem Gegenbeleg (Bon ist deutsch wie der Kassenbon). */
+const PAYMENT_LABELS: Record<string, string> = {
+  cash: 'Bar',
+  card: 'Karte (Terminal)',
+  sumup_terminal: 'Karte (SumUp)',
+  sumup_online: 'SumUp online',
+  paypal: 'PayPal',
+  google_pay: 'Google Pay',
+  apple_pay: 'Apple Pay',
+};
+
+const REASON_LABELS: Record<string, string> = {
+  wrong_order: 'Falsch bestellt',
+  quality: 'Qualitaet',
+  not_delivered: 'Nicht geliefert',
+  customer_request: 'Wunsch des Gastes',
+  duplicate: 'Doppelt gebucht',
+  price_error: 'Falscher Preis',
+  other: 'Sonstiges',
+};
+
+export function refundReasonLabel(
+  code: string | null | undefined,
+  text: string | null | undefined,
+): string | null {
+  const label = code ? (REASON_LABELS[code] ?? code) : null;
+  const extra = text?.trim();
+  if (label && extra) return `${label}: ${extra}`;
+  return label ?? extra ?? null;
+}
 
 @Injectable()
 export class OrderPrintService {
@@ -454,13 +493,15 @@ export class OrderPrintService {
             {
               ...this.buildOrderPayload(data.order),
               organization: orgPayload,
-              items: receiptItems.map((it) => ({
-                quantity: it.quantity,
-                name: it.productName,
-                total: it.totalPrice,
-                notes: it.notes ?? null,
-                options: this.formatOptions(it),
-              })),
+              items: receiptItems
+                .filter((it) => it.status !== OrderItemStatus.CANCELLED)
+                .map((it) => ({
+                  quantity: it.quantity,
+                  name: it.productName,
+                  total: it.totalPrice,
+                  notes: it.notes ?? null,
+                  options: this.formatOptions(it),
+                })),
               total: data.order?.total,
               subtotal: data.order?.subtotal,
               // MwSt je Satz aus den Positionen; fehlt bei steuerbefreiten
@@ -494,6 +535,195 @@ export class OrderPrintService {
     } catch (error) {
       this.logger.error(
         `Failed to handle payment received printing for org ${organizationId}: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Gegenbeleg einer Erstattung auf den Kassenbon-Drucker (Geraet der
+   * Erstattung, sonst Bon-Drucker der Organisation). Gedruckt wird immer,
+   * wenn ein Drucker gefunden wird — auch wenn der automatische Kassenbon
+   * aus ist, denn der Gegenbeleg belegt die Auszahlung. Liefert, ob ein
+   * Druckauftrag entstanden ist.
+   */
+  async printRefundReceipt(
+    organizationId: string,
+    data: {
+      refund: Refund;
+      order: Order;
+      deviceId: string | null;
+      deviceName?: string | null;
+      reprint?: boolean;
+    },
+  ): Promise<boolean> {
+    try {
+      const { refund, order } = data;
+      const { printerId } = await this.printRoutingService.resolveOrderPrinter({
+        organizationId,
+        orderDeviceId: data.deviceId ?? order.createdByDeviceId ?? null,
+        workflow: 'receipt',
+      });
+      if (!printerId) return false;
+      const isTest =
+        refund.isTest || (await this.isTestEvent(order.eventId ?? null));
+      const taxLines = refund.taxLines ?? [];
+      await this.printJobsService.createFromWorkflow(
+        organizationId,
+        printerId,
+        null,
+        order.id,
+        1,
+        {
+          ...this.buildOrderPayload(order),
+          organization: await this.buildOrgPayload(organizationId),
+          created_at: refund.createdAt,
+          original_created_at: order.createdAt,
+          refund_id: refund.id,
+          refund_number: refund.refundNumber,
+          refund_kind: refund.kind,
+          items: (refund.items ?? []).map((item) => ({
+            quantity: item.quantity,
+            name: item.productName,
+            total: Number(item.amount),
+            unit_price: Number(item.unitPrice),
+            tax_rate: Number(item.taxRate),
+            cancelled: item.cancelled,
+          })),
+          pfand_amount: Number(refund.pfandAmount) || 0,
+          tip_amount: Number(refund.tipAmount) || 0,
+          tax_lines: taxLines,
+          tax_amount: Number(refund.taxTotal) || 0,
+          total: Number(refund.amount),
+          payment_method: refund.paymentMethod,
+          payment_label:
+            PAYMENT_LABELS[refund.paymentMethod] ?? refund.paymentMethod,
+          refund_status: refund.status,
+          provider_reference: refund.providerReference,
+          reason: refundReasonLabel(refund.reasonCode, refund.reasonText),
+          actor_name: refund.actorName,
+          device_name: data.deviceName ?? null,
+          reprint: data.reprint === true,
+          is_test: isTest,
+        },
+        null,
+        REFUND_RECEIPT_TEMPLATE,
+      );
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to print refund receipt for org ${organizationId}: ${(error as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Storno-Bon fuer die Kueche/Station: dieselben Drucker wie der
+   * Kuechenbon (je Produktionsstandort), nur wenn auch Kuechenbons gedruckt
+   * werden. So weiss die Kueche, dass ein schon gedruckter Bon nicht mehr
+   * gilt.
+   */
+  async printCancellationTickets(
+    organizationId: string,
+    data: {
+      order: Order;
+      items: { item: OrderItem; quantity: number }[];
+      reason?: string | null;
+    },
+  ): Promise<void> {
+    try {
+      if (data.items.length === 0) return;
+      const orderFlow = (await this.getOrderFlow(organizationId)) ?? {};
+      const kitchen = orderFlow.kitchenTicketPrinting;
+      const orderDeviceId = data.order.createdByDeviceId ?? null;
+      const deviceHasFallback =
+        !!orderDeviceId && (await this.deviceHasDefaultPrinter(orderDeviceId));
+      if (kitchen?.enabled === false && !deviceHasFallback) return;
+
+      const isTest = await this.isTestEvent(data.order.eventId ?? null);
+      const orgPayload = await this.buildOrgPayload(organizationId);
+      const withRelations = await this.orderItemRepository.find({
+        where: data.items.map(({ item }) => ({ id: item.id })),
+        relations: ['product', 'productionStation'],
+      });
+      const byId = new Map(withRelations.map((i) => [i.id, i]));
+
+      const buckets = new Map<
+        string,
+        {
+          printerId: string;
+          stationName: string | null;
+          lines: { item: OrderItem; quantity: number }[];
+        }
+      >();
+      for (const line of data.items) {
+        const item = byId.get(line.item.id) ?? line.item;
+        let printerId: string | null = null;
+        if (kitchen?.mode === 'per_order' || !kitchen?.mode) {
+          printerId = (
+            await this.printRoutingService.resolveOrderPrinter({
+              organizationId,
+              orderDeviceId,
+              workflow: 'kitchen',
+            })
+          ).printerId;
+        } else {
+          printerId =
+            (
+              await this.printRoutingService.resolveItemPrinter({
+                item,
+                orderDeviceId,
+                organizationId,
+              })
+            ).printerId ??
+            kitchen?.printerId ??
+            null;
+        }
+        if (!printerId) continue;
+        const stationKey =
+          kitchen?.mode === 'per_station'
+            ? (item.productionStationId ?? '-')
+            : '-';
+        const key = `${printerId}::${stationKey}`;
+        const bucket = buckets.get(key) ?? {
+          printerId,
+          stationName:
+            kitchen?.mode === 'per_station'
+              ? (item.productionStation?.name ?? null)
+              : null,
+          lines: [],
+        };
+        bucket.lines.push({ item, quantity: line.quantity });
+        buckets.set(key, bucket);
+      }
+
+      for (const bucket of buckets.values()) {
+        await this.printJobsService.createFromWorkflow(
+          organizationId,
+          bucket.printerId,
+          null,
+          data.order.id,
+          1,
+          {
+            ...this.buildOrderPayload(data.order),
+            organization: orgPayload,
+            created_at: new Date(),
+            station_name: bucket.stationName,
+            items: bucket.lines.map(({ item, quantity }) => ({
+              quantity,
+              name: item.productName,
+              options: this.formatOptions(item),
+            })),
+            reason: data.reason ?? null,
+            is_test: isTest,
+          },
+          null,
+          CANCELLATION_TICKET_TEMPLATE,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to print cancellation ticket for org ${organizationId}: ${(error as Error).message}`,
       );
     }
   }

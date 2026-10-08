@@ -18,12 +18,7 @@ import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
-import {
-  Repository,
-  In,
-  type EntityManager,
-  type FindOptionsWhere,
-} from 'typeorm';
+import { Repository, In, type EntityManager } from 'typeorm';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
 import { CurrentDevice } from '../../common/decorators';
 import { DevicesService } from './devices.service';
@@ -54,7 +49,6 @@ import {
   OrderFulfillmentType,
 } from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
-import { StockMovementType } from '../../database/entities/stock-movement.entity';
 import {
   PaymentMethod,
   PaymentProvider,
@@ -93,6 +87,18 @@ import {
   resolveDeviceOrderTable,
 } from './device-order-table';
 import { groupStationItems } from './station-items';
+import { RefundsService } from '../refunds/refunds.service';
+import {
+  OrderHistoryService,
+  parseHistoryFilters,
+} from '../refunds/order-history.service';
+import {
+  CancelItemsDto,
+  CancelOrderWithActorDto,
+  CreateRefundDto,
+  ReprintDto,
+} from '../refunds/dto/refund.dto';
+import { BUILTIN_PRINT_TEMPLATES } from '../print-jobs/builtin-templates';
 
 /**
  * Helper to ensure device has an organization.
@@ -156,6 +162,8 @@ export class DeviceApiController {
     private readonly pfandReturnsService: PfandReturnsService,
     private readonly configService: ConfigService,
     private readonly paymentsBatchService: PaymentsBatchService,
+    private readonly refundsService: RefundsService,
+    private readonly orderHistoryService: OrderHistoryService,
   ) {}
 
   @Get('organization')
@@ -314,6 +322,11 @@ export class DeviceApiController {
         templateMap[t.type] = tpl.generatedTemplate;
       }
       // else: skip — agent falls back to its built-in template for this type.
+    }
+    // Gegenbeleg und Storno-Bon: mitgelieferte Vorlage, solange die
+    // Organisation keine eigene hat (aeltere Agenten kennen sie noch nicht).
+    for (const [name, source] of Object.entries(BUILTIN_PRINT_TEMPLATES)) {
+      if (!templateMap[name]) templateMap[name] = source;
     }
 
     return {
@@ -1102,6 +1115,24 @@ export class DeviceApiController {
       `Device split payment created: ${payment.id} for order ${order.orderNumber}`,
     );
 
+    // Kassenbon wie bei der Einzelzahlung (fehlte bei Split-Zahlungen).
+    this.orderPrintService
+      .handlePaymentReceived(organizationId, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        paymentId: payment.id,
+        amount: Number(payment.amount),
+        paymentMethod: payment.paymentMethod,
+        isFullyPaid,
+        order,
+        amountReceived: payment.metadata?.amountReceived,
+      })
+      .catch((err) =>
+        this.logger.error(
+          `Auto-receipt on split payment ${payment.id} failed: ${(err as Error).message}`,
+        ),
+      );
+
     // Auto-open cash drawer on cash payment
     if (createDto.paymentMethod === PaymentMethod.CASH) {
       try {
@@ -1331,172 +1362,173 @@ export class DeviceApiController {
 
   @Get('orders')
   @ApiOperation({
-    summary: 'Get all orders for device organization (paginated)',
+    summary: 'Bestellverlauf der Kasse (Filter und Seiten serverseitig)',
+    description:
+      'Neueste zuerst. `cursor` aus `meta.nextCursor` lädt die nächste Seite („Mehr laden“). `displayStatus` (kommagetrennt): in_kitchen, ready, completed, unpaid, cancelled, partly_refunded, refunded. `paymentMethod`: cash, card, sumup, discount. `scope=device`: nur Bestellungen dieser Kasse. `from`/`to`: ISO-Zeitpunkte. `q`: Nummer, Tisch, Name oder Produkt. `meta.counts` zählt je Status bei sonst gleichen Filtern. Alte Kassen: `status` und `page` wirken wie bisher.',
   })
+  @ApiQuery({ name: 'eventId', required: false })
+  @ApiQuery({ name: 'q', required: false })
+  @ApiQuery({ name: 'displayStatus', required: false })
+  @ApiQuery({ name: 'paymentMethod', required: false })
+  @ApiQuery({ name: 'scope', required: false, enum: ['device', 'all'] })
+  @ApiQuery({ name: 'from', required: false })
+  @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'cursor', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'page', required: false })
   async getAllOrders(
     @CurrentDevice() device: Device,
-    @Query('status') status?: string,
-    @Query('eventId') eventId?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query()
+    query: {
+      status?: string;
+      eventId?: string;
+      page?: string;
+      limit?: string;
+      q?: string;
+      displayStatus?: string;
+      paymentMethod?: string;
+      scope?: string;
+      from?: string;
+      to?: string;
+      cursor?: string;
+    },
   ) {
     const organizationId = requireOrganization(device);
-
-    const pageNum = Math.max(1, parseInt(page || '1', 10) || 1);
-    const limitNum = Math.min(
-      100,
-      Math.max(1, parseInt(limit || '50', 10) || 50),
-    );
-    const skip = (pageNum - 1) * limitNum;
-
-    const where: FindOptionsWhere<Order> = { organizationId };
-
-    if (status) {
-      const validStatuses = Object.values(OrderStatus);
-      if (validStatuses.includes(status as OrderStatus)) {
-        where.status = status as OrderStatus;
-      }
+    const filters = parseHistoryFilters(query);
+    if (
+      filters.status &&
+      !Object.values(OrderStatus).includes(filters.status as OrderStatus)
+    ) {
+      filters.status = null;
     }
-
-    if (eventId) {
-      where.eventId = eventId;
-    }
-
-    const [orders, total] = await this.orderRepository.findAndCount({
-      where,
-      relations: ['items'],
-      order: { createdAt: 'DESC' },
-      skip,
-      take: limitNum,
+    if (query.scope === 'device') filters.deviceId = device.id;
+    const page = query.page ? parseInt(query.page, 10) || 1 : null;
+    return this.orderHistoryService.list(organizationId, filters, {
+      limit: parseInt(query.limit || '50', 10) || 50,
+      cursor: query.cursor ?? null,
+      page,
     });
+  }
 
+  @Get('orders/:orderId')
+  @ApiOperation({
+    summary:
+      'Bestellung im Detail: Positionen mit Status, Zahlungen, Erstattungen, Verlauf',
+  })
+  async getOrderDetail(
+    @CurrentDevice() device: Device,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+  ) {
+    const organizationId = requireOrganization(device);
     return {
-      data: orders,
-      meta: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum),
-      },
+      data: await this.orderHistoryService.detail(organizationId, orderId),
     };
   }
 
   @Post('orders/:orderId/cancel')
-  @ApiOperation({ summary: 'Cancel an order and restore stock' })
+  @ApiOperation({
+    summary: 'Ganze Bestellung stornieren (nur unbezahlt)',
+    description:
+      'Bezahlte oder teilweise bezahlte Bestellungen: 400 ORDER_PAID_REFUND_REQUIRED — stattdessen `POST orders/:orderId/refunds` mit `mode: full, cancelItems: true`. Bestand zurück nur für Positionen, mit denen die Küche noch nicht begonnen hat. Berechtigung je Gerät (`refundPermission`).',
+  })
   async cancelOrder(
     @CurrentDevice() device: Device,
     @Param('orderId', ParseUUIDPipe) orderId: string,
-    @Body() body: { reason?: string },
+    @Body() body: CancelOrderWithActorDto,
   ) {
-    const organizationId = requireOrganization(device);
-
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId, organizationId },
-      relations: ['items'],
-    });
-
-    if (!order) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.ORDER_NOT_FOUND,
-        message: 'Bestellung nicht gefunden',
-      });
-    }
-
-    if (
-      order.status === OrderStatus.COMPLETED ||
-      order.status === OrderStatus.CANCELLED
-    ) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.ORDER_CANNOT_BE_CANCELLED,
-        message:
-          'Bestellung kann nicht storniert werden (bereits abgeschlossen oder storniert)',
-      });
-    }
-
-    // Restore stock for items with trackInventory
-    for (const item of order.items) {
-      if (item.status === OrderItemStatus.CANCELLED) continue;
-
-      const product = await this.productRepository.findOne({
-        where: { id: item.productId },
-      });
-
-      if (product && product.trackInventory) {
-        const quantityBefore = product.stockQuantity;
-        product.stockQuantity += item.quantity;
-        await this.productRepository.save(product);
-
-        // Create stock movement entry
-        const movement = this.stockMovementRepository.create({
-          eventId: order.eventId!,
-          productId: product.id,
-          type: StockMovementType.SALE_CANCELLED,
-          quantity: item.quantity,
-          quantityBefore,
-          quantityAfter: product.stockQuantity,
-          referenceType: 'order',
-          referenceId: order.id,
-          reason: body.reason || 'Order cancelled',
-          createdByUserId: null,
-        });
-        await this.stockMovementRepository.save(movement);
-
-        // Notify POS terminals about stock change
-        if (order.eventId) {
-          this.gatewayService.notifyProductUpdated(
-            organizationId,
-            order.eventId,
-            {
-              id: product.id,
-              name: product.name,
-              categoryId: product.categoryId,
-              price: Number(product.price),
-              isAvailable: product.isAvailable,
-              isActive: product.isActive,
-              stockQuantity: product.stockQuantity,
-              trackInventory: product.trackInventory,
-            },
-          );
-        }
-      }
-
-      // Cancel the item
-      item.status = OrderItemStatus.CANCELLED;
-      await this.orderItemRepository.save(item);
-    }
-
-    // Update order status
-    order.status = OrderStatus.CANCELLED;
-    order.cancelledAt = new Date();
-    order.cancellationReason = body.reason || null;
-    await this.orderRepository.save(order);
-
-    // Gateway notifications
-    this.gatewayService.notifyOrderUpdated(
-      organizationId,
-      order.eventId,
-      order.id,
-      {
-        status: OrderStatus.CANCELLED,
-        cancelledAt: order.cancelledAt,
-      },
+    requireOrganization(device);
+    const actor = await this.refundsService.resolveDeviceActor(device, body);
+    const { order } = await this.refundsService.cancelOrder(
+      actor,
+      orderId,
+      body,
     );
-
-    if (order.eventId) {
-      this.gatewayService.notifyKitchenOrderCancelled(
-        organizationId,
-        order.id,
-        order.orderNumber,
-      );
-    }
-
     this.logger.log(
       `Order ${order.orderNumber} cancelled by device ${device.name}`,
     );
-
     return { data: order };
+  }
+
+  @Post('orders/:orderId/cancel-items')
+  @ApiOperation({
+    summary: 'Positionen oder Teilmengen stornieren (ohne Erstattung)',
+    description:
+      'Solange die Küche nicht begonnen hat (`pending`): Bestand zurück, Station entfernt sie live, Storno-Bon an den Stationsdrucker. In Arbeit/fertig/serviert nur mit `confirmStarted` und Grund (Ausschuss, kein Bestand zurück), sonst 409 ORDER_ITEM_ALREADY_STARTED. Sinkt die Summe unter das schon Bezahlte: 400 ORDER_PAID_REFUND_REQUIRED.',
+  })
+  async cancelOrderItems(
+    @CurrentDevice() device: Device,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() body: CancelItemsDto,
+  ) {
+    const organizationId = requireOrganization(device);
+    const actor = await this.refundsService.resolveDeviceActor(device, body);
+    await this.refundsService.cancelItems(actor, orderId, body);
+    return {
+      data: await this.orderHistoryService.detail(organizationId, orderId),
+    };
+  }
+
+  @Post('orders/:orderId/refunds')
+  @ApiOperation({
+    summary:
+      'Erstattung mit Gegenbeleg (Teil-, Positions- oder Vollerstattung)',
+    description:
+      'Jede Erstattung ist ein eigener Beleg mit negativen Beträgen, MwSt je Satz und Bezug auf Bestellung und Zahlung; er wird auf dem Kassenbon-Drucker gedruckt. Rückgabeweg je ursprünglicher Zahlart: bar (Kassenlade öffnet), SumUp (Erstattung über die SumUp-API; Fehler: 400 REFUND_PROVIDER_FAILED, Wiederholung mit `manual: true` bucht „manuell erstattet“), fremdes Kartengerät (manuell). Im Testmodus wird bei SumUp nichts erstattet. `cancelItems` storniert die Positionen zugleich (Storno bezahlter Bestellungen).',
+  })
+  async createRefund(
+    @CurrentDevice() device: Device,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Body() body: CreateRefundDto,
+  ) {
+    const organizationId = requireOrganization(device);
+    const actor = await this.refundsService.resolveDeviceActor(device, body);
+    const outcome = await this.refundsService.createRefund(
+      actor,
+      orderId,
+      body,
+    );
+    this.logger.log(
+      `Refund on order ${outcome.order.orderNumber} by device ${device.name}: ${outcome.refunds.map((r) => `${r.refundNumber} ${r.amount}`).join(', ')}`,
+    );
+    return {
+      data: {
+        refunds: outcome.refunds.map((r) => ({
+          id: r.id,
+          refundNumber: r.refundNumber,
+          amount: Number(r.amount),
+          paymentMethod: r.paymentMethod,
+          status: r.status,
+          printed: (r as typeof r & { printed?: boolean }).printed ?? false,
+        })),
+        order: await this.orderHistoryService.detail(organizationId, orderId),
+      },
+    };
+  }
+
+  @Post('orders/:orderId/refunds/:refundId/reprint')
+  @ApiOperation({ summary: 'Gegenbeleg einer Erstattung nachdrucken' })
+  async reprintRefund(
+    @CurrentDevice() device: Device,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+    @Param('refundId', ParseUUIDPipe) refundId: string,
+  ) {
+    const organizationId = requireOrganization(device);
+    // Nachdruck ist immer erlaubt (auch bei „nur mit PIN“/„aus“).
+    const actor = {
+      organizationId,
+      deviceId: device.id,
+      deviceName: device.name,
+      userId: null,
+      actorName: null,
+      cashDrawerPrinterId: null,
+    };
+    const printed = await this.refundsService.reprintRefund(
+      actor,
+      orderId,
+      refundId,
+    );
+    return { data: { success: true, printed } };
   }
 
   @Post('orders/:orderId/reprint')
@@ -1504,7 +1536,7 @@ export class DeviceApiController {
   async reprintOrder(
     @CurrentDevice() device: Device,
     @Param('orderId', ParseUUIDPipe) orderId: string,
-    @Body() body: { type?: 'tickets' | 'receipt' },
+    @Body() body: ReprintDto,
   ) {
     const organizationId = requireOrganization(device);
 
@@ -1561,6 +1593,18 @@ export class DeviceApiController {
 
     this.logger.log(
       `Reprint (${printType}) for order ${order.orderNumber} by device ${device.name}`,
+    );
+    await this.refundsService.recordReprint(
+      {
+        organizationId,
+        deviceId: device.id,
+        deviceName: device.name,
+        userId: null,
+        actorName: null,
+        cashDrawerPrinterId: null,
+      },
+      order.id,
+      printType,
     );
 
     return { data: { success: true } };
