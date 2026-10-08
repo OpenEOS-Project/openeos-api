@@ -16,6 +16,262 @@ import type { ChangelogEintrag } from './changelog.types';
  */
 export const CHANGELOG: ChangelogEintrag[] = [
   {
+    datum: '2026-10-08',
+    art: 'neu',
+    titel: {
+      de: 'Die neue Kasse',
+      en: 'The new till',
+    },
+    kurz: {
+      de: 'Neues Design mit farbigen Kategorien, Favoriten, Suche, Hell/Dunkel und einem Kassieren-Blatt für alles.',
+      en: 'A new design with coloured categories, favourites, search, light/dark and one checkout sheet for everything.',
+    },
+    text: {
+      de: 'Die Kasse ist von Grund auf neu gestaltet. Kategorien stehen mit eigener Farbe und eigenem Icon in einer Leiste, ganz oben findest du deine Favoriten, und über die Lupe suchst du jeden Artikel direkt. Bar, Karte, Rabatt, Pfand und „Rechnung teilen“ erledigst du in einem Kassieren-Blatt. Blätter schließt du, indem du sie nach unten wischst. Über das Menü (drei Striche oben) stellst du Hell, Dunkel oder System für dieses Gerät ein. Im Testmodus zeigt ein schmaler Streifen unter dem Kopf, dass die Bestellungen beim Freischalten gelöscht werden.',
+      en: 'The till has been redesigned from the ground up. Categories sit in a bar with their own colour and icon, your favourites are at the top, and the magnifier lets you search for any item directly. Cash, card, discount, deposit and "Split bill" are all handled in one checkout sheet. Sheets close when you swipe them down. The menu (three lines at the top) lets you choose light, dark or system for this device. In test mode a slim strip below the header reminds you that orders will be deleted on activation.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'neu',
+    titel: {
+      de: 'Tische und Tischplan',
+      en: 'Tables and floor plan',
+    },
+    kurz: {
+      de: 'Lege Bereiche und Tische an und zeichne einen Tischplan mit Wänden, Raumform und Zonen.',
+      en: 'Create areas and tables and draw a floor plan with walls, room shape and zones.',
+    },
+    text: {
+      de: 'Unter „Tische“ legst du Bereiche wie Saal oder Terrasse an und darin deine Tische, einzeln oder als ganze Serie (zum Beispiel A1 bis A20). Im Tischplan-Editor ziehst du die Tische an ihren Platz, zeichnest Wände als Linienzug, passt die Raumform an und markierst Zonen wie Küche, Bar/Theke oder gesperrte Flächen. Liegt ein Tisch außerhalb des Raums oder in einer gesperrten Zone, weist dich der Editor darauf hin. In der Veranstaltung legst du fest, ob mit festen Tischen oder freien Tischnummern gearbeitet wird.',
+      en: 'Under "Tables" you create areas such as a hall or terrace and the tables in them, one by one or as a whole series (for example A1 to A20). In the floor plan editor you drag tables into place, draw walls as lines, adjust the room shape and mark zones such as kitchen, bar/counter or blocked areas. If a table lies outside the room or in a blocked zone, the editor tells you. In the event you choose whether to work with fixed tables or free table numbers.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'neu',
+    titel: {
+      de: 'Kassieren am Tisch',
+      en: 'Table service at the till',
+    },
+    kurz: {
+      de: 'Tisch öffnen, offene Tische im Blick, Tisch wechseln und den ganzen Tisch auf einmal kassieren.',
+      en: 'Open a table, keep an eye on open tables, switch tables and settle a whole table at once.',
+    },
+    text: {
+      de: 'Mit Tischbetrieb startet die Kasse mit „Tisch öffnen“: per Nummer, aus einer Liste oder direkt auf dem Tischplan. Welche Ansicht eine Kasse zeigt, stellst du je Gerät ein. Die Leiste „Offene Tische“ zeigt, wo noch etwas offen ist und wo ein Gast wartet oder Essen fertig zum Servieren ist; mit „Serviert“ hakst du es ab. Über die Tischanzeige wechselst du den Tisch, der angefangene Warenkorb wird dabei geparkt oder mitgenommen. Beim Kassieren zahlst du alle offenen Bestellungen des Tisches in einem Schritt. Alle Kassen sind dabei live auf demselben Stand.',
+      en: 'With table service the till starts with "Open table": by number, from a list or right on the floor plan. You choose per device which view a till shows. The "Open tables" bar shows where something is still open and where a guest is waiting or food is ready to serve; "Served" ticks it off. Tapping the table lets you switch tables, and the cart you started is parked or taken along. At checkout you settle all open orders of the table in one step. All tills stay in sync live.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'neu',
+    titel: {
+      de: 'Integrationen für deine Organisation einschalten',
+      en: 'Switch on integrations for your organization',
+    },
+    kurz: {
+      de: 'Ein Katalog zeigt alle Integrationen; SumUp schaltest du pro Organisation ein und aus.',
+      en: 'A catalog shows all integrations; you switch SumUp on and off per organization.',
+    },
+    text: {
+      de: 'Unter „Integrationen“ findest du jetzt einen Katalog mit allen Anbindungen, jeweils mit Beschreibung und Bildern. Admins schalten eine Integration für die Organisation ein oder aus, eingerichtet wird sie auf ihrer eigenen Seite. Kartenzahlung mit SumUp erscheint an der Kasse erst, wenn die Integration eingeschaltet ist. Hinterlegte Zugangsdaten bleiben beim Ausschalten erhalten.',
+      en: 'Under "Integrations" you now find a catalog of all connections, each with a description and pictures. Admins switch an integration on or off for the organization and set it up on its own page. Card payment with SumUp only appears at the till once the integration is switched on. Stored credentials are kept when you switch it off.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'neu',
+    titel: {
+      de: 'Produkt-Icons und farbige Kategorien',
+      en: 'Product icons and coloured categories',
+    },
+    kurz: {
+      de: 'Wähle für Produkte ein Kassen-Icon statt eines Fotos und gib Kategorien Icon und Farbe.',
+      en: 'Pick a till icon for products instead of a photo and give categories an icon and colour.',
+    },
+    text: {
+      de: 'Für jedes Produkt kannst du aus einer Sammlung von Kassen-Icons wählen, zum Beispiel Pils, Pommes oder Bratwurst, statt ein Foto hochzuladen. Kategorien bekommen ein Icon und eine Farbe; beides siehst du an der Kasse in der Kategorieleiste und bei Produkten ohne eigenes Bild.',
+      en: 'For every product you can choose from a collection of till icons, such as beer, fries or sausage, instead of uploading a photo. Categories get an icon and a colour; you see both at the till in the category bar and on products without their own picture.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'neu',
+    titel: {
+      de: 'Stationsanzeige mit Fertig-Rückmeldung',
+      en: 'Station display shows what is ready',
+    },
+    kurz: {
+      de: 'Erledigtes wird sichtbar abgehakt und lässt sich nach einer einstellbaren Zeit ausblenden.',
+      en: 'Finished items are visibly ticked off and can be hidden after a time you choose.',
+    },
+    text: {
+      de: 'Tippst du an der Stationsanzeige auf „Fertig“, wird der Artikel sofort abgehakt; ist eine Bestellung komplett, färbt sich die Karte grün. In den Geräteeinstellungen legst du mit „Erledigte ausblenden“ fest, nach wie vielen Sekunden fertige Bestellungen verschwinden oder ob sie gesammelt am Ende stehen bleiben. Alle Karten sind gleich aufgebaut und zeigen Tisch, Abholung, To-go oder Theke.',
+      en: 'When you tap "Ready" on the station display, the item is ticked off immediately; once an order is complete, its card turns green. In the device settings, "Clear completed" sets after how many seconds finished orders disappear, or whether they stay collected at the end. All cards share the same layout and show table, pickup, to-go or counter.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'neu',
+    titel: {
+      de: 'Mitglieder direkt anlegen',
+      en: 'Create members directly',
+    },
+    kurz: {
+      de: 'Beim Selbstbetrieb legst du Konten mit Startpasswort direkt in der Oberfläche an.',
+      en: 'When self-hosting, you create accounts with a starting password right in the interface.',
+    },
+    text: {
+      de: 'Wer OpenEOS selbst betreibt, hat oft keinen Mailserver für Einladungen. Unter „Mitglieder“ → „Mitglied hinzufügen“ gibt es deshalb den Reiter „Konto direkt anlegen“: Name, E-Mail und ein Startpasswort, das du dem neuen Mitglied weitergibst. Hat die Person schon ein Konto, fügst du sie ohne Passwort hinzu.',
+      en: 'If you run OpenEOS yourself, you often have no mail server for invitations. Under "Members" → "Add member" there is now a "Create account directly" tab: name, email and a starting password that you pass on to the new member. If the person already has an account, you add them without a password.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'verbessert',
+    titel: {
+      de: 'Bestellung und Zahlung in einem Schritt',
+      en: 'Order and payment in one step',
+    },
+    kurz: {
+      de: 'Beim sofortigen Kassieren geht eine Bestellung erst nach der Zahlung an Küche und Stationen.',
+      en: 'With immediate checkout, an order only reaches kitchen and stations once it is paid.',
+    },
+    text: {
+      de: 'Kassierst du sofort, werden Bestellung und Zahlung jetzt gemeinsam gebucht. Bricht die Zahlung ab oder wird die Karte abgelehnt, entsteht keine Bestellung, und die Küche bekommt nichts, was nicht bezahlt ist. „Senden“ ohne Zahlung gibt es nur noch, wenn die Veranstaltung mit offenen Rechnungen arbeitet.',
+      en: 'When you check out immediately, order and payment are now booked together. If the payment is cancelled or the card is declined, no order is created, and the kitchen gets nothing that has not been paid. "Send" without payment is only offered when the event works with open tabs.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'verbessert',
+    titel: {
+      de: 'Geräte übersichtlicher einrichten',
+      en: 'Clearer device setup',
+    },
+    kurz: {
+      de: 'Geräteeinstellungen neu gegliedert, „Verknüpft mit“ auf einen Blick, Kopplungscode am Stück.',
+      en: 'Device settings reorganized, "Linked to" at a glance, pairing code in one piece.',
+    },
+    text: {
+      de: 'Die Einstellungen eines Geräts sind jetzt nach Betrieb, Zahlung, Sicherheit, Anzeige und Aussehen gegliedert, und was von einer Wahl abhängt, steht direkt darunter: bei einer Kasse mit Tischen der Standardbereich und die Tischwahl, beim Kundendisplay die zugehörige Kasse, bei der Stationsanzeige der Standort. Die Kachel „Verknüpft mit“ zeigt sofort, wozu ein Gerät gehört. Der Kopplungscode erscheint als sechs Ziffern am Stück, und beim Eingeben darfst du ihn auch mit Leerzeichen einfügen.',
+      en: 'A device\'s settings are now grouped into operation, payment, security, display and appearance, and whatever depends on a choice sits right below it: for a till with tables the default area and table selection, for a customer display its till, for a station display its station. The "Linked to" tile shows at once what a device belongs to. The pairing code appears as six digits in one piece, and you may paste it with spaces when entering it.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'verbessert',
+    titel: {
+      de: 'Ganz auf Englisch, auf Deutsch per Du',
+      en: 'Fully in English, informal in German',
+    },
+    kurz: {
+      de: 'Die englische Oberfläche ist vollständig, auf Deutsch sprechen wir dich mit Du an, Fehlermeldungen sind verständlich.',
+      en: 'The English interface is complete, German now uses the informal "du", and error messages are easy to understand.',
+    },
+    text: {
+      de: 'Stellst du Englisch ein, ist jetzt wirklich alles englisch, auch Navigation, Datumsangaben und Zahlen. Auf Deutsch spricht OpenEOS dich überall mit Du an, in der Oberfläche, in E-Mails und auf dem Bon. Fehlermeldungen sagen jetzt in deiner Sprache, was genau nicht geklappt hat, statt nur „Fehler“ zu melden.',
+      en: 'If you choose English, everything really is in English now, including navigation, dates and numbers. In German, OpenEOS addresses you informally everywhere: in the interface, in emails and on the receipt. Error messages now tell you in your language what exactly went wrong instead of just saying "error".',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'verbessert',
+    titel: {
+      de: 'Frischeres Erscheinungsbild',
+      en: 'A fresher look',
+    },
+    kurz: {
+      de: 'Neue Schrift, neue Icons und Seitenköpfe, die überall gleich aufgebaut sind.',
+      en: 'A new typeface, new icons and page headers that work the same everywhere.',
+    },
+    text: {
+      de: 'Überschriften nutzen eine neue, kräftigere Schrift, und alle Icons stammen aus einem einheitlichen Satz. Jede Seite ist gleich aufgebaut: oben Titel und Beschreibung, die Aktionen wie „Schichtplan erstellen“ oder „Inventur erstellen“ an der Liste, zu der sie gehören. Detailseiten von Gerät, Schichtplan, Benutzer und Integration haben beschriftete Knöpfe statt reiner Symbole. Auf dem Telefon und im dunklen Modus wird alles sauber dargestellt.',
+      en: 'Headlines use a new, bolder typeface, and all icons come from one consistent set. Every page follows the same pattern: title and description at the top, actions such as "Create shift plan" or "Create stocktake" on the list they belong to. Detail pages for devices, shift plans, users and integrations have labelled buttons instead of bare symbols. Everything displays cleanly on phones and in dark mode.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'verbessert',
+    titel: {
+      de: 'Support-Anfragen und Kontaktformulare bleiben vollständig in OpenEOS',
+      en: 'Support requests and contact forms stay entirely within OpenEOS',
+    },
+    kurz: {
+      de: 'Nachrichten an den Support werden nicht mehr an einen Messenger weitergeleitet.',
+      en: 'Messages to support are no longer forwarded to a messenger.',
+    },
+    text: {
+      de: 'Was du im Support-Chat oder über die Kontaktformulare der Website schreibst, wird jetzt ausschließlich in OpenEOS bearbeitet. Eine Weiterleitung an einen Messenger-Dienst gibt es nicht mehr; das Team wird per E-Mail benachrichtigt. Für dich ändert sich an der Bedienung nichts.',
+      en: 'What you write in the support chat or through the contact forms on the website is now handled solely within OpenEOS. Messages are no longer forwarded to a messenger service; the team is notified by email. Nothing changes in how you use it.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'verbessert',
+    titel: {
+      de: 'Fehlerberichte enthalten weniger Daten',
+      en: 'Error reports contain less data',
+    },
+    kurz: {
+      de: 'Automatische Fehlerberichte beschränken sich auf das, was zur Fehlersuche nötig ist.',
+      en: 'Automatic error reports are limited to what is needed to find the fault.',
+    },
+    text: {
+      de: 'Tritt ein Fehler auf, schickt OpenEOS einen Bericht, damit wir ihn beheben können. Diese Berichte enthalten jetzt nur noch, was zur Fehlersuche nötig ist; persönliche Angaben und Bildschirmaufzeichnungen sind nicht mehr dabei.',
+      en: 'When an error occurs, OpenEOS sends a report so we can fix it. These reports now contain only what is needed to find the fault; personal details and screen recordings are no longer included.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'behoben',
+    titel: {
+      de: 'Testbestellungen werden beim Freischalten gelöscht',
+      en: 'Test orders are deleted on activation',
+    },
+    kurz: {
+      de: 'Nach dem Freischalten tauchen Testbestellungen nicht mehr in Auswertungen und Beständen auf.',
+      en: 'After activation, test orders no longer show up in reports and stock.',
+    },
+    text: {
+      de: 'Die Kasse kündigt es an: Bestellungen aus dem Testmodus werden beim Freischalten gelöscht. Bisher blieben sie trotzdem stehen und zählten in Auswertungen, Beständen und Abholnummern mit. Jetzt verschwinden sie beim Freischalten wirklich, und die Veranstaltung startet sauber.',
+      en: 'The till says so: orders from test mode are deleted on activation. Until now they stayed anyway and counted in reports, stock and pickup numbers. Now they really disappear on activation, and the event starts with a clean slate.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'behoben',
+    titel: {
+      de: 'Richtige Tage rund um Mitternacht',
+      en: 'The right day around midnight',
+    },
+    kurz: {
+      de: 'Eindeutige Bestellnummern, korrektes „Heute“ zwischen 0 und 2 Uhr und Schichten am richtigen Tag.',
+      en: 'Unique order numbers, a correct "today" between midnight and 2 a.m. and shifts on the right day.',
+    },
+    text: {
+      de: 'Kurz nach Mitternacht konnte dieselbe Bestellnummer zweimal vergeben werden, und Bestellungen zwischen 0 und 2 Uhr zählten in Übersicht und Auswertungen noch zum Vortag. Der Schicht-Generator legte Schichten einen Tag zu früh an. Alle drei richten sich jetzt nach dem Kalendertag deiner Organisation, und englische Datumsangaben erscheinen im gewohnten Format.',
+      en: 'Shortly after midnight the same order number could be issued twice, and orders between midnight and 2 a.m. still counted towards the previous day in the dashboard and reports. The shift generator created shifts one day early. All three now follow the calendar day of your organization, and English dates appear in the usual format.',
+    },
+  },
+  {
+    datum: '2026-10-08',
+    art: 'behoben',
+    titel: {
+      de: 'Kleinere Korrekturen',
+      en: 'Smaller fixes',
+    },
+    kurz: {
+      de: 'Artikelanzahl in der Übersicht, To-go an der Station, Mitgliederverwaltung und Darstellung.',
+      en: 'Item counts on the dashboard, to-go at the station, member management and display.',
+    },
+    text: {
+      de: 'Die letzten Aktivitäten in der Übersicht zeigten bei jeder Bestellung „0 Artikel“ – jetzt steht dort die richtige Zahl. To-go-Bestellungen erscheinen an der Stationsanzeige als To-go statt als Theke. Beim Entfernen und Ändern von Mitgliedern bleibt immer mindestens ein Admin in der Organisation, und jeder kann nur Rechte vergeben, die er selbst hat. Außerdem sind Menüs, Dialoge und Karten auf dem Telefon und im dunklen Modus nicht mehr abgeschnitten oder schlecht lesbar, und der Shop zeigt Pflichtfelder, Öffnungszeiten und den LIVE-Hinweis korrekt an.',
+      en: 'Recent activity on the dashboard showed "0 items" for every order – it now shows the right number. To-go orders appear on the station display as to-go instead of counter. When members are removed or changed, an organization always keeps at least one admin, and everyone can only grant permissions they have themselves. Menus, dialogs and cards are no longer cut off or hard to read on phones and in dark mode, and the shop shows required fields, opening hours and the LIVE badge correctly.',
+    },
+  },
+  {
     datum: '2026-10-03',
     art: 'neu',
     titel: {
@@ -449,6 +705,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
  * Eintrag ohne Version da.
  */
 export const RELEASES: Record<string, string> = {
+  '2026-10-08': '1.6',
   '2026-10-03': '1.5',
   '2026-09-24': '1.4',
   '2026-09-17': '1.3',
