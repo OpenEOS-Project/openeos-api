@@ -92,6 +92,7 @@ import {
   isClientRequestConflict,
   resolveDeviceOrderTable,
 } from './device-order-table';
+import { groupStationItems } from './station-items';
 
 /**
  * Helper to ensure device has an organization.
@@ -1601,40 +1602,7 @@ export class DeviceApiController {
       .addOrderBy('ord.createdAt', 'ASC')
       .getMany();
 
-    // Group by order
-    const orderMap = new Map<string, { order: any; items: any[] }>();
-    for (const item of items) {
-      const orderId = item.order.id;
-      if (!orderMap.has(orderId)) {
-        orderMap.set(orderId, {
-          order: {
-            id: item.order.id,
-            orderNumber: item.order.orderNumber,
-            dailyNumber: item.order.dailyNumber,
-            tableNumber: item.order.tableNumber,
-            customerName: item.order.customerName,
-            priority: item.order.priority,
-            createdAt: item.order.createdAt,
-            fulfillmentType: item.order.fulfillmentType,
-            source: item.order.source,
-          },
-          items: [],
-        });
-      }
-      orderMap.get(orderId)!.items.push({
-        id: item.id,
-        productName: item.productName,
-        categoryName: item.categoryName,
-        quantity: item.quantity,
-        status: item.status,
-        notes: item.notes,
-        kitchenNotes: item.kitchenNotes,
-        options: item.options,
-        createdAt: item.createdAt,
-      });
-    }
-
-    return { data: Array.from(orderMap.values()) };
+    return { data: groupStationItems(items) };
   }
 
   @Post('station/items/:itemId/ready')
