@@ -1,5 +1,11 @@
 # Production Docker Compose for OpenEOS API
 # Usage: docker compose -f docker-compose.prod.yml up -d
+#
+# One API instance, migrations run when it starts (DATABASE_MIGRATIONS_RUN,
+# default true). For several instances and deploys without downtime see
+# "Mehrere Instanzen" in README.md: migrations then run once beforehand
+# (service `migrate` below) and the instances start with
+# DATABASE_MIGRATIONS_RUN=false.
 
 services:
   api:
@@ -25,7 +31,9 @@ services:
       DATABASE_NAME: ${DATABASE_NAME:-openeos}
       DATABASE_SYNCHRONIZE: "false"
       DATABASE_LOGGING: "false"
-      DATABASE_MIGRATIONS_RUN: "true"
+      # true: apply pending migrations on start (one instance). With several
+      # instances set false and run the `migrate` service before each rollout.
+      DATABASE_MIGRATIONS_RUN: ${DATABASE_MIGRATIONS_RUN:-true}
 
       # Redis
       REDIS_HOST: redis
@@ -81,8 +89,15 @@ services:
 
       # Optional: Sentry
       SENTRY_DSN: ${SENTRY_DSN:-}
+
+      # Optional: token for GET /api/internal/deploy-guard (deploy workflows
+      # ask there whether an event is selling). Empty: endpoint disabled.
+      DEPLOY_GUARD_TOKEN: ${DEPLOY_GUARD_TOKEN:-}
     volumes:
       - uploads:/app/uploads
+    # SIGTERM: open requests get up to 20 s (SHUTDOWN_TIMEOUT_MS) — give the
+    # process that long before Docker kills it.
+    stop_grace_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
@@ -117,9 +132,30 @@ services:
       - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie.name=io"
       - "traefik.http.services.openeos-api.loadbalancer.sticky.cookie.secure=true"
 
-    # Uncomment for multiple instances:
-    # deploy:
-    #   replicas: 2
+    # Multiple instances: remove `container_name` above, then
+    #   scale: 2
+    # and see README.md ("Mehrere Instanzen").
+
+  # One-shot migration run for multi-instance setups:
+  #   docker compose -f docker-compose.prod.yml run --rm migrate
+  # Not started by `up` (profile "tools").
+  migrate:
+    image: ghcr.io/openeos-project/openeos-api:latest
+    profiles: ["tools"]
+    restart: "no"
+    command: ["node", "node_modules/typeorm/cli.js", "migration:run", "-d", "dist/src/config/data-source.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: ${DATABASE_USER:-openeos}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD is required}
+      DATABASE_NAME: ${DATABASE_NAME:-openeos}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - openeos-internal
 
   postgres:
     image: postgres:16-alpine
