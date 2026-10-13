@@ -219,6 +219,15 @@ export class Event extends SoftDeleteEntity {
   })
   priceCharged: number | null;
 
+  /**
+   * Abgerechnete Veranstaltungstage, festgehalten beim Freischalten (Kauf
+   * auf Rechnung oder Stripe-Zahlung). Eine spaeter geaenderte Zaehlregel —
+   * etwa der Wechsel von Kalender- auf Geschaeftstage — darf eine bezahlte
+   * Veranstaltung nicht nachtraeglich kuerzer oder laenger machen.
+   */
+  @Column({ name: 'billed_days', type: 'int', nullable: true })
+  billedDays: number | null;
+
   // Relations
   @ManyToOne(() => Organization, (org) => org.events, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'organization_id' })

@@ -107,6 +107,7 @@ describe('EventsService.activate and test orders', () => {
         billingEnabled: options.billingEnabled ?? true,
       } as unknown as DeploymentService,
       cleanup,
+      unused,
     );
     jest
       .spyOn(
