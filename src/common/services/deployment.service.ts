@@ -24,6 +24,15 @@ export class DeploymentService {
   /** Duerfen mehrere Organisationen nebeneinander existieren? */
   readonly multiTenant: boolean;
 
+  /**
+   * Impressum und Datenschutz des Plattformbetreibers fuer oeffentliche
+   * Seiten. `null`: nicht anzeigen (eigenstaendig ohne gesetzte Variable).
+   */
+  readonly platformLegal: {
+    imprintUrl: string | null;
+    privacyUrl: string | null;
+  };
+
   constructor(private readonly configService: ConfigService) {
     this.mode =
       this.configService.get<DeploymentMode>('deployment.mode') ?? 'saas';
@@ -31,6 +40,10 @@ export class DeploymentService {
       this.configService.get<boolean>('deployment.billingEnabled') ?? true;
     this.multiTenant =
       this.configService.get<boolean>('deployment.multiTenant') ?? true;
+    this.platformLegal = {
+      imprintUrl: this.configService.get<string>('platform.imprintUrl') || null,
+      privacyUrl: this.configService.get<string>('platform.privacyUrl') || null,
+    };
 
     if (this.isSelfHosted) {
       this.logger.log(

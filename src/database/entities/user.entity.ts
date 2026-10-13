@@ -167,6 +167,19 @@ export class User extends SoftDeleteEntity {
   })
   preferences: UserPreferences;
 
+  /**
+   * Einwilligung in Produkt-Neuigkeiten per E-Mail (Registrierung). Der
+   * Zeitpunkt ist der Nachweis nach Art. 7 Abs. 1 DSGVO; null heisst keine
+   * Einwilligung. Wirksam wird sie erst mit bestaetigter Adresse
+   * (`emailVerifiedAt`) — das ist die Bestaetigung im Double-Opt-in.
+   */
+  @Column({
+    name: 'newsletter_opt_in_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  newsletterOptInAt: Date | null;
+
   // Pending Email Change
   @Column({
     name: 'pending_email',

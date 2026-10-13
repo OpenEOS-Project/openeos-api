@@ -91,6 +91,21 @@ export default () => ({
     multiTenant: !IS_SELF_HOSTED,
   },
 
+  platform: {
+    // Impressum und Datenschutz des Plattformbetreibers. Shop und
+    // Helferseiten zeigen sie klein unter den Angaben des Vereins
+    // ("Bereitgestellt mit OpenEOS"). Gehostet sind das die Seiten von
+    // openeos.de; eigenstaendig betrieben gibt es ohne gesetzte Variable
+    // keine Plattform-Links, dann zaehlen nur die Angaben des Vereins.
+    // Eine leer gesetzte Variable blendet den Link ebenfalls aus.
+    imprintUrl:
+      process.env.PLATFORM_IMPRINT_URL ??
+      (IS_SELF_HOSTED ? '' : 'https://openeos.de/imprint'),
+    privacyUrl:
+      process.env.PLATFORM_PRIVACY_URL ??
+      (IS_SELF_HOSTED ? '' : 'https://openeos.de/privacy'),
+  },
+
   billing: {
     // Preis je Veranstaltungstag. Eine mehrtaegige Veranstaltung kostet
     // entsprechend ein Vielfaches davon.

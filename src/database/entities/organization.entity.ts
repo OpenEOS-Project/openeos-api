@@ -11,6 +11,25 @@ import { Invitation } from './invitation.entity';
 import { Invoice } from './invoice.entity';
 import { RentalAssignment } from './rental-assignment.entity';
 
+/**
+ * Rechtliche Angaben des Vereins fuer seine oeffentlichen Seiten (Shop,
+ * Helferseiten). Verkauft wird im Namen des Vereins, Helferdaten erhebt der
+ * Verein — Impressum (§ 5 DDG) und Datenschutzhinweis (Art. 13 DSGVO) muessen
+ * deshalb von ihm kommen, nicht von OpenEOS.
+ *
+ * Je Angabe entweder ein Link auf die eigene Seite des Vereins oder ein
+ * Freitext, den OpenEOS selbst anzeigt. Beides zugleich ist nicht erlaubt,
+ * siehe normalizeLegalSettings().
+ */
+export interface OrganizationLegalSettings {
+  imprintUrl?: string;
+  imprintText?: string;
+  privacyUrl?: string;
+  privacyText?: string;
+  /** Kontaktadresse fuer Datenschutzanfragen, optional. */
+  contactEmail?: string;
+}
+
 export interface OrganizationSettings {
   currency: string;
   timezone: string;
@@ -40,6 +59,7 @@ export interface OrganizationSettings {
    * ableiten, auch ein Verein kann steuerpflichtig sein.
    */
   vatExempt?: boolean;
+  legal?: OrganizationLegalSettings;
   pos?: {
     /**
      * Sofort kassieren oder auf Deckel buchen. Der einzige Wert aus dem

@@ -26,6 +26,8 @@ import {
 } from '../../common/utils/event-schedule.util';
 import { Category } from '../../database/entities/category.entity';
 import { Product } from '../../database/entities/product.entity';
+import { DeploymentService } from '../../common/services/deployment.service';
+import { toPublicLegalInfo } from '../organizations/legal/legal-settings.util';
 
 const WEEKDAY_KEYS: ShopWeekday[] = [
   'sun',
@@ -136,6 +138,7 @@ export class EventsShopPublicController {
     private readonly categoryRepository: Repository<Category>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    private readonly deployment: DeploymentService,
   ) {}
 
   private async loadShopEvent(eventId: string): Promise<Event> {
@@ -207,6 +210,10 @@ export class EventsShopPublicController {
           isOpenNow,
           testMode,
         },
+        // Impressum und Datenschutz des Vereins (er verkauft) plus die
+        // Plattform-Links von OpenEOS — nur diese Felder, nichts sonst aus
+        // den Organisationseinstellungen.
+        legal: toPublicLegalInfo(organization, this.deployment.platformLegal),
       },
     };
   }
