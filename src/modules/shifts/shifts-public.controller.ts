@@ -223,6 +223,8 @@ export class ShiftsPublicController {
             plan.organization,
             this.deployment.platformLegal,
           ),
+          // Fuer die Textseiten von Impressum/Datenschutz (/s/<slug>/legal/…).
+          slug: plan.publicSlug,
           jobs: plan.jobs
             .sort((a, b) => a.sortOrder - b.sortOrder)
             .map((job) => ({
