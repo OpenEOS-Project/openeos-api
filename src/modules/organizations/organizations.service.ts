@@ -35,6 +35,7 @@ import {
   CreateInvitationDto,
 } from './dto';
 import { EmailService } from '../email/email.service';
+import { normalizeLegalSettings } from './legal/legal-settings.util';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { ConfigService } from '@nestjs/config';
 import { DeploymentService } from '../../common/services/deployment.service';
@@ -291,6 +292,12 @@ export class OrganizationsService {
        schickt, ersetzt `pos` als Ganzes, und das ist auch gemeint. */
     const { settings: incomingSettings, ...rest } = updateDto;
     Object.assign(organization, rest);
+    /* Die rechtlichen Angaben erscheinen auf oeffentlichen Seiten (Shop,
+       Helferseiten) — deshalb hier streng pruefen und bereinigen statt sie
+       wie den Rest der Einstellungen ungesehen abzulegen. */
+    if (incomingSettings && 'legal' in incomingSettings) {
+      incomingSettings.legal = normalizeLegalSettings(incomingSettings.legal);
+    }
     if (incomingSettings) {
       organization.settings = {
         ...organization.settings,

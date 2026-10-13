@@ -1,5 +1,8 @@
 import { Event, ShopOpeningHours } from '../../database/entities/event.entity';
-import { resolveShopWindows } from './events-shop-public.controller';
+import {
+  EventsShopPublicController,
+  resolveShopWindows,
+} from './events-shop-public.controller';
 
 /*
  * All expectations are absolute instants (ISO, UTC). The result must not
@@ -77,5 +80,60 @@ describe('resolveShopWindows (weekly opening hours)', () => {
     });
 
     expect(resolveShopWindows(event, 'Europe/Berlin')).toEqual([]);
+  });
+});
+
+describe('EventsShopPublicController.getShop — legal information', () => {
+  it('returns the club notices and platform links, and nothing else from the settings', async () => {
+    const event = {
+      id: '2ef07d24-536b-4209-9248-afa3e260e934',
+      organizationId: 'org-1',
+      name: 'Sommerfest',
+      status: 'active',
+      startDate: new Date('2026-10-24T08:00:00Z'),
+      endDate: new Date('2026-10-24T20:00:00Z'),
+      settings: { shop: { enabled: true } },
+    };
+    const organization = {
+      name: 'TSV Musterstadt',
+      settings: {
+        currency: 'EUR',
+        timezone: 'Europe/Berlin',
+        sumup: { apiKey: 'sup_sk_live_secret', merchantCode: 'MC1' },
+        legal: {
+          imprintUrl: 'https://tsv.example/impressum',
+          privacyText: 'Datenschutzhinweis',
+        },
+      },
+    };
+    const controller = new EventsShopPublicController(
+      { findOne: () => Promise.resolve(event) } as never,
+      { findOne: () => Promise.resolve(organization) } as never,
+      undefined as never,
+      undefined as never,
+      {
+        platformLegal: {
+          imprintUrl: 'https://openeos.de/imprint',
+          privacyUrl: 'https://openeos.de/privacy',
+        },
+      } as never,
+    );
+
+    const { data } = await controller.getShop(event.id);
+
+    expect(data.legal).toEqual({
+      organizationName: 'TSV Musterstadt',
+      imprintUrl: 'https://tsv.example/impressum',
+      imprintText: null,
+      privacyUrl: null,
+      privacyText: 'Datenschutzhinweis',
+      contactEmail: null,
+      complete: true,
+      platform: {
+        imprintUrl: 'https://openeos.de/imprint',
+        privacyUrl: 'https://openeos.de/privacy',
+      },
+    });
+    expect(JSON.stringify(data)).not.toContain('sup_sk_live_secret');
   });
 });

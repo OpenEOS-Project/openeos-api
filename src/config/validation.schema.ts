@@ -84,6 +84,16 @@ export const validationSchema = Joi.object({
   // 'selfhosted' (eigenstaendig, eine Organisation, kostenlos).
   DEPLOYMENT_MODE: Joi.string().valid('saas', 'selfhosted').default('saas'),
 
+  // Impressum/Datenschutz des Plattformbetreibers auf Shop und Helferseiten.
+  // Ohne Standardwert: nicht gesetzt heisst "Vorgabe der Betriebsart", leer
+  // heisst "keinen Link anzeigen" (siehe configuration.ts).
+  PLATFORM_IMPRINT_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .allow(''),
+  PLATFORM_PRIVACY_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .allow(''),
+
   // Event billing (pay-per-event activation)
   STRIPE_SECRET_KEY: Joi.string().allow('').default(''),
   STRIPE_WEBHOOK_SECRET: Joi.string().allow('').default(''),

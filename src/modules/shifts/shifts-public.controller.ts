@@ -12,12 +12,17 @@ import { ShiftsService } from './shifts.service';
 import { PublicRegisterDto } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { ShiftRegistrationStatus } from '../../database/entities/shift-registration.entity';
+import { DeploymentService } from '../../common/services/deployment.service';
+import { toPublicLegalInfo } from '../organizations/legal/legal-settings.util';
 
 @ApiTags('Shifts (Public)')
 @Controller('public/shifts')
 @Public()
 export class ShiftsPublicController {
-  constructor(private readonly shiftsService: ShiftsService) {}
+  constructor(
+    private readonly shiftsService: ShiftsService,
+    private readonly deployment: DeploymentService,
+  ) {}
 
   @Get(':slug')
   @ApiOperation({ summary: 'Get public shift plan by slug' })
@@ -33,6 +38,12 @@ export class ShiftsPublicController {
         name: plan.organization?.name || '',
         logoUrl: plan.organization?.logoUrl || null,
       },
+      // Der Verein erhebt die Helferdaten: sein Impressum und sein
+      // Datenschutzhinweis, darunter die Plattform-Links von OpenEOS.
+      legal: toPublicLegalInfo(
+        plan.organization,
+        this.deployment.platformLegal,
+      ),
       event: plan.event
         ? {
             name: plan.event.name,
@@ -208,6 +219,10 @@ export class ShiftsPublicController {
             name: plan.organization?.name || '',
             logoUrl: plan.organization?.logoUrl || null,
           },
+          legal: toPublicLegalInfo(
+            plan.organization,
+            this.deployment.platformLegal,
+          ),
           jobs: plan.jobs
             .sort((a, b) => a.sortOrder - b.sortOrder)
             .map((job) => ({
