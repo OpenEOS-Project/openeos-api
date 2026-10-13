@@ -213,6 +213,7 @@ describe('EventUnlockCancellationService', () => {
     let committed = false;
     const eventRepository = {
       manager: {
+        getRepository: jest.fn(() => orgTx),
         transaction: jest.fn(
           async (work: (m: EntityManager) => Promise<unknown>) => {
             const result = await work(manager);
@@ -229,6 +230,7 @@ describe('EventUnlockCancellationService', () => {
       count: jest.fn().mockResolvedValue(options.realOrders ?? 0),
     } as unknown as Repository<Order>;
     const cancellationRepository = {
+      find: jest.fn().mockResolvedValue(options.history ?? []),
       findOne: jest.fn(),
       save: jest.fn((r: EventBillingCancellation) => Promise.resolve(r)),
       count: jest.fn().mockResolvedValue(0),
@@ -899,6 +901,31 @@ describe('EventUnlockCancellationService', () => {
       expect(email.sendEventGoodwillRefundEmail).toHaveBeenCalledWith(
         expect.objectContaining({ via: 'invoice', amount: 20 }),
       );
+    });
+
+    it('preview: charged, refunded so far, refundable, real orders, deadline', async () => {
+      const earlier = {
+        kind: 'goodwill',
+        amount: 12.5,
+      } as unknown as EventBillingCancellation;
+      const { service } = setup({ history: [earlier], realOrders: 7 });
+      await expect(
+        service.platformPreview(EVENT_ID, AFTER_DEADLINE),
+      ).resolves.toEqual({
+        eventId: EVENT_ID,
+        billingStatus: 'paid',
+        via: 'stripe',
+        currency: 'EUR',
+        amountCharged: 40,
+        refundedSoFar: 12.5,
+        refundable: 27.5,
+        realOrders: 7,
+        deadline: '2026-09-04T15:00:00.000Z',
+        timezone: BERLIN,
+        deadlinePassed: true,
+        invoiced: false,
+        onlineRefundAvailable: true,
+      });
     });
 
     it('the organization still cannot cancel with real orders', async () => {

@@ -84,6 +84,8 @@ export interface PlatformCancellationPreview {
   /** Echte Bestellungen (ohne Testbestellungen). */
   realOrders: number;
   deadline: string | null;
+  /** Zeitzone der Organisation — die Oberflaeche zeigt die Frist darin. */
+  timezone: string;
   deadlinePassed: boolean;
   /** Ob die Rechnung (Kauf auf Rechnung) schon gestellt ist. */
   invoiced: boolean;
@@ -379,7 +381,8 @@ export class EventUnlockCancellationService {
     const organization = await this.eventRepository.manager
       .getRepository(Organization)
       .findOne({ where: { id: event.organizationId } });
-    const deadline = cancellationDeadline(event, this.timezoneOf(organization));
+    const timezone = this.timezoneOf(organization);
+    const deadline = cancellationDeadline(event, timezone);
     const realOrders = await this.orderRepository.count({
       where: { eventId: event.id, isTest: false },
     });
@@ -410,6 +413,7 @@ export class EventUnlockCancellationService {
       refundable,
       realOrders,
       deadline: deadline ? deadline.toISOString() : null,
+      timezone,
       deadlinePassed: !!deadline && now.getTime() >= deadline.getTime(),
       invoiced: !!event.invoicedAt,
       onlineRefundAvailable:
