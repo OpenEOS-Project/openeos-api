@@ -21,6 +21,7 @@ export type RedigierterAdminUser = Pick<
   | 'isActive'
   | 'isSuperAdmin'
   | 'emailVerifiedAt'
+  | 'newsletterOptInAt'
   | 'lastLoginAt'
   | 'lockedUntil'
   | 'failedLoginAttempts'
@@ -38,6 +39,7 @@ export function redigiereAdminUser(user: User): RedigierterAdminUser {
     isActive: user.isActive,
     isSuperAdmin: user.isSuperAdmin,
     emailVerifiedAt: user.emailVerifiedAt,
+    newsletterOptInAt: user.newsletterOptInAt,
     lastLoginAt: user.lastLoginAt,
     lockedUntil: user.lockedUntil,
     failedLoginAttempts: user.failedLoginAttempts,

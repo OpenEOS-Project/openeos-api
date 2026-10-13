@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsEmail,
   IsOptional,
   IsString,
@@ -69,4 +70,14 @@ export class RegisterDto {
     message: 'Organisationsname darf maximal 200 Zeichen lang sein',
   })
   organizationName: string;
+
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'Einwilligung in gelegentliche Produkt-Neuigkeiten per E-Mail. ' +
+      'Gespeichert wird der Zeitpunkt der Einwilligung als Nachweis.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  newsletterOptIn?: boolean;
 }

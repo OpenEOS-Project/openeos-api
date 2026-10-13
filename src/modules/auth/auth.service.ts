@@ -118,8 +118,14 @@ export class AuthService {
     /** Ohne Passwort ging statt der Bestaetigung ein Anmeldelink raus. */
     magicLinkSent: boolean;
   }> {
-    const { email, password, firstName, lastName, organizationName } =
-      registerDto;
+    const {
+      email,
+      password,
+      firstName,
+      lastName,
+      organizationName,
+      newsletterOptIn,
+    } = registerDto;
 
     /* Eigenstaendig gibt es keine Selbstregistrierung.
        Zwei Gruende: sie legt jedes Mal eine weitere Organisation an, und sie
@@ -179,6 +185,8 @@ export class AuthService {
         emailVerificationExpiresAt: new Date(
           Date.now() + EMAIL_VERIFICATION_EXPIRY_HOURS * 60 * 60 * 1000,
         ),
+        // Zeitpunkt der Einwilligung als Nachweis; ohne Haken keine.
+        newsletterOptInAt: newsletterOptIn === true ? new Date() : null,
       });
       await queryRunner.manager.save(user);
 
