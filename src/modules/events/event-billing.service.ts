@@ -21,7 +21,12 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { User } from '../../database/entities';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { OrganizationsService } from '../organizations/organizations.service';
-import { countEventDays } from '../../common/utils/event-schedule.util';
+import {
+  countBillableDays,
+  countCalendarDays,
+  normalizeBusinessDayStartHour,
+  parseEventDateInput,
+} from '../../common/utils/event-schedule.util';
 import { StripeService } from '../stripe/stripe.service';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
@@ -37,8 +42,14 @@ export type DiscountReason = 'first-event' | 'organization' | null;
 export interface EventPrice {
   /** Preis je Veranstaltungstag, vor Nachlass. */
   pricePerDay: number;
-  /** Abgerechnete Veranstaltungstage. */
+  /** Abgerechnete Veranstaltungstage (Geschaeftstage, siehe countBillableDays). */
   days: number;
+  /**
+   * Stunde, zu der ein Veranstaltungstag wechselt (Ortszeit der
+   * Organisation). Mitgeliefert, damit der Hinweis "von 6 bis 6 Uhr" in der
+   * Oberflaeche nicht eine zweite, irgendwann abweichende 6 kennt.
+   */
+  businessDayStartHour: number;
   /** pricePerDay * days, vor Nachlass. */
   price: number;
   discountPercent: number;
@@ -161,6 +172,13 @@ export class EventBillingService {
     return count > 0;
   }
 
+  /** Tageswechsel der Abrechnung, siehe countBillableDays. */
+  private get businessDayStartHour(): number {
+    return normalizeBusinessDayStartHour(
+      this.configService.get<number>('billing.businessDayStartHour'),
+    );
+  }
+
   /**
    * Preis einer Veranstaltung: Tagespreis mal Veranstaltungstage, davon der
    * hoechste zutreffende Nachlass.
@@ -185,10 +203,12 @@ export class EventBillingService {
         ? Number(organization.eventPriceOverride)
         : defaultPrice;
 
-    const days = countEventDays(
+    const businessDayStartHour = this.businessDayStartHour;
+    const days = countBillableDays(
       event.startDate,
       event.endDate,
       organization.settings?.timezone || 'Europe/Berlin',
+      businessDayStartHour,
     );
     const price = Math.round(pricePerDay * days * 100) / 100;
 
@@ -219,6 +239,7 @@ export class EventBillingService {
     return {
       pricePerDay,
       days,
+      businessDayStartHour,
       price,
       discountPercent,
       discountReason,
@@ -264,11 +285,14 @@ export class EventBillingService {
     );
 
     const organization = await this.getOrganization(organizationId);
+    const timeZone = organization.settings?.timezone || 'Europe/Berlin';
     /* Die Rechnung braucht vom Ereignis nur den Zeitraum. Eine leere Id
-       schliesst nichts aus, weil es hier noch nichts auszuschliessen gibt. */
+       schliesst nichts aus, weil es hier noch nichts auszuschliessen gibt.
+       Das Formular schickt reine Daten; die gelten als Mitternacht in der
+       Zeitzone der Organisation, wie die gespeicherte Veranstaltung. */
     const entwurf = {
-      startDate: new Date(startDate),
-      endDate: endDate ? new Date(endDate) : new Date(startDate),
+      startDate: parseEventDateInput(startDate, timeZone),
+      endDate: parseEventDateInput(endDate || startDate, timeZone),
     } as Event;
 
     const istErste = !(await this.hasBilledEventBefore(
@@ -288,6 +312,29 @@ export class EventBillingService {
     };
   }
 
+  /**
+   * Fuer eine bezahlte oder bestellte Veranstaltung gilt, was beim
+   * Freischalten berechnet wurde — nicht, was die heutige Regel ergaebe.
+   * Sonst zeigte eine nach Kalendertagen bezahlte Veranstaltung nach dem
+   * Wechsel auf Geschaeftstage ploetzlich weniger Tage als bezahlt.
+   */
+  private withChargedValues(price: EventPrice, event: Event): EventPrice {
+    if (!EVENT_PAID_BILLING_STATUSES.includes(event.billingStatus)) {
+      return price;
+    }
+    const days = event.billedDays ?? price.days;
+    const finalPrice =
+      event.priceCharged !== null && event.priceCharged !== undefined
+        ? Number(event.priceCharged)
+        : price.finalPrice;
+    return {
+      ...price,
+      days,
+      price: Math.round(price.pricePerDay * days * 100) / 100,
+      finalPrice,
+    };
+  }
+
   async getBillingInfo(
     organizationId: string,
     eventId: string,
@@ -301,7 +348,10 @@ export class EventBillingService {
 
     const event = await this.getEventInOrg(organizationId, eventId);
     const organization = await this.getOrganization(organizationId);
-    const price = await this.resolvePrice(organization, event);
+    const price = this.withChargedValues(
+      await this.resolvePrice(organization, event),
+      event,
+    );
 
     return {
       ...price,
@@ -345,7 +395,7 @@ export class EventBillingService {
       });
     }
 
-    const { finalPrice } = await this.resolvePrice(organization, event);
+    const { finalPrice, days } = await this.resolvePrice(organization, event);
 
     organization.billingEmail = dto.billingEmail;
     organization.billingAddress = {
@@ -358,6 +408,7 @@ export class EventBillingService {
     event.billingStatus = 'invoice';
     // Server-side computed — never trust a client-supplied price.
     event.priceCharged = finalPrice;
+    event.billedDays = days;
     await this.eventRepository.save(event);
 
     this.logger.log(
@@ -467,10 +518,12 @@ export class EventBillingService {
 
     const appUrl =
       this.configService.get<string>('APP_URL') || 'http://localhost:3001';
-    const dayLabel =
+    const hour = price.businessDayStartHour;
+    const dayLabel = `${
       price.days === 1
         ? '1 Veranstaltungstag'
-        : `${price.days} Veranstaltungstage`;
+        : `${price.days} Veranstaltungstage`
+    } (${hour} bis ${hour} Uhr)`;
 
     const session = await this.stripeService.createCheckoutSession({
       customerId,
@@ -482,11 +535,20 @@ export class EventBillingService {
       productDescription: dayLabel,
       successUrl: `${appUrl}/events?payment=success&eventId=${event.id}`,
       cancelUrl: `${appUrl}/events?payment=cancelled&eventId=${event.id}`,
-      metadata: { eventId: event.id, organizationId: organization.id },
+      /* Die Tage reisen mit: bezahlt wird spaeter vielleicht erst, wenn die
+         Veranstaltung schon anders liegt, und festgehalten werden soll,
+         wofuer diese Sitzung den Betrag verlangt hat. */
+      metadata: {
+        eventId: event.id,
+        organizationId: organization.id,
+        days: String(price.days),
+      },
       // Derselbe Preis fuer dieselbe Veranstaltung ergibt dieselbe Sitzung.
       // Aendert sich der Preis, weil die Veranstaltung laenger wurde, ist es
       // bewusst eine neue.
-      idempotencyKey: `event-checkout:${event.id}:${price.finalPrice}`,
+      // Die Tage stehen mit im Schluessel, weil sie in der Beschreibung
+      // stehen — gleicher Schluessel mit anderen Angaben lehnt Stripe ab.
+      idempotencyKey: `event-checkout:${event.id}:${price.finalPrice}:${price.days}d`,
     });
 
     event.billingStatus = 'pending';
@@ -542,6 +604,14 @@ export class EventBillingService {
 
     const bezahltAm = new Date();
     const betrag = (session.amount_total ?? 0) / 100;
+    const organization = await this.organizationRepository.findOne({
+      where: { id: event.organizationId },
+    });
+    const tage = this.daysOfCheckout(
+      session.metadata?.days,
+      event,
+      organization,
+    );
 
     /* Bedingtes Update statt Lesen-und-dann-Schreiben: der Webhook und die
        Rueckkehr aus dem Checkout treffen regelmaessig in derselben Sekunde
@@ -558,6 +628,7 @@ export class EventBillingService {
         paidAt: bezahltAm,
         stripeCheckoutSessionId: session.id,
         priceCharged: betrag,
+        billedDays: tage,
       },
     );
 
@@ -570,6 +641,7 @@ export class EventBillingService {
     event.paidAt = bezahltAm;
     event.stripeCheckoutSessionId = session.id;
     event.priceCharged = betrag;
+    event.billedDays = tage;
 
     this.logger.log(
       `Event ${event.id} bezahlt über Stripe (${event.priceCharged})`,
@@ -578,9 +650,6 @@ export class EventBillingService {
     // Best-effort wie beim Rechnungsweg: eine gescheiterte Mail darf eine
     // verbuchte Zahlung nicht zurueckdrehen.
     try {
-      const organization = await this.organizationRepository.findOne({
-        where: { id: event.organizationId },
-      });
       if (organization) {
         await this.notifyAdminOfEventOrdered(
           organization,
@@ -596,6 +665,28 @@ export class EventBillingService {
     }
 
     return event;
+  }
+
+  /**
+   * Fuer welche Tage eine Stripe-Sitzung bezahlt wurde. Neue Sitzungen
+   * tragen die Zahl in den Metadaten. Fehlt sie, stammt die Sitzung von vor
+   * der Umstellung auf Geschaeftstage — ihr Betrag wurde nach Kalendertagen
+   * berechnet, also werden auch die so gezaehlt.
+   */
+  private daysOfCheckout(
+    metadataDays: string | undefined,
+    event: Event,
+    organization: Organization | null,
+  ): number {
+    const fromMetadata = Number(metadataDays);
+    if (Number.isInteger(fromMetadata) && fromMetadata >= 1) {
+      return fromMetadata;
+    }
+    return countCalendarDays(
+      event.startDate,
+      event.endDate,
+      organization?.settings?.timezone || 'Europe/Berlin',
+    );
   }
 
   /**

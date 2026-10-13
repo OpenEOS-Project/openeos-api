@@ -3,10 +3,15 @@
  * Online-Shop an jedem davon geoeffnet ist.
  *
  * Eine Veranstaltung ist ein Bereich aus Kalendertagen — Freitag bis
- * Sonntag sind drei Tage, danach wird abgerechnet. Die Uhrzeiten stecken
- * nicht darin, sondern in den Oeffnungszeiten, und die werden je Tag
- * einzeln gesetzt: freitags 18 bis 22 Uhr, samstags 10 bis 2 Uhr,
- * sonntags 14 bis 18 Uhr.
+ * Sonntag sind drei Tage. Die Uhrzeiten stecken nicht darin, sondern in den
+ * Oeffnungszeiten, und die werden je Tag einzeln gesetzt: freitags 18 bis
+ * 22 Uhr, samstags 10 bis 2 Uhr, sonntags 14 bis 18 Uhr.
+ *
+ * Abgerechnet wird dagegen nach Geschaeftstagen (countBillableDays): ein
+ * Veranstaltungstag laeuft von 6 bis 6 Uhr, eine Nacht bis 2 Uhr zaehlt
+ * also noch zum Vortag. Shop-Tage und Tageslisten bleiben Kalendertage
+ * (countCalendarDays, listEventDayKeys) — dort geht es ums Datum, nicht um
+ * den Preis.
  *
  * Der Fall ueber Mitternacht ergibt sich daraus von selbst. Liegt die
  * Endzeit eines Tages nicht nach seiner Startzeit, laeuft das Fenster in
@@ -172,28 +177,131 @@ function parseHHMM(value: string): { hour: number; minute: number } | null {
   return { hour, minute };
 }
 
+/** Standard-Tageswechsel fuer die Abrechnung: 6 Uhr Ortszeit. */
+export const DEFAULT_BUSINESS_DAY_START_HOUR = 6;
+
 /**
- * Anzahl der Veranstaltungstage — die Groesse, nach der abgerechnet wird.
+ * Den konfigurierten Tageswechsel auf eine brauchbare Stunde bringen.
  *
- * Gezaehlt werden Kalendertage einschliesslich beider Enden: Freitag bis
- * Sonntag sind drei. Immer mindestens einer; ein Ende vor dem Beginn wird
- * als eintaegig gewertet, statt eine negative Rechnung zu erzeugen.
+ * Erlaubt ist 1 bis 23. Null scheidet aus: Veranstaltungen aus dem
+ * Formular liegen auf Mitternacht, und mit einem Tageswechsel um 0 Uhr
+ * fiele ihr Ende (exklusiv) auf den Vortag — Freitag bis Sonntag ergaebe
+ * zwei Tage statt drei. Alles andere faellt auf den Standard zurueck.
  */
-export function countEventDays(
+export function normalizeBusinessDayStartHour(value: unknown): number {
+  const hour = typeof value === 'string' ? Number(value) : value;
+  return typeof hour === 'number' &&
+    Number.isInteger(hour) &&
+    hour >= 1 &&
+    hour <= 23
+    ? hour
+    : DEFAULT_BUSINESS_DAY_START_HOUR;
+}
+
+/**
+ * Geschaeftstag eines Zeitpunkts als Tageszahl: der Kalendertag seiner
+ * Wanduhrzeit, vor dem Tageswechsel der Vortag. Samstag 3 Uhr gehoert so
+ * zum Freitag.
+ *
+ * Gerechnet wird ueber die Wanduhrzeit, nicht ueber eine feste Verschiebung
+ * um sechs Stunden — sonst verrutschte die Grenze in der Nacht der
+ * Zeitumstellung um eine Stunde.
+ */
+function businessDayNumber(
+  date: Date,
+  timeZone: string,
+  dayStartHour: number,
+): number {
+  const wall = toWallClock(date, timeZone);
+  const day = dayNumber(wall);
+  return wall.hour < dayStartHour ? day - 1 : day;
+}
+
+/** Beginn und Ende lesen; ohne (lesbares) Ende endet die Veranstaltung mit ihrem Beginn. */
+function readRange(
+  startDate: Date | string | null | undefined,
+  endDate: Date | string | null | undefined,
+): { start: Date; end: Date } | null {
+  if (!startDate) return null;
+  const start = toDate(startDate);
+  if (Number.isNaN(start.getTime())) return null;
+  const end = endDate ? toDate(endDate) : start;
+  return { start, end: Number.isNaN(end.getTime()) ? start : end };
+}
+
+/**
+ * Anzahl der abgerechneten Veranstaltungstage — die Groesse, nach der die
+ * Freischaltung bezahlt wird.
+ *
+ * Gezaehlt werden Geschaeftstage: ein Tag beginnt um `dayStartHour`
+ * (Standard 6 Uhr) Ortszeit der Organisation und endet um dieselbe Uhrzeit
+ * am Folgetag. Samstag 20 Uhr bis Sonntag 2 Uhr ist damit ein Tag, Freitag
+ * 17 Uhr bis Sonntag 18 Uhr bleiben drei.
+ *
+ * Ein Beginn vor dem Tageswechsel gehoert zum Vortag. Das Ende ist
+ * exklusiv, wie bei den Shop-Fenstern: wer um genau 6 Uhr aufhoert, hat vom
+ * naechsten Geschaeftstag keine Minute genutzt, also zaehlt das Ende bis
+ * einschliesslich 6:00 zum Vortag. Erst 6:01 beginnt einen neuen Tag.
+ *
+ * Das Formular schickt reine Daten als Mitternacht. Beginn und Ende
+ * rutschen dann beide auf den Vortag, die Zahl bleibt die der
+ * Kalendertage — Freitag bis Sonntag sind weiterhin drei.
+ *
+ * Immer mindestens einer; ein Ende vor dem Beginn wird als eintaegig
+ * gewertet, statt eine negative Rechnung zu erzeugen.
+ */
+export function countBillableDays(
+  startDate: Date | string | null | undefined,
+  endDate: Date | string | null | undefined,
+  timeZone: string,
+  dayStartHour: number = DEFAULT_BUSINESS_DAY_START_HOUR,
+): number {
+  const range = readRange(startDate, endDate);
+  if (!range || range.end.getTime() <= range.start.getTime()) return 1;
+  const hour = normalizeBusinessDayStartHour(dayStartHour);
+
+  const firstDay = businessDayNumber(range.start, timeZone, hour);
+  // Eine Millisekunde vor dem Ende: das Ende selbst gehoert nicht mehr dazu.
+  const lastDay = businessDayNumber(
+    new Date(range.end.getTime() - 1),
+    timeZone,
+    hour,
+  );
+  return Math.max(1, lastDay - firstDay + 1);
+}
+
+/**
+ * Anzahl der Kalendertage einschliesslich beider Enden: Freitag bis
+ * Sonntag sind drei, egal zu welcher Uhrzeit. Das ist die Tagesliste des
+ * Shops und des Formulars — und die Regel, nach der vor der Umstellung auf
+ * Geschaeftstage abgerechnet wurde.
+ *
+ * Immer mindestens einer; ein Ende vor dem Beginn ergibt einen Tag.
+ */
+export function countCalendarDays(
   startDate: Date | string | null | undefined,
   endDate: Date | string | null | undefined,
   timeZone: string,
 ): number {
-  if (!startDate) return 1;
-  const start = toDate(startDate);
-  if (Number.isNaN(start.getTime())) return 1;
-  const end = endDate ? toDate(endDate) : start;
-  const effectiveEnd = Number.isNaN(end.getTime()) ? start : end;
+  const range = readRange(startDate, endDate);
+  if (!range) return 1;
 
-  const firstDay = dayNumber(toWallClock(start, timeZone));
-  const lastDay = dayNumber(toWallClock(effectiveEnd, timeZone));
+  const firstDay = dayNumber(toWallClock(range.start, timeZone));
+  const lastDay = dayNumber(toWallClock(range.end, timeZone));
   if (lastDay <= firstDay) return 1;
   return lastDay - firstDay + 1;
+}
+
+/**
+ * Datum aus einer Anfrage lesen. Ein reines 'YYYY-MM-DD' ist Mitternacht in
+ * der Zeitzone der Organisation — `new Date('2026-10-17')` waere
+ * Mitternacht UTC und laege je nach Zone auf einer anderen Uhrzeit, im
+ * ungluecklichen Fall genau auf dem Tageswechsel.
+ */
+export function parseEventDateInput(value: string, timeZone: string): Date {
+  const day = dateKeyToDayNumber(value);
+  if (day === null) return new Date(value);
+  return fromWallClock(dayToWallClock(day, 0, 0), timeZone);
 }
 
 /** Die Kalendertage einer Veranstaltung als 'YYYY-MM-DD', der Reihe nach. */
@@ -206,7 +314,7 @@ export function listEventDayKeys(
   const start = toDate(startDate);
   if (Number.isNaN(start.getTime())) return [];
 
-  const days = countEventDays(startDate, endDate, timeZone);
+  const days = countCalendarDays(startDate, endDate, timeZone);
   const firstDay = dayNumber(toWallClock(start, timeZone));
   const pad = (n: number) => String(n).padStart(2, '0');
 

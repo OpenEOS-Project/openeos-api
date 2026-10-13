@@ -433,6 +433,8 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `CORS_ORIGINS` | Erlaubte Origins | http://localhost:3001 |
 | `TRUST_PROXY` | Vertrauenswürdige Reverse-Proxys für X-Forwarded-For (Hop-Anzahl, IPs/CIDRs oder `false`) | loopback, linklocal, uniquelocal |
 | `UPLOAD_DIR` | Upload-Verzeichnis | ./uploads |
+| `EVENT_PRICE_EUR` | Preis pro abgerechnetem Veranstaltungstag | 25 |
+| `BUSINESS_DAY_START_HOUR` | Tageswechsel der Abrechnung (Stunde 1–23, Ortszeit der Organisation). Ein Veranstaltungstag läuft von 6 bis 6 Uhr; ein Ende bis einschließlich 6:00 zählt zum Vortag (Sa 20 Uhr – So 2 Uhr = 1 Tag). Bereits bezahlte Veranstaltungen behalten ihre Tage. | 6 |
 
 Siehe `.env.example` für alle verfügbaren Variablen.
 
