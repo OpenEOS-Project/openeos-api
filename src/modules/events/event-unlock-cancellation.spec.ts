@@ -18,10 +18,15 @@ import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { EventBillingService } from './event-billing.service';
+import { BillingAuditService } from './billing-audit.service';
 import {
   EventUnlockCancellationService,
   cancellationDeadline,
 } from './event-unlock-cancellation.service';
+
+/** expect.objectContaining ohne `any` — fuer verschachtelte Erwartungen. */
+const containing = (expected: object): unknown =>
+  expect.objectContaining(expected);
 
 const ORG = '00000000-0000-4000-8000-000000000001';
 const EVENT_ID = '00000000-0000-4000-8000-0000000000e1';
@@ -153,6 +158,7 @@ describe('EventUnlockCancellationService', () => {
       creditNoteError?: Error;
       refundError?: Error;
       refundStatus?: string;
+      history?: EventBillingCancellation[];
     } = {},
   ) {
     const event = options.event ?? paidEvent();
@@ -172,6 +178,7 @@ describe('EventUnlockCancellationService', () => {
       count: jest.fn().mockResolvedValue(options.realOrders ?? 0),
     };
     const cancellationTx = {
+      find: jest.fn().mockResolvedValue(options.history ?? []),
       findOne: jest
         .fn()
         .mockResolvedValue(options.previousCancellation ?? null),
@@ -206,6 +213,7 @@ describe('EventUnlockCancellationService', () => {
     let committed = false;
     const eventRepository = {
       manager: {
+        getRepository: jest.fn(() => orgTx),
         transaction: jest.fn(
           async (work: (m: EntityManager) => Promise<unknown>) => {
             const result = await work(manager);
@@ -222,6 +230,7 @@ describe('EventUnlockCancellationService', () => {
       count: jest.fn().mockResolvedValue(options.realOrders ?? 0),
     } as unknown as Repository<Order>;
     const cancellationRepository = {
+      find: jest.fn().mockResolvedValue(options.history ?? []),
       findOne: jest.fn(),
       save: jest.fn((r: EventBillingCancellation) => Promise.resolve(r)),
       count: jest.fn().mockResolvedValue(0),
@@ -269,6 +278,7 @@ describe('EventUnlockCancellationService', () => {
 
     const email = {
       sendEventUnlockCancelledEmail: jest.fn().mockResolvedValue(true),
+      sendEventGoodwillRefundEmail: jest.fn().mockResolvedValue(true),
       sendAdminEventUnlockCancelledNotification: jest
         .fn()
         .mockResolvedValue(true),
@@ -278,6 +288,7 @@ describe('EventUnlockCancellationService', () => {
       resolveNotificationTarget: jest.fn().mockResolvedValue('ops@openeos.de'),
     };
     const gateway = { notifyEventStatusChanged: jest.fn() };
+    const audit = { record: jest.fn().mockResolvedValue(undefined) };
     const organizations = { checkRole: jest.fn().mockResolvedValue({}) };
 
     const service = new EventUnlockCancellationService(
@@ -289,6 +300,7 @@ describe('EventUnlockCancellationService', () => {
       email as unknown as EmailService,
       platformSettings as unknown as PlatformSettingsService,
       gateway as unknown as GatewayService,
+      audit as unknown as BillingAuditService,
     );
 
     return {
@@ -299,6 +311,7 @@ describe('EventUnlockCancellationService', () => {
       stripe,
       email,
       gateway,
+      audit,
       organizations,
       orderTx,
       eventTx,
@@ -344,6 +357,7 @@ describe('EventUnlockCancellationService', () => {
       await service.cancelForPlatform(
         EVENT_ID,
         admin,
+        { reason: 'Unwetter' },
         new Date('2026-09-10T10:00:00.000Z'),
       );
       expect(saved[0]).toMatchObject({
@@ -641,6 +655,287 @@ describe('EventUnlockCancellationService', () => {
     });
   });
 
+  describe('platform: cancellation and goodwill (Kulanz)', () => {
+    const AFTER_DEADLINE = new Date('2026-09-12T10:00:00.000Z');
+    const auditActor = {
+      userId: admin.id,
+      ipAddress: '203.0.113.7',
+      userAgent: 'jest',
+    };
+
+    it('requires a reason', async () => {
+      const { service, stripe } = setup();
+      await expect(
+        service.cancelForPlatform(EVENT_ID, admin, { reason: '  ' }),
+      ).rejects.toMatchObject({
+        response: { reason: 'REFUND_REASON_REQUIRED' },
+      });
+      expect(stripe.createCreditNoteWithRefund).not.toHaveBeenCalled();
+    });
+
+    it('with real orders: refunds via credit note, keeps unlock, status and orders', async () => {
+      const { service, event, saved, stripe, email, audit, gateway, log } =
+        setup({ realOrders: 12 });
+
+      const result = await service.cancelForPlatform(
+        EVENT_ID,
+        admin,
+        { reason: 'Kasse fiel aus', audit: auditActor },
+        AFTER_DEADLINE,
+      );
+
+      expect(stripe.createCreditNoteWithRefund).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invoiceId: 'in_1',
+          amountInCents: 4000,
+          memo: 'Kulanzerstattung · Sommerfest',
+          idempotencyKey: `event-unlock-cancel:${EVENT_ID}:cs_paid:goodwill:1:4000:credit-note`,
+        }),
+      );
+      expect(saved[0]).toMatchObject({
+        kind: 'goodwill',
+        reason: 'Kasse fiel aus',
+        amount: 40,
+        initiatedBy: 'platform',
+        creditNoteNumber: 'ABCD-0001-CN-01',
+      });
+      expect(result.kind).toBe('goodwill');
+      // Veranstaltung unveraendert: freigeschaltet und aktiv.
+      expect(log).not.toContain('save-event:none:test');
+      expect(event).toMatchObject({
+        billingStatus: 'paid',
+        status: EventStatus.ACTIVE,
+        priceCharged: 40,
+        stripeCheckoutSessionId: 'cs_paid',
+      });
+      expect(gateway.notifyEventStatusChanged).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'event_billing_goodwill_refund',
+          reason: 'Kasse fiel aus',
+          actor: auditActor,
+          details: containing({
+            amount: 40,
+            realOrders: 12,
+            keepsUnlock: true,
+          }),
+        }),
+      );
+      expect(email.sendEventGoodwillRefundEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ to: 'kasse@example.org', amount: 40 }),
+      );
+      expect(email.sendEventUnlockCancelledEmail).not.toHaveBeenCalled();
+      expect(
+        email.sendAdminEventUnlockCancelledNotification,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'goodwill', reason: 'Kasse fiel aus' }),
+      );
+    });
+
+    it('partial amount: credit note over the part only, unlock stays', async () => {
+      const { service, event, saved, stripe } = setup();
+
+      await service.cancelForPlatform(
+        EVENT_ID,
+        admin,
+        { reason: 'Nur ein Tag genutzt', amount: 15.5 },
+        AFTER_DEADLINE,
+      );
+
+      expect(stripe.createCreditNoteWithRefund).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amountInCents: 1550,
+          idempotencyKey: `event-unlock-cancel:${EVENT_ID}:cs_paid:goodwill:1:1550:credit-note`,
+        }),
+      );
+      expect(saved[0]).toMatchObject({ kind: 'goodwill', amount: 15.5 });
+      expect(event.billingStatus).toBe('paid');
+    });
+
+    it('partial amount without invoice: refunds that amount of the payment', async () => {
+      const { service, stripe } = setup({ session: { invoice: null } });
+      await service.cancelForPlatform(
+        EVENT_ID,
+        admin,
+        { reason: 'Kulanz', amount: 10 },
+        AFTER_DEADLINE,
+      );
+      expect(stripe.createRefund).toHaveBeenCalledWith(
+        expect.objectContaining({
+          paymentIntentId: 'pi_1',
+          amountInCents: 1000,
+        }),
+      );
+    });
+
+    it('full amount without orders: a real cancellation (test mode), after the deadline', async () => {
+      const { service, event, saved, audit } = setup();
+      await service.cancelForPlatform(
+        EVENT_ID,
+        admin,
+        { reason: 'Veranstaltung abgesagt', audit: auditActor },
+        AFTER_DEADLINE,
+      );
+      expect(saved[0]).toMatchObject({
+        kind: 'cancellation',
+        reason: 'Veranstaltung abgesagt',
+        deadline: null,
+      });
+      expect(event).toMatchObject({
+        billingStatus: 'none',
+        status: EventStatus.TEST,
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'event_billing_cancelled' }),
+      );
+    });
+
+    it('caps the amount at what is still refundable (earlier goodwill counted)', async () => {
+      const earlier = {
+        kind: 'goodwill',
+        amount: 30,
+        cancelledBy: 'someone-else',
+        createdAt: new Date('2026-09-01T10:00:00.000Z'),
+      } as unknown as EventBillingCancellation;
+      const { service, stripe } = setup({ history: [earlier] });
+
+      await expect(
+        service.cancelForPlatform(
+          EVENT_ID,
+          admin,
+          { reason: 'noch mehr', amount: 15 },
+          AFTER_DEADLINE,
+        ),
+      ).rejects.toMatchObject({
+        response: {
+          reason: 'REFUND_EXCEEDS_REFUNDABLE',
+          params: { max: '10.00' },
+        },
+      });
+      expect(stripe.createCreditNoteWithRefund).not.toHaveBeenCalled();
+    });
+
+    it('refunds the rest with a distinct key after an earlier goodwill refund', async () => {
+      const earlier = {
+        kind: 'goodwill',
+        amount: 30,
+        cancelledBy: 'someone-else',
+        createdAt: new Date('2026-09-01T10:00:00.000Z'),
+      } as unknown as EventBillingCancellation;
+      const { service, stripe, saved, event } = setup({
+        history: [earlier],
+        realOrders: 2,
+      });
+      await service.cancelForPlatform(
+        EVENT_ID,
+        admin,
+        { reason: 'Rest' },
+        AFTER_DEADLINE,
+      );
+      expect(stripe.createCreditNoteWithRefund).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amountInCents: 1000,
+          idempotencyKey: `event-unlock-cancel:${EVENT_ID}:cs_paid:goodwill:2:1000:credit-note`,
+        }),
+      );
+      expect(saved[0]).toMatchObject({ kind: 'goodwill', amount: 10 });
+      expect(event.billingStatus).toBe('paid');
+    });
+
+    it('rejects zero', async () => {
+      const { service } = setup();
+      await expect(
+        service.cancelForPlatform(
+          EVENT_ID,
+          admin,
+          { reason: 'x', amount: 0 },
+          AFTER_DEADLINE,
+        ),
+      ).rejects.toMatchObject({
+        response: { reason: 'REFUND_AMOUNT_INVALID' },
+      });
+    });
+
+    it('a double submit returns the first goodwill refund instead of refunding twice', async () => {
+      const first = {
+        id: 'cancel-0',
+        kind: 'goodwill',
+        amount: 15,
+        cancelledBy: admin.id,
+        createdAt: new Date(AFTER_DEADLINE.getTime() - 20 * 1000),
+      } as unknown as EventBillingCancellation;
+      const { service, stripe } = setup({ history: [first] });
+      const result = await service.cancelForPlatform(
+        EVENT_ID,
+        admin,
+        { reason: 'x', amount: 15 },
+        AFTER_DEADLINE,
+      );
+      expect(result.id).toBe('cancel-0');
+      expect(stripe.createCreditNoteWithRefund).not.toHaveBeenCalled();
+    });
+
+    it('invoice order with orders: goodwill, operator has to issue the credit note', async () => {
+      const { service, saved, event, stripe, email } = setup({
+        realOrders: 4,
+        event: paidEvent({
+          billingStatus: 'invoice',
+          stripeCheckoutSessionId: null,
+          invoicedAt: new Date('2026-08-02T10:00:00.000Z'),
+        }),
+      });
+      await service.cancelForPlatform(
+        EVENT_ID,
+        admin,
+        { reason: 'Kulanz', amount: 20 },
+        AFTER_DEADLINE,
+      );
+      expect(stripe.createCreditNoteWithRefund).not.toHaveBeenCalled();
+      expect(stripe.createRefund).not.toHaveBeenCalled();
+      expect(saved[0]).toMatchObject({
+        kind: 'goodwill',
+        amount: 20,
+        manualCreditNoteRequired: true,
+      });
+      expect(event.billingStatus).toBe('invoice');
+      expect(email.sendEventGoodwillRefundEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ via: 'invoice', amount: 20 }),
+      );
+    });
+
+    it('preview: charged, refunded so far, refundable, real orders, deadline', async () => {
+      const earlier = {
+        kind: 'goodwill',
+        amount: 12.5,
+      } as unknown as EventBillingCancellation;
+      const { service } = setup({ history: [earlier], realOrders: 7 });
+      await expect(
+        service.platformPreview(EVENT_ID, AFTER_DEADLINE),
+      ).resolves.toEqual({
+        eventId: EVENT_ID,
+        billingStatus: 'paid',
+        via: 'stripe',
+        currency: 'EUR',
+        amountCharged: 40,
+        refundedSoFar: 12.5,
+        refundable: 27.5,
+        realOrders: 7,
+        deadline: '2026-09-04T15:00:00.000Z',
+        timezone: BERLIN,
+        deadlinePassed: true,
+        invoiced: false,
+        onlineRefundAvailable: true,
+      });
+    });
+
+    it('the organization still cannot cancel with real orders', async () => {
+      const { service } = setup({ realOrders: 1 });
+      await expect(
+        service.cancelForOrganization(ORG, EVENT_ID, admin, IN_TIME),
+      ).rejects.toMatchObject({ response: { reason: 'EVENT_HAS_ORDERS' } });
+    });
+  });
+
   describe('refund webhook', () => {
     it('records the new status and alerts the operator when a refund fails', async () => {
       const { service, cancellationRepository, email } = setup();
@@ -720,6 +1015,7 @@ describe('starter bonus after a cancellation', () => {
         get: (key: string, fallback?: unknown) => config[key] ?? fallback,
       } as unknown as ConfigService,
       {} as EventUnlockCancellationService,
+      {} as BillingAuditService,
     );
   }
 
@@ -788,6 +1084,7 @@ describe('settling a checkout after its cancellation', () => {
       {
         wasCheckoutCancelled: jest.fn().mockResolvedValue(true),
       } as unknown as EventUnlockCancellationService,
+      {} as BillingAuditService,
     );
 
     const result = await service.settleStripePayment('cs_paid');

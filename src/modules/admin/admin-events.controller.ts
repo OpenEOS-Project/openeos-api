@@ -9,10 +9,16 @@ import {
   Query,
   UseGuards,
   ParseUUIDPipe,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminEventsService } from './admin-events.service';
-import { QueryAdminEventsDto, MarkInvoicedDto } from './dto/admin-events.dto';
+import {
+  QueryAdminEventsDto,
+  MarkInvoicedDto,
+  PlatformCancelBillingDto,
+} from './dto/admin-events.dto';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../database/entities';
@@ -72,18 +78,42 @@ export class AdminEventsController {
   }
 
   /**
-   * Freischaltung stornieren, auch nach Ablauf der 7-Tage-Frist. Erstattung
-   * und Stornorechnung wie beim Storno durch die Organisation; echte
-   * Bestellungen verhindern ihn auch hier.
+   * Was ein Storno bzw. eine Kulanzerstattung gerade bewirken wuerde:
+   * Betrag, schon Erstattetes, echte Bestellungen, Frist.
+   */
+  @Get(':id/cancel-billing')
+  async cancelBillingPreview(@Param('id', ParseUUIDPipe) id: string) {
+    return { data: await this.cancellationService.platformPreview(id) };
+  }
+
+  /**
+   * Freischaltung stornieren oder per Kulanz (teil-)erstatten — ohne Frist
+   * und auch bei echten Bestellungen; Grund ist Pflicht. Mit Bestellungen
+   * oder bei einem Teilbetrag bleibt die Freischaltung bestehen (siehe
+   * EventUnlockCancellationService.cancelForPlatform).
    */
   @Post(':id/cancel-billing')
   async cancelBilling(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PlatformCancelBillingDto,
     @CurrentUser() user: User,
+    @Req() req: Request,
   ) {
     const cancellation = await this.cancellationService.cancelForPlatform(
       id,
       user,
+      {
+        reason: dto.reason,
+        amount: dto.amount ?? null,
+        audit: {
+          userId: user.id,
+          ipAddress:
+            (req as { ip?: string }).ip ||
+            req.socket?.remoteAddress ||
+            '0.0.0.0',
+          userAgent: req.headers['user-agent'] ?? null,
+        },
+      },
     );
     return { data: toCancellationSummary(cancellation) };
   }

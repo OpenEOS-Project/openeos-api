@@ -442,6 +442,24 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 
 Siehe `.env.example` für alle verfügbaren Variablen.
 
+### Stripe-Webhook (SaaS)
+
+Endpunkt im Stripe-Dashboard: `<API_URL>/api/public/stripe/webhook`, Signaturgeheimnis
+in `STRIPE_WEBHOOK_SECRET`. Abonniert sein müssen genau diese Ereignisse
+(`STRIPE_WEBHOOK_EVENTS` in `src/modules/events/stripe-webhook.controller.ts`):
+
+| Ereignis | Wirkung |
+|----------|---------|
+| `checkout.session.completed` | Zahlung verbuchen, Veranstaltung freischalten (Karte sofort; Lastschrift erst mit dem nächsten Ereignis) |
+| `checkout.session.async_payment_succeeded` | Lastschrift eingegangen → freischalten |
+| `checkout.session.async_payment_failed` | Lastschrift geplatzt → zurück auf „nicht freigeschaltet“, Mail an die Organisation |
+| `checkout.session.expired` | Zahlungsseite abgelaufen → zurück auf „nicht freigeschaltet“, Mail an die Organisation |
+| `refund.updated`, `refund.failed` | Stand der Erstattung nach Storno/Kulanz; gescheitert → Mail an den Betreiber |
+| `charge.dispute.created`, `charge.dispute.closed` | Rückbuchung → Mail an den Betreiber und Admin-Protokoll, keine Sperre |
+
+Ein stündlicher Job gleicht zusätzlich alle Veranstaltungen im Zustand „Zahlung läuft“
+mit Stripe ab (verlorene Webhooks, Altfälle) — siehe `EventCheckoutLifecycleService`.
+
 ## Docker
 
 ```bash

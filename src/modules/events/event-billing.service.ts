@@ -31,6 +31,8 @@ import { StripeService } from '../stripe/stripe.service';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { OrderInvoiceDto } from './dto/event-billing.dto';
+import { BillingAuditService } from './billing-audit.service';
+import { AdminAction } from '../../database/entities/admin-audit-log.entity';
 import {
   CancellationInfo,
   CancellationSummary,
@@ -135,6 +137,7 @@ export class EventBillingService {
     private readonly stripeService: StripeService,
     private readonly configService: ConfigService,
     private readonly cancellationService: EventUnlockCancellationService,
+    private readonly billingAudit: BillingAuditService,
   ) {}
 
   private async getOrganization(organizationId: string): Promise<Organization> {
@@ -634,6 +637,13 @@ export class EventBillingService {
     }
 
     if (isEventBillingUnlocked(event.billingStatus)) {
+      if (event.stripeCheckoutSessionId !== session.id) {
+        /* Bezahlt, aber die Veranstaltung war schon ueber einen anderen Weg
+           freigeschaltet (zweite Zahlungsseite, auf Rechnung, erlassen).
+           Das Geld ist da und gehoert zurueck — das kann nur der Betreiber
+           entscheiden. */
+        await this.alertUnassignedPayment(event, session);
+      }
       return event;
     }
 
@@ -683,6 +693,25 @@ export class EventBillingService {
       return this.eventRepository.findOne({ where: { id: event.id } });
     }
 
+    /* Spaet eingegangene Zahlung (z. B. Lastschrift einer frueheren
+       Zahlungsseite), waehrend schon eine neue Zahlungsseite offen war:
+       die neue schliessen, damit niemand ein zweites Mal bezahlt. */
+    const andereSitzung =
+      event.billingStatus === 'pending' &&
+      event.stripeCheckoutSessionId &&
+      event.stripeCheckoutSessionId !== session.id
+        ? event.stripeCheckoutSessionId
+        : null;
+    if (andereSitzung) {
+      try {
+        await this.stripeService.expireCheckoutSession(andereSitzung);
+      } catch (error) {
+        this.logger.warn(
+          `Offene Zahlungsseite ${andereSitzung} nicht geschlossen: ${(error as Error).message}`,
+        );
+      }
+    }
+
     event.billingStatus = 'paid';
     event.paidAt = bezahltAm;
     event.stripeCheckoutSessionId = session.id;
@@ -712,6 +741,79 @@ export class EventBillingService {
     }
 
     return event;
+  }
+
+  /**
+   * Eine bezahlte Checkout-Sitzung, die keine Freischaltung (mehr) bewirkt:
+   * Protokoll und Mail an den Betreiber, einmal je Sitzung.
+   */
+  private async alertUnassignedPayment(
+    event: Event,
+    session: {
+      id: string;
+      amount_total: number | null;
+      currency: string | null;
+    },
+  ): Promise<void> {
+    try {
+      if (
+        await this.billingAudit.hasEntryWithDetail(
+          AdminAction.EVENT_DUPLICATE_PAYMENT,
+          'sessionId',
+          session.id,
+        )
+      ) {
+        return;
+      }
+      const betrag = (session.amount_total ?? 0) / 100;
+      this.logger.error(
+        `Zahlung ${session.id} (${betrag}) für Event ${event.id} ohne Wirkung — Event ist bereits ${event.billingStatus}`,
+      );
+      await this.billingAudit.record({
+        action: AdminAction.EVENT_DUPLICATE_PAYMENT,
+        organizationId: event.organizationId,
+        eventId: event.id,
+        details: {
+          sessionId: session.id,
+          amount: betrag,
+          currency: (session.currency ?? 'eur').toUpperCase(),
+          billingStatus: event.billingStatus,
+          activeSessionId: event.stripeCheckoutSessionId,
+        },
+      });
+      const to = await this.platformSettingsService.resolvePlatformAdminEmail();
+      if (!to) return;
+      const organization = await this.organizationRepository.findOne({
+        where: { id: event.organizationId },
+      });
+      await this.emailService.sendAdminBillingAlert({
+        to,
+        subject: 'Zahlung ohne Freischaltung eingegangen',
+        intro:
+          'Über Stripe ist eine Zahlung für eine Veranstaltung eingegangen, die bereits freigeschaltet war. Die Zahlung schaltet nichts frei.',
+        rows: [
+          ['Organisation', organization?.name ?? event.organizationId],
+          ['Veranstaltung', event.name],
+          [
+            'Betrag',
+            new Intl.NumberFormat('de-DE', {
+              style: 'currency',
+              currency: (session.currency ?? 'eur').toUpperCase(),
+            }).format(betrag),
+          ],
+          ['Status', event.billingStatus],
+          ['Checkout-Sitzung', session.id],
+        ],
+        todo: {
+          title: 'Bitte prüfen und erstatten',
+          text: 'Die doppelte Zahlung im Stripe-Dashboard erstatten und die Organisation informieren.',
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Hinweis auf Zahlung ohne Freischaltung nicht gesendet: ${(error as Error).message}`,
+      );
+    }
   }
 
   /**

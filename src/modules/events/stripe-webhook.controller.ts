@@ -13,8 +13,26 @@ import type { Request } from 'express';
 import { Public } from '../../common/decorators/public.decorator';
 import { EventBillingService } from './event-billing.service';
 import { EventUnlockCancellationService } from './event-unlock-cancellation.service';
+import { EventCheckoutLifecycleService } from './event-checkout-lifecycle.service';
+import { StripeDisputeService } from './stripe-dispute.service';
 import { StripeService } from '../stripe/stripe.service';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
+
+/**
+ * Stripe-Ereignisse, die dieser Endpunkt verarbeitet. Genau diese muessen
+ * im Stripe-Dashboard am Webhook-Endpunkt abonniert sein (siehe
+ * .env.example); alles andere wird quittiert und ignoriert.
+ */
+export const STRIPE_WEBHOOK_EVENTS = [
+  'checkout.session.completed',
+  'checkout.session.async_payment_succeeded',
+  'checkout.session.async_payment_failed',
+  'checkout.session.expired',
+  'refund.updated',
+  'refund.failed',
+  'charge.dispute.created',
+  'charge.dispute.closed',
+] as const;
 
 /**
  * Stripes Rueckmeldung zu bezahlten Freischaltungen.
@@ -37,6 +55,8 @@ export class StripeWebhookController {
     private readonly stripeService: StripeService,
     private readonly eventBillingService: EventBillingService,
     private readonly cancellationService: EventUnlockCancellationService,
+    private readonly checkoutLifecycle: EventCheckoutLifecycleService,
+    private readonly disputeService: StripeDisputeService,
   ) {}
 
   @Post('webhook')
@@ -73,23 +93,52 @@ export class StripeWebhookController {
       });
     }
 
-    if (
-      event.type === 'checkout.session.completed' ||
+    switch (event.type) {
+      case 'checkout.session.completed':
       /* Lastschrift: beim Abschluss des Checkouts ist noch nichts bezahlt
          (payment_status 'unpaid'); Stripe meldet den Eingang Tage spaeter
          mit diesem Ereignis. */
-      event.type === 'checkout.session.async_payment_succeeded'
-    ) {
-      const session = event.data.object;
-      await this.eventBillingService.settleStripePayment(session.id);
-    } else if (
-      event.type === 'refund.updated' ||
-      event.type === 'refund.failed'
-    ) {
-      // Stand der Erstattung nach einem Storno (Lastschrift dauert Tage).
-      await this.cancellationService.handleRefundUpdate(event.data.object);
-    } else {
-      this.logger.debug(`Stripe-Webhook ${event.type} ignoriert`);
+      // falls through
+      case 'checkout.session.async_payment_succeeded':
+        await this.eventBillingService.settleStripePayment(
+          event.data.object.id,
+        );
+        break;
+      case 'checkout.session.expired':
+        // Zahlungsseite abgelaufen, ohne dass bezahlt wurde.
+        await this.checkoutLifecycle.handleCheckoutExpired(
+          event.data.object,
+          event.id,
+        );
+        break;
+      case 'checkout.session.async_payment_failed':
+        // Lastschrift nicht eingeloest.
+        await this.checkoutLifecycle.handleAsyncPaymentFailed(
+          event.data.object,
+          event.id,
+        );
+        break;
+      case 'refund.updated':
+      case 'refund.failed':
+        // Stand der Erstattung nach einem Storno (Lastschrift dauert Tage).
+        await this.cancellationService.handleRefundUpdate(event.data.object);
+        break;
+      case 'charge.dispute.created':
+        await this.disputeService.handleDispute(
+          event.data.object,
+          'created',
+          event.id,
+        );
+        break;
+      case 'charge.dispute.closed':
+        await this.disputeService.handleDispute(
+          event.data.object,
+          'closed',
+          event.id,
+        );
+        break;
+      default:
+        this.logger.debug(`Stripe-Webhook ${event.type} ignoriert`);
     }
 
     // Stripe wiederholt alles, was nicht mit 2xx quittiert wird. Ein
