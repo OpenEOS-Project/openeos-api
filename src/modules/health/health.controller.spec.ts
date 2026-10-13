@@ -104,3 +104,23 @@ describe('HealthController readiness', () => {
     }
   });
 });
+
+describe('HealthController rate limiting', () => {
+  // Metadaten haengen am Handler; nur gelesen, nie aufgerufen.
+  const skipped = (name: keyof HealthController) =>
+    Reflect.getMetadata(
+      'THROTTLER:SKIPdefault',
+      Object.getOwnPropertyDescriptor(HealthController.prototype, name)!
+        .value as object,
+    ) === true;
+
+  it('does not rate-limit the liveness checks', () => {
+    expect(skipped('check')).toBe(true);
+    expect(skipped('liveness')).toBe(true);
+  });
+
+  it('keeps the rate limit on checks that touch database and Redis', () => {
+    expect(skipped('readiness')).toBe(false);
+    expect(skipped('detailed')).toBe(false);
+  });
+});
