@@ -1,11 +1,11 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { CacheModule } from '@nestjs/cache-manager';
 import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD, APP_FILTER } from '@nestjs/core';
-import { redisStore } from 'cache-manager-redis-yet';
+import { createKeyv } from '@keyv/redis';
 import { SentryModule, SentryGlobalFilter } from '@sentry/nestjs/setup';
 
 import {
@@ -18,6 +18,8 @@ import {
 import type { PoolOptions } from './config/database.config';
 import { JwtAuthGuard, DeploymentModeGuard } from './common/guards';
 import { CommonModule } from './common/common.module';
+import { RedisModule } from './common/redis/redis.module';
+import { redisUrl } from './common/redis/redis.constants';
 import { AuthModule } from './modules/auth';
 import { ApiTokensModule } from './modules/api-tokens/api-tokens.module';
 import { MonitoringModule } from './modules/monitoring/monitoring.module';
@@ -55,6 +57,7 @@ import { PlatformSettingsModule } from './modules/platform-settings';
 import { SupportModule } from './modules/support';
 import { ContactModule } from './modules/contact';
 import { ChangelogModule } from './modules/changelog';
+import { DeployGuardModule } from './modules/deploy-guard/deploy-guard.module';
 
 @Module({
   imports: [
@@ -100,19 +103,40 @@ import { ChangelogModule } from './modules/changelog';
       inject: [ConfigService],
     }),
 
-    // Redis Cache
+    // Redis: gemeinsame Verbindung fuer Readiness und Cron-Sperre (global)
+    RedisModule,
+
+    // Redis Cache — shared by all API instances. Revoked access tokens live
+    // here (auth.service / jwt.strategy): with an in-process cache a logout
+    // would only count on the instance that handled it.
+    //
+    // `stores` (cache-manager 7 / Keyv). The former `store: redisStore(...)`
+    // was the cache-manager 5 option; @nestjs/cache-manager 3 ignored it and
+    // silently fell back to memory.
     CacheModule.registerAsync({
       isGlobal: true,
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        store: await redisStore({
-          socket: {
-            host: configService.get<string>('redis.host'),
-            port: configService.get<number>('redis.port'),
-          },
-        }),
-        ttl: 60 * 1000, // 1 minute default TTL
-      }),
+      useFactory: (configService: ConfigService) => {
+        const store = createKeyv(
+          redisUrl(
+            configService.get<string>('redis.host') || 'localhost',
+            configService.get<number>('redis.port') || 6379,
+            process.env.REDIS_PASSWORD || undefined,
+          ),
+        );
+        // Ohne Zuhoerer wuerde ein Verbindungsfehler als unbehandeltes
+        // 'error'-Ereignis den Prozess beenden.
+        const logger = new Logger('CacheRedis');
+        store.on('error', (err: unknown) =>
+          logger.warn(
+            `Cache store: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+        return {
+          stores: [store],
+          ttl: 60 * 1000, // 1 minute default TTL
+        };
+      },
       inject: [ConfigService],
     }),
 
@@ -166,6 +190,7 @@ import { ChangelogModule } from './modules/changelog';
     PlatformSettingsModule,
     SupportModule,
     ContactModule,
+    DeployGuardModule,
   ],
   controllers: [],
   providers: [

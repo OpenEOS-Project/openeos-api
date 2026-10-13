@@ -31,6 +31,12 @@ async function bootstrap() {
   });
   const configService = app.get(ConfigService);
 
+  // SIGTERM/SIGINT run the shutdown hooks: ShutdownService marks the
+  // instance as draining, websockets close (clients reconnect to another
+  // instance), open requests finish (at most SHUTDOWN_TIMEOUT_MS, 20 s),
+  // then database and Redis disconnect. See common/lifecycle.
+  app.enableShutdownHooks();
+
   // Behind a reverse proxy (Traefik) the socket address is the proxy's.
   // `trust proxy` makes req.ip the client address taken from
   // X-Forwarded-For — but only from proxies we trust, so clients can not
