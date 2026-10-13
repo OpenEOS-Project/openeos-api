@@ -406,3 +406,21 @@ export function isWithinShopWindows(
     return at >= from && at < until;
   });
 }
+
+/**
+ * Denselben Zeitpunkt um `days` Kalendertage verschieben — gleiche
+ * Wanduhrzeit in der Zeitzone, auch ueber eine Zeitumstellung hinweg.
+ * Freitag 17 Uhr minus sieben Tage ist wieder Freitag 17 Uhr, nicht 16
+ * oder 18 Uhr, wie es eine Rechnung mit 7 × 24 Stunden ergaebe.
+ */
+export function shiftCalendarDaysInZone(
+  date: Date | string,
+  days: number,
+  timeZone: string,
+): Date {
+  const wall = toWallClock(toDate(date), timeZone);
+  return fromWallClock(
+    dayToWallClock(dayNumber(wall) + days, wall.hour, wall.minute),
+    timeZone,
+  );
+}

@@ -228,6 +228,18 @@ export class Event extends SoftDeleteEntity {
   @Column({ name: 'billed_days', type: 'int', nullable: true })
   billedDays: number | null;
 
+  /**
+   * Beginn der Veranstaltung beim Freischalten. Die kostenlose Stornofrist
+   * rechnet vom frueheren aus diesem und dem heutigen Beginn — wer nach dem
+   * Bezahlen nach hinten verschiebt, verlaengert damit nicht die Frist.
+   */
+  @Column({
+    name: 'unlocked_start_date',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  unlockedStartDate: Date | null;
+
   // Relations
   @ManyToOne(() => Organization, (org) => org.events, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'organization_id' })

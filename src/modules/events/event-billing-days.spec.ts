@@ -6,6 +6,7 @@ import { Organization } from '../../database/entities/organization.entity';
 import { User } from '../../database/entities';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { StripeService } from '../stripe/stripe.service';
+import { EventUnlockCancellationService } from './event-unlock-cancellation.service';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 
@@ -99,6 +100,16 @@ describe('EventBillingService – Veranstaltungstage', () => {
       } as unknown as PlatformSettingsService,
       stripeService as unknown as StripeService,
       configService,
+      {
+        describe: jest.fn().mockResolvedValue({
+          allowed: false,
+          deadline: null,
+          timezone: 'Europe/Berlin',
+          blockedReason: 'not_paid',
+        }),
+        lastCancellation: jest.fn().mockResolvedValue(null),
+        wasCheckoutCancelled: jest.fn().mockResolvedValue(false),
+      } as unknown as EventUnlockCancellationService,
     );
 
     return { service, event, eventRepository, stripeService };

@@ -12,6 +12,7 @@ import type { Request } from 'express';
 
 import { Public } from '../../common/decorators/public.decorator';
 import { EventBillingService } from './event-billing.service';
+import { EventUnlockCancellationService } from './event-unlock-cancellation.service';
 import { StripeService } from '../stripe/stripe.service';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 
@@ -35,6 +36,7 @@ export class StripeWebhookController {
   constructor(
     private readonly stripeService: StripeService,
     private readonly eventBillingService: EventBillingService,
+    private readonly cancellationService: EventUnlockCancellationService,
   ) {}
 
   @Post('webhook')
@@ -71,9 +73,21 @@ export class StripeWebhookController {
       });
     }
 
-    if (event.type === 'checkout.session.completed') {
+    if (
+      event.type === 'checkout.session.completed' ||
+      /* Lastschrift: beim Abschluss des Checkouts ist noch nichts bezahlt
+         (payment_status 'unpaid'); Stripe meldet den Eingang Tage spaeter
+         mit diesem Ereignis. */
+      event.type === 'checkout.session.async_payment_succeeded'
+    ) {
       const session = event.data.object;
       await this.eventBillingService.settleStripePayment(session.id);
+    } else if (
+      event.type === 'refund.updated' ||
+      event.type === 'refund.failed'
+    ) {
+      // Stand der Erstattung nach einem Storno (Lastschrift dauert Tage).
+      await this.cancellationService.handleRefundUpdate(event.data.object);
     } else {
       this.logger.debug(`Stripe-Webhook ${event.type} ignoriert`);
     }

@@ -17,6 +17,10 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { EventBillingService } from './event-billing.service';
+import {
+  EventUnlockCancellationService,
+  toCancellationSummary,
+} from './event-unlock-cancellation.service';
 import { OrderInvoiceDto } from './dto';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
@@ -27,7 +31,10 @@ import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 @SaasOnly()
 @Controller('organizations/:organizationId')
 export class EventBillingController {
-  constructor(private readonly eventBillingService: EventBillingService) {}
+  constructor(
+    private readonly eventBillingService: EventBillingService,
+    private readonly cancellationService: EventUnlockCancellationService,
+  ) {}
 
   @Get('event-price-preview')
   @ApiOperation({
@@ -123,6 +130,37 @@ export class EventBillingController {
       user,
     );
     return { data };
+  }
+
+  @Post('events/:eventId/billing/cancel')
+  @ApiOperation({
+    summary: 'Freischaltung kostenlos stornieren (bis 7 Tage vor Beginn)',
+    description:
+      'Nur Administratoren der Organisation und nur ohne echte Bestellungen. ' +
+      'Stripe-Zahlungen werden voll erstattet (mit Stornorechnung, wenn eine ' +
+      'Rechnung erzeugt wurde); die Veranstaltung faellt in den Testmodus ' +
+      'zurueck. Wiederholte Aufrufe liefern die bestehende Stornierung. ' +
+      'Fehler: EVENT_CANCELLATION_DEADLINE_PASSED, EVENT_HAS_ORDERS, ' +
+      'EVENT_NOT_PAID, REFUND_FAILED.',
+  })
+  async cancelUnlock(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @CurrentUser() user: User,
+  ) {
+    const cancellation = await this.cancellationService.cancelForOrganization(
+      organizationId,
+      eventId,
+      user,
+    );
+    const billing = await this.eventBillingService.getBillingInfo(
+      organizationId,
+      eventId,
+      user,
+    );
+    return {
+      data: { cancellation: toCancellationSummary(cancellation), billing },
+    };
   }
 
   @Get('billing/invoices')
