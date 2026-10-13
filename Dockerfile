@@ -69,6 +69,8 @@ COPY --from=prod-deps --chown=nestjs:nodejs /app/node_modules ./node_modules
 # Copy built application
 COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nestjs:nodejs /app/package.json ./
+# License texts travel with the image (AGPL-3.0-or-later)
+COPY --from=builder --chown=nestjs:nodejs /app/LICENSE /app/NOTICE ./
 # Static assets (e.g. brand logo embedded into generated PDFs)
 COPY --from=builder --chown=nestjs:nodejs /app/assets ./assets
 

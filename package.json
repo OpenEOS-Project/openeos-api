@@ -2,9 +2,9 @@
   "name": "openeos-api",
   "version": "0.0.1",
   "description": "",
-  "author": "",
+  "author": "Lukas Lukic-Spitznagel",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "AGPL-3.0-or-later",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
