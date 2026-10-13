@@ -38,7 +38,7 @@ Thumbs.db
 /playwright-report/
 /blob-report/
 /playwright/.cache/
-/.omc
+.omc/
 
 # User uploads (runtime data, volume-mounted in prod)
 /uploads/
