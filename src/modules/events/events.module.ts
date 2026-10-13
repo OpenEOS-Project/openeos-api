@@ -9,6 +9,9 @@ import { EventsService } from './events.service';
 import { EventBillingService } from './event-billing.service';
 import { EventUnlockCancellationService } from './event-unlock-cancellation.service';
 import { TestOrderCleanupService } from './test-order-cleanup.service';
+import { BillingAuditService } from './billing-audit.service';
+import { EventCheckoutLifecycleService } from './event-checkout-lifecycle.service';
+import { StripeDisputeService } from './stripe-dispute.service';
 import { GatewayModule } from '../gateway/gateway.module';
 import { SumUpModule } from '../sumup/sumup.module';
 import { StripeModule } from '../stripe/stripe.module';
@@ -26,6 +29,7 @@ import {
   ShopCheckout,
   TableArea,
   EventBillingCancellation,
+  AdminAuditLog,
 } from '../../database/entities';
 
 @Module({
@@ -42,6 +46,7 @@ import {
       ShopCheckout,
       TableArea,
       EventBillingCancellation,
+      AdminAuditLog,
     ]),
     forwardRef(() => GatewayModule),
     SumUpModule,
@@ -61,7 +66,15 @@ import {
     EventBillingService,
     EventUnlockCancellationService,
     TestOrderCleanupService,
+    BillingAuditService,
+    EventCheckoutLifecycleService,
+    StripeDisputeService,
   ],
-  exports: [EventsService, EventBillingService, EventUnlockCancellationService],
+  exports: [
+    EventsService,
+    EventBillingService,
+    EventUnlockCancellationService,
+    BillingAuditService,
+  ],
 })
 export class EventsModule {}

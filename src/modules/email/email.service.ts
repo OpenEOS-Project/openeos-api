@@ -467,9 +467,17 @@ export class EmailService {
     creditNoteNumber: string | null;
     manualCreditNoteRequired: boolean;
     invoiceNote: string | null;
+    /** Kulanz: Erstattung, die Freischaltung bleibt. Standard: Storno. */
+    kind?: 'cancellation' | 'goodwill';
+    /** Begruendung der Plattform. */
+    reason?: string | null;
   }): Promise<boolean> {
-    const subject =
-      options.via === 'stripe'
+    const kulanz = options.kind === 'goodwill';
+    const subject = kulanz
+      ? options.via === 'stripe'
+        ? 'Kulanzerstattung (Stripe)'
+        : 'Kulanzgutschrift (auf Rechnung)'
+      : options.via === 'stripe'
         ? 'Freischaltung storniert (Stripe-Erstattung)'
         : 'Freischaltung storniert (auf Rechnung)';
     const zeilen: [string, string][] = [
@@ -495,6 +503,12 @@ export class EmailService {
     if (options.invoiceNote) {
       zeilen.push(['Rechnungsvermerk', options.invoiceNote]);
     }
+    if (options.reason) {
+      zeilen.push(['Grund', options.reason]);
+    }
+    if (kulanz) {
+      zeilen.push(['Freischaltung', 'bleibt bestehen']);
+    }
 
     const html = rahmen({
       kontext: 'Betrieb',
@@ -504,11 +518,13 @@ export class EmailService {
       appUrl: this.appUrl,
       inhalt: stapeln(
         ueberschrift(subject),
-        datenblock('Storno', zeilen),
+        datenblock(kulanz ? 'Kulanz' : 'Storno', zeilen),
         options.manualCreditNoteRequired
           ? hinweis(
-              'Stornorechnung stellen',
-              'Die Rechnung zu dieser Bestellung war schon gestellt. Bitte eine Stornorechnung dazu ausstellen und einen bereits gezahlten Betrag zurücküberweisen.',
+              kulanz ? 'Gutschrift stellen' : 'Stornorechnung stellen',
+              kulanz
+                ? 'Die Rechnung zu dieser Bestellung war schon gestellt. Bitte über den Betrag eine Gutschrift (Teilstorno) ausstellen und einen bereits gezahlten Anteil zurücküberweisen.'
+                : 'Die Rechnung zu dieser Bestellung war schon gestellt. Bitte eine Stornorechnung dazu ausstellen und einen bereits gezahlten Betrag zurücküberweisen.',
             )
           : null,
         knopf(`${this.appUrl}/admin/events`, 'Im Adminbereich ansehen'),
@@ -516,6 +532,161 @@ export class EmailService {
     });
 
     return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /**
+   * Kulanzerstattung an die Organisation: ein Teil oder der ganze Betrag
+   * geht zurueck, die Freischaltung bleibt bestehen.
+   */
+  async sendEventGoodwillRefundEmail(options: {
+    to: string;
+    organizationName: string;
+    eventName: string;
+    amount: number;
+    currency: string;
+    via: 'stripe' | 'invoice';
+    creditNoteNumber: string | null;
+  }): Promise<boolean> {
+    const subject = `Erstattung – ${options.eventName}`;
+    const betrag = new Intl.NumberFormat('de-DE', {
+      style: 'currency',
+      currency: options.currency || 'EUR',
+    }).format(options.amount);
+
+    const zeilen: [string, string][] = [
+      ['Veranstaltung', options.eventName],
+      [options.via === 'stripe' ? 'Erstattung' : 'Gutschrift', betrag],
+    ];
+    if (options.creditNoteNumber) {
+      zeilen.push(['Gutschrift', options.creditNoteNumber]);
+    }
+
+    const rueckweg =
+      options.via === 'stripe'
+        ? 'Der Betrag geht auf die Karte bzw. das Konto zurück, mit dem du bezahlt hast – bei Karten meist in 5–10 Werktagen, bei Lastschrift in etwa 5 Werktagen. Die Gutschrift findest du unter Rechnungen.'
+        : 'Du hattest auf Rechnung bestellt. Wir verrechnen den Betrag mit deiner Rechnung bzw. schicken dir eine Gutschrift; einen bereits überwiesenen Anteil erstatten wir zurück.';
+
+    const html = rahmen({
+      kontext: 'Freischaltung',
+      titel: `OpenEOS — ${subject}`,
+      preheader: `${betrag} gehen an dich zurück.`,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Wir erstatten dir einen Betrag.') +
+          absatz(
+            `Für „${options.eventName}“${options.organizationName ? ` (${options.organizationName})` : ''} erstatten wir dir aus Kulanz ${betrag}.`,
+          ),
+        datenblock('Erstattung', zeilen),
+        absatz(rueckweg),
+        absatz(
+          'Deine Freischaltung bleibt bestehen; Bestellungen und Auswertungen der Veranstaltung bleiben unverändert.',
+        ),
+        knopf(`${this.appUrl}/events`, 'Zu den Veranstaltungen'),
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /**
+   * An die Organisation: eine begonnene Online-Zahlung ist nicht
+   * zustande gekommen (Zahlungsseite abgelaufen oder Lastschrift
+   * gescheitert). Die Veranstaltung ist wieder "nicht freigeschaltet" und
+   * kann erneut freigeschaltet werden.
+   */
+  async sendEventCheckoutNotCompletedEmail(options: {
+    to: string;
+    organizationName: string;
+    eventName: string;
+    eventDate: Date | null;
+    timeZone: string;
+    reason: 'expired' | 'payment_failed';
+    failureReason: string | null;
+  }): Promise<boolean> {
+    const subject = `Zahlung nicht abgeschlossen – ${options.eventName}`;
+    const beginn = options.eventDate
+      ? new Intl.DateTimeFormat('de-DE', {
+          dateStyle: 'medium',
+          timeZone: options.timeZone,
+        }).format(options.eventDate)
+      : '–';
+
+    const zeilen: [string, string][] = [
+      ['Veranstaltung', options.eventName],
+      ['Beginn', beginn],
+      [
+        'Stand',
+        options.reason === 'payment_failed'
+          ? 'Lastschrift nicht eingelöst'
+          : 'Zahlungsseite abgelaufen',
+      ],
+    ];
+    if (options.reason === 'payment_failed' && options.failureReason) {
+      zeilen.push(['Grund laut Bank', options.failureReason]);
+    }
+
+    const erklaerung =
+      options.reason === 'payment_failed'
+        ? 'Die Lastschrift für die Freischaltung konnte nicht eingezogen werden. Es wurde nichts abgebucht.'
+        : 'Die Zahlung für die Freischaltung wurde nicht abgeschlossen, die Zahlungsseite ist inzwischen abgelaufen. Es wurde nichts abgebucht.';
+
+    const html = rahmen({
+      kontext: 'Freischaltung',
+      titel: `OpenEOS — ${subject}`,
+      preheader:
+        'Zahlung nicht abgeschlossen – du kannst die Veranstaltung erneut freischalten.',
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Zahlung nicht abgeschlossen.') +
+          absatz(
+            `${erklaerung} „${options.eventName}“${options.organizationName ? ` (${options.organizationName})` : ''} ist deshalb noch nicht freigeschaltet.`,
+          ),
+        datenblock('Freischaltung', zeilen),
+        absatz(
+          options.reason === 'payment_failed'
+            ? 'Du kannst die Veranstaltung erneut freischalten – am besten mit einem anderen Konto oder per Karte. Deine Einrichtung bleibt erhalten.'
+            : 'Du kannst die Veranstaltung jederzeit erneut freischalten. Deine Einrichtung bleibt erhalten.',
+        ),
+        knopf(`${this.appUrl}/events`, 'Veranstaltung freischalten'),
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /**
+   * Warnung an den Betreiber zur Abrechnung: Rueckbuchung (Dispute),
+   * doppelte Zahlung o. ae. Ein Datenblock, ein Hinweis, was zu tun ist.
+   */
+  async sendAdminBillingAlert(options: {
+    to: string;
+    subject: string;
+    intro: string;
+    rows: [string, string][];
+    todo: { title: string; text: string } | null;
+  }): Promise<boolean> {
+    const html = rahmen({
+      kontext: 'Betrieb',
+      titel: `OpenEOS — ${options.subject}`,
+      preheader: options.intro,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift(options.subject),
+        absatz(options.intro),
+        datenblock('Details', options.rows),
+        options.todo ? hinweis(options.todo.title, options.todo.text) : null,
+        knopf(`${this.appUrl}/admin/events`, 'Im Adminbereich ansehen'),
+      ),
+    });
+
+    return this.sendEmail({
+      to: options.to,
+      subject: options.subject,
+      html,
+    });
   }
 
   /** Hinweis an den Betreiber: eine Storno-Erstattung ist gescheitert. */

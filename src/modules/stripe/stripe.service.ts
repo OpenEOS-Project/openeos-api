@@ -197,6 +197,44 @@ export class StripeService {
   }
 
   /**
+   * Die Checkout-Sitzung samt Zahlung und deren letzter Belastung — daraus
+   * stammt bei einer gescheiterten Lastschrift der Grund.
+   */
+  async getCheckoutSessionWithPayment(
+    sessionId: string,
+  ): Promise<Stripe.Checkout.Session> {
+    return this.requireClient().checkout.sessions.retrieve(sessionId, {
+      expand: ['payment_intent.latest_charge'],
+    });
+  }
+
+  /**
+   * Eine offene Checkout-Sitzung beenden. Danach kann ueber sie nichts mehr
+   * bezahlt werden — die Voraussetzung, um eine haengende Freischaltung
+   * gefahrlos zurueckzusetzen.
+   */
+  async expireCheckoutSession(
+    sessionId: string,
+  ): Promise<Stripe.Checkout.Session> {
+    return this.requireClient().checkout.sessions.expire(sessionId);
+  }
+
+  async getPaymentIntent(
+    paymentIntentId: string,
+  ): Promise<Stripe.PaymentIntent> {
+    return this.requireClient().paymentIntents.retrieve(paymentIntentId);
+  }
+
+  /** Stripe kennt das angefragte Objekt nicht (geloescht, anderes Konto/Modus). */
+  isResourceMissing(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: string }).code === 'resource_missing'
+    );
+  }
+
+  /**
    * Die Checkout-Sitzung samt Zahlung und Rechnung — was ein Storno braucht,
    * um die richtige Zahlung zu erstatten und die Rechnung gutzuschreiben.
    */
@@ -209,7 +247,8 @@ export class StripeService {
   }
 
   /**
-   * Eine bezahlte Rechnung vollständig gutschreiben und dabei erstatten.
+   * Eine bezahlte Rechnung ganz oder teilweise gutschreiben und dabei
+   * erstatten.
    *
    * Stripe stellt dazu eine Gutschrift (Credit Note) mit eigener Nummer
    * („<Rechnungsnummer>-CN-01“) und eigenem PDF aus — die Stornorechnung —
@@ -245,15 +284,22 @@ export class StripeService {
     return typeof first === 'string' ? first : first.id;
   }
 
-  /** Eine Zahlung vollständig erstatten (ohne Rechnung, also ohne Gutschrift). */
+  /**
+   * Eine Zahlung erstatten (ohne Rechnung, also ohne Gutschrift). Ohne
+   * Betrag erstattet Stripe, was von der Zahlung noch offen ist.
+   */
   async createRefund(params: {
     paymentIntentId: string;
+    amountInCents?: number;
     metadata: Record<string, string>;
     idempotencyKey: string;
   }): Promise<Stripe.Refund> {
     return this.requireClient().refunds.create(
       {
         payment_intent: params.paymentIntentId,
+        ...(params.amountInCents !== undefined
+          ? { amount: params.amountInCents }
+          : {}),
         reason: 'requested_by_customer',
         metadata: params.metadata,
       },

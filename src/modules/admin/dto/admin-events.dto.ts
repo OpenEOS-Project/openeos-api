@@ -7,6 +7,9 @@ import {
   Max,
   IsString,
   IsBoolean,
+  IsNumber,
+  IsNotEmpty,
+  MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
@@ -89,4 +92,31 @@ export class MarkInvoicedDto {
   @IsOptional()
   @IsString()
   note?: string;
+}
+
+/**
+ * Storno bzw. Kulanzerstattung durch die Plattform. Ohne Betrag wird der
+ * ganze noch erstattbare Betrag erstattet.
+ */
+export class PlatformCancelBillingDto {
+  @ApiProperty({
+    example: 'Veranstaltung wegen Unwetter abgesagt',
+    description: 'Begründung (Pflicht, landet im Admin-Protokoll)',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(1000)
+  reason: string;
+
+  @ApiPropertyOptional({
+    example: 20,
+    description:
+      'Zu erstattender Betrag in der Währung der Organisation. Ohne Angabe: der ganze noch erstattbare Betrag.',
+    nullable: true,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  amount?: number | null;
 }

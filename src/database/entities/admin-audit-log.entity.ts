@@ -19,7 +19,21 @@ export enum AdminAction {
   CREATE_RENTAL_HARDWARE = 'create_rental_hardware',
   ASSIGN_RENTAL = 'assign_rental',
   RETURN_RENTAL = 'return_rental',
+  // Freischaltung einer Veranstaltung (Stripe/Rechnung)
+  EVENT_CHECKOUT_RELEASED = 'event_checkout_released',
+  EVENT_BILLING_CANCELLED = 'event_billing_cancelled',
+  EVENT_BILLING_GOODWILL_REFUND = 'event_billing_goodwill_refund',
+  EVENT_PAYMENT_DISPUTE_OPENED = 'event_payment_dispute_opened',
+  EVENT_PAYMENT_DISPUTE_CLOSED = 'event_payment_dispute_closed',
+  EVENT_DUPLICATE_PAYMENT = 'event_duplicate_payment',
 }
+
+/**
+ * Was das System ohne angemeldeten Admin protokolliert (Stripe-Webhooks,
+ * Aufraeumjob), steht mit `admin_user_id = NULL` und dieser Adresse im
+ * Protokoll.
+ */
+export const SYSTEM_AUDIT_IP = 'system';
 
 export interface AuditLogDetails {
   before?: Record<string, unknown>;
@@ -31,8 +45,9 @@ export interface AuditLogDetails {
 @Index(['adminUserId', 'createdAt'])
 @Index(['organizationId', 'createdAt'])
 export class AdminAuditLog extends BaseEntity {
-  @Column({ name: 'admin_user_id', type: 'uuid' })
-  adminUserId: string;
+  /** NULL: vom System ausgeloest (Webhook, zeitgesteuerter Job). */
+  @Column({ name: 'admin_user_id', type: 'uuid', nullable: true })
+  adminUserId: string | null;
 
   @Column({ name: 'organization_id', type: 'uuid', nullable: true })
   organizationId: string | null;
@@ -63,7 +78,7 @@ export class AdminAuditLog extends BaseEntity {
     onDelete: 'SET NULL',
   })
   @JoinColumn({ name: 'admin_user_id' })
-  adminUser: User;
+  adminUser: User | null;
 
   @ManyToOne(() => Organization, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'organization_id' })

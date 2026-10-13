@@ -5,6 +5,14 @@ import { Event } from './event.entity';
 /** Wer storniert hat: die Organisation selbst oder die Plattform (Support). */
 export type EventBillingCancellationInitiator = 'organization' | 'platform';
 
+/**
+ * - `cancellation`: die Freischaltung ist aufgehoben (Veranstaltung wieder
+ *   "nicht freigeschaltet").
+ * - `goodwill`: Kulanzerstattung durch die Plattform — ganz oder teilweise,
+ *   die Freischaltung bleibt bestehen.
+ */
+export type EventBillingCancellationKind = 'cancellation' | 'goodwill';
+
 /** Stand der Stripe-Erstattung, wie Stripe ihn meldet. */
 export type EventRefundStatus =
   | 'pending'
@@ -44,10 +52,23 @@ export class EventBillingCancellation extends BaseEntity {
   @Column({ name: 'initiated_by', type: 'varchar', length: 20 })
   initiatedBy: EventBillingCancellationInitiator;
 
+  @Column({
+    name: 'kind',
+    type: 'varchar',
+    length: 20,
+    default: 'cancellation',
+  })
+  kind: EventBillingCancellationKind;
+
+  /** Begruendung der Plattform (Pflicht bei Storno/Kulanz durch den Super-Admin). */
+  @Column({ name: 'reason', type: 'text', nullable: true })
+  reason: string | null;
+
   /** 'paid' (Stripe) oder 'invoice' (Kauf auf Rechnung). */
   @Column({ name: 'previous_billing_status', type: 'varchar', length: 20 })
   previousBillingStatus: 'paid' | 'invoice';
 
+  /** Erstatteter (bzw. bei Rechnung: gutzuschreibender) Betrag. */
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   amount: number;
 

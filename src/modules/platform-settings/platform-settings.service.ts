@@ -119,6 +119,21 @@ export class PlatformSettingsService {
   }
 
   /**
+   * Die Betreiber-Adresse ohne Schalter — fuer Warnungen, die nicht
+   * abbestellt werden duerfen (Rueckbuchung, doppelte Zahlung): die
+   * Adresse aus den Super-Admin-Einstellungen (`adminNotifications.email`),
+   * sonst ADMIN_NOTIFY_EMAIL bzw. ADMIN_EMAIL.
+   */
+  async resolvePlatformAdminEmail(): Promise<string | null> {
+    const settings = await this.getNotificationSettings();
+    return (
+      settings.email ||
+      this.configService.get<string>('email.adminNotifyEmail') ||
+      null
+    );
+  }
+
+  /**
    * Generic accessors for simple, single-value settings (e.g. a persisted
    * polling cursor) that don't warrant their own typed getter/setter pair.
    */

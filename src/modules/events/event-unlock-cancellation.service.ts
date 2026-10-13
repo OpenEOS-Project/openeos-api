@@ -19,8 +19,10 @@ import { Order } from '../../database/entities/order.entity';
 import {
   EventBillingCancellation,
   EventBillingCancellationInitiator,
+  EventBillingCancellationKind,
   EventRefundStatus,
 } from '../../database/entities/event-billing-cancellation.entity';
+import { AdminAction } from '../../database/entities/admin-audit-log.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { User } from '../../database/entities';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
@@ -30,6 +32,7 @@ import { StripeService } from '../stripe/stripe.service';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { GatewayService } from '../gateway/gateway.service';
+import { AuditActor, BillingAuditService } from './billing-audit.service';
 
 /** Bis so viele Kalendertage vor Beginn ist der Storno kostenlos. */
 export const FREE_CANCELLATION_DAYS = 7;
@@ -59,6 +62,32 @@ export interface CancellationSummary {
   previousBillingStatus: 'paid' | 'invoice';
   refundStatus: EventRefundStatus | null;
   creditNoteNumber: string | null;
+  /** Storno (Freischaltung aufgehoben) oder Kulanz (Freischaltung bleibt). */
+  kind: EventBillingCancellationKind;
+  reason: string | null;
+}
+
+/**
+ * Was der Super-Admin vor einem Storno bzw. einer Kulanzerstattung sieht.
+ * Betraege in der Waehrung der Organisation.
+ */
+export interface PlatformCancellationPreview {
+  eventId: string;
+  billingStatus: string;
+  via: 'stripe' | 'invoice' | null;
+  currency: string;
+  amountCharged: number;
+  /** Schon per Kulanz erstattet (seit dieser Freischaltung). */
+  refundedSoFar: number;
+  /** Hoechstens noch erstattbar. */
+  refundable: number;
+  /** Echte Bestellungen (ohne Testbestellungen). */
+  realOrders: number;
+  deadline: string | null;
+  deadlinePassed: boolean;
+  /** Ob die Rechnung (Kauf auf Rechnung) schon gestellt ist. */
+  invoiced: boolean;
+  onlineRefundAvailable: boolean;
 }
 
 /** Ergebnis der Stripe-Seite eines Stornos. */
@@ -114,7 +143,33 @@ export function toCancellationSummary(
     previousBillingStatus: record.previousBillingStatus,
     refundStatus: record.refundStatus,
     creditNoteNumber: record.creditNoteNumber,
+    kind: record.kind ?? 'cancellation',
+    reason: record.reason ?? null,
   };
+}
+
+/** Euro-Betrag in Cent, ohne Gleitkomma-Rest. */
+function toCents(amount: number): number {
+  return Math.round(amount * 100);
+}
+
+/**
+ * Was seit der letzten Freischaltung schon per Kulanz erstattet wurde: die
+ * Kulanzzeilen nach dem letzten Storno (ein Storno beendet eine
+ * Freischaltung, alles danach gehoert zur naechsten).
+ */
+function refundedSinceUnlock(rowsNewestFirst: EventBillingCancellation[]): {
+  amount: number;
+  count: number;
+} {
+  let cents = 0;
+  let count = 0;
+  for (const row of rowsNewestFirst) {
+    if ((row.kind ?? 'cancellation') === 'cancellation') break;
+    cents += toCents(Number(row.amount));
+    count += 1;
+  }
+  return { amount: cents / 100, count };
 }
 
 function idOf(
@@ -143,9 +198,10 @@ function refundStatusOf(status: string | null | undefined): EventRefundStatus {
  *
  * Regeln (Oberflaeche, Doku und AGB versprechen genau das):
  * - nur bezahlte (Stripe) oder auf Rechnung bestellte Freischaltungen,
- * - nur bis 7 Kalendertage vor Beginn (siehe cancellationDeadline) —
- *   die Plattform darf die Frist uebergehen,
+ * - nur bis 7 Kalendertage vor Beginn (siehe cancellationDeadline),
  * - nur ohne echte Bestellungen; Testbestellungen zaehlen nicht,
+ * - die Plattform darf beides uebergehen und auch teilweise erstatten
+ *   (siehe cancelForPlatform),
  * - Stripe: volle Erstattung, bei einer Rechnung aus dem Checkout als
  *   Stripe-Gutschrift (Stornorechnung) mit Erstattung,
  * - Rechnung: keine Zahlung zurueck; war die Rechnung schon gestellt, muss
@@ -170,6 +226,7 @@ export class EventUnlockCancellationService {
     private readonly emailService: EmailService,
     private readonly platformSettingsService: PlatformSettingsService,
     private readonly gatewayService: GatewayService,
+    private readonly billingAudit: BillingAuditService,
   ) {}
 
   private timezoneOf(organization: Organization | null): string {
@@ -213,8 +270,9 @@ export class EventUnlockCancellationService {
   }
 
   async lastCancellation(eventId: string): Promise<CancellationSummary | null> {
+    // Kulanzerstattungen heben die Freischaltung nicht auf — kein Storno.
     const record = await this.cancellationRepository.findOne({
-      where: { eventId },
+      where: { eventId, kind: 'cancellation' },
       order: { createdAt: 'DESC' },
     });
     return record ? toCancellationSummary(record) : null;
@@ -223,7 +281,7 @@ export class EventUnlockCancellationService {
   /** Wurde die Freischaltung aus dieser Checkout-Sitzung schon storniert? */
   async wasCheckoutCancelled(sessionId: string): Promise<boolean> {
     const count = await this.cancellationRepository.count({
-      where: { stripeCheckoutSessionId: sessionId },
+      where: { stripeCheckoutSessionId: sessionId, kind: 'cancellation' },
     });
     return count > 0;
   }
@@ -251,15 +309,43 @@ export class EventUnlockCancellationService {
   }
 
   /**
-   * Storno durch die Plattform (Super-Admin): ohne Frist. Echte
-   * Bestellungen verhindern ihn trotzdem — eine genutzte Veranstaltung
-   * zu erstatten ist Kulanz und gehoert nicht in diesen Weg.
+   * Storno bzw. Kulanzerstattung durch die Plattform (Super-Admin).
+   *
+   * Anders als die Organisation darf die Plattform alles: ohne Frist, auch
+   * bei echten Bestellungen, ganz oder teilweise — mit Pflicht-Begruendung.
+   *
+   * - Keine echten Bestellungen und der volle (Rest-)Betrag: ein Storno wie
+   *   bei der Organisation — die Freischaltung ist aufgehoben, eine aktive
+   *   Veranstaltung faellt in den Testmodus.
+   * - Echte Bestellungen oder nur ein Teilbetrag: Kulanz. Die Freischaltung
+   *   und der Veranstaltungsstatus bleiben, Bestellungen bleiben
+   *   unveraendert. Eine genutzte Veranstaltung in den Testmodus zu
+   *   zwingen, hiesse: die Kasse mitten im Betrieb auf 25 Testbestellungen
+   *   begrenzen, und beim naechsten Aktivieren wuerden die seither
+   *   gebuchten (Test-)Bestellungen geloescht. Wer erstattet bekommt, soll
+   *   seine Veranstaltung trotzdem ordentlich zu Ende fuehren koennen.
+   *
+   * Stripe: Gutschrift (Credit Note) ueber den Betrag mit Erstattung, ohne
+   * Rechnung aus dem Checkout eine (Teil-)Erstattung der Zahlung.
    */
   async cancelForPlatform(
     eventId: string,
     admin: User,
+    options: {
+      reason: string;
+      amount?: number | null;
+      audit?: AuditActor | null;
+    },
     now: Date = new Date(),
   ): Promise<EventBillingCancellation> {
+    const reason = options.reason?.trim();
+    if (!reason) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.REFUND_REASON_REQUIRED,
+        message: 'Bitte gib einen Grund an',
+      });
+    }
     return this.cancel({
       eventId,
       organizationId: null,
@@ -267,7 +353,69 @@ export class EventUnlockCancellationService {
       initiatedBy: 'platform',
       enforceDeadline: false,
       now,
+      platform: {
+        reason,
+        amount: options.amount ?? null,
+        audit: options.audit ?? null,
+      },
     });
+  }
+
+  /** Was ein Storno/eine Kulanz durch die Plattform gerade bewirken wuerde. */
+  async platformPreview(
+    eventId: string,
+    now: Date = new Date(),
+  ): Promise<PlatformCancellationPreview> {
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+    });
+    if (!event) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.EVENT_NOT_FOUND,
+        message: 'Event nicht gefunden',
+      });
+    }
+    const organization = await this.eventRepository.manager
+      .getRepository(Organization)
+      .findOne({ where: { id: event.organizationId } });
+    const deadline = cancellationDeadline(event, this.timezoneOf(organization));
+    const realOrders = await this.orderRepository.count({
+      where: { eventId: event.id, isTest: false },
+    });
+    const paid = EVENT_PAID_BILLING_STATUSES.includes(event.billingStatus);
+    const rows = paid
+      ? await this.cancellationRepository.find({
+          where: { eventId: event.id },
+          order: { createdAt: 'DESC' },
+        })
+      : [];
+    const refunded = refundedSinceUnlock(rows);
+    const amountCharged = paid ? Number(event.priceCharged ?? 0) : 0;
+    const refundable = Math.max(
+      0,
+      (toCents(amountCharged) - toCents(refunded.amount)) / 100,
+    );
+    return {
+      eventId: event.id,
+      billingStatus: event.billingStatus,
+      via: paid
+        ? event.billingStatus === 'paid'
+          ? 'stripe'
+          : 'invoice'
+        : null,
+      currency: organization?.settings?.currency || 'EUR',
+      amountCharged,
+      refundedSoFar: refunded.amount,
+      refundable,
+      realOrders,
+      deadline: deadline ? deadline.toISOString() : null,
+      deadlinePassed: !!deadline && now.getTime() >= deadline.getTime(),
+      invoiced: !!event.invoicedAt,
+      onlineRefundAvailable:
+        event.billingStatus !== 'paid' ||
+        (this.stripeService.isConfigured && !!event.stripeCheckoutSessionId),
+    };
   }
 
   private async cancel(options: {
@@ -277,6 +425,12 @@ export class EventUnlockCancellationService {
     initiatedBy: EventBillingCancellationInitiator;
     enforceDeadline: boolean;
     now: Date;
+    /** Nur Plattform: Begruendung, Betrag (null = alles), Protokoll. */
+    platform?: {
+      reason: string;
+      amount: number | null;
+      audit: AuditActor | null;
+    };
   }): Promise<EventBillingCancellation> {
     const {
       eventId,
@@ -285,6 +439,7 @@ export class EventUnlockCancellationService {
       initiatedBy,
       enforceDeadline,
       now,
+      platform,
     } = options;
 
     /* Alles in einer Transaktion mit gesperrter Veranstaltungszeile: eine
@@ -368,7 +523,8 @@ export class EventUnlockCancellationService {
         const orders = await manager.getRepository(Order).count({
           where: { eventId: event.id, isTest: false },
         });
-        if (orders > 0) {
+        // Die Plattform darf auch bei echten Bestellungen (Kulanz).
+        if (orders > 0 && !platform) {
           throw new BadRequestException({
             code: ErrorCodes.VALIDATION_ERROR,
             reason: ErrorReasons.EVENT_HAS_ORDERS,
@@ -378,14 +534,82 @@ export class EventUnlockCancellationService {
           });
         }
 
+        /* Betrag: was von dieser Freischaltung noch nicht (per Kulanz)
+           erstattet ist; die Plattform kann weniger waehlen. */
+        const charged = Number(event.priceCharged ?? 0);
+        const history = await cancellations.find({
+          where: { eventId: event.id },
+          order: { createdAt: 'DESC' },
+        });
+        const earlier = refundedSinceUnlock(history);
+        const remainingCents = toCents(charged) - toCents(earlier.amount);
+        const requestedCents =
+          platform?.amount !== null && platform?.amount !== undefined
+            ? toCents(platform.amount)
+            : remainingCents;
+        /* Doppelklick bzw. wiederholte Anfrage: dieselbe Kulanz desselben
+           Admins von eben noch einmal zurueckgeben statt ein zweites Mal
+           zu erstatten. Bewusst gewollte zweite Teilerstattungen liegen
+           nicht innerhalb von zwei Minuten mit gleichem Betrag. */
+        const latest = history[0];
+        if (
+          platform &&
+          latest &&
+          latest.kind === 'goodwill' &&
+          latest.cancelledBy === actor.id &&
+          toCents(Number(latest.amount)) === requestedCents &&
+          now.getTime() - new Date(latest.createdAt).getTime() < 2 * 60 * 1000
+        ) {
+          return {
+            event,
+            organization,
+            cancellation: latest,
+            replayed: true,
+            statusChanged: false,
+          };
+        }
+        if (platform) {
+          if (remainingCents <= 0) {
+            throw new BadRequestException({
+              code: ErrorCodes.VALIDATION_ERROR,
+              reason: ErrorReasons.REFUND_NOTHING_TO_REFUND,
+              message: 'Für diese Freischaltung ist nichts mehr zu erstatten',
+            });
+          }
+          if (!(requestedCents > 0)) {
+            throw new BadRequestException({
+              code: ErrorCodes.VALIDATION_ERROR,
+              reason: ErrorReasons.REFUND_AMOUNT_INVALID,
+              message: 'Der Betrag muss größer als 0 sein',
+            });
+          }
+          if (requestedCents > remainingCents) {
+            throw new BadRequestException({
+              code: ErrorCodes.VALIDATION_ERROR,
+              reason: ErrorReasons.REFUND_EXCEEDS_REFUNDABLE,
+              message: `Erstattbar sind höchstens ${(remainingCents / 100).toFixed(2)}`,
+              params: { max: (remainingCents / 100).toFixed(2) },
+            });
+          }
+        }
+        const fullRemaining = requestedCents === remainingCents;
+        /* Kulanz statt Storno: mit echten Bestellungen oder bei einem
+           Teilbetrag bleibt die Freischaltung (siehe cancelForPlatform). */
+        const kind: EventBillingCancellationKind =
+          platform && (orders > 0 || !fullRemaining)
+            ? 'goodwill'
+            : 'cancellation';
+
         const previousBillingStatus = event.billingStatus as 'paid' | 'invoice';
         const record = cancellations.create({
           eventId: event.id,
           organizationId: event.organizationId,
           cancelledBy: actor.id,
           initiatedBy,
+          kind,
+          reason: platform?.reason ?? null,
           previousBillingStatus,
-          amount: Number(event.priceCharged ?? 0),
+          amount: requestedCents / 100,
           currency: organization?.settings?.currency || 'EUR',
           paidAt: event.paidAt,
           billedDays: event.billedDays ?? null,
@@ -398,25 +622,46 @@ export class EventUnlockCancellationService {
         });
 
         if (previousBillingStatus === 'paid') {
-          Object.assign(record, await this.refundStripePayment(event));
+          Object.assign(
+            record,
+            await this.refundStripePayment(event, {
+              /* Ganzer, unberuehrter Betrag: Stripe bestimmt ihn selbst
+                 (Rechnungsbetrag bzw. die ganze Zahlung) — das bleibt
+                 exakt, auch wenn priceCharged gerundet ist. */
+              amountInCents:
+                fullRemaining && earlier.count === 0 ? null : requestedCents,
+              keySuffix:
+                kind === 'goodwill'
+                  ? `:goodwill:${earlier.count + 1}:${requestedCents}`
+                  : earlier.count > 0
+                    ? `:rest:${requestedCents}`
+                    : '',
+              memo:
+                kind === 'goodwill'
+                  ? `Kulanzerstattung · ${event.name}`
+                  : `Stornierung der Freischaltung · ${event.name}`,
+            }),
+          );
         }
 
         const statusBefore = event.status;
-        event.billingStatus = 'none';
-        event.paidAt = null;
-        event.priceCharged = null;
-        event.billedDays = null;
-        event.stripeCheckoutSessionId = null;
-        event.unlockedStartDate = null;
-        event.invoicedAt = null;
-        event.invoicedBy = null;
-        event.invoiceNote = null;
-        // Aktiv heisst: es wird verkauft. Ohne Freischaltung geht das nur
-        // noch im Testmodus.
-        if (event.status === EventStatus.ACTIVE) {
-          event.status = EventStatus.TEST;
+        if (kind === 'cancellation') {
+          event.billingStatus = 'none';
+          event.paidAt = null;
+          event.priceCharged = null;
+          event.billedDays = null;
+          event.stripeCheckoutSessionId = null;
+          event.unlockedStartDate = null;
+          event.invoicedAt = null;
+          event.invoicedBy = null;
+          event.invoiceNote = null;
+          // Aktiv heisst: es wird verkauft. Ohne Freischaltung geht das nur
+          // noch im Testmodus.
+          if (event.status === EventStatus.ACTIVE) {
+            event.status = EventStatus.TEST;
+          }
+          await events.save(event);
         }
-        await events.save(event);
         const saved = await cancellations.save(record);
 
         return {
@@ -425,6 +670,7 @@ export class EventUnlockCancellationService {
           cancellation: saved,
           replayed: false,
           statusChanged: statusBefore !== event.status,
+          realOrders: orders,
         };
       },
     );
@@ -433,7 +679,8 @@ export class EventUnlockCancellationService {
 
     const { event, organization, cancellation, statusChanged } = outcome;
     this.logger.log(
-      `Freischaltung storniert: event=${event.id} org=${event.organizationId} ` +
+      `Freischaltung ${cancellation.kind === 'goodwill' ? 'per Kulanz erstattet' : 'storniert'}: ` +
+        `event=${event.id} org=${event.organizationId} ` +
         `by=${actor.id} (${initiatedBy}) amount=${cancellation.amount} ` +
         `via=${cancellation.previousBillingStatus} refund=${cancellation.stripeRefundId ?? '-'} ` +
         `creditNote=${cancellation.creditNoteNumber ?? '-'}`,
@@ -445,6 +692,33 @@ export class EventUnlockCancellationService {
         organizationId: event.organizationId,
         status: event.status,
         name: event.name,
+      });
+    }
+
+    if (platform) {
+      await this.billingAudit.record({
+        action:
+          cancellation.kind === 'goodwill'
+            ? AdminAction.EVENT_BILLING_GOODWILL_REFUND
+            : AdminAction.EVENT_BILLING_CANCELLED,
+        organizationId: event.organizationId,
+        eventId: event.id,
+        reason: platform.reason,
+        actor: platform.audit ?? {
+          userId: actor.id,
+          ipAddress: '0.0.0.0',
+        },
+        details: {
+          cancellationId: cancellation.id,
+          kind: cancellation.kind,
+          amount: Number(cancellation.amount),
+          currency: cancellation.currency,
+          via: cancellation.previousBillingStatus,
+          realOrders: outcome.realOrders ?? 0,
+          stripeRefundId: cancellation.stripeRefundId,
+          creditNoteNumber: cancellation.creditNoteNumber,
+          keepsUnlock: cancellation.kind === 'goodwill',
+        },
       });
     }
 
@@ -463,6 +737,13 @@ export class EventUnlockCancellationService {
    */
   private async refundStripePayment(
     event: Event,
+    options: {
+      /** null: alles, was Stripe noch erstatten kann. */
+      amountInCents: number | null;
+      /** Unterscheidet Kulanz-/Resterstattungen vom einfachen Storno. */
+      keySuffix: string;
+      memo: string;
+    },
   ): Promise<StripeRefundOutcome> {
     const fail = (detail: string): never => {
       this.logger.error(
@@ -483,9 +764,11 @@ export class EventUnlockCancellationService {
     const metadata = {
       eventId: event.id,
       organizationId: event.organizationId,
-      reason: 'event_unlock_cancellation',
+      reason: options.keySuffix.startsWith(':goodwill')
+        ? 'event_unlock_goodwill'
+        : 'event_unlock_cancellation',
     };
-    const keyBase = `event-unlock-cancel:${event.id}:${event.stripeCheckoutSessionId}`;
+    const keyBase = `event-unlock-cancel:${event.id}:${event.stripeCheckoutSessionId}${options.keySuffix}`;
 
     try {
       const session = await this.stripeService.getCheckoutSessionForRefund(
@@ -499,10 +782,22 @@ export class EventUnlockCancellationService {
       const invoiceId = idOf(session.invoice);
 
       if (invoice && invoiceId && invoice.status === 'paid') {
+        // Was von der Rechnung noch nicht gutgeschrieben ist.
+        const creditable =
+          invoice.amount_paid - (invoice.post_payment_credit_notes_amount ?? 0);
+        const amount = options.amountInCents ?? creditable;
+        if (amount > creditable) {
+          throw new BadRequestException({
+            code: ErrorCodes.VALIDATION_ERROR,
+            reason: ErrorReasons.REFUND_EXCEEDS_REFUNDABLE,
+            message: `Erstattbar sind höchstens ${(creditable / 100).toFixed(2)}`,
+            params: { max: (creditable / 100).toFixed(2) },
+          });
+        }
         const creditNote = await this.stripeService.createCreditNoteWithRefund({
           invoiceId,
-          amountInCents: invoice.amount_paid,
-          memo: `Stornierung der Freischaltung · ${event.name}`,
+          amountInCents: amount,
+          memo: options.memo,
           metadata,
           idempotencyKey: `${keyBase}:credit-note`,
         });
@@ -525,6 +820,7 @@ export class EventUnlockCancellationService {
       }
       const refund = await this.stripeService.createRefund({
         paymentIntentId,
+        amountInCents: options.amountInCents ?? undefined,
         metadata,
         idempotencyKey: `${keyBase}:refund`,
       });
@@ -537,7 +833,12 @@ export class EventUnlockCancellationService {
         refundStatus: refundStatusOf(refund.status),
       };
     } catch (error) {
-      if (error instanceof BadGatewayException) throw error;
+      if (
+        error instanceof BadGatewayException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
       return fail((error as Error).message);
     }
   }
@@ -611,7 +912,24 @@ export class EventUnlockCancellationService {
     const customerEmail =
       organization?.billingEmail ||
       (cancellation.initiatedBy === 'organization' ? actor.email : null);
-    if (customerEmail) {
+    const goodwill = cancellation.kind === 'goodwill';
+    if (customerEmail && goodwill) {
+      try {
+        await this.emailService.sendEventGoodwillRefundEmail({
+          to: customerEmail,
+          organizationName: organization?.name ?? '',
+          eventName: event.name,
+          amount,
+          currency: cancellation.currency,
+          via,
+          creditNoteNumber: cancellation.creditNoteNumber,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Kulanz-Bestätigung an ${customerEmail} nicht gesendet: ${(error as Error).message}`,
+        );
+      }
+    } else if (customerEmail) {
       try {
         await this.emailService.sendEventUnlockCancelledEmail({
           to: customerEmail,
@@ -648,6 +966,8 @@ export class EventUnlockCancellationService {
           creditNoteNumber: cancellation.creditNoteNumber,
           manualCreditNoteRequired: cancellation.manualCreditNoteRequired,
           invoiceNote: cancellation.invoiceNote,
+          kind: cancellation.kind,
+          reason: cancellation.reason,
         });
       }
     } catch (error) {
