@@ -1,5 +1,6 @@
 import { Controller, Get, Inject, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type { Response } from 'express';
@@ -74,7 +75,11 @@ export class HealthController {
     private readonly shutdown: ShutdownService,
   ) {}
 
+  // Liveness ohne Rate-Limit: Monitore und Rollout-Messungen fragen oft und
+  // von einer IP; ein 429 waere hier eine falsche Auskunft. Beide Endpunkte
+  // fassen weder Datenbank noch Redis an.
   @Public()
+  @SkipThrottle()
   @Get()
   check(): HealthCheck {
     return {
@@ -102,6 +107,7 @@ export class HealthController {
   }
 
   @Public()
+  @SkipThrottle()
   @Get('live')
   liveness(): HealthCheck {
     return {
