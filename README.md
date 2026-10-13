@@ -385,7 +385,7 @@ src/
 | Methode | Endpunkt | Beschreibung |
 |---------|----------|--------------|
 | GET | `/` | Basic Health Check |
-| GET | `/ready` | Readiness Probe (DB + Redis) |
+| GET | `/ready` | Readiness Probe (DB, Redis, Migrationen, nicht im Herunterfahren) — 503 bei Fehler |
 | GET | `/live` | Liveness Probe |
 | GET | `/detailed` | Detailed Health + Memory |
 
@@ -435,6 +435,10 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `UPLOAD_DIR` | Upload-Verzeichnis | ./uploads |
 | `EVENT_PRICE_EUR` | Preis pro abgerechnetem Veranstaltungstag | 25 |
 | `BUSINESS_DAY_START_HOUR` | Tageswechsel der Abrechnung (Stunde 1–23, Ortszeit der Organisation). Ein Veranstaltungstag läuft von 6 bis 6 Uhr; ein Ende bis einschließlich 6:00 zählt zum Vortag (Sa 20 Uhr – So 2 Uhr = 1 Tag). Bereits bezahlte Veranstaltungen behalten ihre Tage. | 6 |
+| `DATABASE_MIGRATIONS_RUN` | Migrationen beim Start ausführen (eine Instanz) | false (Vorlage `docker-compose.prod.yml`: true) |
+| `SHUTDOWN_TIMEOUT_MS` | So lange dürfen offene Anfragen nach SIGTERM noch laufen | 20000 |
+| `SHUTDOWN_DRAIN_DELAY_MS` | Wartezeit nach SIGTERM, in der `/api/health/ready` schon 503 meldet | 0 |
+| `DEPLOY_GUARD_TOKEN` | Token für `GET /api/internal/deploy-guard` (leer: Endpunkt aus) | – |
 
 Siehe `.env.example` für alle verfügbaren Variablen.
 
@@ -454,30 +458,82 @@ docker-compose down
 docker-compose down -v
 ```
 
+## Datenbank-Änderungen: abwärtskompatibel (expand/contract)
+
+Beim Deploy laufen die Migrationen **vor** dem Austausch der Instanzen, und
+eine Weile bedienen alte und neue Version dieselbe Datenbank gleichzeitig.
+Jede Migration muss deshalb mit dem **bisherigen** Code funktionieren:
+
+1. **Expand** — nur hinzufügen: neue Tabellen, neue Spalten mit Default oder
+   `NULL`, neue Indizes (bei großen Tabellen `CONCURRENTLY`). Der neue Code
+   schreibt alt und neu, liest neu mit Rückfall auf alt.
+2. **Migrate** — Daten umziehen (in der Migration oder per Job).
+3. **Contract** — erst in einem **späteren** Release, wenn kein Code mehr die
+   alte Form nutzt: Spalten/Tabellen entfernen, `NOT NULL` setzen, umbenennen.
+
+Nicht in einem Schritt: Spalte umbenennen oder löschen, Typ ändern, `NOT NULL`
+ohne Default, Enum-Werte entfernen. Umbenennen heißt: neue Spalte anlegen,
+befüllen, Code umstellen — die alte Spalte fällt ein Release später weg.
+Migrationen nicht nachträglich ändern; `down()` pflegen.
+
+## Mehrere Instanzen
+
+Die API läuft mit mehreren Instanzen hinter einem Proxy (Traefik):
+
+- **Socket.io** verteilt Nachrichten über Redis (`RedisIoAdapter`); die
+  Verbindungen bleiben per Sticky-Cookie an einer Instanz.
+- **Cache** (u. a. gesperrte Zugangstoken nach dem Abmelden) liegt in Redis.
+- **Zeitgesteuerte Jobs** (`@Cron`) laufen nur auf einer Instanz:
+  `CronLockService` belegt die Fälligkeit per `SET … NX PX` in Redis.
+- **Migrationen** laufen einmal vor dem Rollout, nicht beim Start:
+  `DATABASE_MIGRATIONS_RUN=false` und vorher
+  `docker compose run --rm migrate` (bzw. `pnpm migration:run:prod` im Image).
+  Fehlen Migrationen, meldet `/api/health/ready` 503 — eine neue Instanz
+  bekommt dann keinen Verkehr.
+- **Herunterfahren**: auf SIGTERM meldet die Instanz „nicht bereit“, schließt
+  die Websockets (Clients verbinden sich neu), lässt offene Anfragen bis zu
+  `SHUTDOWN_TIMEOUT_MS` (20 s) zu Ende laufen und trennt erst dann Datenbank
+  und Redis. Compose: `stop_grace_period: 30s`.
+
+Eine einzelne Instanz (Vorlage `docker-compose.prod.yml`) braucht nichts davon:
+sie führt die Migrationen beim Start aus.
+
 ## Automatisches Deployment
 
-Nach jedem erfolgreichen Image-Build auf `main` (Workflow `.github/workflows/build-push.yml`) kann automatisch auf den Produktionsserver deployed werden. Der Deploy-Job ist standardmäßig deaktiviert und muss explizit aktiviert werden.
+Der Workflow `.github/workflows/build-push.yml` baut das Image und spielt es
+aus: `dev` → Staging, `main` → Produktion. Aktiv nur mit der Variable
+`DEPLOY_ENABLED=true`.
 
-**Aktivieren:** Repository-Variable `DEPLOY_ENABLED` auf `true` setzen (Settings → Secrets and variables → Actions → Variables).
+Ablauf auf dem Server (per SSH, Compose-Verzeichnis `DEPLOY_PATH`):
 
-**Benötigte Variables:**
+1. **Deploy-Schutz** (nur Produktion): fragt `GET /api/internal/deploy-guard`.
+   Läuft gerade ein Fest — eine aktive Veranstaltung mit echten Bestellungen
+   (keine Testbuchungen) in den letzten 30 Minuten —, wartet der Deploy und
+   fragt alle 5 Minuten erneut, höchstens 90 Minuten, dann bricht er mit
+   Meldung ab. Manuell übergehen: Workflow per „Run workflow“ auf `main` mit
+   `force: true` starten.
+2. `docker compose pull <service>`
+3. **Migrationen** als eigener Schritt: `docker compose run --rm --no-deps migrate`
+   (nur wenn der Compose-Dienst `migrate` existiert).
+4. **`docker rollout <service>`** ([docker-rollout](https://github.com/wowu/docker-rollout)):
+   startet neue Instanzen neben den alten, wartet auf `healthy`
+   (`/api/health/ready`), nimmt die alten aus dem Proxy (Pre-Stop-Hook legt
+   `/tmp/drain` an, der Health-Check schlägt fehl) und stoppt sie dann.
+   Werden die neuen nicht gesund, bleiben die alten aktiv, das vorige Image
+   bekommt das Tag zurück und der Workflow schlägt fehl.
 
-| Variable | Beschreibung |
-|----------|--------------|
-| `DEPLOY_ENABLED` | `true` aktiviert den Deploy-Job, sonst wird er übersprungen |
-| `DEPLOY_PATH` | Optional — Compose-Verzeichnis auf dem Server (Default: `/srv/docker/<repo-name>`) |
-| `DEPLOY_SERVICE` | Name des zu aktualisierenden Compose-Service |
+Fehlt `docker rollout` auf dem Server oder hat der Dienst noch einen festen
+`container_name`, fällt der Workflow auf `docker compose up -d` zurück.
 
-**Benötigte Secrets:**
+**Variables:** `DEPLOY_ENABLED`, `DEPLOY_PATH` / `STAGING_DEPLOY_PATH`
+(Default `/srv/docker/<repo>` bzw. `/srv/docker/staging/<repo>`),
+`DEPLOY_SERVICE` (Compose-Dienst), optional `DEPLOY_GUARD_URL`
+(Default `https://api.openeos.de/api/internal/deploy-guard`).
 
-| Secret | Beschreibung |
-|--------|--------------|
-| `DEPLOY_HOST` | Hostname/IP des Produktionsservers |
-| `DEPLOY_USER` | SSH-Benutzer |
-| `DEPLOY_SSH_KEY` | Privater SSH-Key für den Zugriff |
-| `DEPLOY_PORT` | (optional) SSH-Port, Standard: `22` |
-
-Der Deploy-Job verbindet sich per SSH auf den Server und führt dort `docker compose pull` + `docker compose up -d` für den konfigurierten Service aus, gefolgt von `docker image prune -f`.
+**Secrets:** `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, optional
+`DEPLOY_PORT`, `DEPLOY_GUARD_TOKEN` (gleicher Wert wie in der `.env` der
+Produktions-API). Ohne `DEPLOY_GUARD_TOKEN` wird der Deploy-Schutz mit einer
+Warnung übersprungen.
 
 ## License
 

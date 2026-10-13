@@ -3,6 +3,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 import { Logger } from '@nestjs/common';
 import type { Server, ServerOptions } from 'socket.io';
+import { redisUrl } from '../redis/redis.constants';
 
 /**
  * Socket.io adapter backed by Redis pub/sub so broadcasts, rooms and
@@ -18,9 +19,7 @@ export class RedisIoAdapter extends IoAdapter {
     port: number,
     password?: string,
   ): Promise<void> {
-    const url = password
-      ? `redis://:${encodeURIComponent(password)}@${host}:${port}`
-      : `redis://${host}:${port}`;
+    const url = redisUrl(host, port, password);
 
     const pubClient = createClient({ url });
     const subClient = pubClient.duplicate();

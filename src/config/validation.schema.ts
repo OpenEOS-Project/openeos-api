@@ -97,4 +97,14 @@ export const validationSchema = Joi.object({
 
   // Empfänger für Support-Nachrichten und Kontaktanfragen (optional)
   SUPPORT_NOTIFY_EMAIL: Joi.string().allow('').default(''),
+
+  // Token fuer GET /api/internal/deploy-guard (Deploy-Workflows fragen dort,
+  // ob gerade ein Fest laeuft). Leer: Endpunkt antwortet 404.
+  DEPLOY_GUARD_TOKEN: Joi.string().min(32).allow('').optional(),
+
+  // Herunterfahren: wie lange offene Anfragen noch zu Ende laufen duerfen,
+  // und optional eine Wartezeit, in der die Instanz schon "nicht bereit"
+  // meldet, aber noch bedient (siehe common/lifecycle/shutdown.service.ts).
+  SHUTDOWN_TIMEOUT_MS: Joi.number().integer().min(0).optional(),
+  SHUTDOWN_DRAIN_DELAY_MS: Joi.number().integer().min(0).optional(),
 });

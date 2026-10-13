@@ -11,6 +11,7 @@ import {
 } from '../../database/entities';
 import { EmailService } from '../email/email.service';
 import { localDateKey } from '../../common/utils/date-range.util';
+import { CronLockService } from '../../common/redis/cron-lock.service';
 
 @Injectable()
 export class ShiftReminderService {
@@ -24,6 +25,7 @@ export class ShiftReminderService {
     @InjectRepository(ShiftRegistration)
     private readonly registrationRepository: Repository<ShiftRegistration>,
     private readonly emailService: EmailService,
+    private readonly cronLock: CronLockService,
   ) {}
 
   /**
@@ -31,6 +33,13 @@ export class ShiftReminderService {
    */
   @Cron(CronExpression.EVERY_DAY_AT_8AM)
   async handleShiftReminders() {
+    // Mehrere API-Instanzen: nur eine verschickt die Erinnerungen.
+    await this.cronLock.runExclusive('shift-reminders', () =>
+      this.sendShiftReminders(),
+    );
+  }
+
+  private async sendShiftReminders() {
     this.logger.log('Starting shift reminder job...');
 
     try {
@@ -152,6 +161,12 @@ export class ShiftReminderService {
    */
   @Cron(CronExpression.EVERY_HOUR)
   async handleVerificationReminders() {
+    await this.cronLock.runExclusive('shift-verification-reminders', () =>
+      this.sendVerificationReminders(),
+    );
+  }
+
+  private async sendVerificationReminders() {
     this.logger.log('Starting verification-reminder job...');
     try {
       const plans = await this.shiftPlanRepository.find({

@@ -9,6 +9,8 @@ import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import type { Request, Response } from 'express';
 
+const HEALTH_PATH = /^\/[^/?]+\/health(?:[/?]|$)/;
+
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger(LoggingInterceptor.name);
@@ -30,9 +32,15 @@ export class LoggingInterceptor implements NestInterceptor {
     const response = context.switchToHttp().getResponse<Response>();
     response.setHeader('X-Request-Id', requestId);
 
-    this.logger.log(
-      `[${requestId}] ${method} ${url} - IP: ${ip} - UA: ${userAgent.substring(0, 50)}`,
-    );
+    // Container-Health-Checks fragen alle paar Sekunden — die stehen nur
+    // im Log, wenn sie fehlschlagen.
+    const quiet = HEALTH_PATH.test(url);
+
+    if (!quiet) {
+      this.logger.log(
+        `[${requestId}] ${method} ${url} - IP: ${ip} - UA: ${userAgent.substring(0, 50)}`,
+      );
+    }
 
     if (
       process.env.NODE_ENV === 'development' &&
@@ -48,6 +56,7 @@ export class LoggingInterceptor implements NestInterceptor {
       tap({
         next: () => {
           const statusCode = response.statusCode;
+          if (quiet && statusCode < 400) return;
           const duration = Date.now() - now;
           this.logger.log(
             `[${requestId}] ${method} ${url} - ${statusCode} - ${duration}ms`,
