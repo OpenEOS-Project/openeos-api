@@ -381,6 +381,182 @@ export class EmailService {
   }
 
   /**
+   * Bestaetigung an die Organisation: die Freischaltung ist storniert.
+   *
+   * Nennt Betrag, Rueckweg und Dauer ausdruecklich. Bei Lastschrift ist
+   * das mehr als Hoeflichkeit: wer nicht weiss, dass das Geld unterwegs
+   * ist, laesst die Lastschrift bei der Bank zurueckgehen — und bekommt
+   * den Betrag dann doppelt.
+   */
+  async sendEventUnlockCancelledEmail(options: {
+    to: string;
+    organizationName: string;
+    eventName: string;
+    eventDate: Date | null;
+    timeZone: string;
+    amount: number;
+    currency: string;
+    via: 'stripe' | 'invoice';
+    creditNoteNumber: string | null;
+  }): Promise<boolean> {
+    const subject = `Freischaltung storniert – ${options.eventName}`;
+    const betrag = new Intl.NumberFormat('de-DE', {
+      style: 'currency',
+      currency: options.currency || 'EUR',
+    }).format(options.amount);
+    const beginn = options.eventDate
+      ? new Intl.DateTimeFormat('de-DE', {
+          dateStyle: 'medium',
+          timeZone: options.timeZone,
+        }).format(options.eventDate)
+      : '–';
+
+    const zeilen: [string, string][] = [
+      ['Veranstaltung', options.eventName],
+      ['Beginn', beginn],
+      [options.via === 'stripe' ? 'Erstattung' : 'Betrag', betrag],
+    ];
+    if (options.creditNoteNumber) {
+      zeilen.push(['Stornorechnung', options.creditNoteNumber]);
+    }
+
+    const rueckweg =
+      options.via === 'stripe'
+        ? 'Der volle Betrag geht auf die Karte bzw. das Konto zurück, mit dem du bezahlt hast – bei Karten meist in 5–10 Werktagen, bei Lastschrift in etwa 5 Werktagen. Die Stornorechnung findest du unter Rechnungen.'
+        : 'Du hattest auf Rechnung bestellt. Ist die Rechnung schon gestellt, bekommst du von uns eine Stornorechnung; einen bereits überwiesenen Betrag erstatten wir zurück.';
+
+    const html = rahmen({
+      kontext: 'Freischaltung',
+      titel: `OpenEOS — ${subject}`,
+      preheader:
+        options.via === 'stripe'
+          ? `Storniert: ${betrag} gehen an dich zurück.`
+          : 'Storniert: die Bestellung auf Rechnung ist aufgehoben.',
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Freischaltung storniert.') +
+          absatz(
+            `Die Freischaltung von „${options.eventName}“${options.organizationName ? ` (${options.organizationName})` : ''} ist storniert.`,
+          ),
+        datenblock('Storno', zeilen),
+        absatz(rueckweg),
+        absatz(
+          'Die Veranstaltung läuft im Testmodus weiter, deine Einrichtung bleibt. Du kannst sie jederzeit erneut freischalten; der Preis wird dann neu berechnet.',
+        ),
+        knopf(`${this.appUrl}/events`, 'Zu den Veranstaltungen'),
+        hinweis(
+          'Das warst nicht du?',
+          'Dann melde dich bitte umgehend beim Support.',
+        ),
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /** Hinweis an den Betreiber: eine Freischaltung wurde storniert. */
+  async sendAdminEventUnlockCancelledNotification(options: {
+    to: string;
+    organizationName: string;
+    eventName: string;
+    eventDate: Date | null;
+    amount: number;
+    via: 'stripe' | 'invoice';
+    initiatedBy: 'organization' | 'platform';
+    creditNoteNumber: string | null;
+    manualCreditNoteRequired: boolean;
+    invoiceNote: string | null;
+  }): Promise<boolean> {
+    const subject =
+      options.via === 'stripe'
+        ? 'Freischaltung storniert (Stripe-Erstattung)'
+        : 'Freischaltung storniert (auf Rechnung)';
+    const zeilen: [string, string][] = [
+      ['Organisation', options.organizationName],
+      ['Veranstaltung', options.eventName],
+      [
+        'Beginn',
+        options.eventDate
+          ? options.eventDate.toLocaleDateString('de-DE', {
+              dateStyle: 'medium',
+            })
+          : '–',
+      ],
+      ['Betrag', `${options.amount.toFixed(2).replace('.', ',')} €`],
+      [
+        'Storniert von',
+        options.initiatedBy === 'platform' ? 'Plattform-Admin' : 'Organisation',
+      ],
+    ];
+    if (options.creditNoteNumber) {
+      zeilen.push(['Stornorechnung', options.creditNoteNumber]);
+    }
+    if (options.invoiceNote) {
+      zeilen.push(['Rechnungsvermerk', options.invoiceNote]);
+    }
+
+    const html = rahmen({
+      kontext: 'Betrieb',
+      titel: `OpenEOS — ${subject}`,
+      preheader: `${options.organizationName}: ${options.eventName}`,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift(subject),
+        datenblock('Storno', zeilen),
+        options.manualCreditNoteRequired
+          ? hinweis(
+              'Stornorechnung stellen',
+              'Die Rechnung zu dieser Bestellung war schon gestellt. Bitte eine Stornorechnung dazu ausstellen und einen bereits gezahlten Betrag zurücküberweisen.',
+            )
+          : null,
+        knopf(`${this.appUrl}/admin/events`, 'Im Adminbereich ansehen'),
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /** Hinweis an den Betreiber: eine Storno-Erstattung ist gescheitert. */
+  async sendAdminEventRefundFailedNotification(options: {
+    to: string;
+    eventName: string;
+    organizationId: string;
+    amount: number;
+    refundId: string;
+    failureReason: string | null;
+  }): Promise<boolean> {
+    const subject = 'Erstattung eines Stornos fehlgeschlagen';
+    const html = rahmen({
+      kontext: 'Betrieb',
+      titel: `OpenEOS — ${subject}`,
+      preheader: `${options.eventName}: Erstattung bitte manuell klären`,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift(subject),
+        absatz(
+          'Stripe konnte eine Erstattung nach einem Storno nicht ausführen. Das Geld liegt wieder auf dem Stripe-Konto; die Organisation hat es nicht erhalten.',
+        ),
+        datenblock('Erstattung', [
+          ['Veranstaltung', options.eventName],
+          ['Organisation', options.organizationId],
+          ['Betrag', `${options.amount.toFixed(2).replace('.', ',')} €`],
+          ['Stripe-Erstattung', options.refundId],
+          ['Grund', options.failureReason ?? 'unbekannt'],
+        ]),
+        hinweis(
+          'Bitte manuell erstatten',
+          'Kontakt mit der Organisation aufnehmen und den Betrag auf anderem Weg zurückzahlen.',
+        ),
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /**
    * Antwort des Supports an den Fragesteller.
    *
    * Bis hierher lief die Benachrichtigung nur in eine Richtung: wer eine

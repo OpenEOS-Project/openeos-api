@@ -171,7 +171,7 @@ export class StripeService {
   }
 
   /**
-   * Das Rechnungs-PDF holen.
+   * Das PDF einer Rechnung oder Gutschrift holen.
    *
    * Stripe legt es unter einer eigenen, nicht erratbaren URL ab. Die wird
    * bewusst nicht an den Browser durchgereicht, sondern hier abgerufen und
@@ -194,6 +194,92 @@ export class StripeService {
     sessionId: string,
   ): Promise<Stripe.Checkout.Session> {
     return this.requireClient().checkout.sessions.retrieve(sessionId);
+  }
+
+  /**
+   * Die Checkout-Sitzung samt Zahlung und Rechnung — was ein Storno braucht,
+   * um die richtige Zahlung zu erstatten und die Rechnung gutzuschreiben.
+   */
+  async getCheckoutSessionForRefund(
+    sessionId: string,
+  ): Promise<Stripe.Checkout.Session> {
+    return this.requireClient().checkout.sessions.retrieve(sessionId, {
+      expand: ['payment_intent', 'invoice'],
+    });
+  }
+
+  /**
+   * Eine bezahlte Rechnung vollständig gutschreiben und dabei erstatten.
+   *
+   * Stripe stellt dazu eine Gutschrift (Credit Note) mit eigener Nummer
+   * („<Rechnungsnummer>-CN-01“) und eigenem PDF aus — die Stornorechnung —
+   * und legt die Erstattung auf die Zahlung der Rechnung an. Keine Mail von
+   * Stripe: die Bestätigung schicken wir selbst, auf Deutsch und mit den
+   * Folgen für die Veranstaltung.
+   */
+  async createCreditNoteWithRefund(params: {
+    invoiceId: string;
+    amountInCents: number;
+    memo: string;
+    metadata: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<Stripe.CreditNote> {
+    return this.requireClient().creditNotes.create(
+      {
+        invoice: params.invoiceId,
+        amount: params.amountInCents,
+        refund_amount: params.amountInCents,
+        reason: 'order_change',
+        memo: params.memo,
+        email_type: 'none',
+        metadata: params.metadata,
+      },
+      { idempotencyKey: params.idempotencyKey },
+    );
+  }
+
+  /** Die Erstattung, die Stripe zu einer Gutschrift angelegt hat. */
+  refundIdOfCreditNote(creditNote: Stripe.CreditNote): string | null {
+    const first = creditNote.refunds?.[0]?.refund;
+    if (!first) return null;
+    return typeof first === 'string' ? first : first.id;
+  }
+
+  /** Eine Zahlung vollständig erstatten (ohne Rechnung, also ohne Gutschrift). */
+  async createRefund(params: {
+    paymentIntentId: string;
+    metadata: Record<string, string>;
+    idempotencyKey: string;
+  }): Promise<Stripe.Refund> {
+    return this.requireClient().refunds.create(
+      {
+        payment_intent: params.paymentIntentId,
+        reason: 'requested_by_customer',
+        metadata: params.metadata,
+      },
+      { idempotencyKey: params.idempotencyKey },
+    );
+  }
+
+  async retrieveRefund(refundId: string): Promise<Stripe.Refund> {
+    return this.requireClient().refunds.retrieve(refundId);
+  }
+
+  /** Die Gutschriften (Stornorechnungen) eines Kunden, mit Rechnungsnummer. */
+  async listCreditNotes(
+    customerId: string,
+    limit = 100,
+  ): Promise<Stripe.CreditNote[]> {
+    const page = await this.requireClient().creditNotes.list({
+      customer: customerId,
+      limit,
+      expand: ['data.invoice'],
+    });
+    return page.data;
+  }
+
+  async getCreditNote(creditNoteId: string): Promise<Stripe.CreditNote> {
+    return this.requireClient().creditNotes.retrieve(creditNoteId);
   }
 
   /**

@@ -31,6 +31,11 @@ import { StripeService } from '../stripe/stripe.service';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { OrderInvoiceDto } from './dto/event-billing.dto';
+import {
+  CancellationInfo,
+  CancellationSummary,
+  EventUnlockCancellationService,
+} from './event-unlock-cancellation.service';
 
 /* hasBilledEventBefore schliesst die laufende Veranstaltung aus. Bei einer
    Vorschau gibt es keine; diese Id trifft auf keine Zeile zu. */
@@ -70,11 +75,26 @@ export interface EventBillingInfo extends EventPrice {
   organizationName: string;
   billingEmail: string | null;
   billingAddress: BillingAddress | null;
+  /** Wann bezahlt bzw. auf Rechnung bestellt wurde (ISO). */
+  paidAt: string | null;
+  /** Der tatsaechlich berechnete Betrag. */
+  priceCharged: number | null;
+  /** Ob und bis wann sich die Freischaltung kostenlos stornieren laesst. */
+  cancellation: CancellationInfo;
+  /** Die letzte Stornierung, falls es eine gab. */
+  lastCancellation: CancellationSummary | null;
 }
 
-/** Eine von Stripe ausgestellte Rechnung, auf das reduziert, was die Liste zeigt. */
+/**
+ * Eine von Stripe ausgestellte Rechnung oder Gutschrift (Stornorechnung),
+ * auf das reduziert, was die Liste zeigt.
+ */
 export interface OrganizationInvoice {
   id: string;
+  /** Rechnung oder Stornorechnung. */
+  kind: 'invoice' | 'credit_note';
+  /** Bei einer Stornorechnung: die Nummer der aufgehobenen Rechnung. */
+  relatedInvoiceNumber: string | null;
   /** Fortlaufende Rechnungsnummer von Stripe. Fehlt bei Entwürfen. */
   number: string | null;
   issuedAt: string | null;
@@ -114,6 +134,7 @@ export class EventBillingService {
     private readonly platformSettingsService: PlatformSettingsService,
     private readonly stripeService: StripeService,
     private readonly configService: ConfigService,
+    private readonly cancellationService: EventUnlockCancellationService,
   ) {}
 
   private async getOrganization(organizationId: string): Promise<Organization> {
@@ -361,6 +382,18 @@ export class EventBillingService {
       organizationName: organization.name,
       billingEmail: organization.billingEmail,
       billingAddress: organization.billingAddress,
+      paidAt: event.paidAt ? new Date(event.paidAt).toISOString() : null,
+      priceCharged:
+        event.priceCharged !== null && event.priceCharged !== undefined
+          ? Number(event.priceCharged)
+          : null,
+      cancellation: await this.cancellationService.describe(
+        event,
+        organization,
+      ),
+      lastCancellation: await this.cancellationService.lastCancellation(
+        event.id,
+      ),
     };
   }
 
@@ -409,6 +442,8 @@ export class EventBillingService {
     // Server-side computed — never trust a client-supplied price.
     event.priceCharged = finalPrice;
     event.billedDays = days;
+    // Fuer die Stornofrist: der Beginn, wie er beim Bestellen stand.
+    event.unlockedStartDate = event.startDate;
     await this.eventRepository.save(event);
 
     this.logger.log(
@@ -602,6 +637,16 @@ export class EventBillingService {
       return event;
     }
 
+    /* Diese Zahlung wurde schon storniert und erstattet. Stripe wiederholt
+       Webhooks, und bei Lastschrift kommt die Erfolgsmeldung Tage spaeter —
+       sie darf eine stornierte Freischaltung nicht wieder aufleben lassen. */
+    if (await this.cancellationService.wasCheckoutCancelled(session.id)) {
+      this.logger.warn(
+        `Stripe session ${sessionId} gehört zu einer stornierten Freischaltung — übergangen`,
+      );
+      return event;
+    }
+
     const bezahltAm = new Date();
     const betrag = (session.amount_total ?? 0) / 100;
     const organization = await this.organizationRepository.findOne({
@@ -629,6 +674,7 @@ export class EventBillingService {
         stripeCheckoutSessionId: session.id,
         priceCharged: betrag,
         billedDays: tage,
+        unlockedStartDate: event.startDate,
       },
     );
 
@@ -642,6 +688,7 @@ export class EventBillingService {
     event.stripeCheckoutSessionId = session.id;
     event.priceCharged = betrag;
     event.billedDays = tage;
+    event.unlockedStartDate = event.startDate;
 
     this.logger.log(
       `Event ${event.id} bezahlt über Stripe (${event.priceCharged})`,
@@ -745,12 +792,15 @@ export class EventBillingService {
       return [];
     }
 
-    const invoices = await this.stripeService.listInvoices(
-      organization.stripeCustomerId,
-    );
+    const [invoices, creditNotes] = await Promise.all([
+      this.stripeService.listInvoices(organization.stripeCustomerId),
+      this.stripeService.listCreditNotes(organization.stripeCustomerId),
+    ]);
 
-    return invoices.map((invoice) => ({
+    const rows: OrganizationInvoice[] = invoices.map((invoice) => ({
       id: invoice.id ?? '',
+      kind: 'invoice' as const,
+      relatedInvoiceNumber: null,
       number: invoice.number ?? null,
       // Stripe zählt in Sekunden, der Rest der Anwendung in Millisekunden.
       issuedAt: invoice.created
@@ -765,6 +815,35 @@ export class EventBillingService {
       hostedUrl: invoice.hosted_invoice_url ?? null,
       hasPdf: !!invoice.invoice_pdf,
     }));
+
+    /* Stornorechnungen sind bei Stripe Gutschriften zu einer Rechnung. Sie
+       stehen in derselben Liste, weil sie fuer die Buchhaltung dazugehoeren:
+       wer die Rechnung ablegt, muss auch ihre Aufhebung finden. */
+    for (const note of creditNotes) {
+      const invoice =
+        note.invoice && typeof note.invoice !== 'string' ? note.invoice : null;
+      rows.push({
+        id: note.id,
+        kind: 'credit_note',
+        relatedInvoiceNumber: invoice?.number ?? null,
+        number: note.number ?? null,
+        issuedAt: note.created
+          ? new Date(note.created * 1000).toISOString()
+          : null,
+        total: (note.total ?? 0) / 100,
+        currency: (note.currency ?? 'eur').toUpperCase(),
+        status: note.status ?? 'issued',
+        paid: false,
+        description: note.memo ?? null,
+        hostedUrl: null,
+        hasPdf: !!note.pdf,
+      });
+    }
+
+    // Neueste zuerst, Rechnungen und Gutschriften gemischt.
+    return rows.sort((a, b) =>
+      (b.issuedAt ?? '').localeCompare(a.issuedAt ?? ''),
+    );
   }
 
   /**
@@ -787,12 +866,27 @@ export class EventBillingService {
     );
 
     const organization = await this.getOrganization(organizationId);
-    const invoice = await this.stripeService.getInvoice(invoiceId);
+
+    /* Gutschriften (Stornorechnungen) tragen bei Stripe das Praefix cn_ —
+       derselbe Weg, dieselbe Pruefung der Zugehoerigkeit. */
+    const document = invoiceId.startsWith('cn_')
+      ? await this.stripeService.getCreditNote(invoiceId).then((note) => ({
+          id: note.id,
+          number: note.number,
+          customer: note.customer,
+          pdf: note.pdf,
+        }))
+      : await this.stripeService.getInvoice(invoiceId).then((invoice) => ({
+          id: invoice.id ?? invoiceId,
+          number: invoice.number,
+          customer: invoice.customer,
+          pdf: invoice.invoice_pdf,
+        }));
 
     const customerId =
-      typeof invoice.customer === 'string'
-        ? invoice.customer
-        : invoice.customer?.id;
+      typeof document.customer === 'string'
+        ? document.customer
+        : document.customer?.id;
     if (
       !organization.stripeCustomerId ||
       customerId !== organization.stripeCustomerId
@@ -804,7 +898,7 @@ export class EventBillingService {
       });
     }
 
-    if (!invoice.invoice_pdf) {
+    if (!document.pdf) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.INVOICE_PDF_NOT_AVAILABLE,
@@ -812,10 +906,8 @@ export class EventBillingService {
       });
     }
 
-    const content = await this.stripeService.fetchInvoicePdf(
-      invoice.invoice_pdf,
-    );
-    return { filename: `${invoice.number ?? invoice.id}.pdf`, content };
+    const content = await this.stripeService.fetchInvoicePdf(document.pdf);
+    return { filename: `${document.number ?? document.id}.pdf`, content };
   }
 
   async companySearch(
