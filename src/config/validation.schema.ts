@@ -88,6 +88,9 @@ export const validationSchema = Joi.object({
   STRIPE_SECRET_KEY: Joi.string().allow('').default(''),
   STRIPE_WEBHOOK_SECRET: Joi.string().allow('').default(''),
   EVENT_PRICE_EUR: Joi.number().default(25),
+  // Stunde, zu der ein abgerechneter Veranstaltungstag wechselt (Ortszeit).
+  // 0 ist ausgeschlossen, siehe normalizeBusinessDayStartHour.
+  BUSINESS_DAY_START_HOUR: Joi.number().integer().min(1).max(23).default(6),
   FIRST_EVENT_DISCOUNT_PERCENT: Joi.number().min(0).max(100).default(20),
   TEST_EVENT_MAX_ORDERS: Joi.number().default(25),
   OPENREGISTER_API_KEY: Joi.string().allow('').default(''),

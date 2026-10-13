@@ -21,11 +21,21 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { User } from '../../database/entities';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { OrganizationsService } from '../organizations/organizations.service';
-import { countEventDays } from '../../common/utils/event-schedule.util';
+import {
+  countBillableDays,
+  countCalendarDays,
+  normalizeBusinessDayStartHour,
+  parseEventDateInput,
+} from '../../common/utils/event-schedule.util';
 import { StripeService } from '../stripe/stripe.service';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { OrderInvoiceDto } from './dto/event-billing.dto';
+import {
+  CancellationInfo,
+  CancellationSummary,
+  EventUnlockCancellationService,
+} from './event-unlock-cancellation.service';
 
 /* hasBilledEventBefore schliesst die laufende Veranstaltung aus. Bei einer
    Vorschau gibt es keine; diese Id trifft auf keine Zeile zu. */
@@ -37,8 +47,14 @@ export type DiscountReason = 'first-event' | 'organization' | null;
 export interface EventPrice {
   /** Preis je Veranstaltungstag, vor Nachlass. */
   pricePerDay: number;
-  /** Abgerechnete Veranstaltungstage. */
+  /** Abgerechnete Veranstaltungstage (Geschaeftstage, siehe countBillableDays). */
   days: number;
+  /**
+   * Stunde, zu der ein Veranstaltungstag wechselt (Ortszeit der
+   * Organisation). Mitgeliefert, damit der Hinweis "von 6 bis 6 Uhr" in der
+   * Oberflaeche nicht eine zweite, irgendwann abweichende 6 kennt.
+   */
+  businessDayStartHour: number;
   /** pricePerDay * days, vor Nachlass. */
   price: number;
   discountPercent: number;
@@ -59,11 +75,26 @@ export interface EventBillingInfo extends EventPrice {
   organizationName: string;
   billingEmail: string | null;
   billingAddress: BillingAddress | null;
+  /** Wann bezahlt bzw. auf Rechnung bestellt wurde (ISO). */
+  paidAt: string | null;
+  /** Der tatsaechlich berechnete Betrag. */
+  priceCharged: number | null;
+  /** Ob und bis wann sich die Freischaltung kostenlos stornieren laesst. */
+  cancellation: CancellationInfo;
+  /** Die letzte Stornierung, falls es eine gab. */
+  lastCancellation: CancellationSummary | null;
 }
 
-/** Eine von Stripe ausgestellte Rechnung, auf das reduziert, was die Liste zeigt. */
+/**
+ * Eine von Stripe ausgestellte Rechnung oder Gutschrift (Stornorechnung),
+ * auf das reduziert, was die Liste zeigt.
+ */
 export interface OrganizationInvoice {
   id: string;
+  /** Rechnung oder Stornorechnung. */
+  kind: 'invoice' | 'credit_note';
+  /** Bei einer Stornorechnung: die Nummer der aufgehobenen Rechnung. */
+  relatedInvoiceNumber: string | null;
   /** Fortlaufende Rechnungsnummer von Stripe. Fehlt bei Entwürfen. */
   number: string | null;
   issuedAt: string | null;
@@ -103,6 +134,7 @@ export class EventBillingService {
     private readonly platformSettingsService: PlatformSettingsService,
     private readonly stripeService: StripeService,
     private readonly configService: ConfigService,
+    private readonly cancellationService: EventUnlockCancellationService,
   ) {}
 
   private async getOrganization(organizationId: string): Promise<Organization> {
@@ -161,6 +193,13 @@ export class EventBillingService {
     return count > 0;
   }
 
+  /** Tageswechsel der Abrechnung, siehe countBillableDays. */
+  private get businessDayStartHour(): number {
+    return normalizeBusinessDayStartHour(
+      this.configService.get<number>('billing.businessDayStartHour'),
+    );
+  }
+
   /**
    * Preis einer Veranstaltung: Tagespreis mal Veranstaltungstage, davon der
    * hoechste zutreffende Nachlass.
@@ -185,10 +224,12 @@ export class EventBillingService {
         ? Number(organization.eventPriceOverride)
         : defaultPrice;
 
-    const days = countEventDays(
+    const businessDayStartHour = this.businessDayStartHour;
+    const days = countBillableDays(
       event.startDate,
       event.endDate,
       organization.settings?.timezone || 'Europe/Berlin',
+      businessDayStartHour,
     );
     const price = Math.round(pricePerDay * days * 100) / 100;
 
@@ -219,6 +260,7 @@ export class EventBillingService {
     return {
       pricePerDay,
       days,
+      businessDayStartHour,
       price,
       discountPercent,
       discountReason,
@@ -264,11 +306,14 @@ export class EventBillingService {
     );
 
     const organization = await this.getOrganization(organizationId);
+    const timeZone = organization.settings?.timezone || 'Europe/Berlin';
     /* Die Rechnung braucht vom Ereignis nur den Zeitraum. Eine leere Id
-       schliesst nichts aus, weil es hier noch nichts auszuschliessen gibt. */
+       schliesst nichts aus, weil es hier noch nichts auszuschliessen gibt.
+       Das Formular schickt reine Daten; die gelten als Mitternacht in der
+       Zeitzone der Organisation, wie die gespeicherte Veranstaltung. */
     const entwurf = {
-      startDate: new Date(startDate),
-      endDate: endDate ? new Date(endDate) : new Date(startDate),
+      startDate: parseEventDateInput(startDate, timeZone),
+      endDate: parseEventDateInput(endDate || startDate, timeZone),
     } as Event;
 
     const istErste = !(await this.hasBilledEventBefore(
@@ -288,6 +333,29 @@ export class EventBillingService {
     };
   }
 
+  /**
+   * Fuer eine bezahlte oder bestellte Veranstaltung gilt, was beim
+   * Freischalten berechnet wurde — nicht, was die heutige Regel ergaebe.
+   * Sonst zeigte eine nach Kalendertagen bezahlte Veranstaltung nach dem
+   * Wechsel auf Geschaeftstage ploetzlich weniger Tage als bezahlt.
+   */
+  private withChargedValues(price: EventPrice, event: Event): EventPrice {
+    if (!EVENT_PAID_BILLING_STATUSES.includes(event.billingStatus)) {
+      return price;
+    }
+    const days = event.billedDays ?? price.days;
+    const finalPrice =
+      event.priceCharged !== null && event.priceCharged !== undefined
+        ? Number(event.priceCharged)
+        : price.finalPrice;
+    return {
+      ...price,
+      days,
+      price: Math.round(price.pricePerDay * days * 100) / 100,
+      finalPrice,
+    };
+  }
+
   async getBillingInfo(
     organizationId: string,
     eventId: string,
@@ -301,7 +369,10 @@ export class EventBillingService {
 
     const event = await this.getEventInOrg(organizationId, eventId);
     const organization = await this.getOrganization(organizationId);
-    const price = await this.resolvePrice(organization, event);
+    const price = this.withChargedValues(
+      await this.resolvePrice(organization, event),
+      event,
+    );
 
     return {
       ...price,
@@ -311,6 +382,18 @@ export class EventBillingService {
       organizationName: organization.name,
       billingEmail: organization.billingEmail,
       billingAddress: organization.billingAddress,
+      paidAt: event.paidAt ? new Date(event.paidAt).toISOString() : null,
+      priceCharged:
+        event.priceCharged !== null && event.priceCharged !== undefined
+          ? Number(event.priceCharged)
+          : null,
+      cancellation: await this.cancellationService.describe(
+        event,
+        organization,
+      ),
+      lastCancellation: await this.cancellationService.lastCancellation(
+        event.id,
+      ),
     };
   }
 
@@ -345,7 +428,7 @@ export class EventBillingService {
       });
     }
 
-    const { finalPrice } = await this.resolvePrice(organization, event);
+    const { finalPrice, days } = await this.resolvePrice(organization, event);
 
     organization.billingEmail = dto.billingEmail;
     organization.billingAddress = {
@@ -358,6 +441,9 @@ export class EventBillingService {
     event.billingStatus = 'invoice';
     // Server-side computed — never trust a client-supplied price.
     event.priceCharged = finalPrice;
+    event.billedDays = days;
+    // Fuer die Stornofrist: der Beginn, wie er beim Bestellen stand.
+    event.unlockedStartDate = event.startDate;
     await this.eventRepository.save(event);
 
     this.logger.log(
@@ -467,10 +553,12 @@ export class EventBillingService {
 
     const appUrl =
       this.configService.get<string>('APP_URL') || 'http://localhost:3001';
-    const dayLabel =
+    const hour = price.businessDayStartHour;
+    const dayLabel = `${
       price.days === 1
         ? '1 Veranstaltungstag'
-        : `${price.days} Veranstaltungstage`;
+        : `${price.days} Veranstaltungstage`
+    } (${hour} bis ${hour} Uhr)`;
 
     const session = await this.stripeService.createCheckoutSession({
       customerId,
@@ -482,11 +570,20 @@ export class EventBillingService {
       productDescription: dayLabel,
       successUrl: `${appUrl}/events?payment=success&eventId=${event.id}`,
       cancelUrl: `${appUrl}/events?payment=cancelled&eventId=${event.id}`,
-      metadata: { eventId: event.id, organizationId: organization.id },
+      /* Die Tage reisen mit: bezahlt wird spaeter vielleicht erst, wenn die
+         Veranstaltung schon anders liegt, und festgehalten werden soll,
+         wofuer diese Sitzung den Betrag verlangt hat. */
+      metadata: {
+        eventId: event.id,
+        organizationId: organization.id,
+        days: String(price.days),
+      },
       // Derselbe Preis fuer dieselbe Veranstaltung ergibt dieselbe Sitzung.
       // Aendert sich der Preis, weil die Veranstaltung laenger wurde, ist es
       // bewusst eine neue.
-      idempotencyKey: `event-checkout:${event.id}:${price.finalPrice}`,
+      // Die Tage stehen mit im Schluessel, weil sie in der Beschreibung
+      // stehen — gleicher Schluessel mit anderen Angaben lehnt Stripe ab.
+      idempotencyKey: `event-checkout:${event.id}:${price.finalPrice}:${price.days}d`,
     });
 
     event.billingStatus = 'pending';
@@ -540,8 +637,26 @@ export class EventBillingService {
       return event;
     }
 
+    /* Diese Zahlung wurde schon storniert und erstattet. Stripe wiederholt
+       Webhooks, und bei Lastschrift kommt die Erfolgsmeldung Tage spaeter —
+       sie darf eine stornierte Freischaltung nicht wieder aufleben lassen. */
+    if (await this.cancellationService.wasCheckoutCancelled(session.id)) {
+      this.logger.warn(
+        `Stripe session ${sessionId} gehört zu einer stornierten Freischaltung — übergangen`,
+      );
+      return event;
+    }
+
     const bezahltAm = new Date();
     const betrag = (session.amount_total ?? 0) / 100;
+    const organization = await this.organizationRepository.findOne({
+      where: { id: event.organizationId },
+    });
+    const tage = this.daysOfCheckout(
+      session.metadata?.days,
+      event,
+      organization,
+    );
 
     /* Bedingtes Update statt Lesen-und-dann-Schreiben: der Webhook und die
        Rueckkehr aus dem Checkout treffen regelmaessig in derselben Sekunde
@@ -558,6 +673,8 @@ export class EventBillingService {
         paidAt: bezahltAm,
         stripeCheckoutSessionId: session.id,
         priceCharged: betrag,
+        billedDays: tage,
+        unlockedStartDate: event.startDate,
       },
     );
 
@@ -570,6 +687,8 @@ export class EventBillingService {
     event.paidAt = bezahltAm;
     event.stripeCheckoutSessionId = session.id;
     event.priceCharged = betrag;
+    event.billedDays = tage;
+    event.unlockedStartDate = event.startDate;
 
     this.logger.log(
       `Event ${event.id} bezahlt über Stripe (${event.priceCharged})`,
@@ -578,9 +697,6 @@ export class EventBillingService {
     // Best-effort wie beim Rechnungsweg: eine gescheiterte Mail darf eine
     // verbuchte Zahlung nicht zurueckdrehen.
     try {
-      const organization = await this.organizationRepository.findOne({
-        where: { id: event.organizationId },
-      });
       if (organization) {
         await this.notifyAdminOfEventOrdered(
           organization,
@@ -596,6 +712,28 @@ export class EventBillingService {
     }
 
     return event;
+  }
+
+  /**
+   * Fuer welche Tage eine Stripe-Sitzung bezahlt wurde. Neue Sitzungen
+   * tragen die Zahl in den Metadaten. Fehlt sie, stammt die Sitzung von vor
+   * der Umstellung auf Geschaeftstage — ihr Betrag wurde nach Kalendertagen
+   * berechnet, also werden auch die so gezaehlt.
+   */
+  private daysOfCheckout(
+    metadataDays: string | undefined,
+    event: Event,
+    organization: Organization | null,
+  ): number {
+    const fromMetadata = Number(metadataDays);
+    if (Number.isInteger(fromMetadata) && fromMetadata >= 1) {
+      return fromMetadata;
+    }
+    return countCalendarDays(
+      event.startDate,
+      event.endDate,
+      organization?.settings?.timezone || 'Europe/Berlin',
+    );
   }
 
   /**
@@ -654,12 +792,15 @@ export class EventBillingService {
       return [];
     }
 
-    const invoices = await this.stripeService.listInvoices(
-      organization.stripeCustomerId,
-    );
+    const [invoices, creditNotes] = await Promise.all([
+      this.stripeService.listInvoices(organization.stripeCustomerId),
+      this.stripeService.listCreditNotes(organization.stripeCustomerId),
+    ]);
 
-    return invoices.map((invoice) => ({
+    const rows: OrganizationInvoice[] = invoices.map((invoice) => ({
       id: invoice.id ?? '',
+      kind: 'invoice' as const,
+      relatedInvoiceNumber: null,
       number: invoice.number ?? null,
       // Stripe zählt in Sekunden, der Rest der Anwendung in Millisekunden.
       issuedAt: invoice.created
@@ -674,6 +815,35 @@ export class EventBillingService {
       hostedUrl: invoice.hosted_invoice_url ?? null,
       hasPdf: !!invoice.invoice_pdf,
     }));
+
+    /* Stornorechnungen sind bei Stripe Gutschriften zu einer Rechnung. Sie
+       stehen in derselben Liste, weil sie fuer die Buchhaltung dazugehoeren:
+       wer die Rechnung ablegt, muss auch ihre Aufhebung finden. */
+    for (const note of creditNotes) {
+      const invoice =
+        note.invoice && typeof note.invoice !== 'string' ? note.invoice : null;
+      rows.push({
+        id: note.id,
+        kind: 'credit_note',
+        relatedInvoiceNumber: invoice?.number ?? null,
+        number: note.number ?? null,
+        issuedAt: note.created
+          ? new Date(note.created * 1000).toISOString()
+          : null,
+        total: (note.total ?? 0) / 100,
+        currency: (note.currency ?? 'eur').toUpperCase(),
+        status: note.status ?? 'issued',
+        paid: false,
+        description: note.memo ?? null,
+        hostedUrl: null,
+        hasPdf: !!note.pdf,
+      });
+    }
+
+    // Neueste zuerst, Rechnungen und Gutschriften gemischt.
+    return rows.sort((a, b) =>
+      (b.issuedAt ?? '').localeCompare(a.issuedAt ?? ''),
+    );
   }
 
   /**
@@ -696,12 +866,27 @@ export class EventBillingService {
     );
 
     const organization = await this.getOrganization(organizationId);
-    const invoice = await this.stripeService.getInvoice(invoiceId);
+
+    /* Gutschriften (Stornorechnungen) tragen bei Stripe das Praefix cn_ —
+       derselbe Weg, dieselbe Pruefung der Zugehoerigkeit. */
+    const document = invoiceId.startsWith('cn_')
+      ? await this.stripeService.getCreditNote(invoiceId).then((note) => ({
+          id: note.id,
+          number: note.number,
+          customer: note.customer,
+          pdf: note.pdf,
+        }))
+      : await this.stripeService.getInvoice(invoiceId).then((invoice) => ({
+          id: invoice.id ?? invoiceId,
+          number: invoice.number,
+          customer: invoice.customer,
+          pdf: invoice.invoice_pdf,
+        }));
 
     const customerId =
-      typeof invoice.customer === 'string'
-        ? invoice.customer
-        : invoice.customer?.id;
+      typeof document.customer === 'string'
+        ? document.customer
+        : document.customer?.id;
     if (
       !organization.stripeCustomerId ||
       customerId !== organization.stripeCustomerId
@@ -713,7 +898,7 @@ export class EventBillingService {
       });
     }
 
-    if (!invoice.invoice_pdf) {
+    if (!document.pdf) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.INVOICE_PDF_NOT_AVAILABLE,
@@ -721,10 +906,8 @@ export class EventBillingService {
       });
     }
 
-    const content = await this.stripeService.fetchInvoicePdf(
-      invoice.invoice_pdf,
-    );
-    return { filename: `${invoice.number ?? invoice.id}.pdf`, content };
+    const content = await this.stripeService.fetchInvoicePdf(document.pdf);
+    return { filename: `${document.number ?? document.id}.pdf`, content };
   }
 
   async companySearch(

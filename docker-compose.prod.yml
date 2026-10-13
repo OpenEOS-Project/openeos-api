@@ -77,6 +77,8 @@ services:
 
       # Abrechnung (§ 19 UStG — Endpreise ohne USt)
       EVENT_PRICE_EUR: ${EVENT_PRICE_EUR:-25}
+      # Tageswechsel der Abrechnung (Stunde, Ortszeit): 6 = Tag von 6 bis 6 Uhr
+      BUSINESS_DAY_START_HOUR: ${BUSINESS_DAY_START_HOUR:-6}
       TEST_EVENT_MAX_ORDERS: ${TEST_EVENT_MAX_ORDERS:-25}
       OPENREGISTER_API_KEY: ${OPENREGISTER_API_KEY:-}
 

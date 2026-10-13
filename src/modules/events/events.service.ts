@@ -8,6 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { Repository, In } from 'typeorm';
 import {
   Event,
@@ -38,7 +39,10 @@ import {
 } from '../../common/dto/pagination.dto';
 import { CreateEventDto, UpdateEventDto, CopyProductsDto } from './dto';
 import { GatewayService } from '../gateway/gateway.service';
-import { countEventDays } from '../../common/utils/event-schedule.util';
+import {
+  countBillableDays,
+  normalizeBusinessDayStartHour,
+} from '../../common/utils/event-schedule.util';
 import { TestOrderCleanupService } from './test-order-cleanup.service';
 
 @Injectable()
@@ -66,6 +70,7 @@ export class EventsService {
     private readonly gatewayService: GatewayService,
     private readonly deployment: DeploymentService,
     private readonly testOrderCleanupService: TestOrderCleanupService,
+    private readonly configService: ConfigService,
   ) {}
 
   private emitStatusChanged(event: Event): void {
@@ -103,6 +108,13 @@ export class EventsService {
    * werden. Sonst liesse sich ein Tag buchen und anschliessend auf eine Woche
    * verlaengern, ohne dass je eine zweite Rechnung entstuende. Verschieben und
    * verkuerzen bleiben erlaubt.
+   *
+   * Bezahlt sind die beim Freischalten festgehaltenen Tage (`billedDays`).
+   * Gezaehlt wird wie beim Preis nach Geschaeftstagen; ergibt der jetzige
+   * Zeitraum danach mehr Tage als festgehalten — etwa bei einer noch nach
+   * Kalendertagen bezahlten Veranstaltung, die vor 6 Uhr beginnt —, gilt
+   * der jetzige Zeitraum als bezahlt, damit eine unveraenderte
+   * Veranstaltung nicht ploetzlich als verlaengert abgelehnt wird.
    */
   private async assertPaidDurationNotExtended(
     event: Event,
@@ -118,8 +130,20 @@ export class EventsService {
     });
     const timezone = organization?.settings?.timezone || 'Europe/Berlin';
 
-    const paidDays = countEventDays(event.startDate, event.endDate, timezone);
-    const nextDays = countEventDays(nextStart, nextEnd, timezone);
+    const dayStartHour = normalizeBusinessDayStartHour(
+      this.configService.get<number>('billing.businessDayStartHour'),
+    );
+
+    const paidDays = Math.max(
+      event.billedDays ?? 0,
+      countBillableDays(event.startDate, event.endDate, timezone, dayStartHour),
+    );
+    const nextDays = countBillableDays(
+      nextStart,
+      nextEnd,
+      timezone,
+      dayStartHour,
+    );
 
     if (nextDays > paidDays) {
       throw new BadRequestException({

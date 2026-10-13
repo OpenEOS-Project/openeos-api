@@ -7,6 +7,7 @@ import { EventBillingController } from './event-billing.controller';
 import { StripeWebhookController } from './stripe-webhook.controller';
 import { EventsService } from './events.service';
 import { EventBillingService } from './event-billing.service';
+import { EventUnlockCancellationService } from './event-unlock-cancellation.service';
 import { TestOrderCleanupService } from './test-order-cleanup.service';
 import { GatewayModule } from '../gateway/gateway.module';
 import { SumUpModule } from '../sumup/sumup.module';
@@ -24,6 +25,7 @@ import {
   Payment,
   ShopCheckout,
   TableArea,
+  EventBillingCancellation,
 } from '../../database/entities';
 
 @Module({
@@ -39,6 +41,7 @@ import {
       Payment,
       ShopCheckout,
       TableArea,
+      EventBillingCancellation,
     ]),
     forwardRef(() => GatewayModule),
     SumUpModule,
@@ -53,7 +56,12 @@ import {
     EventBillingController,
     StripeWebhookController,
   ],
-  providers: [EventsService, EventBillingService, TestOrderCleanupService],
-  exports: [EventsService, EventBillingService],
+  providers: [
+    EventsService,
+    EventBillingService,
+    EventUnlockCancellationService,
+    TestOrderCleanupService,
+  ],
+  exports: [EventsService, EventBillingService, EventUnlockCancellationService],
 })
 export class EventsModule {}

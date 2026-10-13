@@ -82,3 +82,4 @@ export * from './helper-magic-link.entity';
 export * from './login-magic-link.entity';
 export * from './contact-request.entity';
 export * from './api-token.entity';
+export * from './event-billing-cancellation.entity';

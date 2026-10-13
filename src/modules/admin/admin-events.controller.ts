@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   UseGuards,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminEventsService } from './admin-events.service';
@@ -16,6 +17,10 @@ import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../database/entities';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
+import {
+  EventUnlockCancellationService,
+  toCancellationSummary,
+} from '../events/event-unlock-cancellation.service';
 
 @ApiTags('Admin')
 @ApiBearerAuth('JWT-auth')
@@ -23,7 +28,10 @@ import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 @Controller('admin/events')
 @UseGuards(SuperAdminGuard)
 export class AdminEventsController {
-  constructor(private readonly adminEventsService: AdminEventsService) {}
+  constructor(
+    private readonly adminEventsService: AdminEventsService,
+    private readonly cancellationService: EventUnlockCancellationService,
+  ) {}
 
   @Get()
   async findAll(@Query() queryDto: QueryAdminEventsDto) {
@@ -61,6 +69,23 @@ export class AdminEventsController {
   async unmarkInvoiced(@Param('id') id: string) {
     const event = await this.adminEventsService.unmarkInvoiced(id);
     return { data: event };
+  }
+
+  /**
+   * Freischaltung stornieren, auch nach Ablauf der 7-Tage-Frist. Erstattung
+   * und Stornorechnung wie beim Storno durch die Organisation; echte
+   * Bestellungen verhindern ihn auch hier.
+   */
+  @Post(':id/cancel-billing')
+  async cancelBilling(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ) {
+    const cancellation = await this.cancellationService.cancelForPlatform(
+      id,
+      user,
+    );
+    return { data: toCancellationSummary(cancellation) };
   }
 
   @Post(':id/waive')

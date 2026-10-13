@@ -95,6 +95,13 @@ export default () => ({
     // Preis je Veranstaltungstag. Eine mehrtaegige Veranstaltung kostet
     // entsprechend ein Vielfaches davon.
     eventPriceEur: parseFloat(process.env.EVENT_PRICE_EUR || '25'),
+    // Tageswechsel fuer die Abrechnung, Stunde in der Zeitzone der
+    // Organisation: ein Veranstaltungstag laeuft von 6 bis 6 Uhr, eine Nacht
+    // bis 2 Uhr zaehlt noch zum Vortag. Siehe countBillableDays.
+    businessDayStartHour: parseInt(
+      process.env.BUSINESS_DAY_START_HOUR || '6',
+      10,
+    ),
     // Nachlass auf die erste abgerechnete Veranstaltung einer Organisation.
     firstEventDiscountPercent: parseFloat(
       process.env.FIRST_EVENT_DISCOUNT_PERCENT || '20',
