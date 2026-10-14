@@ -30,6 +30,7 @@ import {
 import { CreatePaymentDto, SplitPaymentDto, QueryPaymentsDto } from './dto';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { cashReceivedMetadata } from '../print-jobs/receipt-tax.util';
+import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 
@@ -92,7 +93,10 @@ export class PaymentsService {
     }
 
     const provider = this.getProviderForMethod(createDto.paymentMethod);
-    await this.assertProviderEnabled(organizationId, provider);
+    await this.assertPaymentMethodAllowed(
+      organizationId,
+      createDto.paymentMethod,
+    );
 
     const payment = this.paymentRepository.create({
       orderId: createDto.orderId,
@@ -220,7 +224,10 @@ export class PaymentsService {
     }
 
     const provider = this.getProviderForMethod(splitDto.paymentMethod);
-    await this.assertProviderEnabled(organizationId, provider);
+    await this.assertPaymentMethodAllowed(
+      organizationId,
+      splitDto.paymentMethod,
+    );
 
     const payment = this.paymentRepository.create({
       orderId: splitDto.orderId,
@@ -397,20 +404,24 @@ export class PaymentsService {
   // Private helper methods
 
   /**
-   * SumUp-Zahlungen nur bei eingeschaltetem SumUp verbuchen. `card` ist ein
-   * fremdes Kartengeraet ohne Anbindung und bleibt wie Bargeld immer
-   * moeglich — gesperrt wird nur, was ueber SumUp laeuft.
+   * Darf die Organisation mit dieser Zahlart buchen? SumUp nur bei
+   * eingeschaltetem SumUp (`card` ist ein fremdes Kartengeraet ohne
+   * Anbindung und bleibt immer moeglich), Bargeld nicht im bargeldlosen
+   * Modus.
    */
-  private async assertProviderEnabled(
+  private async assertPaymentMethodAllowed(
     organizationId: string,
-    provider: PaymentProvider,
+    method: PaymentMethod,
   ): Promise<void> {
-    if (provider !== PaymentProvider.SUMUP) return;
+    const sumup = this.getProviderForMethod(method) === PaymentProvider.SUMUP;
+    const cash = method === PaymentMethod.CASH;
+    if (!sumup && !cash) return;
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
       select: { id: true, settings: true },
     });
-    assertIntegrationEnabled(organization?.settings, 'sumup');
+    if (sumup) assertIntegrationEnabled(organization?.settings, 'sumup');
+    assertCashAllowed(organization?.settings, method);
   }
 
   private getProviderForMethod(method: PaymentMethod): PaymentProvider {

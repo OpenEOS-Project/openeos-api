@@ -60,6 +60,7 @@ import { SelectedOptionDto } from '../orders/dto';
 import { CreatePaymentDto } from '../payments/dto';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
+import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
 import { PrintersService } from '../printers/printers.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
@@ -233,6 +234,8 @@ export class DeviceApiController {
       | string
       | undefined;
 
+    // Die Pruefung auf den bargeldlosen Modus steckt im Dienst: die
+    // Pfand-Rueckgabe ist eine reine Barauszahlung.
     const pfandReturn = await this.pfandReturnsService.create(
       organizationId,
       dto,
@@ -601,6 +604,12 @@ export class DeviceApiController {
     // gehen weiter.
     if (createDto.payment) {
       assertSumUpAllowedInMode(event?.status, createDto.payment.paymentMethod);
+      // Bargeldloser Modus: gar nicht erst eine Bestellung anlegen, die
+      // settle() danach wieder zurueckrollen muesste.
+      await this.assertPaymentMethodAllowed(
+        organizationId,
+        createDto.payment.paymentMethod,
+      );
     }
 
     // Bestellung, Positionen, Bestand und Summen in einer Transaktion:
@@ -914,7 +923,10 @@ export class DeviceApiController {
     }
 
     const provider = this.getProviderForMethod(createDto.paymentMethod);
-    await this.assertProviderEnabled(organizationId, provider);
+    await this.assertPaymentMethodAllowed(
+      organizationId,
+      createDto.paymentMethod,
+    );
     await this.assertSumUpAllowedForOrder(order, createDto.paymentMethod);
 
     const payment = this.paymentRepository.create({
@@ -1070,7 +1082,10 @@ export class DeviceApiController {
     }
 
     const provider = this.getProviderForMethod(createDto.paymentMethod);
-    await this.assertProviderEnabled(organizationId, provider);
+    await this.assertPaymentMethodAllowed(
+      organizationId,
+      createDto.paymentMethod,
+    );
     await this.assertSumUpAllowedForOrder(order, createDto.paymentMethod);
 
     // Create payment
@@ -1171,6 +1186,8 @@ export class DeviceApiController {
   @ApiOperation({ summary: 'Open the cash drawer via configured printer' })
   async openCashDrawer(@CurrentDevice() device: Device) {
     const organizationId = requireOrganization(device);
+    // Bargeldlos: keine Kassenlade (ein reiner Bargeldvorgang).
+    await this.assertPaymentMethodAllowed(organizationId);
     const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as
       | string
       | undefined;
@@ -1871,20 +1888,28 @@ export class DeviceApiController {
   }
 
   /**
-   * SumUp-Zahlungen nur bei eingeschaltetem SumUp verbuchen. `card` ist ein
-   * fremdes Kartengeraet ohne Anbindung und bleibt wie Bargeld immer
-   * moeglich — gesperrt wird nur, was ueber SumUp laeuft.
+   * Darf die Organisation mit dieser Zahlart buchen?
+   *
+   * - SumUp nur bei eingeschaltetem SumUp. `card` ist ein fremdes
+   *   Kartengeraet ohne Anbindung und bleibt immer moeglich.
+   * - Bargeld nicht im bargeldlosen Modus (`assertCashAllowed`). Ohne
+   *   Zahlart gilt der Vorgang als reiner Bargeldvorgang (Kassenlade).
    */
-  private async assertProviderEnabled(
+  private async assertPaymentMethodAllowed(
     organizationId: string,
-    provider: PaymentProvider,
+    method?: PaymentMethod,
   ): Promise<void> {
-    if (provider !== PaymentProvider.SUMUP) return;
+    const sumup =
+      method !== undefined &&
+      this.getProviderForMethod(method) === PaymentProvider.SUMUP;
+    const cash = method === undefined || method === PaymentMethod.CASH;
+    if (!sumup && !cash) return;
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
       select: { id: true, settings: true },
     });
-    assertIntegrationEnabled(organization?.settings, 'sumup');
+    if (sumup) assertIntegrationEnabled(organization?.settings, 'sumup');
+    assertCashAllowed(organization?.settings, method);
   }
 
   /** Testmodus der Organisation: kein SumUp-Checkout am Lesegeraet. */

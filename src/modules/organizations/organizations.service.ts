@@ -36,6 +36,8 @@ import {
 } from './dto';
 import { EmailService } from '../email/email.service';
 import { normalizeLegalSettings } from './legal/legal-settings.util';
+import { isCashlessMode } from '../../common/utils/cashless-mode.util';
+import { OrganizationCashlessChange } from '../../database/entities/organization-cashless-change.entity';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { ConfigService } from '@nestjs/config';
 import { DeploymentService } from '../../common/services/deployment.service';
@@ -298,6 +300,12 @@ export class OrganizationsService {
     if (incomingSettings && 'legal' in incomingSettings) {
       incomingSettings.legal = normalizeLegalSettings(incomingSettings.legal);
     }
+    // Der bargeldlose Modus wird nur ueber setCashlessMode() geschaltet —
+    // dort wird jede Aenderung protokolliert. Was hier mitkommt (Abschnitte
+    // schicken oft die kompletten Einstellungen zurueck), bleibt aussen vor.
+    if (incomingSettings && 'payments' in incomingSettings) {
+      delete incomingSettings.payments;
+    }
     if (incomingSettings) {
       organization.settings = {
         ...organization.settings,
@@ -365,6 +373,103 @@ export class OrganizationsService {
     );
 
     return this.findOne(organization.id, user);
+  }
+
+  /**
+   * Schaltet den bargeldlosen Modus um (nur Admins, in beide Richtungen —
+   * so entschieden, keine Einweg-Sperre) und protokolliert die Aenderung
+   * mit Zeitpunkt und Person in `organization_cashless_changes`.
+   *
+   * Schalter und Protokoll in einer Transaktion, die Organisationszeile ist
+   * dabei gesperrt: zwei gleichzeitige Umschaltungen ergeben zwei saubere
+   * Eintraege statt eines verlorenen. Ohne Aenderung (schon so) wird nichts
+   * geschrieben. Geschrieben wird gezielt `settings.payments` per jsonb —
+   * wie bei den Integrationen, damit maskierte Zugangsdaten unberuehrt
+   * bleiben.
+   */
+  async setCashlessMode(
+    id: string,
+    cashless: boolean,
+    user: User,
+    client: { ipAddress?: string | null; userAgent?: string | null } = {},
+  ): Promise<Organization> {
+    const organization = await this.findOne(id, user);
+    await this.checkRole(organization.id, user, OrganizationRole.ADMIN);
+
+    await this.dataSource.transaction(async (manager) => {
+      const [row] = await manager.query<
+        { settings: Record<string, unknown> | null }[]
+      >(
+        `SELECT settings FROM organizations
+          WHERE id = $1 AND deleted_at IS NULL
+          FOR UPDATE`,
+        [organization.id],
+      );
+      const current = isCashlessMode(row?.settings);
+      if (current === cashless) return;
+
+      const changedAt = new Date();
+      await manager.query(
+        `UPDATE organizations
+            SET settings = jsonb_set(
+                  COALESCE(settings, '{}'::jsonb),
+                  '{payments}',
+                  CASE WHEN jsonb_typeof(settings->'payments') = 'object'
+                       THEN settings->'payments'
+                       ELSE '{}'::jsonb
+                  END || $2::jsonb,
+                  true
+                ),
+                updated_at = now()
+          WHERE id = $1`,
+        [
+          organization.id,
+          JSON.stringify({ cashless, changedAt: changedAt.toISOString() }),
+        ],
+      );
+      const name = [user.firstName, user.lastName].filter(Boolean).join(' ');
+      await manager.insert(OrganizationCashlessChange, {
+        organizationId: organization.id,
+        cashless,
+        changedByUserId: user.id,
+        changedByName: (name ? `${name} (${user.email})` : user.email)?.slice(
+          0,
+          255,
+        ),
+        ipAddress: client.ipAddress?.slice(0, 45) ?? null,
+        userAgent: client.userAgent?.slice(0, 500) ?? null,
+        createdAt: changedAt,
+      });
+      this.logger.log(
+        `Cashless mode ${cashless ? 'enabled' : 'disabled'} for organization ${organization.id} by user ${user.id}`,
+      );
+    });
+
+    return this.findOne(organization.id, user);
+  }
+
+  /** Verlauf des bargeldlosen Modus, neueste zuerst (alle Mitglieder). */
+  async getCashlessHistory(
+    id: string,
+    user: User,
+  ): Promise<
+    Pick<
+      OrganizationCashlessChange,
+      'id' | 'createdAt' | 'cashless' | 'changedByName'
+    >[]
+  > {
+    const organization = await this.findOne(id, user);
+    return this.dataSource.getRepository(OrganizationCashlessChange).find({
+      where: { organizationId: organization.id },
+      select: {
+        id: true,
+        createdAt: true,
+        cashless: true,
+        changedByName: true,
+      },
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
   }
 
   async remove(id: string, user: User): Promise<void> {

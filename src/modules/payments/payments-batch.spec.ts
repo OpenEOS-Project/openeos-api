@@ -495,3 +495,82 @@ describe('PaymentsBatchService.payBatch', () => {
     });
   });
 });
+
+describe('PaymentsBatchService.payBatch — bargeldloser Modus', () => {
+  function cashlessSetup(extra: Record<string, unknown> = {}) {
+    const ctx = setup();
+    ctx.db.organization = {
+      id: ORG,
+      settings: { vatExempt: false, payments: { cashless: true }, ...extra },
+    };
+    ctx.db.orders.push(order('o1'), order('o2'));
+    ctx.db.items.push(item('i1', 'o1'), item('i2', 'o2'));
+    return ctx;
+  }
+
+  async function expectCashDisabled(call: Promise<unknown>) {
+    await expect(call).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(call).rejects.toMatchObject({
+      response: { code: 'CASH_PAYMENTS_DISABLED' },
+    });
+  }
+
+  it('rejects a cash batch (also with tip and received cash) and books nothing', async () => {
+    const { db, pay, print } = cashlessSetup();
+
+    await expectCashDisabled(
+      pay({
+        orderIds: ['o1', 'o2'],
+        paymentMethod: PaymentMethod.CASH,
+        amountReceived: 50,
+        tipAmount: 2,
+      }),
+    );
+
+    expect(db.payments).toHaveLength(0);
+    expect(byId(db.orders, 'o2')).toMatchObject({
+      tipAmount: 0,
+      total: 10,
+      paymentStatus: PaymentStatus.UNPAID,
+    });
+    expect(print.handlePaymentReceived).not.toHaveBeenCalled();
+  });
+
+  it('pays a batch by card, tip on the last order', async () => {
+    const { db, pay } = cashlessSetup();
+
+    const result = await pay({
+      orderIds: ['o1', 'o2'],
+      paymentMethod: PaymentMethod.CARD,
+      tipAmount: 1.5,
+    });
+
+    expect(result.totalPaid).toBe(21.5);
+    expect(db.payments.map((p) => [p.orderId, p.paymentMethod])).toEqual([
+      ['o1', PaymentMethod.CARD],
+      ['o2', PaymentMethod.CARD],
+    ]);
+    expect(byId(db.orders, 'o2')).toMatchObject({
+      tipAmount: 1.5,
+      paymentStatus: PaymentStatus.PAID,
+    });
+  });
+
+  it('pays a batch via the SumUp terminal (with tip) when SumUp is on', async () => {
+    const { db, pay } = cashlessSetup({
+      integrations: { sumup: { enabled: true } },
+    });
+
+    await pay({
+      orderIds: ['o1', 'o2'],
+      paymentMethod: PaymentMethod.SUMUP_TERMINAL,
+      providerTransactionId: 'tx-1',
+      tipAmount: 1,
+    });
+
+    expect(db.payments).toHaveLength(2);
+    expect(db.payments[1]).toMatchObject({
+      paymentProvider: PaymentProvider.SUMUP,
+    });
+  });
+});

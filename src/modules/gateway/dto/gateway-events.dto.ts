@@ -292,6 +292,9 @@ export const GatewayEvents = {
   DEVICE_CONFIG_UPDATED: 'deviceConfigUpdated',
   DEVICE_STATUS_CHANGED: 'deviceStatusChanged',
 
+  // Organization Events
+  ORGANIZATION_SETTINGS_UPDATED: 'organizationSettingsUpdated',
+
   // Cash Drawer Events
   OPEN_CASH_DRAWER: 'openCashDrawer',
 

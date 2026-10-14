@@ -31,6 +31,7 @@ import {
 } from '../../database/entities/payment.entity';
 import { GatewayService } from '../gateway/gateway.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
+import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import {
   cashReceivedMetadata,
@@ -177,11 +178,13 @@ export class PaymentsBatchService {
       where: { id: organizationId },
       select: { id: true, settings: true },
     });
-    // SumUp nur bei eingeschalteter Integration; Bar/fremdes Kartengeraet
-    // gehen immer.
+    // SumUp nur bei eingeschalteter Integration; fremdes Kartengeraet geht
+    // immer, Bargeld nicht im bargeldlosen Modus (Trinkgeld und erhaltenes
+    // Bargeld haengen an derselben Zahlart).
     if (provider === PaymentProvider.SUMUP) {
       assertIntegrationEnabled(organization?.settings, 'sumup');
     }
+    assertCashAllowed(organization?.settings, dto.paymentMethod);
 
     const locked = await manager.find(Order, {
       where: { id: In(dto.orderIds), organizationId },

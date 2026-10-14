@@ -9,3 +9,13 @@ export class UpdateIntegrationDto {
   @IsBoolean()
   enabled: boolean;
 }
+
+export class UpdateCashlessDto {
+  @ApiProperty({
+    example: true,
+    description:
+      'Bargeldloser Modus: true sperrt Bargeld an allen Kassen und in der Verwaltung',
+  })
+  @IsBoolean()
+  cashless: boolean;
+}

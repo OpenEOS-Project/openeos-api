@@ -48,6 +48,10 @@ import { OrganizationRole } from '../../database/entities/user-organization.enti
 import { GatewayService } from '../gateway/gateway.service';
 import { isIntegrationEnabled } from '../integrations/integration-catalog';
 import {
+  assertCashAllowed,
+  isCashlessMode,
+} from '../../common/utils/cashless-mode.util';
+import {
   OrderPrintService,
   refundReasonLabel,
 } from '../print-jobs/order-print.service';
@@ -65,7 +69,7 @@ import {
   type OrderHistoryDetail,
 } from './order-history.service';
 import {
-  allocateRefund,
+  allocateRefundFor,
   amountComposition,
   cents,
   compositionTotal,
@@ -765,8 +769,20 @@ export class RefundsService {
         ),
         isProvider: isSumUpTerminal(p),
         createdAt: new Date(p.createdAt),
+        isCash: p.paymentMethod === PaymentMethod.CASH,
       }));
-    const allocation = allocateRefund(refundable, refundCents, dto.paymentId);
+    // Bargeldloser Modus: nichts bar auszahlen. Erstattet wird nur auf
+    // unbare Zahlungen (Karte, SumUp, online) — reichen die nicht, wird
+    // abgewiesen statt den Rest aus der Kasse zu geben.
+    const { allocation, cashBlocked } = allocateRefundFor(
+      refundable,
+      refundCents,
+      dto.paymentId,
+      isCashlessMode(organization?.settings),
+    );
+    if (cashBlocked) {
+      assertCashAllowed(organization?.settings, PaymentMethod.CASH);
+    }
     if (!allocation) {
       if (dto.paymentId) {
         const max =
@@ -954,6 +970,9 @@ export class RefundsService {
   }> {
     const reference = payment.providerTransactionId ?? null;
     if (payment.paymentMethod === PaymentMethod.CASH) {
+      // Bargeldlos: refundInTransaction verteilt gar nicht erst auf
+      // Barzahlungen; hier nur zur Sicherheit.
+      assertCashAllowed(options.organization?.settings, PaymentMethod.CASH);
       return {
         status: options.isTestMode ? 'test' : 'completed',
         providerReference: null,

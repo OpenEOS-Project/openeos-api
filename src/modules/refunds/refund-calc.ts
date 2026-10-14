@@ -249,6 +249,8 @@ export interface RefundablePayment {
   refundable: number;
   isProvider: boolean;
   createdAt: Date;
+  /** Barzahlung — im bargeldlosen Modus nicht erstattbar. */
+  isCash?: boolean;
 }
 
 /**
@@ -278,6 +280,42 @@ export function allocateRefund(
     rest -= take;
   }
   return rest > 0 ? null : out;
+}
+
+/**
+ * Wie `allocateRefund`, im bargeldlosen Modus aber nur auf unbare Zahlungen
+ * (Karte, SumUp, online). `cashBlocked`: der Betrag liesse sich nur mit
+ * einer Barzahlung erstatten — die Erstattung wird dann abgewiesen
+ * (CASH_PAYMENTS_DISABLED), statt Geld aus der Kasse zu geben.
+ */
+export function allocateRefundFor(
+  payments: RefundablePayment[],
+  amountCents: number,
+  preferredId: string | null | undefined,
+  cashless: boolean,
+): {
+  allocation: { paymentId: string; amount: number }[] | null;
+  cashBlocked: boolean;
+} {
+  if (!cashless) {
+    return {
+      allocation: allocateRefund(payments, amountCents, preferredId),
+      cashBlocked: false,
+    };
+  }
+  if (preferredId && payments.find((p) => p.id === preferredId)?.isCash) {
+    return { allocation: null, cashBlocked: true };
+  }
+  const allocation = allocateRefund(
+    payments.filter((p) => !p.isCash),
+    amountCents,
+    preferredId,
+  );
+  return {
+    allocation,
+    cashBlocked:
+      !allocation && payments.some((p) => p.isCash && p.refundable > 0),
+  };
 }
 
 /** Status in der Liste: genau einer je Bestellung (gleich in Kasse und Verwaltung). */

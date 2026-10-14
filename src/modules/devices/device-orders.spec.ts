@@ -430,6 +430,8 @@ function setupController(
     orderingMode?: 'immediate' | 'tab' | null;
     /** Kassiermodus der Organisation (Rückfall). */
     orgOrderingMode?: 'immediate' | 'tab';
+    /** Weitere Einstellungen der Organisation (bargeldlos, SumUp). */
+    orgSettings?: Record<string, unknown>;
   } = {},
 ) {
   const db = new FakeDb();
@@ -447,6 +449,12 @@ function setupController(
   if (options.orgOrderingMode) {
     db.organizations[0].settings = {
       pos: { orderingMode: options.orgOrderingMode },
+    };
+  }
+  if (options.orgSettings) {
+    db.organizations[0].settings = {
+      ...(db.organizations[0].settings as object),
+      ...options.orgSettings,
     };
   }
   db.products.push({
@@ -521,6 +529,7 @@ function setupController(
   };
   // Konstruktor-Reihenfolge siehe DeviceApiController.
   const controller = makeController({
+    0: db.repo(Organization),
     1: eventRepository,
     4: orderRepository,
     14: gatewayService,
@@ -1083,7 +1092,10 @@ describe('DeviceApiController.createOrder — SumUp im Testmodus', () => {
 
   it('live event: a SumUp terminal payment is booked', async () => {
     const { controller, device, paymentsBatchService, response } =
-      setupController({ orderingMode: 'immediate' });
+      setupController({
+        orderingMode: 'immediate',
+        orgSettings: { integrations: { sumup: { enabled: true } } },
+      });
 
     await controller.createOrder(
       device,
@@ -1097,5 +1109,100 @@ describe('DeviceApiController.createOrder — SumUp im Testmodus', () => {
     );
 
     expect(paymentsBatchService.settle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DeviceApiController.createOrder — bargeldloser Modus', () => {
+  const cashless = { payments: { cashless: true } };
+
+  it('rejects an order paid in cash before anything is created', async () => {
+    const {
+      db,
+      controller,
+      device,
+      paymentsBatchService,
+      orderPrintService,
+      response,
+    } = setupController({ orderingMode: 'immediate', orgSettings: cashless });
+
+    const call = controller.createOrder(
+      device,
+      dto({
+        payment: {
+          paymentMethod: PaymentMethod.CASH,
+          amountReceived: 20,
+          tipAmount: 1,
+        },
+      }),
+      response() as never,
+    );
+
+    await expect(call).rejects.toMatchObject({
+      status: HttpStatus.FORBIDDEN,
+      response: { code: 'CASH_PAYMENTS_DISABLED' },
+    });
+    expect(db.orders).toHaveLength(0);
+    expect(db.products[0].stockQuantity).toBe(10);
+    expect(paymentsBatchService.settle).not.toHaveBeenCalled();
+    expect(orderPrintService.handleOrderCreated).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['card', { paymentMethod: PaymentMethod.CARD }],
+    ['card with tip', { paymentMethod: PaymentMethod.CARD, tipAmount: 2 }],
+  ])('books an order paid by %s', async (_label, payment) => {
+    const { db, controller, device, paymentsBatchService, response } =
+      setupController({ orderingMode: 'immediate', orgSettings: cashless });
+
+    const { data } = await controller.createOrder(
+      device,
+      dto({ payment: payment as CreateDeviceOrderDto['payment'] }),
+      response() as never,
+    );
+
+    expect(data).toMatchObject({ paymentStatus: PaymentStatus.PAID });
+    expect(db.orders).toHaveLength(1);
+    expect(paymentsBatchService.settle).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG,
+      'device-1',
+      expect.objectContaining(payment),
+    );
+  });
+
+  it('books a SumUp terminal payment with tip when SumUp is on', async () => {
+    const { controller, device, paymentsBatchService, response } =
+      setupController({
+        orderingMode: 'immediate',
+        orgSettings: {
+          ...cashless,
+          integrations: { sumup: { enabled: true } },
+        },
+      });
+
+    await controller.createOrder(
+      device,
+      dto({
+        payment: {
+          paymentMethod: PaymentMethod.SUMUP_TERMINAL,
+          providerTransactionId: 'tx-1',
+          tipAmount: 1,
+        },
+      }),
+      response() as never,
+    );
+
+    expect(paymentsBatchService.settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('still allows an unpaid round in tab mode (no payment, no cash)', async () => {
+    const { db, controller, device, response } = setupController({
+      orderingMode: 'tab',
+      orgSettings: cashless,
+    });
+
+    await controller.createOrder(device, dto(), response() as never);
+
+    expect(db.orders).toHaveLength(1);
   });
 });
