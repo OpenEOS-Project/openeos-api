@@ -10,7 +10,9 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -28,6 +30,7 @@ import {
   CreateInvitationDto,
   BroadcastMessageDto,
   UpdateIntegrationDto,
+  UpdateCashlessDto,
 } from './dto';
 import { SetPinDto } from '../devices/dto';
 import { CurrentUser, Public } from '../../common/decorators';
@@ -107,6 +110,42 @@ export class OrganizationsController {
     );
     this.gatewayService.notifyOrganizationSettingsUpdated(organization.id);
     return { data: organization };
+  }
+
+  @Patch(':id/payments/cashless')
+  @ApiOperation({
+    summary: 'Switch cashless mode on or off (admins only, logged)',
+    description:
+      'Bargeldloser Modus: sperrt jede Barzahlung, Bar-Erstattung, Pfand-Auszahlung und die Kassenlade (403 CASH_PAYMENTS_DISABLED). Jede Umschaltung wird mit Zeitpunkt und Person protokolliert (GET :id/payments/cashless/history).',
+  })
+  async setCashlessMode(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCashlessDto,
+    @CurrentUser() user: User,
+    @Req() request: Request,
+  ) {
+    const organization = await this.organizationsService.setCashlessMode(
+      id,
+      dto.cashless,
+      user,
+      {
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
+    this.gatewayService.notifyOrganizationSettingsUpdated(organization.id);
+    return { data: organization };
+  }
+
+  @Get(':id/payments/cashless/history')
+  @ApiOperation({ summary: 'Change log of the cashless mode (newest first)' })
+  async getCashlessHistory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ) {
+    return {
+      data: await this.organizationsService.getCashlessHistory(id, user),
+    };
   }
 
   @Delete(':id')

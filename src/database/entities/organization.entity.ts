@@ -84,6 +84,8 @@ export interface OrganizationSettings {
    */
   payments?: {
     cashless?: boolean;
+    /** Letzte Umschaltung (ISO); Verlauf in organization_cashless_changes. */
+    changedAt?: string;
   };
   onlineOrdering?: {
     enabled: boolean;

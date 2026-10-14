@@ -1,10 +1,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { PaymentMethod } from '../../database/entities/payment.entity';
-import {
-  assertCashAllowed,
-  isCashlessMode,
-  normalizePaymentSettings,
-} from './cashless-mode.util';
+import { assertCashAllowed, isCashlessMode } from './cashless-mode.util';
 
 const cashless = { payments: { cashless: true } };
 
@@ -38,6 +34,8 @@ describe('cashless mode helper', () => {
     PaymentMethod.SUMUP_TERMINAL,
     PaymentMethod.SUMUP_ONLINE,
     PaymentMethod.PAYPAL,
+    PaymentMethod.GOOGLE_PAY,
+    PaymentMethod.APPLE_PAY,
   ])('lets %s through in cashless mode', (method) => {
     expect(() => assertCashAllowed(cashless, method)).not.toThrow();
   });
@@ -45,16 +43,5 @@ describe('cashless mode helper', () => {
   it('allows cash when the mode is off (default)', () => {
     expect(() => assertCashAllowed({}, PaymentMethod.CASH)).not.toThrow();
     expect(() => assertCashAllowed(null)).not.toThrow();
-  });
-
-  it('only stores a real boolean', () => {
-    expect(normalizePaymentSettings({ cashless: true })).toEqual({
-      cashless: true,
-    });
-    expect(normalizePaymentSettings({ cashless: false, other: 1 })).toEqual({
-      cashless: false,
-    });
-    expect(normalizePaymentSettings({ cashless: 'yes' })).toEqual({});
-    expect(normalizePaymentSettings(null)).toEqual({});
   });
 });

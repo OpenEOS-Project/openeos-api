@@ -45,16 +45,3 @@ export function assertCashAllowed(
       'Deine Organisation arbeitet bargeldlos. Bargeld kann über OpenEOS nicht erfasst oder ausgezahlt werden.',
   });
 }
-
-/**
- * Bereinigt `settings.payments` beim Speichern: nur bekannte Schluessel mit
- * dem richtigen Typ. Die Einstellungen sind sonst frei formbar, und ein
- * `cashless: "false"` (String) waere still als „aus“ gelesen worden.
- */
-export function normalizePaymentSettings(input: unknown): {
-  cashless?: boolean;
-} {
-  if (!input || typeof input !== 'object') return {};
-  const cashless = (input as { cashless?: unknown }).cashless;
-  return typeof cashless === 'boolean' ? { cashless } : {};
-}
