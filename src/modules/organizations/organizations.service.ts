@@ -36,6 +36,7 @@ import {
 } from './dto';
 import { EmailService } from '../email/email.service';
 import { normalizeLegalSettings } from './legal/legal-settings.util';
+import { normalizePaymentSettings } from '../../common/utils/cashless-mode.util';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { ConfigService } from '@nestjs/config';
 import { DeploymentService } from '../../common/services/deployment.service';
@@ -297,6 +298,13 @@ export class OrganizationsService {
        wie den Rest der Einstellungen ungesehen abzulegen. */
     if (incomingSettings && 'legal' in incomingSettings) {
       incomingSettings.legal = normalizeLegalSettings(incomingSettings.legal);
+    }
+    // Der bargeldlose Modus sperrt Bargeld serverseitig — nur ein echter
+    // Wahrheitswert wird gespeichert.
+    if (incomingSettings && 'payments' in incomingSettings) {
+      incomingSettings.payments = normalizePaymentSettings(
+        incomingSettings.payments,
+      );
     }
     if (incomingSettings) {
       organization.settings = {

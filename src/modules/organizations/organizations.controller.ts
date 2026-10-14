@@ -81,6 +81,11 @@ export class OrganizationsController {
       updateDto,
       user,
     );
+    // Kassen sofort umstellen (z. B. bargeldloser Modus), nicht erst beim
+    // naechsten Neuladen.
+    if (updateDto.settings) {
+      this.gatewayService.notifyOrganizationSettingsUpdated(organization.id);
+    }
     return { data: organization };
   }
 
@@ -100,6 +105,7 @@ export class OrganizationsController {
       updateDto.enabled,
       user,
     );
+    this.gatewayService.notifyOrganizationSettingsUpdated(organization.id);
     return { data: organization };
   }
 

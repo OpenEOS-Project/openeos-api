@@ -407,6 +407,26 @@ export class GatewayService {
     );
   }
 
+  // Organization Events
+
+  /**
+   * Einstellungen der Organisation haben sich geaendert (z. B. bargeldloser
+   * Modus, SumUp an/aus). Die Kassen laden daraufhin `GET
+   * /device-api/organization` neu. Bewusst ohne Inhalt: die Einstellungen
+   * enthalten Zugangsdaten, und jede Kasse holt sie ohnehin selbst.
+   */
+  notifyOrganizationSettingsUpdated(organizationId: string) {
+    this.logger.debug(
+      `Emitting organizationSettingsUpdated for organization ${organizationId}`,
+    );
+
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.ORGANIZATION_SETTINGS_UPDATED,
+      { organizationId },
+    );
+  }
+
   // Device Events
 
   notifyDeviceSettingsUpdated(

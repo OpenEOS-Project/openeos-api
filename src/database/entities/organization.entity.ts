@@ -77,6 +77,14 @@ export interface OrganizationSettings {
     tableService?: boolean;
     counterPickup?: boolean;
   };
+  /**
+   * Zahlungsarten der Organisation. `cashless: true` sperrt Bargeld an
+   * allen Einstiegen (siehe cashless-mode.util.ts) — ohne Bargeld braucht
+   * die Kasse keine TSE. Fehlt der Eintrag, ist Bargeld erlaubt.
+   */
+  payments?: {
+    cashless?: boolean;
+  };
   onlineOrdering?: {
     enabled: boolean;
     requirePayment: boolean;

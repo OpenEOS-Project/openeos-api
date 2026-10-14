@@ -60,6 +60,10 @@ export const ErrorCodes = {
   INTEGRATION_NOT_FOUND: 'INTEGRATION_NOT_FOUND',
   INTEGRATION_DISABLED: 'INTEGRATION_DISABLED',
 
+  // Payment Errors
+  // Bargeldloser Modus: Bargeld ist fuer die Organisation gesperrt.
+  CASH_PAYMENTS_DISABLED: 'CASH_PAYMENTS_DISABLED',
+
   // Stripe Errors
   STRIPE_NOT_CONFIGURED: 'STRIPE_NOT_CONFIGURED',
   STRIPE_API_ERROR: 'STRIPE_API_ERROR',
@@ -124,6 +128,9 @@ export const ErrorMessages: Record<ErrorCode, string> = {
 
   [ErrorCodes.INTEGRATION_NOT_FOUND]: 'Integration nicht gefunden',
   [ErrorCodes.INTEGRATION_DISABLED]: 'Integration ist nicht aktiviert',
+
+  [ErrorCodes.CASH_PAYMENTS_DISABLED]:
+    'Bargeld ist im bargeldlosen Modus gesperrt',
 
   [ErrorCodes.STRIPE_NOT_CONFIGURED]:
     'Online-Zahlung ist derzeit nicht verfügbar',

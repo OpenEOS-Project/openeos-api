@@ -8,6 +8,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { PfandType } from '../../database/entities/pfand-type.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
+import { Organization } from '../../database/entities/organization.entity';
+import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
 import {
   PfandReturn,
   PfandReturnLine,
@@ -38,12 +40,23 @@ export class PfandReturnsService {
   /**
    * Records a deposit payout. Resolves amounts server-side from the org's
    * PfandTypes, opens the cash drawer, and emits a real-time event.
+   *
+   * Die Auszahlung ist immer Bargeld — im bargeldlosen Modus deshalb
+   * gesperrt. Zurueckgegebenes Pfand laesst sich dort nur gegen neues
+   * Pfand im Warenkorb verrechnen (Kasse, ohne diesen Endpunkt) oder ueber
+   * eine Erstattung auf die urspruengliche Zahlart zurueckgeben.
    */
   async create(
     organizationId: string,
     dto: CreatePfandReturnDto,
     context: PfandReturnContext = {},
   ): Promise<PfandReturn> {
+    const organization = await this.pfandReturnRepository.manager.findOne(
+      Organization,
+      { where: { id: organizationId }, select: { id: true, settings: true } },
+    );
+    assertCashAllowed(organization?.settings);
+
     const typeIds = dto.lines.map((l) => l.pfandTypeId);
     const types = await this.pfandTypeRepository.find({
       where: { id: In(typeIds), organizationId },

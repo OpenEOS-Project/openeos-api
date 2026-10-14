@@ -148,6 +148,7 @@ describeWithDb('RefundsService against Postgres', () => {
       eventStatus?: string;
       vatExempt?: boolean;
       sumup?: boolean;
+      cashless?: boolean;
     } = {},
   ): Promise<World> {
     const orgId = randomUUID();
@@ -159,6 +160,7 @@ describeWithDb('RefundsService against Postgres', () => {
       settings.sumup = { apiKey: 'sup_sk_test', merchantCode: 'MCODE' };
       settings.integrations = { sumup: { enabled: true } };
     }
+    if (options.cashless) settings.payments = { cashless: true };
     await q(
       `INSERT INTO organizations (id, name, slug, support_pin, settings)
        VALUES ($1, 'Verein', $2, '123456', $3)`,
@@ -628,6 +630,38 @@ describeWithDb('RefundsService against Postgres', () => {
       reasonCode: 'other',
     });
     expect(outcome.refunds[0].status).toBe('manual');
+  });
+
+  it('cashless mode: no cash refund (nothing changes), card refunds still work', async () => {
+    const w = await world({ cashless: true });
+    const cash = await order(w, { pay: 'cash' });
+    let error: unknown;
+    try {
+      await service.createRefund(w.actor, cash.orderId, {
+        mode: 'amount',
+        amount: 2,
+        reasonCode: 'other',
+      });
+    } catch (e) {
+      error = e;
+    }
+    expect(
+      (error as BadRequestException).getResponse?.() as { code?: string },
+    ).toMatchObject({ code: 'CASH_PAYMENTS_DISABLED' });
+    const [after] = await q<{ refunded: string }>(
+      `SELECT refunded_amount AS refunded FROM orders WHERE id = $1`,
+      [cash.orderId],
+    );
+    expect(Number(after.refunded)).toBe(0);
+    expect(gateway.sendOpenCashDrawer).not.toHaveBeenCalled();
+
+    const card = await order(w, { pay: 'card' });
+    const outcome = await service.createRefund(w.actor, card.orderId, {
+      mode: 'amount',
+      amount: 2,
+      reasonCode: 'other',
+    });
+    expect(outcome.refunds[0]).toMatchObject({ paymentMethod: 'card' });
   });
 
   it('is idempotent with clientRequestId', async () => {
