@@ -54,8 +54,8 @@ export interface RefundTaxLine {
 /**
  * Erstattung = eigener Beleg (Gegenbeleg) mit negativen Betraegen und
  * Bezug auf die Ursprungsbestellung und -zahlung. Die Bestellung selbst
- * bleibt als Ursprungsbeleg erhalten (TSE-tauglich, vgl. fiskaly-spec
- * §Erstattung: eigener RECEIPT mit umgekehrten Vorzeichen).
+ * bleibt als Ursprungsbeleg erhalten (TSE-tauglich: eine Erstattung ist
+ * ein eigener Beleg mit umgekehrten Vorzeichen).
  */
 @Entity('refunds')
 @Index(['orderId'])

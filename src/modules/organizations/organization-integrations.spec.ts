@@ -128,7 +128,7 @@ describe('OrganizationsService.setIntegrationEnabled', () => {
   it('rejects an unknown integration with 404 INTEGRATION_NOT_FOUND', async () => {
     const { service, query } = setup({ role: OrganizationRole.ADMIN });
 
-    const call = service.setIntegrationEnabled(ORG_ID, 'fiskaly', true, user);
+    const call = service.setIntegrationEnabled(ORG_ID, 'unknown', true, user);
 
     await expect(call).rejects.toBeInstanceOf(NotFoundException);
     await expect(call).rejects.toMatchObject({

@@ -287,7 +287,7 @@ export class DeviceTablesController {
     return {
       data: {
         printer: printer ? printerStatus(printer) : null,
-        // Wird mit der fiskaly-Anbindung (api #12) befuellt.
+        // Wird befuellt, sobald es eine TSE-Anbindung gibt.
         tse: null,
       },
     };
