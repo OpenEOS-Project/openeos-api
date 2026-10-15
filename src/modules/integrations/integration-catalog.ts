@@ -7,8 +7,8 @@ import { ErrorCodes } from '../../common/constants/error-codes';
  * Bewusst eine feste Liste statt freier Schluessel: der Schalter landet in
  * den frei formbaren Einstellungen (`settings.integrations.<id>`), und ohne
  * Liste koennte jeder Admin dort beliebige Eintraege anlegen. Eine neue
- * Integration (fiskaly, stripe) kommt hier dazu und wird an ihren Endpunkten
- * mit `assertIntegrationEnabled` abgesichert.
+ * Integration (etwa Stripe oder die TSE) kommt hier dazu und wird an ihren
+ * Endpunkten mit `assertIntegrationEnabled` abgesichert.
  */
 export const INTEGRATION_IDS = ['sumup'] as const;
 
