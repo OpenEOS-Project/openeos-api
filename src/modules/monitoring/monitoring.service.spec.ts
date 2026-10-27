@@ -8,7 +8,6 @@ import {
   Event,
   Order,
   Organization,
-  RentalAssignment,
   SupportMessage,
   User,
 } from '../../database/entities';
@@ -77,8 +76,8 @@ describe('MonitoringService (without database)', () => {
     expect(queries[0]).toBe(
       'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY',
     );
-    // 8 aggregate queries + activations + 3 lists = 12 instead of 29 before.
-    expect(manager.createQueryBuilder).toHaveBeenCalledTimes(9);
+    // 7 aggregate queries + activations + 3 lists = 11 instead of 29 before.
+    expect(manager.createQueryBuilder).toHaveBeenCalledTimes(8);
     expect(manager.find).toHaveBeenCalledTimes(3);
   });
 
@@ -102,7 +101,6 @@ describe('MonitoringService (without database)', () => {
             revenue_month: '25.00',
           },
         ],
-        [RentalAssignment, { revenue_total: '99.90' }],
         [ContactRequest, undefined],
         [SupportMessage, { unread: '0', threads: '0', latest: null }],
         [Device, { total: '5', verified: '4' }],
@@ -134,7 +132,6 @@ describe('MonitoringService (without database)', () => {
       summeEur: 150.5,
       heuteEur: 0,
       monatEur: 25,
-      mieteEur: 99.9,
     });
     expect(k.kontaktanfragen).toEqual({ offen: 0, neu24h: 0, letzte: [] });
     expect(k.support).toEqual({
@@ -190,7 +187,7 @@ describeWithDb(
     });
 
     async function truncate(): Promise<void> {
-      await ds.query(`TRUNCATE rental_assignments, rental_hardware, support_messages,
+      await ds.query(`TRUNCATE support_messages,
       contact_requests, orders, devices, events, user_organizations, users,
       organizations CASCADE`);
     }
@@ -214,7 +211,6 @@ describeWithDb(
       const { after } = await compare();
       expect(after.support.letzteNachrichtAm).toBeNull();
       expect(after.umsatz.summeEur).toBe(0);
-      expect(after.umsatz.mieteEur).toBe(0);
     });
 
     it('mixed data with edge cases', async () => {
@@ -255,7 +251,6 @@ describeWithDb(
         summeEur: 145.5,
         heuteEur: expectedToday,
         monatEur: 65,
-        mieteEur: 135.5,
       });
       expect(after.kontaktanfragen).toMatchObject({ offen: 8, neu24h: 5 });
       expect(after.kontaktanfragen.letzte[0].vorschau).toHaveLength(
@@ -431,32 +426,6 @@ async function seed(ds: DataSource): Promise<void> {
       [org, direction],
     );
   }
-
-  // Rentals: confirmed/active/returned count → 50 + 35.50 + 50 = 135.50.
-  const [user] = await ds.query<{ id: string }[]>(
-    `SELECT id FROM users LIMIT 1`,
-  );
-  const hw = randomUUID();
-  await ds.query(
-    `INSERT INTO rental_hardware (id, type, name, serial_number, daily_rate)
-     VALUES ($1, 'printer', 'Printer', 'SN-1', 10)`,
-    [hw],
-  );
-  const rentals: [string, string][] = [
-    ['confirmed', '50.00'],
-    ['active', '35.50'],
-    ['returned', '50.00'],
-    ['pending', '70.00'],
-    ['cancelled', '80.00'],
-  ];
-  for (const [status, amount] of rentals) {
-    await ds.query(
-      `INSERT INTO rental_assignments (rental_hardware_id, organization_id, status, start_date,
-         end_date, daily_rate, total_days, total_amount, assigned_by_user_id)
-       VALUES ($1, $2, $3, CURRENT_DATE, CURRENT_DATE, 10, 1, $4, $5)`,
-      [hw, orgs[1], status, amount, user.id],
-    );
-  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -477,7 +446,6 @@ async function metricsBeforeRefactor(ds: DataSource): Promise<Kennzahlen> {
   const orders = ds.getRepository(Order);
   const contactRequests = ds.getRepository(ContactRequest);
   const supportMessages = ds.getRepository(SupportMessage);
-  const rentals = ds.getRepository(RentalAssignment);
   const PAID_OR_INVOICED = ['paid', 'invoice'];
   /* The mappers are private methods of the service; for the comparison
      they are pulled out with their signature, not re-implemented. */
@@ -524,7 +492,6 @@ async function metricsBeforeRefactor(ds: DataSource): Promise<Kennzahlen> {
     revenueTotal,
     revenueToday,
     revenueMonth,
-    rentalTotal,
     contactsOpen,
     contactsRecent,
     contactsLatest,
@@ -574,12 +541,6 @@ async function metricsBeforeRefactor(ds: DataSource): Promise<Kennzahlen> {
     revenue(PAID_OR_INVOICED),
     revenue(PAID_OR_INVOICED, dayStart),
     revenue(PAID_OR_INVOICED, monthStart),
-    rentals
-      .createQueryBuilder('r')
-      .select('COALESCE(SUM(r.totalAmount), 0)', 'total')
-      .where("r.status IN ('confirmed','active','returned')")
-      .getRawOne<{ total: string }>(),
-
     contactRequests.count({ where: { handledAt: IsNull() } }),
     contactRequests
       .createQueryBuilder('c')
@@ -638,7 +599,6 @@ async function metricsBeforeRefactor(ds: DataSource): Promise<Kennzahlen> {
       summeEur: revenueTotal,
       heuteEur: revenueToday,
       monatEur: revenueMonth,
-      mieteEur: Number(rentalTotal?.total ?? 0),
     },
     kontaktanfragen: {
       offen: contactsOpen,

@@ -105,7 +105,6 @@ Real-time Updates über Socket.io unter \`/\` mit Namespaces:
     .addTag('Online Orders', 'Public online ordering endpoints')
     .addTag('Credits', 'Credit/token management for SaaS billing')
     .addTag('Invoices', 'Invoice management')
-    .addTag('Rentals', 'Hardware rental management')
     .addTag('Admin', 'Super admin endpoints')
     .addTag('Reports', 'Reporting and analytics')
     .addTag('Uploads', 'File upload management')

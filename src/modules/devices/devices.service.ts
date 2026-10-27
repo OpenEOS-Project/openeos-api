@@ -46,6 +46,7 @@ import {
   dropNullSettings,
 } from './device-settings.validation';
 import { GatewayService } from '../gateway/gateway.service';
+import { PrinterAgentsService } from '../printers/printer-agents.service';
 
 @Injectable()
 export class DevicesService {
@@ -64,6 +65,8 @@ export class DevicesService {
     private readonly paymentRepository: Repository<Payment>,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
+    @Inject(forwardRef(() => PrinterAgentsService))
+    private readonly printerAgentsService: PrinterAgentsService,
   ) {}
 
   async create(
@@ -232,6 +235,11 @@ export class DevicesService {
     await this.checkPermission(organizationId, user.id, 'devices');
 
     const device = await this.findOne(organizationId, deviceId, user);
+    if (device.type === DeviceType.PRINTER_AGENT) {
+      // Drucker und ihre Zuordnungen (Stationen, Bon-Workflow, Geraete) mit weg.
+      await this.printerAgentsService.removeAgentDevice(device);
+      return;
+    }
     await this.deviceRepository.remove(device);
 
     this.logger.log(`Device deleted: ${device.name} (${device.id})`);

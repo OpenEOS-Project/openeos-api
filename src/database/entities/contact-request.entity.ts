@@ -6,13 +6,11 @@ import {
   Index,
 } from 'typeorm';
 
-export type ContactRequestKind =
-  | 'demo'
-  | 'contact'
-  | 'hardware'
-  | 'gateway'
-  | 'feedback'
-  | 'feature';
+/**
+ * `hardware` und `gateway` (Miet-Hardware, Kassen-Gateway) gibt es seit
+ * 2026-10 nicht mehr; alte Zeilen in der Tabelle koennen sie noch tragen.
+ */
+export type ContactRequestKind = 'demo' | 'contact' | 'feedback' | 'feature';
 
 /**
  * Was uns über die Website erreicht: Anfragen, Rueckmeldungen, Wuensche.

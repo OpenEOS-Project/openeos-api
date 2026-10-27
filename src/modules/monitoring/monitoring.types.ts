@@ -94,8 +94,6 @@ export interface Kennzahlen {
     summeEur: number;
     heuteEur: number;
     monatEur: number;
-    /** Hardware-Miete getrennt, weil sie anders zustande kommt. */
-    mieteEur: number;
   };
 
   kontaktanfragen: {

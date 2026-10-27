@@ -16,8 +16,11 @@ export enum AdminAction {
   COMPLETE_PURCHASE = 'complete_purchase',
   SET_DISCOUNT = 'set_discount',
   REMOVE_DISCOUNT = 'remove_discount',
+  /** @deprecated Vermietung entfernt (2026-10); bleibt fuer alte Eintraege. */
   CREATE_RENTAL_HARDWARE = 'create_rental_hardware',
+  /** @deprecated Vermietung entfernt (2026-10); bleibt fuer alte Eintraege. */
   ASSIGN_RENTAL = 'assign_rental',
+  /** @deprecated Vermietung entfernt (2026-10); bleibt fuer alte Eintraege. */
   RETURN_RENTAL = 'return_rental',
   // Freischaltung einer Veranstaltung (Stripe/Rechnung)
   EVENT_CHECKOUT_RELEASED = 'event_checkout_released',

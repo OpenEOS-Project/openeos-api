@@ -12,8 +12,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 export type ContactRequestType =
   | 'demo'
   | 'contact'
-  | 'hardware'
-  | 'gateway'
   /* Von der Website: Rueckmeldung und Funktionswunsch. Getrennt, weil
      ein Wunsch anders gelesen wird als eine Stoerungsmeldung. */
   | 'feedback'
@@ -22,10 +20,10 @@ export type ContactRequestType =
 export class CreateContactRequestDto {
   @ApiProperty({
     example: 'demo',
-    enum: ['demo', 'contact', 'hardware', 'gateway', 'feedback', 'feature'],
+    enum: ['demo', 'contact', 'feedback', 'feature'],
     description: 'Art der Anfrage',
   })
-  @IsIn(['demo', 'contact', 'hardware', 'gateway', 'feedback', 'feature'])
+  @IsIn(['demo', 'contact', 'feedback', 'feature'])
   type: ContactRequestType;
 
   @ApiProperty({ example: 'Max Mustermann', minLength: 2, maxLength: 100 })

@@ -38,6 +38,7 @@ export * from './dining-table.entity';
 // Devices & Print
 export * from './device.entity';
 export * from './printer.entity';
+export * from './discovered-printer.entity';
 export * from './print-template.entity';
 export * from './print-job.entity';
 
@@ -62,10 +63,6 @@ export * from './support-message.entity';
 // Auth & Security
 export * from './trusted-device.entity';
 export * from './email-otp.entity';
-
-// Rentals
-export * from './rental-hardware.entity';
-export * from './rental-assignment.entity';
 
 // Inventory
 export * from './stock-movement.entity';
