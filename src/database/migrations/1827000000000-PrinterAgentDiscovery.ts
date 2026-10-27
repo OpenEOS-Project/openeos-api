@@ -17,8 +17,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * `printers.rental_assignment_id` und `printers.agent_local_id` entfernen,
  * `bluetooth` aus dem Enum nehmen. Siehe README „expand/contract“.
  */
-export class PrinterAgentDiscovery1826000000000 implements MigrationInterface {
-  name = 'PrinterAgentDiscovery1826000000000';
+export class PrinterAgentDiscovery1827000000000 implements MigrationInterface {
+  name = 'PrinterAgentDiscovery1827000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // ALTER TYPE ADD VALUE cannot run inside a transaction in PostgreSQL
