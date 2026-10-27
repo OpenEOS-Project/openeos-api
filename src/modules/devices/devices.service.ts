@@ -691,6 +691,17 @@ export class DevicesService {
       'blocked',
     );
 
+    if (device.type === DeviceType.PRINTER_AGENT) {
+      // Ein gesperrter Agent darf nicht weiter drucken oder per Heartbeat
+      // seine Drucker online melden: Drucker offline, Socket kappen. Beim
+      // Neuverbinden scheitert er, weil das Geraet inaktiv ist.
+      await this.printerAgentsService.markAgentOffline(
+        device.id,
+        organizationId,
+      );
+      this.gatewayService.reassignDeviceRoom(device.id, null);
+    }
+
     return device;
   }
 

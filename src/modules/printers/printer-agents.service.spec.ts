@@ -242,10 +242,12 @@ describe('PrinterAgentsService.handleAgentHeartbeat', () => {
     // Only the agent's own printers, scoped to its organization.
     expect(printerRepository.find).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({
-          deviceId: DEVICE,
-          organizationId: ORG,
-        }) as unknown,
+        where: [
+          expect.objectContaining({
+            deviceId: DEVICE,
+            organizationId: ORG,
+          }),
+        ] as unknown,
       }),
     );
     expect(printerRepository.update).toHaveBeenCalledTimes(2);
@@ -288,6 +290,140 @@ describe('PrinterAgentsService.handleAgentHeartbeat', () => {
     await service.handleAgentHeartbeat(DEVICE, ORG, { version: '2.0.0' });
     expect(deviceRepository.update).toHaveBeenCalled();
     expect(printerRepository.find).not.toHaveBeenCalled();
+  });
+
+  it('matches manual printers without fingerprint by printerId', async () => {
+    const { service, printerRepository, gatewayService } = setup();
+    // Manual network printer: no fingerprint, adopted printer: fingerprint.
+    printerRepository.find.mockResolvedValue([
+      { id: 'p-manual', fingerprint: null, isOnline: false },
+      { id: 'p-usb', fingerprint: 'usb:1', isOnline: true },
+    ] as never);
+
+    await service.handleAgentHeartbeat(DEVICE, ORG, {
+      printers: [
+        { printerId: 'p-manual', online: true },
+        { fingerprint: 'usb:1', online: false, lastError: 'unplugged' },
+      ],
+    });
+
+    // Both lookups stay scoped to this agent and its organization.
+    const [{ where }] = printerRepository.find.mock.calls[0] as unknown as [
+      { where: Record<string, unknown>[] },
+    ];
+    expect(where).toHaveLength(2);
+    for (const clause of where) {
+      expect(clause).toMatchObject({ deviceId: DEVICE, organizationId: ORG });
+    }
+
+    expect(printerRepository.update).toHaveBeenCalledTimes(2);
+    expect(printerRepository.update).toHaveBeenCalledWith(
+      { id: 'p-manual' },
+      expect.objectContaining({ isOnline: true }),
+    );
+    expect(printerRepository.update).toHaveBeenCalledWith(
+      { id: 'p-usb' },
+      expect.objectContaining({ isOnline: false }),
+    );
+    expect(gatewayService.notifyPrinterStatusChanged).toHaveBeenCalledTimes(2);
+    expect(gatewayService.notifyPrinterStatusChanged).toHaveBeenCalledWith(
+      ORG,
+      expect.objectContaining({ printerId: 'p-manual', isOnline: true }),
+    );
+    expect(gatewayService.notifyPrinterStatusChanged).toHaveBeenCalledWith(
+      ORG,
+      expect.objectContaining({ printerId: 'p-usb', isOnline: false }),
+    );
+  });
+
+  it('prefers the fingerprint over the printerId of the same entry', async () => {
+    const { service, printerRepository } = setup();
+    printerRepository.find.mockResolvedValue([
+      { id: 'p-by-fp', fingerprint: 'usb:1', isOnline: false },
+      { id: 'p-by-id', fingerprint: null, isOnline: false },
+    ] as never);
+
+    await service.handleAgentHeartbeat(DEVICE, ORG, {
+      printers: [{ fingerprint: 'usb:1', printerId: 'p-by-id', online: true }],
+    });
+
+    expect(printerRepository.update).toHaveBeenCalledTimes(1);
+    expect(printerRepository.update).toHaveBeenCalledWith(
+      { id: 'p-by-fp' },
+      expect.objectContaining({ isOnline: true }),
+    );
+  });
+
+  it('ignores printerIds that do not belong to the agent', async () => {
+    const { service, printerRepository, gatewayService } = setup();
+    // The scoped lookup finds nothing for a foreign printer id.
+    printerRepository.find.mockResolvedValue([] as never);
+
+    await service.handleAgentHeartbeat(DEVICE, ORG, {
+      printers: [{ printerId: 'p-foreign', online: true }],
+    });
+
+    expect(printerRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: [
+          expect.objectContaining({ deviceId: DEVICE, organizationId: ORG }),
+        ] as unknown,
+      }),
+    );
+    expect(printerRepository.update).not.toHaveBeenCalled();
+    expect(gatewayService.notifyPrinterStatusChanged).not.toHaveBeenCalled();
+  });
+
+  it('skips entries without fingerprint and printerId', async () => {
+    const { service, printerRepository } = setup();
+    await service.handleAgentHeartbeat(DEVICE, ORG, {
+      printers: [{ online: true } as never, null as never],
+    });
+    expect(printerRepository.find).not.toHaveBeenCalled();
+  });
+});
+
+describe('PrinterAgentsService.markAgentOffline', () => {
+  it('sets online printers offline, keeps lastSeenAt and notifies each one', async () => {
+    const { service, printerRepository, gatewayService } = setup();
+    const seen = new Date('2026-10-27T08:00:00Z');
+    printerRepository.find.mockResolvedValue([
+      { id: 'p1', lastSeenAt: seen },
+      { id: 'p2', lastSeenAt: seen },
+    ] as never);
+
+    await service.markAgentOffline(DEVICE, ORG);
+
+    // Only this agent's printers that are currently online.
+    expect(printerRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { deviceId: DEVICE, organizationId: ORG, isOnline: true },
+      }),
+    );
+    expect(printerRepository.update).toHaveBeenCalledTimes(1);
+    const [, patch] = printerRepository.update.mock.calls[0] as unknown as [
+      unknown,
+      Record<string, unknown>,
+    ];
+    expect(patch).toEqual({ isOnline: false });
+    expect(patch).not.toHaveProperty('lastSeenAt');
+
+    expect(gatewayService.notifyPrinterStatusChanged).toHaveBeenCalledTimes(2);
+    expect(gatewayService.notifyPrinterStatusChanged).toHaveBeenCalledWith(
+      ORG,
+      { printerId: 'p1', isOnline: false, lastSeenAt: seen.toISOString() },
+    );
+    expect(gatewayService.notifyPrinterStatusChanged).toHaveBeenCalledWith(
+      ORG,
+      { printerId: 'p2', isOnline: false, lastSeenAt: seen.toISOString() },
+    );
+  });
+
+  it('does nothing when no printer of the agent is online', async () => {
+    const { service, printerRepository, gatewayService } = setup();
+    await service.markAgentOffline(DEVICE, ORG);
+    expect(printerRepository.update).not.toHaveBeenCalled();
+    expect(gatewayService.notifyPrinterStatusChanged).not.toHaveBeenCalled();
   });
 });
 
@@ -468,8 +604,15 @@ describe('PrinterAgentsService.removeAgent', () => {
       DEVICE,
       null,
     );
-    // Order matters: references first, then printers, then the device.
+    // The POS hears the printers go offline before they disappear.
+    expect(gatewayService.notifyPrinterStatusChanged).toHaveBeenCalledTimes(2);
+    expect(gatewayService.notifyPrinterStatusChanged).toHaveBeenCalledWith(
+      ORG,
+      expect.objectContaining({ printerId: 'p1', isOnline: false }),
+    );
+    // Order matters: offline first, then references, printers, the device.
     const order = [
+      gatewayService.notifyPrinterStatusChanged.mock.invocationCallOrder[0],
       printersService.clearPrinterReferences.mock.invocationCallOrder[0],
       printerRepository.delete.mock.invocationCallOrder[0],
       deviceRepository.delete.mock.invocationCallOrder[0],
