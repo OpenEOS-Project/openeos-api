@@ -107,6 +107,12 @@ export default () => ({
   },
 
   billing: {
+    // Zahlungsziel der Stripe-Rechnung beim Kauf auf Rechnung, in Tagen.
+    // Eine Organisation kann ein eigenes haben (invoice_days_until_due).
+    invoiceDaysUntilDue: parseInt(
+      process.env.STRIPE_INVOICE_DAYS_UNTIL_DUE || '14',
+      10,
+    ),
     // Preis je Veranstaltungstag. Eine mehrtaegige Veranstaltung kostet
     // entsprechend ein Vielfaches davon.
     eventPriceEur: parseFloat(process.env.EVENT_PRICE_EUR || '25'),

@@ -38,6 +38,11 @@ import {
   CancellationSummary,
   EventUnlockCancellationService,
 } from './event-unlock-cancellation.service';
+import {
+  EventInvoiceSummary,
+  StripeInvoiceService,
+  invoiceSummaryOf,
+} from './stripe-invoice.service';
 
 /* hasBilledEventBefore schliesst die laufende Veranstaltung aus. Bei einer
    Vorschau gibt es keine; diese Id trifft auf keine Zeile zu. */
@@ -85,6 +90,15 @@ export interface EventBillingInfo extends EventPrice {
   cancellation: CancellationInfo;
   /** Die letzte Stornierung, falls es eine gab. */
   lastCancellation: CancellationSummary | null;
+  /**
+   * Auf Rechnung: ob Stripe die Rechnung ausstellt und verschickt. Ohne
+   * Stripe bleibt es beim alten Weg (Rechnung von Hand durch den Betreiber).
+   */
+  invoiceViaStripe: boolean;
+  /** Zahlungsziel einer Rechnung in Tagen (Organisation oder Standard). */
+  invoiceDaysUntilDue: number;
+  /** Die Stripe-Rechnung zur Freischaltung; null bei Altfaellen und ohne Rechnung. */
+  invoice: EventInvoiceSummary | null;
 }
 
 /**
@@ -109,6 +123,8 @@ export interface OrganizationInvoice {
   hostedUrl: string | null;
   /** Ob ein PDF abrufbar ist — Entwürfe haben noch keines. */
   hasPdf: boolean;
+  /** Faelligkeitsdatum (nur Rechnungen mit Zahlungsziel, also Kauf auf Rechnung). */
+  dueAt: string | null;
 }
 
 export interface CompanySearchResultItem {
@@ -138,6 +154,7 @@ export class EventBillingService {
     private readonly configService: ConfigService,
     private readonly cancellationService: EventUnlockCancellationService,
     private readonly billingAudit: BillingAuditService,
+    private readonly invoiceService: StripeInvoiceService,
   ) {}
 
   private async getOrganization(organizationId: string): Promise<Organization> {
@@ -397,6 +414,11 @@ export class EventBillingService {
       lastCancellation: await this.cancellationService.lastCancellation(
         event.id,
       ),
+      invoiceViaStripe:
+        organization.billingMode === 'invoice' &&
+        this.invoiceService.isAvailable,
+      invoiceDaysUntilDue: this.invoiceService.daysUntilDue(organization),
+      invoice: invoiceSummaryOf(event),
     };
   }
 
@@ -431,7 +453,8 @@ export class EventBillingService {
       });
     }
 
-    const { finalPrice, days } = await this.resolvePrice(organization, event);
+    const price = await this.resolvePrice(organization, event);
+    const { finalPrice, days } = price;
 
     organization.billingEmail = dto.billingEmail;
     organization.billingAddress = {
@@ -441,17 +464,83 @@ export class EventBillingService {
     };
     await this.organizationRepository.save(organization);
 
+    /* Stripe stellt die Rechnung — vor dem Freischalten, damit eine
+       abgelehnte Rechnung (Stripe nicht erreichbar, Kunde gesperrt) keine
+       freigeschaltete Veranstaltung ohne Rechnung hinterlaesst. Bricht
+       dagegen erst das Speichern ab, findet ein erneuter Versuch dank
+       Idempotenzschluessel dieselbe Rechnung wieder. Ohne Stripe bleibt
+       es beim alten Weg: frei, Rechnung von Hand durch den Betreiber. */
+    const issued = this.invoiceService.isAvailable
+      ? await this.invoiceService.issue({
+          event,
+          organization,
+          price,
+          billingEmail: dto.billingEmail,
+        })
+      : null;
+    if (issued && issued.customerId !== organization.stripeCustomerId) {
+      organization.stripeCustomerId = issued.customerId;
+      await this.organizationRepository.save(organization);
+    }
+
     event.billingStatus = 'invoice';
     // Server-side computed — never trust a client-supplied price.
     event.priceCharged = finalPrice;
     event.billedDays = days;
+    // Wann bestellt wurde — die Stornofrist und die Anzeige haengen daran.
+    event.paidAt = new Date();
     // Fuer die Stornofrist: der Beginn, wie er beim Bestellen stand.
     event.unlockedStartDate = event.startDate;
+    if (issued) {
+      Object.assign(event, issued.snapshot);
+      /* Abgerechnet ist damit — der Filter "abgerechnet" im Adminbereich
+         und das Protokoll der Stornierung lesen diese Felder. */
+      event.invoicedAt = new Date();
+      event.invoicedBy = null;
+      event.invoiceNote = `Stripe-Rechnung ${issued.snapshot.stripeInvoiceNumber ?? issued.snapshot.stripeInvoiceId}`;
+    }
     await this.eventRepository.save(event);
 
     this.logger.log(
-      `Event ${event.id} (org ${organizationId}) ordered auf Rechnung, price_charged=${finalPrice}`,
+      `Event ${event.id} (org ${organizationId}) ordered auf Rechnung, price_charged=${finalPrice}` +
+        (issued ? `, stripe_invoice=${issued.snapshot.stripeInvoiceId}` : ''),
     );
+
+    if (issued) {
+      await this.billingAudit.record({
+        action: AdminAction.EVENT_INVOICE_ISSUED,
+        organizationId: organization.id,
+        eventId: event.id,
+        actor: { userId: user.id, ipAddress: '0.0.0.0' },
+        details: {
+          invoiceId: issued.snapshot.stripeInvoiceId,
+          invoiceNumber: issued.snapshot.stripeInvoiceNumber,
+          amount: finalPrice,
+          currency: organization.settings?.currency || 'EUR',
+          days,
+          dueAt: issued.snapshot.invoiceDueAt?.toISOString() ?? null,
+        },
+      });
+      // Best effort: Stripes eigene Rechnungsmail geht unabhaengig davon raus.
+      try {
+        await this.emailService.sendEventInvoiceIssuedEmail({
+          to: dto.billingEmail,
+          organizationName: organization.name,
+          eventName: event.name,
+          eventDate: event.startDate,
+          timeZone: organization.settings?.timezone || 'Europe/Berlin',
+          amount: finalPrice,
+          currency: organization.settings?.currency || 'EUR',
+          invoiceNumber: issued.snapshot.stripeInvoiceNumber,
+          dueAt: issued.snapshot.invoiceDueAt,
+          hostedUrl: issued.snapshot.invoiceHostedUrl,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Bestätigung der Bestellung auf Rechnung nicht gesendet: ${(error as Error).message}`,
+        );
+      }
+    }
 
     // Best-effort admin notification — failures are only logged, never block
     // the order-invoice flow that already succeeded above.
@@ -461,6 +550,12 @@ export class EventBillingService {
         event,
         finalPrice,
         'invoice',
+        issued
+          ? {
+              number: issued.snapshot.stripeInvoiceNumber,
+              dueAt: issued.snapshot.invoiceDueAt,
+            }
+          : null,
       );
     } catch (error) {
       this.logger.warn(
@@ -481,6 +576,7 @@ export class EventBillingService {
     event: Event,
     priceCharged: number,
     paymentMethod: 'invoice' | 'stripe',
+    invoice: { number: string | null; dueAt: Date | null } | null = null,
   ): Promise<void> {
     /* Derselbe Schalter fuer beide Wege: aus Betreibersicht ist es ein
        Ereignis — jemand hat eine Veranstaltung gekauft. Wie bezahlt
@@ -508,6 +604,7 @@ export class EventBillingService {
         city: organization.billingAddress?.city ?? '',
         country: organization.billingAddress?.country ?? '',
       },
+      invoice,
     });
   }
 
@@ -916,6 +1013,9 @@ export class EventBillingService {
         invoice.lines?.data?.[0]?.description ?? invoice.description ?? null,
       hostedUrl: invoice.hosted_invoice_url ?? null,
       hasPdf: !!invoice.invoice_pdf,
+      dueAt: invoice.due_date
+        ? new Date(invoice.due_date * 1000).toISOString()
+        : null,
     }));
 
     /* Stornorechnungen sind bei Stripe Gutschriften zu einer Rechnung. Sie
@@ -939,6 +1039,7 @@ export class EventBillingService {
         description: note.memo ?? null,
         hostedUrl: null,
         hasPdf: !!note.pdf,
+        dueAt: null,
       });
     }
 

@@ -1,7 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Event } from '../../database/entities/event.entity';
+import {
+  Event,
+  EventInvoiceStatus,
+  isInvoiceOverdue,
+} from '../../database/entities/event.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { QueryAdminEventsDto, MarkInvoicedDto } from './dto/admin-events.dto';
 
@@ -19,6 +23,16 @@ export interface AdminEventListItem {
   invoicedAt: Date | null;
   invoicedBy: string | null;
   invoiceNote: string | null;
+  /** Auf Rechnung ueber Stripe: die Rechnung. Leer bei Altfaellen (von Hand). */
+  stripeInvoiceId: string | null;
+  invoiceNumber: string | null;
+  /** Stripes Status; `overdue` fuer offene Rechnungen nach dem Faelligkeitsdatum. */
+  invoiceStatus: EventInvoiceStatus | 'overdue' | null;
+  invoiceDueAt: Date | null;
+  invoicePaidAt: Date | null;
+  invoiceHostedUrl: string | null;
+  invoiceHasPdf: boolean;
+  priceCharged: number | null;
 }
 
 /**
@@ -37,6 +51,14 @@ interface AdminEventRawRow {
   event_invoiced_at: Date | null;
   event_invoiced_by: string | null;
   event_invoice_note: string | null;
+  event_stripe_invoice_id: string | null;
+  event_stripe_invoice_number: string | null;
+  event_invoice_status: EventInvoiceStatus | null;
+  event_invoice_due_at: Date | null;
+  event_invoice_paid_at: Date | null;
+  event_invoice_hosted_url: string | null;
+  event_invoice_pdf_url: string | null;
+  event_price_charged: string | null;
   organizationName?: string | null;
   org_name?: string | null;
   orderCount?: string | null;
@@ -97,6 +119,14 @@ export class AdminEventsService {
         'event.invoicedAt',
         'event.invoicedBy',
         'event.invoiceNote',
+        'event.stripeInvoiceId',
+        'event.stripeInvoiceNumber',
+        'event.invoiceStatus',
+        'event.invoiceDueAt',
+        'event.invoicePaidAt',
+        'event.invoiceHostedUrl',
+        'event.invoicePdfUrl',
+        'event.priceCharged',
       ])
       .addSelect('org.name', 'organizationName')
       .addSelect('COUNT(DISTINCT order.id)', 'orderCount')
@@ -139,21 +169,7 @@ export class AdminEventsService {
       .limit(limit)
       .getRawMany<AdminEventRawRow>();
 
-    const data: AdminEventListItem[] = raw.map((r) => ({
-      id: r.event_id,
-      name: r.event_name,
-      organizationId: r.event_organization_id,
-      organizationName: r.organizationName ?? r.org_name ?? '',
-      startDate: r.event_start_date,
-      endDate: r.event_end_date,
-      status: r.event_status,
-      billingStatus: r.event_billing_status,
-      orderCount: parseInt(r.orderCount ?? '0', 10),
-      revenueTotal: parseFloat(r.revenueTotal ?? '0'),
-      invoicedAt: r.event_invoiced_at,
-      invoicedBy: r.event_invoiced_by,
-      invoiceNote: r.event_invoice_note,
-    }));
+    const data: AdminEventListItem[] = raw.map((r) => this.toListItem(r));
 
     return { data, total, page, limit };
   }
@@ -191,6 +207,14 @@ export class AdminEventsService {
         'event.invoicedAt',
         'event.invoicedBy',
         'event.invoiceNote',
+        'event.stripeInvoiceId',
+        'event.stripeInvoiceNumber',
+        'event.invoiceStatus',
+        'event.invoiceDueAt',
+        'event.invoicePaidAt',
+        'event.invoiceHostedUrl',
+        'event.invoicePdfUrl',
+        'event.priceCharged',
       ])
       .addSelect('org.name', 'organizationName')
       .addSelect('COUNT(DISTINCT order.id)', 'orderCount')
@@ -236,21 +260,44 @@ export class AdminEventsService {
       totalAmount: parseFloat(o.totalAmount ?? '0'),
     }));
 
+    return { ...this.toListItem(raw), orders };
+  }
+
+  private toListItem(r: AdminEventRawRow): AdminEventListItem {
+    const invoiceStatus: EventInvoiceStatus | 'overdue' | null =
+      r.event_stripe_invoice_id
+        ? isInvoiceOverdue({
+            invoiceStatus: r.event_invoice_status,
+            invoiceDueAt: r.event_invoice_due_at,
+          })
+          ? 'overdue'
+          : (r.event_invoice_status ?? 'draft')
+        : null;
     return {
-      id: raw.event_id,
-      name: raw.event_name,
-      organizationId: raw.event_organization_id,
-      organizationName: raw.organizationName ?? raw.org_name ?? '',
-      startDate: raw.event_start_date,
-      endDate: raw.event_end_date,
-      status: raw.event_status,
-      billingStatus: raw.event_billing_status,
-      orderCount: parseInt(raw.orderCount ?? '0', 10),
-      revenueTotal: parseFloat(raw.revenueTotal ?? '0'),
-      invoicedAt: raw.event_invoiced_at,
-      invoicedBy: raw.event_invoiced_by,
-      invoiceNote: raw.event_invoice_note,
-      orders,
+      id: r.event_id,
+      name: r.event_name,
+      organizationId: r.event_organization_id,
+      organizationName: r.organizationName ?? r.org_name ?? '',
+      startDate: r.event_start_date,
+      endDate: r.event_end_date,
+      status: r.event_status,
+      billingStatus: r.event_billing_status,
+      orderCount: parseInt(r.orderCount ?? '0', 10),
+      revenueTotal: parseFloat(r.revenueTotal ?? '0'),
+      invoicedAt: r.event_invoiced_at,
+      invoicedBy: r.event_invoiced_by,
+      invoiceNote: r.event_invoice_note,
+      stripeInvoiceId: r.event_stripe_invoice_id ?? null,
+      invoiceNumber: r.event_stripe_invoice_number ?? null,
+      invoiceStatus,
+      invoiceDueAt: r.event_invoice_due_at ?? null,
+      invoicePaidAt: r.event_invoice_paid_at ?? null,
+      invoiceHostedUrl: r.event_invoice_hosted_url ?? null,
+      invoiceHasPdf: !!r.event_invoice_pdf_url,
+      priceCharged:
+        r.event_price_charged !== null && r.event_price_charged !== undefined
+          ? parseFloat(String(r.event_price_charged))
+          : null,
     };
   }
 

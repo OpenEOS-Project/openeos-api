@@ -10,8 +10,10 @@ import {
   UseGuards,
   ParseUUIDPipe,
   Req,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminEventsService } from './admin-events.service';
 import {
@@ -27,6 +29,17 @@ import {
   EventUnlockCancellationService,
   toCancellationSummary,
 } from '../events/event-unlock-cancellation.service';
+import { StripeInvoiceService } from '../events/stripe-invoice.service';
+import type { AuditActor } from '../events/billing-audit.service';
+
+function actorOf(user: User, req: Request): AuditActor {
+  return {
+    userId: user.id,
+    ipAddress:
+      (req as { ip?: string }).ip || req.socket?.remoteAddress || '0.0.0.0',
+    userAgent: req.headers['user-agent'] ?? null,
+  };
+}
 
 @ApiTags('Admin')
 @ApiBearerAuth('JWT-auth')
@@ -37,6 +50,7 @@ export class AdminEventsController {
   constructor(
     private readonly adminEventsService: AdminEventsService,
     private readonly cancellationService: EventUnlockCancellationService,
+    private readonly invoiceService: StripeInvoiceService,
   ) {}
 
   @Get()
@@ -116,6 +130,47 @@ export class AdminEventsController {
       },
     );
     return { data: toCancellationSummary(cancellation) };
+  }
+
+  /** Auf Rechnung ueber Stripe: Stripes Rechnungsmail erneut verschicken. */
+  @Post(':id/invoice/resend')
+  async resendInvoice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Req() req: Request,
+  ) {
+    const event = await this.invoiceService.resend(id, actorOf(user, req));
+    return { data: await this.adminEventsService.getEvent(event.id) };
+  }
+
+  /**
+   * Auf Rechnung ueber Stripe: als ausserhalb von Stripe bezahlt verbuchen
+   * (Ueberweisung auf das eigene Konto). Stripe setzt die Rechnung auf
+   * bezahlt.
+   */
+  @Post(':id/invoice/mark-paid')
+  async markInvoicePaid(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Req() req: Request,
+  ) {
+    const event = await this.invoiceService.markPaid(id, actorOf(user, req));
+    return { data: await this.adminEventsService.getEvent(event.id) };
+  }
+
+  /** Auf Rechnung ueber Stripe: das Rechnungs-PDF. */
+  @Get(':id/invoice/pdf')
+  async invoicePdf(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { filename, content } = await this.invoiceService.invoicePdf(id);
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${safeName}"`,
+    });
+    return new StreamableFile(content);
   }
 
   @Post(':id/waive')

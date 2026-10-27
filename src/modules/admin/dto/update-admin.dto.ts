@@ -10,6 +10,8 @@ import {
   Max,
   MaxLength,
   IsObject,
+  IsInt,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
@@ -312,6 +314,19 @@ export class UpdateOrganizationAdminDto {
   @IsNumber()
   @Min(0)
   eventPriceOverride?: number;
+
+  @ApiPropertyOptional({
+    example: 14,
+    nullable: true,
+    description:
+      'Zahlungsziel für Rechnungen (Kauf auf Rechnung über Stripe) in Tagen; leer = Standard der Plattform',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(1)
+  @Max(120)
+  invoiceDaysUntilDue?: number | null;
 
   @ApiPropertyOptional({
     example: false,
