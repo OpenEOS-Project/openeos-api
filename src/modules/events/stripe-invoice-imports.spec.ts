@@ -13,8 +13,12 @@ import 'reflect-metadata';
 describe('StripeInvoiceService imports', () => {
   it('has every constructor dependency defined when the mail service loads first', () => {
     jest.isolateModules(() => {
-      // Reihenfolge wie beim Start: das Mail-Modul kommt vor dem Events-Modul.
+      /* Reihenfolge wie beim Start: das Mail-Modul kommt vor dem
+         Events-Modul. Nur require laedt synchron in genau dieser Folge —
+         ein import wuerde gehoben und die Reihenfolge waere dahin. */
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       require('../email/email.service');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { StripeInvoiceService } = require('./stripe-invoice.service') as {
         StripeInvoiceService: new (...args: unknown[]) => unknown;
       };
