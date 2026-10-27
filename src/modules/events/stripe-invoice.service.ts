@@ -32,13 +32,9 @@ import { GatewayService } from '../gateway/gateway.service';
 import { AuditActor, BillingAuditService } from './billing-audit.service';
 import type { EventPrice } from './event-billing.service';
 
-/**
- * Der Hinweis nach § 19 UStG auf jeder Rechnung. Derselbe Wortlaut wie in
- * der Oberflaeche (events.checkout.noVat) — der Betreiber weist keine
- * Umsatzsteuer aus, deshalb traegt die Rechnung keine Steuersaetze.
- */
-export const VAT_EXEMPT_NOTE =
-  'Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.';
+import { VAT_EXEMPT_NOTE } from '../../common/constants/billing-text';
+
+export { VAT_EXEMPT_NOTE };
 
 /** Zahlungsziel, wenn weder Organisation noch Umgebung eines nennen. */
 export const DEFAULT_INVOICE_DAYS_UNTIL_DUE = 14;

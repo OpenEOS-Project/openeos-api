@@ -15,7 +15,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { EventRefundVia } from '../../database/entities/event-billing-cancellation.entity';
-import { VAT_EXEMPT_NOTE } from '../events/stripe-invoice.service';
+import { VAT_EXEMPT_NOTE } from '../../common/constants/billing-text';
 import type { Transporter } from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 
