@@ -594,6 +594,7 @@ describe('DevicesService member PINs', () => {
       none,
       none,
       none,
+      none,
     );
     return { service, saved };
   }

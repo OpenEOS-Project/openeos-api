@@ -12,6 +12,7 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  GoneException,
   Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
@@ -38,10 +39,7 @@ import {
   ProductionStation,
 } from '../../database/entities';
 import { EventStatus } from '../../database/entities/event.entity';
-import {
-  PrinterType,
-  PrinterConnectionType,
-} from '../../database/entities/printer.entity';
+import { DeviceType } from '../../database/entities/device.entity';
 import {
   OrderStatus,
   PaymentStatus,
@@ -62,6 +60,8 @@ import { SumUpApiService } from '../sumup/sumup-api.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
 import { PrintersService } from '../printers/printers.service';
+import { PrinterAgentsService } from '../printers/printer-agents.service';
+import { ReportDiscoveredPrintersDto } from '../printers/dto';
 import { GatewayService } from '../gateway/gateway.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import {
@@ -169,6 +169,7 @@ export class DeviceApiController {
     private readonly paymentsBatchService: PaymentsBatchService,
     private readonly refundsService: RefundsService,
     private readonly orderHistoryService: OrderHistoryService,
+    private readonly printerAgentsService: PrinterAgentsService,
   ) {}
 
   @Get('organization')
@@ -250,7 +251,9 @@ export class DeviceApiController {
 
   @Get('printers')
   @ApiOperation({
-    summary: 'Get printer configurations assigned to this device',
+    summary: 'Übernommene Drucker dieses Agents',
+    description:
+      'Nur übernommene (adoptierte) oder manuell angelegte Drucker — der Agent druckt ausschließlich auf diese. Neu laden bei `printerConfigUpdate`.',
   })
   async getPrinters(@CurrentDevice() device: Device) {
     const printers = await this.printersService.findByDeviceId(device.id);
@@ -261,6 +264,7 @@ export class DeviceApiController {
           id: p.id,
           name: p.name,
           type: p.type,
+          fingerprint: p.fingerprint,
           connectionType: p.connectionType,
           connectionConfig: p.connectionConfig,
           paperWidth: p.paperWidth,
@@ -271,40 +275,46 @@ export class DeviceApiController {
     };
   }
 
+  @Post('printers/discovered')
+  @ApiOperation({
+    summary: 'Gefundene Drucker melden',
+    description:
+      'Upsert nach (deviceId, fingerprint), lastSeenAt = jetzt. Bei `full: true` (kompletter Scan) werden nicht gemeldete Einträge nicht gelöscht, nur ihr lastSeenAt bleibt alt.',
+  })
+  async reportDiscoveredPrinters(
+    @CurrentDevice() device: Device,
+    @Body() body: ReportDiscoveredPrintersDto,
+  ) {
+    const organizationId = requireOrganization(device);
+    if (device.type !== DeviceType.PRINTER_AGENT) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.DEVICE_NOT_PRINTER_AGENT,
+        message: 'Gerät ist kein Drucker-Agent',
+      });
+    }
+    const printers = await this.printerAgentsService.reportDiscovered(
+      device.id,
+      organizationId,
+      body,
+    );
+    return { data: { printers } };
+  }
+
   @Post('printers/sync')
   @ApiOperation({
-    summary: 'Sync agent-side printer configuration to the backend',
+    summary: 'Entfernt — 410 Gone',
     description:
-      'Agent posts its local config.yaml printer block; the backend upserts the matching Printer rows and returns canonical IDs.',
+      'Die Druckerliste kommt nicht mehr aus der YAML des Agents. Drucker werden in der Web-App übernommen; der Agent liest sie über GET /device-api/printers.',
+    deprecated: true,
   })
-  async syncPrinters(
-    @CurrentDevice() device: Device,
-    @Body()
-    body: {
-      printers: Array<{
-        localId: string;
-        name: string;
-        type: 'receipt' | 'kitchen' | 'label';
-        connectionType: 'usb' | 'network' | 'bluetooth';
-        connectionConfig?: Record<string, unknown>;
-        paperWidth?: number;
-      }>;
-    },
-  ) {
-    const items = (body?.printers ?? []).map((p) => ({
-      localId: p.localId,
-      name: p.name,
-      type: p.type as PrinterType,
-      connectionType: p.connectionType as PrinterConnectionType,
-      connectionConfig: p.connectionConfig,
-      paperWidth: p.paperWidth,
-    }));
-    const result = await this.printersService.syncFromAgent(
-      device.id,
-      device.organizationId ?? null,
-      items,
-    );
-    return { data: { printers: result } };
+  syncPrinters() {
+    throw new GoneException({
+      code: ErrorCodes.PRINTER_SYNC_REMOVED,
+      reason: ErrorReasons.PRINTER_SYNC_REMOVED,
+      message:
+        'Die Druckerliste wird nicht mehr vom Agenten gepflegt — bitte den Agenten aktualisieren',
+    });
   }
 
   @Get('templates')

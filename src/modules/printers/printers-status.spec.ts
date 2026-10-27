@@ -16,6 +16,8 @@ function setup(current: { id: string; isOnline: boolean } | null) {
     none,
     none,
     gatewayService as never,
+    none,
+    none,
   );
   return { service, printerRepository, gatewayService };
 }

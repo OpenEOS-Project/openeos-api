@@ -70,6 +70,25 @@ export interface DisplayAppearance {
 export const REFUND_PERMISSIONS = ['allowed', 'pin', 'disabled'] as const;
 export type RefundPermissionSetting = (typeof REFUND_PERMISSIONS)[number];
 
+/**
+ * Was ein Drucker-Agent ueber sich meldet (`agentHeartbeat`). Nur bei
+ * `type = printer_agent` gesetzt.
+ */
+export interface PrinterAgentInfo {
+  version?: string;
+  /** 'linux' | 'windows' | 'darwin' — offen fuer weitere Plattformen. */
+  os?: string;
+  arch?: string;
+  hostname?: string;
+  pythonVersion?: string;
+  capabilities?: {
+    usb?: boolean;
+    mdns?: boolean;
+    portscan?: boolean;
+    spooler?: boolean;
+  };
+}
+
 export interface DeviceSettings {
   defaultPrinterId?: string;
   soundEnabled?: boolean;
@@ -164,6 +183,10 @@ export class Device extends BaseEntity {
 
   @Column({ type: 'jsonb', default: {} })
   settings: DeviceSettings;
+
+  /** Nur Drucker-Agenten: Version, Betriebssystem, Faehigkeiten. */
+  @Column({ name: 'agent_info', type: 'jsonb', nullable: true })
+  agentInfo: PrinterAgentInfo | null;
 
   // Relations
   @ManyToOne(() => Organization, (org) => org.devices, {

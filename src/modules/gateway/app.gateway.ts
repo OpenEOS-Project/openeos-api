@@ -21,6 +21,7 @@ import type {
   JoinRoomPayload,
   LeaveRoomPayload,
   PrinterHeartbeatEvent,
+  AgentHeartbeatEvent,
   PrinterJobCompleteEvent,
   PrinterJobFailedEvent,
   CartUpdatePayload,
@@ -29,6 +30,7 @@ import type {
 } from './dto';
 import { DevicesService } from '../devices/devices.service';
 import { PrintersService } from '../printers/printers.service';
+import { PrinterAgentsService } from '../printers/printer-agents.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { PrintJobStatus } from '../../database/entities/print-job.entity';
 
@@ -105,6 +107,7 @@ export class AppGateway
     private readonly configService: ConfigService,
     private readonly devicesService: DevicesService,
     private readonly printersService: PrintersService,
+    private readonly printerAgentsService: PrinterAgentsService,
     private readonly printJobsService: PrintJobsService,
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
@@ -388,6 +391,29 @@ export class AppGateway
       payload.printerId,
       payload.isOnline,
       client.device.organizationId,
+    );
+    return { success: true };
+  }
+
+  /**
+   * Drucker-Agent alle 30 s: Version/OS/Faehigkeiten und welche seiner
+   * uebernommenen Drucker (nach Fingerprint) erreichbar sind.
+   */
+  @SubscribeMessage(GatewayEvents.AGENT_HEARTBEAT)
+  async handleAgentHeartbeat(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() payload: AgentHeartbeatEvent,
+  ) {
+    if (!client.device || !client.device.organizationId) {
+      return { error: 'Not a device connection' };
+    }
+    if (client.device.type !== (DeviceType.PRINTER_AGENT as string)) {
+      return { error: 'Not a printer agent' };
+    }
+    await this.printerAgentsService.handleAgentHeartbeat(
+      client.device.id,
+      client.device.organizationId,
+      payload ?? {},
     );
     return { success: true };
   }

@@ -242,6 +242,34 @@ export interface PrinterConfigUpdateEvent {
   deviceId: string;
 }
 
+/** Server → Agent: Drucker neu suchen (Port-9100-Scan nur bei subnetScan). */
+export interface PrinterDiscoverEvent {
+  subnetScan: boolean;
+}
+
+/**
+ * Agent → Server, alle 30 s: wer der Agent ist und welche seiner
+ * uebernommenen Drucker (nach Fingerprint) gerade erreichbar sind.
+ */
+export interface AgentHeartbeatEvent {
+  version?: string;
+  os?: string;
+  arch?: string;
+  hostname?: string;
+  pythonVersion?: string;
+  capabilities?: {
+    usb?: boolean;
+    mdns?: boolean;
+    portscan?: boolean;
+    spooler?: boolean;
+  };
+  printers?: Array<{
+    fingerprint: string;
+    online: boolean;
+    lastError?: string;
+  }>;
+}
+
 // Event names as constants
 export const GatewayEvents = {
   // Client to Server
@@ -249,6 +277,7 @@ export const GatewayEvents = {
   LEAVE_ROOM: 'leaveRoom',
   DEVICE_HEARTBEAT: 'deviceHeartbeat',
   PRINTER_HEARTBEAT: 'printerHeartbeat',
+  AGENT_HEARTBEAT: 'agentHeartbeat',
   CART_UPDATE: 'cartUpdate',
   WATCH_POS_CART: 'watchPosCart',
   UNWATCH_POS_CART: 'unwatchPosCart',
@@ -300,6 +329,7 @@ export const GatewayEvents = {
 
   // Printer Agent Config Events
   PRINTER_CONFIG_UPDATE: 'printerConfigUpdate',
+  PRINTER_DISCOVER: 'printerDiscover',
 
   // Connection events
   CONNECTED: 'connected',

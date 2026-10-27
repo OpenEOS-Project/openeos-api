@@ -8,17 +8,17 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import {
   Printer,
   Device,
   User,
   UserOrganization,
+  Organization,
+  ProductionStation,
 } from '../../database/entities';
-import {
-  PrinterType,
-  PrinterConnectionType,
-} from '../../database/entities/printer.entity';
+import { PrinterConnectionType } from '../../database/entities/printer.entity';
+import type { OrganizationSettings } from '../../database/entities/organization.entity';
 import { DeviceType } from '../../database/entities/device.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
@@ -29,6 +29,17 @@ import {
 } from '../../common/dto/pagination.dto';
 import { CreatePrinterDto, UpdatePrinterDto } from './dto';
 import { GatewayService } from '../gateway/gateway.service';
+
+const ORDER_FLOW_PRINTER_KEYS = [
+  'receiptPrinting',
+  'kitchenTicketPrinting',
+  'orderTicketPrinting',
+] as const;
+
+const DEVICE_PRINTER_SETTING_KEYS = [
+  'defaultPrinterId',
+  'cashDrawerPrinterId',
+] as const;
 
 @Injectable()
 export class PrintersService {
@@ -43,8 +54,17 @@ export class PrintersService {
     private readonly deviceRepository: Repository<Device>,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
+    @InjectRepository(Organization)
+    private readonly organizationRepository: Repository<Organization>,
+    @InjectRepository(ProductionStation)
+    private readonly productionStationRepository: Repository<ProductionStation>,
   ) {}
 
+  /**
+   * Manuell angelegter Netzwerkdrucker fuer Geraete, die die Erkennung des
+   * Agents nicht findet. USB- und Windows-Drucker kommen nur ueber die
+   * Uebernahme aus `discovered_printers` (PrinterAgentsService.adopt).
+   */
   async create(
     organizationId: string,
     createDto: CreatePrinterDto,
@@ -52,19 +72,32 @@ export class PrintersService {
   ): Promise<Printer> {
     await this.checkPermission(organizationId, user.id, 'devices');
 
-    // Validate deviceId if provided
-    if (createDto.deviceId) {
-      await this.validateDeviceForOrg(createDto.deviceId, organizationId);
+    const connectionType =
+      createDto.connectionType ?? PrinterConnectionType.NETWORK;
+    if (connectionType !== PrinterConnectionType.NETWORK) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.PRINTER_CONNECTION_TYPE_NOT_ALLOWED,
+        message:
+          'Manuell lassen sich nur Netzwerkdrucker anlegen — USB- und Windows-Drucker über „Gefundene Drucker“ übernehmen',
+      });
     }
+
+    await this.validateDeviceForOrg(createDto.deviceId, organizationId);
 
     const printer = this.printerRepository.create({
       organizationId,
       name: createDto.name,
       type: createDto.type,
-      connectionType: createDto.connectionType,
-      connectionConfig: createDto.connectionConfig || {},
-      deviceId: createDto.deviceId || null,
-      paperWidth: createDto.paperWidth || 80,
+      connectionType,
+      connectionConfig: {
+        ipAddress: createDto.connectionConfig.ipAddress,
+        port: createDto.connectionConfig.port ?? 9100,
+      },
+      deviceId: createDto.deviceId,
+      fingerprint: null,
+      paperWidth: createDto.paperWidth ?? 80,
+      hasCashDrawer: createDto.hasCashDrawer ?? false,
       isActive: true,
       isOnline: false,
     });
@@ -72,10 +105,7 @@ export class PrintersService {
     await this.printerRepository.save(printer);
     this.logger.log(`Printer created: ${printer.name} (${printer.id})`);
 
-    // Notify the device about config change
-    if (printer.deviceId) {
-      this.notifyDeviceConfigUpdate(organizationId, printer.deviceId);
-    }
+    this.notifyDeviceConfigUpdate(organizationId, printer.deviceId!);
 
     return printer;
   }
@@ -131,27 +161,33 @@ export class PrintersService {
     await this.checkPermission(organizationId, user.id, 'devices');
 
     const printer = await this.findOne(organizationId, printerId, user);
-    const previousDeviceId = printer.deviceId;
 
-    // Validate new deviceId if provided
-    if (
-      updateDto.deviceId !== undefined &&
-      updateDto.deviceId !== previousDeviceId
-    ) {
-      if (updateDto.deviceId) {
-        await this.validateDeviceForOrg(updateDto.deviceId, organizationId);
+    const { connectionConfig, ...fields } = updateDto;
+    if (connectionConfig) {
+      if (printer.connectionType !== PrinterConnectionType.NETWORK) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.PRINTER_CONNECTION_TYPE_NOT_ALLOWED,
+          message:
+            'IP-Adresse und Port lassen sich nur bei Netzwerkdruckern ändern',
+        });
       }
+      printer.connectionConfig = {
+        ...printer.connectionConfig,
+        ...(connectionConfig.ipAddress !== undefined
+          ? { ipAddress: connectionConfig.ipAddress }
+          : {}),
+        ...(connectionConfig.port !== undefined
+          ? { port: connectionConfig.port }
+          : {}),
+      };
     }
 
-    Object.assign(printer, updateDto);
+    Object.assign(printer, fields);
     await this.printerRepository.save(printer);
 
     this.logger.log(`Printer updated: ${printer.name} (${printer.id})`);
 
-    // Notify affected devices about config change
-    if (previousDeviceId && previousDeviceId !== printer.deviceId) {
-      this.notifyDeviceConfigUpdate(organizationId, previousDeviceId);
-    }
     if (printer.deviceId) {
       this.notifyDeviceConfigUpdate(organizationId, printer.deviceId);
     }
@@ -169,13 +205,92 @@ export class PrintersService {
     const printer = await this.findOne(organizationId, printerId, user);
     const deviceId = printer.deviceId;
 
+    await this.clearPrinterReferences(organizationId, [printer.id]);
     await this.printerRepository.remove(printer);
 
     this.logger.log(`Printer deleted: ${printer.name} (${printer.id})`);
 
-    // Notify the device about config change
     if (deviceId) {
       this.notifyDeviceConfigUpdate(organizationId, deviceId);
+    }
+  }
+
+  /**
+   * Zuordnungen auf die Drucker aufraeumen, bevor sie geloescht werden:
+   * Stationen, Bon-Workflow der Organisation, Standard-/Kassenladen-Drucker
+   * der Geraete sowie Druckeinstellungen von Kategorien und Produkten.
+   */
+  async clearPrinterReferences(
+    organizationId: string,
+    printerIds: string[],
+  ): Promise<void> {
+    if (printerIds.length === 0) return;
+    const ids = new Set(printerIds);
+
+    await this.productionStationRepository.update(
+      { printerId: In(printerIds) },
+      { printerId: null },
+    );
+
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
+    if (organization?.settings?.orderFlow) {
+      let changed = false;
+      const orderFlow: Record<string, unknown> = {
+        ...organization.settings.orderFlow,
+      };
+      for (const key of ORDER_FLOW_PRINTER_KEYS) {
+        const section = orderFlow[key] as
+          | { printerId?: string | null }
+          | undefined;
+        if (section?.printerId && ids.has(section.printerId)) {
+          orderFlow[key] = { ...section, printerId: null };
+          changed = true;
+        }
+      }
+      if (changed) {
+        organization.settings = {
+          ...organization.settings,
+          orderFlow: orderFlow as OrganizationSettings['orderFlow'],
+        };
+        await this.organizationRepository.save(organization);
+        this.gatewayService.notifyOrganizationSettingsUpdated(organizationId);
+      }
+    }
+
+    const devices = await this.deviceRepository.find({
+      where: { organizationId },
+    });
+    for (const device of devices) {
+      const settings = { ...(device.settings ?? {}) };
+      let changed = false;
+      for (const key of DEVICE_PRINTER_SETTING_KEYS) {
+        const value = settings[key];
+        if (typeof value === 'string' && ids.has(value)) {
+          delete settings[key];
+          changed = true;
+        }
+      }
+      if (changed) {
+        device.settings = settings;
+        await this.deviceRepository.save(device);
+        this.gatewayService.notifyDeviceSettingsUpdated(
+          organizationId,
+          device.id,
+          settings,
+        );
+      }
+    }
+
+    // Kategorien/Produkte halten den Drucker in `print_settings` (jsonb).
+    const manager = this.printerRepository.manager;
+    for (const table of ['categories', 'products']) {
+      await manager.query(
+        `UPDATE "${table}" SET "print_settings" = "print_settings" - 'printerId'
+           WHERE "print_settings"->>'printerId' = ANY($1::text[])`,
+        [printerIds],
+      );
     }
   }
 
@@ -184,69 +299,6 @@ export class PrintersService {
       where: { deviceId, isActive: true },
       order: { name: 'ASC' },
     });
-  }
-
-  /**
-   * Upsert the printers a device's agent reports from its local config.yaml.
-   * The agent's config is the source of truth for hardware-fixed fields
-   * (name, type, connection, USB IDs, paperWidth) — `hasCashDrawer` and the
-   * organization assignment stay under admin control and are NOT touched here.
-   */
-  async syncFromAgent(
-    deviceId: string,
-    organizationId: string | null,
-    items: Array<{
-      localId: string;
-      name: string;
-      type: PrinterType;
-      connectionType: PrinterConnectionType;
-      connectionConfig?: Record<string, unknown>;
-      paperWidth?: number;
-    }>,
-  ): Promise<Array<{ id: string; localId: string }>> {
-    const result: Array<{ id: string; localId: string }> = [];
-
-    for (const item of items) {
-      let printer = await this.printerRepository.findOne({
-        where: { deviceId, agentLocalId: item.localId },
-      });
-
-      if (!printer) {
-        // Fallback: maybe the printer existed before this column was added —
-        // pick the first one for this device that has no localId.
-        printer = await this.printerRepository.findOne({
-          where: { deviceId, agentLocalId: IsNull() },
-        });
-      }
-
-      const fields: Partial<Printer> = {
-        agentLocalId: item.localId,
-        name: item.name,
-        type: item.type,
-        connectionType: item.connectionType,
-        connectionConfig: (item.connectionConfig ??
-          {}) as Printer['connectionConfig'],
-        paperWidth: item.paperWidth ?? 80,
-        isActive: true,
-      };
-
-      if (printer) {
-        Object.assign(printer, fields);
-        const saved = await this.printerRepository.save(printer);
-        result.push({ id: saved.id, localId: item.localId });
-      } else {
-        const created = this.printerRepository.create({
-          ...fields,
-          deviceId,
-          organizationId,
-          hasCashDrawer: false,
-        });
-        const saved = await this.printerRepository.save(created);
-        result.push({ id: saved.id, localId: item.localId });
-      }
-    }
-
-    return result;
   }
 
   async updateOnlineStatus(
@@ -361,7 +413,7 @@ export class PrintersService {
             dateStyle: 'short',
             timeStyle: 'short',
           }),
-          body: 'Test-Druck aus dem Super-Admin-Interface.',
+          body: 'Testdruck aus OpenEOS.',
         },
       },
     );
@@ -395,7 +447,7 @@ export class PrintersService {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.DEVICE_NOT_PRINTER_AGENT,
-        message: 'Gerät ist kein Printer Agent',
+        message: 'Gerät ist kein Drucker-Agent',
       });
     }
 

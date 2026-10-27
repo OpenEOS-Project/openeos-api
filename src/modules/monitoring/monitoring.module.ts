@@ -7,7 +7,6 @@ import {
   Event,
   Order,
   Organization,
-  RentalAssignment,
   SupportMessage,
   User,
 } from '../../database/entities';
@@ -24,7 +23,6 @@ import { MonitoringController } from './monitoring.controller';
       Order,
       ContactRequest,
       SupportMessage,
-      RentalAssignment,
     ]),
   ],
   controllers: [MonitoringController],

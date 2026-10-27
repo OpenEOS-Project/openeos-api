@@ -13,7 +13,6 @@ import { Product } from './product.entity';
 import { Order } from './order.entity';
 import { QrCode } from './qr-code.entity';
 import { OnlineOrderSession } from './online-order-session.entity';
-import { RentalAssignment } from './rental-assignment.entity';
 import { StockMovement } from './stock-movement.entity';
 import { InventoryCount } from './inventory-count.entity';
 import { ProductionStation } from './production-station.entity';
@@ -263,9 +262,6 @@ export class Event extends SoftDeleteEntity {
 
   @OneToMany(() => OnlineOrderSession, (session) => session.event)
   onlineOrderSessions: OnlineOrderSession[];
-
-  @OneToMany(() => RentalAssignment, (rental) => rental.event)
-  rentalAssignments: RentalAssignment[];
 
   @OneToMany(() => StockMovement, (movement) => movement.event)
   stockMovements: StockMovement[];

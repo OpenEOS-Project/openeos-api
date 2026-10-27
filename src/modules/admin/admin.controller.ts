@@ -20,17 +20,11 @@ import {
   QueryUsersDto,
   QueryInvoicesAdminDto,
   QueryAuditLogsDto,
-  QueryRentalHardwareDto,
-  QueryRentalAssignmentsAdminDto,
   SetDiscountDto,
   AccessOrganizationDto,
-  CreateRentalHardwareDto,
-  UpdateRentalHardwareDto,
-  CreateRentalAssignmentDto,
   UpdateOrganizationAdminDto,
   CreateSubscriptionConfigDto,
   UpdateSubscriptionConfigDto,
-  AssignPrinterDeviceDto,
   UpdateNotificationSettingsDto,
 } from './dto';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
@@ -265,176 +259,17 @@ export class AdminController {
 
   // === Printers (Admin) ===
 
+  /** Reine Uebersicht: Agents und Drucker je Organisation, online-Status. */
   @Get('printers')
-  async findAllPrinters(@Query('organizationId') organizationId?: string) {
-    const result = await this.adminService.findAllPrinters({ organizationId });
+  async printerOverview(@Query('organizationId') organizationId?: string) {
+    const result = await this.adminService.printerOverview({ organizationId });
     return { data: result };
-  }
-
-  @Post('printers/assign-device')
-  async assignPrinterDevice(
-    @Body() dto: AssignPrinterDeviceDto,
-    @CurrentUser() user: User,
-    @Req() req: unknown,
-  ) {
-    const { ip, userAgent } = this.getClientInfo(req as Request);
-    const printer = await this.adminService.assignPrinterDevice(
-      dto,
-      user,
-      ip,
-      userAgent,
-    );
-    return { data: printer };
-  }
-
-  @Delete('printers/:id')
-  async unassignPrinter(
-    @Param('id') id: string,
-    @CurrentUser() user: User,
-    @Req() req: unknown,
-  ) {
-    const { ip, userAgent } = this.getClientInfo(req as Request);
-    await this.adminService.unassignPrinter(id, user, ip, userAgent);
-    return { data: { success: true } };
   }
 
   @Post('printers/:id/test')
   async testPrintAdmin(@Param('id') id: string) {
     const result = await this.printersService.testPrintAsAdmin(id);
     return { data: result };
-  }
-
-  @Patch('printers/:id')
-  async updatePrinterAdmin(
-    @Param('id') id: string,
-    @Body() body: { hasCashDrawer?: boolean },
-  ) {
-    const printer = await this.adminService.updatePrinterAdmin(id, body);
-    return { data: printer };
-  }
-
-  // === Rental Hardware ===
-
-  @SaasOnly()
-  @Get('rental-hardware')
-  async findAllRentalHardware(@Query() queryDto: QueryRentalHardwareDto) {
-    const result = await this.adminService.findAllRentalHardware(queryDto);
-    return {
-      data: result.data,
-      meta: {
-        total: result.total,
-        page: result.page,
-        limit: result.limit,
-        pages: Math.ceil(result.total / result.limit),
-      },
-    };
-  }
-
-  @SaasOnly()
-  @Post('rental-hardware')
-  async createRentalHardware(
-    @Body() createDto: CreateRentalHardwareDto,
-    @CurrentUser() user: User,
-    @Req() req: unknown,
-  ) {
-    const { ip, userAgent } = this.getClientInfo(req as Request);
-    const hardware = await this.adminService.createRentalHardware(
-      createDto,
-      user.id,
-      ip,
-      userAgent,
-    );
-    return { data: hardware };
-  }
-
-  @SaasOnly()
-  @Patch('rental-hardware/:id')
-  async updateRentalHardware(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateRentalHardwareDto,
-  ) {
-    const hardware = await this.adminService.updateRentalHardware(
-      id,
-      updateDto,
-    );
-    return { data: hardware };
-  }
-
-  @SaasOnly()
-  @Delete('rental-hardware/:id')
-  async deleteRentalHardware(@Param('id') id: string) {
-    await this.adminService.deleteRentalHardware(id);
-    return { data: { success: true } };
-  }
-
-  // === Rental Assignments ===
-
-  @SaasOnly()
-  @Get('rental-assignments')
-  async findAllRentalAssignments(
-    @Query() queryDto: QueryRentalAssignmentsAdminDto,
-  ) {
-    const result = await this.adminService.findAllRentalAssignments(queryDto);
-    return {
-      data: result.data,
-      meta: {
-        total: result.total,
-        page: result.page,
-        limit: result.limit,
-        pages: Math.ceil(result.total / result.limit),
-      },
-    };
-  }
-
-  @SaasOnly()
-  @Post('rental-assignments')
-  async createRentalAssignment(
-    @Body() createDto: CreateRentalAssignmentDto,
-    @CurrentUser() user: User,
-    @Req() req: unknown,
-  ) {
-    const { ip, userAgent } = this.getClientInfo(req as Request);
-    const assignment = await this.adminService.createRentalAssignment(
-      createDto,
-      user.id,
-      ip,
-      userAgent,
-    );
-    return { data: assignment };
-  }
-
-  @SaasOnly()
-  @Post('rental-assignments/:id/activate')
-  async activateRental(
-    @Param('id') id: string,
-    @CurrentUser() user: User,
-    @Req() req: unknown,
-  ) {
-    const { ip, userAgent } = this.getClientInfo(req as Request);
-    const assignment = await this.adminService.activateRental(
-      id,
-      user.id,
-      ip,
-      userAgent,
-    );
-    return { data: assignment };
-  }
-
-  @SaasOnly()
-  @Post('rental-assignments/:id/return')
-  async returnRental(
-    @Param('id') id: string,
-    @CurrentUser() user: User,
-    @Req() req: unknown,
-  ) {
-    const { ip, userAgent } = this.getClientInfo(req as Request);
-    const assignment = await this.adminService.returnRental(
-      id,
-      user.id,
-      ip,
-      userAgent,
-    );
-    return { data: assignment };
   }
 
   // === Statistics ===

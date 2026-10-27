@@ -38,7 +38,6 @@ import { GatewayModule } from './modules/gateway';
 import { QrCodesModule } from './modules/qr-codes';
 import { OnlineOrdersModule } from './modules/online-orders';
 import { InvoicesModule } from './modules/invoices';
-import { RentalsModule } from './modules/rentals';
 import { AdminModule } from './modules/admin';
 import { ReportsModule } from './modules/reports';
 import { UploadsModule } from './modules/uploads';
@@ -172,7 +171,6 @@ import { DeployGuardModule } from './modules/deploy-guard/deploy-guard.module';
     QrCodesModule,
     OnlineOrdersModule,
     InvoicesModule,
-    RentalsModule,
     AdminModule,
     ReportsModule,
     UploadsModule,

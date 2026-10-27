@@ -21,6 +21,7 @@ import {
   DeviceConfigUpdatedEvent,
   DeviceStatusChangedEvent,
   PrinterConfigUpdateEvent,
+  PrinterDiscoverEvent,
   OpenCashDrawerEvent,
   TablesUpdatedEvent,
 } from './dto';
@@ -513,6 +514,24 @@ export class GatewayService {
       organizationId,
       deviceId,
       GatewayEvents.PRINTER_CONFIG_UPDATE,
+      payload,
+    );
+  }
+
+  /** Server → Agent: Drucker neu suchen; der Agent meldet mit `full: true`. */
+  sendPrinterDiscover(
+    organizationId: string,
+    deviceId: string,
+    payload: PrinterDiscoverEvent,
+  ) {
+    this.logger.debug(
+      `Emitting printerDiscover for device ${deviceId} (subnetScan=${payload.subnetScan})`,
+    );
+
+    this.appGateway.emitToDevice(
+      organizationId,
+      deviceId,
+      GatewayEvents.PRINTER_DISCOVER,
       payload,
     );
   }

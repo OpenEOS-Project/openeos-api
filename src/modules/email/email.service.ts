@@ -783,7 +783,7 @@ export class EmailService {
 
   async sendAdminContactRequestNotification(options: {
     to: string;
-    type: 'demo' | 'contact' | 'hardware' | 'gateway' | 'feedback' | 'feature';
+    type: 'demo' | 'contact' | 'feedback' | 'feature';
     name: string;
     email: string;
     organization?: string;
@@ -792,8 +792,6 @@ export class EmailService {
     const typeLabels: Record<typeof options.type, string> = {
       demo: 'Demo-Anfrage',
       contact: 'Kontaktanfrage',
-      hardware: 'Hardware-Miete',
-      gateway: 'Kassen-Gateway',
       feedback: 'Rückmeldung',
       feature: 'Funktionswunsch',
     };

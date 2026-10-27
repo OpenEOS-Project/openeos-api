@@ -185,7 +185,6 @@ async function bootstrap() {
       .addTag('Online Orders', 'Public online ordering endpoints')
       .addTag('Credits', 'Credit management')
       .addTag('Invoices', 'Invoice management')
-      .addTag('Rentals', 'Hardware rental management')
       .addTag('Admin', 'Super admin endpoints')
       .addTag('Reports', 'Reporting and analytics')
       .addTag('Uploads', 'File upload management')

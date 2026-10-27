@@ -9,7 +9,6 @@ import { Order } from './order.entity';
 import { QrCode } from './qr-code.entity';
 import { Invitation } from './invitation.entity';
 import { Invoice } from './invoice.entity';
-import { RentalAssignment } from './rental-assignment.entity';
 
 /**
  * Rechtliche Angaben des Vereins fuer seine oeffentlichen Seiten (Shop,
@@ -155,6 +154,10 @@ export type OrganizationBillingMode = 'prepaid' | 'invoice';
 export enum DiscountType {
   ALL = 'all',
   CREDITS = 'credits',
+  /**
+   * @deprecated Hardware-Vermietung gibt es nicht mehr (2026-10). Der Wert
+   * bleibt, weil `organizations.discount_type` ihn noch enthalten kann.
+   */
   HARDWARE = 'hardware',
 }
 
@@ -301,7 +304,4 @@ export class Organization extends SoftDeleteEntity {
 
   @OneToMany(() => Invoice, (invoice) => invoice.organization)
   invoices: Invoice[];
-
-  @OneToMany(() => RentalAssignment, (rental) => rental.organization)
-  rentalAssignments: RentalAssignment[];
 }

@@ -115,7 +115,6 @@ src/
     ├── online-orders/          # Online-Bestellungen
     ├── credits/                # Guthaben-System
     ├── invoices/               # Rechnungen
-    ├── rentals/                # Hardware-Vermietung
     ├── admin/                  # Super-Admin
     ├── reports/                # Berichte
     ├── uploads/                # Datei-Uploads
@@ -231,11 +230,32 @@ src/
 | Methode | Endpunkt | Beschreibung |
 |---------|----------|--------------|
 | GET | `/` | Alle Drucker |
-| POST | `/` | Drucker erstellen |
+| POST | `/` | Netzwerkdrucker manuell anlegen (`deviceId`, `connectionConfig.ipAddress`/`port`) |
 | GET | `/:id` | Drucker abrufen |
-| PATCH | `/:id` | Drucker aktualisieren |
-| DELETE | `/:id` | Drucker löschen |
+| PATCH | `/:id` | Name, Typ, Papierbreite, Kassenlade, `isActive`; bei `network` auch IP/Port |
+| DELETE | `/:id` | Drucker löschen (Zuordnungen in Stationen, Bon-Workflow, Geräten werden gelöst) |
 | POST | `/:id/test` | Testdruck |
+
+### Printer Agents (`/api/organizations/:orgId/printer-agents`)
+
+Ein Drucker-Agent ist ein Gerät vom Typ `printer_agent` (Pairing wie bei
+Kassen über `POST /devices/init` + `POST /devices/link`). Er findet USB-,
+Netzwerk- und Windows-Drucker selbst und meldet sie; übernommen werden sie
+in der Web-App.
+
+| Methode | Endpunkt | Beschreibung |
+|---------|----------|--------------|
+| GET | `/` | Agents mit Online-Status, `agentInfo`, Anzahl gefundener/übernommener Drucker |
+| DELETE | `/:deviceId` | Agent samt Druckern entfernen |
+| POST | `/:deviceId/discover` | Neu suchen (`{ subnetScan?: boolean }`), 409 `PRINTER_AGENT_OFFLINE` wenn nicht verbunden |
+| GET | `/:deviceId/discovered` | Gefundene Drucker (mit `printerId`, `lastSeenAt`) |
+| POST | `/:deviceId/discovered/:id/adopt` | Übernehmen (`name`, `type`, `paperWidth`, `hasCashDrawer`), 409 `PRINTER_ALREADY_ADOPTED` |
+
+Agent-Seite (`/api/device-api`, Header `X-Device-Token`): `POST /printers/discovered`
+(`{ printers: DiscoveredPrinterInput[], full: boolean }`, Upsert je
+`fingerprint`), `GET /printers` (nur übernommene Drucker), `POST /printers/sync`
+antwortet mit **410** `PRINTER_SYNC_REMOVED`. Socket: `agentHeartbeat`
+(Agent → Server, alle 30 s) und `printerDiscover` (Server → Agent).
 
 ### Print Templates (`/api/organizations/:orgId/print-templates`)
 | Methode | Endpunkt | Beschreibung |
@@ -308,16 +328,6 @@ src/
 | GET | `/:id` | Rechnung abrufen |
 | GET | `/:id/pdf` | Rechnung als PDF |
 
-### Rentals (`/api/organizations/:orgId/rentals`)
-| Methode | Endpunkt | Beschreibung |
-|---------|----------|--------------|
-| GET | `/` | Alle Vermietungen |
-| GET | `/active` | Aktive Vermietungen |
-| GET | `/upcoming` | Anstehende Vermietungen |
-| GET | `/:id` | Vermietung abrufen |
-| POST | `/:id/confirm` | Vermietung bestätigen |
-| POST | `/:id/decline` | Vermietung ablehnen |
-
 ### Reports (`/api/organizations/:orgId/reports`)
 | Methode | Endpunkt | Beschreibung |
 |---------|----------|--------------|
@@ -370,13 +380,8 @@ src/
 | POST | `/purchases/:id/complete` | Kauf abschließen |
 | GET | `/invoices` | Alle Rechnungen |
 | POST | `/invoices/:id/mark-paid` | Als bezahlt markieren |
-| GET | `/rental-hardware` | Hardware-Pool |
-| POST | `/rental-hardware` | Hardware erstellen |
-| PATCH | `/rental-hardware/:id` | Hardware aktualisieren |
-| DELETE | `/rental-hardware/:id` | Hardware löschen |
-| GET | `/rental-assignments` | Alle Zuweisungen |
-| POST | `/rental-assignments` | Zuweisung erstellen |
-| POST | `/rental-assignments/:id/return` | Rückgabe |
+| GET | `/printers` | Übersicht: Drucker-Agents und Drucker je Organisation (nur lesend) |
+| POST | `/printers/:id/test` | Testdruck |
 | GET | `/stats/overview` | Übersichts-Statistiken |
 | GET | `/stats/revenue` | Umsatz-Statistiken |
 | GET | `/audit-logs` | Audit-Logs |
@@ -409,6 +414,9 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `payment:received` | Server → Client | Zahlung eingegangen |
 | `printer:status` | Server → Client | Drucker-Status |
 | `device:heartbeat` | Client → Server | Geräte-Heartbeat |
+| `agentHeartbeat` | Agent → Server | Drucker-Agent: Version/OS/Fähigkeiten, Drucker online nach Fingerprint |
+| `printerDiscover` | Server → Agent | Drucker neu suchen (`{ subnetScan }`) |
+| `printerConfigUpdate` | Server → Agent | Druckerliste neu laden (`GET /device-api/printers`) |
 
 ## Environment Variables
 

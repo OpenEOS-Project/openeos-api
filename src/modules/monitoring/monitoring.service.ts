@@ -8,7 +8,6 @@ import {
   Event,
   Order,
   Organization,
-  RentalAssignment,
   SupportMessage,
   User,
 } from '../../database/entities';
@@ -176,12 +175,6 @@ export class MonitoringService {
       .take(LISTEN_LAENGE)
       .getMany();
 
-    const rentals = await m
-      .createQueryBuilder(RentalAssignment, 'r')
-      .select('COALESCE(SUM(r.totalAmount), 0)', 'revenue_total')
-      .where("r.status IN ('confirmed','active','returned')")
-      .getRawOne<Row<'revenue_total'>>();
-
     const contacts = await m
       .createQueryBuilder(ContactRequest, 'c')
       .select('COUNT(*) FILTER (WHERE c.handledAt IS NULL)', 'open')
@@ -256,7 +249,6 @@ export class MonitoringService {
         summeEur: toNumber(ev?.revenue_total),
         heuteEur: toNumber(ev?.revenue_today),
         monatEur: toNumber(ev?.revenue_month),
-        mieteEur: toNumber(rentals?.revenue_total),
       },
 
       kontaktanfragen: {

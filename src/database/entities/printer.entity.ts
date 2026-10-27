@@ -20,21 +20,33 @@ export enum PrinterType {
 export enum PrinterConnectionType {
   NETWORK = 'network',
   USB = 'usb',
-  BLUETOOTH = 'bluetooth',
+  /** Drucker, der ueber den Windows-Spooler angesprochen wird. */
+  WINDOWS = 'windows',
 }
 
+/**
+ * Wie der Agent den Drucker erreicht. Welche Felder gesetzt sind, haengt
+ * vom `connectionType` ab: `network` → ipAddress/port (Standard 9100),
+ * `usb` → usbVendorId/usbProductId/usbSerialNumber, `windows` →
+ * windowsPrinterName.
+ */
 export interface PrinterConnectionConfig {
   ipAddress?: string;
   port?: number;
   usbVendorId?: string;
   usbProductId?: string;
-  bluetoothAddress?: string;
+  usbSerialNumber?: string;
+  windowsPrinterName?: string;
   [key: string]: unknown;
 }
 
 @Entity('printers')
 @Index(['organizationId'])
 @Index(['deviceId'])
+@Index('UQ_printers_device_fingerprint', ['deviceId', 'fingerprint'], {
+  unique: true,
+  where: '"fingerprint" IS NOT NULL',
+})
 export class Printer extends BaseEntity {
   @Column({ name: 'organization_id', type: 'uuid', nullable: true })
   organizationId: string | null;
@@ -59,15 +71,13 @@ export class Printer extends BaseEntity {
   @Column({ name: 'device_id', type: 'uuid', nullable: true })
   deviceId: string | null;
 
-  /** Stable local identifier from the agent's config.yaml. Used to match an
-      agent-pushed printer back to an existing Printer row. */
-  @Column({
-    name: 'agent_local_id',
-    type: 'varchar',
-    length: 64,
-    nullable: true,
-  })
-  agentLocalId: string | null;
+  /**
+   * Kennung aus der Erkennung des Agents (`usb:<vendor>:<product>:<serial>`,
+   * `net:<mac|ip>`, `win:<name>`), eindeutig je Agent. Null bei manuell
+   * angelegten Druckern.
+   */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  fingerprint: string | null;
 
   @Column({ name: 'paper_width', type: 'int', default: 80 })
   paperWidth: number;
@@ -87,9 +97,6 @@ export class Printer extends BaseEntity {
     nullable: true,
   })
   lastSeenAt: Date | null;
-
-  @Column({ name: 'rental_assignment_id', type: 'uuid', nullable: true })
-  rentalAssignmentId: string | null;
 
   // Relations
   @ManyToOne(() => Organization, (org) => org.printers, {

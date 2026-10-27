@@ -175,6 +175,7 @@ describe('Bargeldloser Modus — Kasse (DeviceApiController)', () => {
       none,
       none,
       none,
+      none,
     );
     return {
       controller,

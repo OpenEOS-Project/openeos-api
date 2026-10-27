@@ -2,14 +2,32 @@ import {
   IsString,
   IsOptional,
   IsBoolean,
-  IsUUID,
+  IsEnum,
   IsInt,
   MaxLength,
-  IsObject,
   IsIn,
+  Min,
+  Max,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import type { PrinterConnectionConfig } from '../../../database/entities/printer.entity';
+import { PrinterType } from '../../../database/entities/printer.entity';
+
+export class UpdateNetworkConnectionConfigDto {
+  @ApiPropertyOptional({ example: '192.168.1.100', description: 'IP-Adresse' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  ipAddress?: string;
+
+  @ApiPropertyOptional({ example: 9100, description: 'TCP-Port' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  port?: number;
+}
 
 export class UpdatePrinterDto {
   @ApiPropertyOptional({
@@ -22,20 +40,24 @@ export class UpdatePrinterDto {
   name?: string;
 
   @ApiPropertyOptional({
-    example: { ipAddress: '192.168.1.100', port: 9100 },
-    description: 'Verbindungskonfiguration',
+    example: 'kitchen',
+    description: 'Druckertyp',
+    enum: PrinterType,
   })
   @IsOptional()
-  @IsObject()
-  connectionConfig?: PrinterConnectionConfig;
+  @IsEnum(PrinterType)
+  type?: PrinterType;
 
   @ApiPropertyOptional({
-    example: '550e8400-e29b-41d4-a716-446655440000',
-    description: 'ID des zugeordneten Printer-Agent-Geräts',
+    example: { ipAddress: '192.168.1.100', port: 9100 },
+    description:
+      'Netzwerkverbindung — nur bei Druckern mit connectionType `network`',
+    type: UpdateNetworkConnectionConfigDto,
   })
   @IsOptional()
-  @IsUUID()
-  deviceId?: string;
+  @ValidateNested()
+  @Type(() => UpdateNetworkConnectionConfigDto)
+  connectionConfig?: UpdateNetworkConnectionConfigDto;
 
   @ApiPropertyOptional({
     example: 80,

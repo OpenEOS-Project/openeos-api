@@ -1,7 +1,6 @@
 import {
   Injectable,
   NotFoundException,
-  BadRequestException,
   ForbiddenException,
   Logger,
   Inject,
@@ -14,53 +13,59 @@ import {
   User,
   SubscriptionConfig,
   Invoice,
-  RentalHardware,
-  RentalAssignment,
   AdminAuditLog,
   Event,
   Order,
   Printer,
   Device,
+  DiscoveredPrinter,
 } from '../../database/entities';
 import { AdminAction } from '../../database/entities/admin-audit-log.entity';
 import { InvoiceStatus } from '../../database/entities/invoice.entity';
 import {
-  RentalHardwareStatus,
-  RentalHardwareType,
-} from '../../database/entities/rental-hardware.entity';
-import {
   DeviceType,
   DeviceStatus,
+  type PrinterAgentInfo,
 } from '../../database/entities/device.entity';
-import { RentalAssignmentStatus } from '../../database/entities/rental-assignment.entity';
 import {
   PrinterType,
   PrinterConnectionType,
   PrinterConnectionConfig,
 } from '../../database/entities/printer.entity';
 
-export interface PrinterPreviousConfig {
-  printerId: string;
+export interface AdminPrinterOverviewPrinter {
+  id: string;
   name: string;
   type: PrinterType;
   connectionType: PrinterConnectionType;
   connectionConfig: PrinterConnectionConfig;
+  fingerprint: string | null;
   paperWidth: number;
   hasCashDrawer: boolean;
+  isActive: boolean;
+  isOnline: boolean;
+  lastSeenAt: Date | null;
 }
 
-export interface UnassignedPrinterDeviceListItem {
-  id: string;
+export interface AdminPrinterOverviewAgent {
+  deviceId: string;
   name: string;
-  suggestedName: string | null;
-  type: DeviceType;
   status: DeviceStatus;
+  isOnline: boolean;
   lastSeenAt: Date | null;
-  createdAt: Date;
-  previousConfig: PrinterPreviousConfig | null;
+  agentInfo: PrinterAgentInfo | null;
+  discoveredCount: number;
+  printers: AdminPrinterOverviewPrinter[];
+}
+
+/** `GET admin/printers`: Agents und Drucker je Organisation. */
+export interface AdminPrinterOverviewEntry {
+  organization: { id: string; name: string } | null;
+  agents: AdminPrinterOverviewAgent[];
 }
 import { EventStatus } from '../../database/entities/event.entity';
 import { GatewayService } from '../gateway/gateway.service';
+import { PrinterAgentsService } from '../printers/printer-agents.service';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   redigiereAdminOrganisation,
@@ -72,13 +77,8 @@ import {
   QueryUsersDto,
   QueryInvoicesAdminDto,
   QueryAuditLogsDto,
-  QueryRentalHardwareDto,
-  QueryRentalAssignmentsAdminDto,
   SetDiscountDto,
   AccessOrganizationDto,
-  CreateRentalHardwareDto,
-  UpdateRentalHardwareDto,
-  CreateRentalAssignmentDto,
   UpdateOrganizationAdminDto,
   CreateSubscriptionConfigDto,
   UpdateSubscriptionConfigDto,
@@ -98,10 +98,6 @@ export class AdminService {
     private readonly subscriptionConfigRepository: Repository<SubscriptionConfig>,
     @InjectRepository(Invoice)
     private readonly invoiceRepository: Repository<Invoice>,
-    @InjectRepository(RentalHardware)
-    private readonly rentalHardwareRepository: Repository<RentalHardware>,
-    @InjectRepository(RentalAssignment)
-    private readonly rentalAssignmentRepository: Repository<RentalAssignment>,
     @InjectRepository(AdminAuditLog)
     private readonly auditLogRepository: Repository<AdminAuditLog>,
     @InjectRepository(Event)
@@ -114,6 +110,8 @@ export class AdminService {
     private readonly deviceRepository: Repository<Device>,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
+    @Inject(forwardRef(() => PrinterAgentsService))
+    private readonly printerAgentsService: PrinterAgentsService,
   ) {}
 
   // === Organizations ===
@@ -509,10 +507,12 @@ export class AdminService {
         message: 'Gerät nicht gefunden',
       });
     }
-    // Drop linked printer rows along with the device — they're useless without
-    // an agent and would otherwise show up as orphans in the admin UI.
-    await this.printerRepository.delete({ deviceId });
-    await this.deviceRepository.delete({ id: deviceId });
+    if (device.type === DeviceType.PRINTER_AGENT) {
+      // Drucker samt Zuordnungen (Stationen, Bon-Workflow, Geraete) mit weg.
+      await this.printerAgentsService.removeAgentDevice(device);
+    } else {
+      await this.deviceRepository.delete({ id: deviceId });
+    }
     this.logger.log(`Admin deleted device ${deviceId}`);
   }
 
@@ -535,736 +535,94 @@ export class AdminService {
     return qb.getMany();
   }
 
-  // === Rental Hardware ===
-
-  async findAllRentalHardware(queryDto: QueryRentalHardwareDto): Promise<{
-    data: RentalHardware[];
-    total: number;
-    page: number;
-    limit: number;
-  }> {
-    const { type, status, search, page = 1, limit = 20 } = queryDto;
-
-    const queryBuilder = this.rentalHardwareRepository.createQueryBuilder('hw');
-
-    if (type) {
-      queryBuilder.andWhere('hw.type = :type', { type });
-    }
-
-    if (status) {
-      queryBuilder.andWhere('hw.status = :status', { status });
-    }
-
-    if (search) {
-      queryBuilder.andWhere(
-        '(hw.name ILIKE :search OR hw.serialNumber ILIKE :search)',
-        { search: `%${search}%` },
-      );
-    }
-
-    const total = await queryBuilder.getCount();
-
-    const data = await queryBuilder
-      .leftJoinAndSelect('hw.device', 'device')
-      .orderBy('hw.createdAt', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit)
-      .getMany();
-
-    return { data, total, page, limit };
-  }
-
-  async createRentalHardware(
-    createDto: CreateRentalHardwareDto,
-    adminUserId: string,
-    ipAddress: string,
-    userAgent?: string,
-  ): Promise<RentalHardware> {
-    const hardware = this.rentalHardwareRepository.create({
-      ...createDto,
-      status: RentalHardwareStatus.AVAILABLE,
-    });
-
-    await this.rentalHardwareRepository.save(hardware);
-
-    await this.createAuditLog(
-      adminUserId,
-      null,
-      AdminAction.CREATE_RENTAL_HARDWARE,
-      'rental_hardware',
-      hardware.id,
-      { name: hardware.name, serialNumber: hardware.serialNumber },
-      ipAddress,
-      userAgent,
-    );
-
-    this.logger.log(
-      `Rental hardware created: ${hardware.name} (${hardware.serialNumber})`,
-    );
-
-    return hardware;
-  }
-
-  async updateRentalHardware(
-    hardwareId: string,
-    updateDto: UpdateRentalHardwareDto,
-  ): Promise<RentalHardware> {
-    const hardware = await this.rentalHardwareRepository.findOne({
-      where: { id: hardwareId },
-    });
-
-    if (!hardware) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.HARDWARE_NOT_FOUND,
-        message: 'Hardware nicht gefunden',
-      });
-    }
-
-    Object.assign(hardware, updateDto);
-    await this.rentalHardwareRepository.save(hardware);
-
-    return hardware;
-  }
-
-  async deleteRentalHardware(hardwareId: string): Promise<void> {
-    const hardware = await this.rentalHardwareRepository.findOne({
-      where: { id: hardwareId },
-    });
-
-    if (!hardware) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.HARDWARE_NOT_FOUND,
-        message: 'Hardware nicht gefunden',
-      });
-    }
-
-    // Check if hardware has active assignments
-    const activeAssignment = await this.rentalAssignmentRepository.findOne({
-      where: {
-        rentalHardwareId: hardwareId,
-        status: In([
-          RentalAssignmentStatus.PENDING,
-          RentalAssignmentStatus.CONFIRMED,
-          RentalAssignmentStatus.ACTIVE,
-        ]),
-      },
-    });
-
-    if (activeAssignment) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.HARDWARE_HAS_ACTIVE_ASSIGNMENTS,
-        message:
-          'Hardware hat aktive Zuweisungen und kann nicht gelöscht werden',
-      });
-    }
-
-    await this.rentalHardwareRepository.remove(hardware);
-  }
-
-  // === Rental Assignments ===
-
-  async findAllRentalAssignments(
-    queryDto: QueryRentalAssignmentsAdminDto,
-  ): Promise<{
-    data: RentalAssignment[];
-    total: number;
-    page: number;
-    limit: number;
-  }> {
-    const {
-      organizationId,
-      hardwareId,
-      status,
-      startDate,
-      endDate,
-      page = 1,
-      limit = 20,
-    } = queryDto;
-
-    const queryBuilder = this.rentalAssignmentRepository
-      .createQueryBuilder('assignment')
-      .leftJoinAndSelect('assignment.rentalHardware', 'hw')
-      .leftJoinAndSelect('assignment.organization', 'org')
-      .leftJoinAndSelect('assignment.event', 'event');
-
-    if (organizationId) {
-      queryBuilder.andWhere('assignment.organizationId = :organizationId', {
-        organizationId,
-      });
-    }
-
-    if (hardwareId) {
-      queryBuilder.andWhere('assignment.rentalHardwareId = :hardwareId', {
-        hardwareId,
-      });
-    }
-
-    if (status) {
-      queryBuilder.andWhere('assignment.status = :status', { status });
-    }
-
-    if (startDate && endDate) {
-      queryBuilder.andWhere(
-        'assignment.startDate BETWEEN :startDate AND :endDate',
-        {
-          startDate: new Date(startDate),
-          endDate: endOfDay(endDate),
-        },
-      );
-    }
-
-    const total = await queryBuilder.getCount();
-
-    const data = await queryBuilder
-      .orderBy('assignment.startDate', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit)
-      .getMany();
-
-    return { data, total, page, limit };
-  }
-
-  async createRentalAssignment(
-    createDto: CreateRentalAssignmentDto,
-    adminUserId: string,
-    ipAddress: string,
-    userAgent?: string,
-  ): Promise<RentalAssignment> {
-    const hardware = await this.rentalHardwareRepository.findOne({
-      where: { id: createDto.rentalHardwareId },
-    });
-
-    if (!hardware) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.HARDWARE_NOT_FOUND,
-        message: 'Hardware nicht gefunden',
-      });
-    }
-
-    if (hardware.status !== RentalHardwareStatus.AVAILABLE) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.HARDWARE_NOT_AVAILABLE,
-        message: 'Hardware ist nicht verfügbar',
-      });
-    }
-
-    const startDate = new Date(createDto.startDate);
-    const endDate = new Date(createDto.endDate);
-    const totalDays =
-      Math.ceil(
-        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
-      ) + 1;
-    const totalAmount = totalDays * Number(hardware.dailyRate);
-
-    const assignment = this.rentalAssignmentRepository.create({
-      ...createDto,
-      startDate,
-      endDate,
-      dailyRate: hardware.dailyRate,
-      totalDays,
-      totalAmount,
-      status: RentalAssignmentStatus.PENDING,
-      assignedByUserId: adminUserId,
-    });
-
-    await this.rentalAssignmentRepository.save(assignment);
-
-    // Update hardware status
-    hardware.status = RentalHardwareStatus.RENTED;
-    await this.rentalHardwareRepository.save(hardware);
-
-    await this.createAuditLog(
-      adminUserId,
-      createDto.organizationId,
-      AdminAction.ASSIGN_RENTAL,
-      'rental_assignment',
-      assignment.id,
-      { hardwareId: hardware.id, hardwareName: hardware.name },
-      ipAddress,
-      userAgent,
-    );
-
-    this.logger.log(`Rental assignment created: ${assignment.id}`);
-
-    return this.rentalAssignmentRepository.findOne({
-      where: { id: assignment.id },
-      relations: ['rentalHardware', 'organization', 'event'],
-    }) as Promise<RentalAssignment>;
-  }
-
-  async activateRental(
-    assignmentId: string,
-    adminUserId: string,
-    ipAddress: string,
-    userAgent?: string,
-  ): Promise<RentalAssignment> {
-    const assignment = await this.rentalAssignmentRepository.findOne({
-      where: { id: assignmentId },
-      relations: ['rentalHardware', 'organization'],
-    });
-
-    if (!assignment) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.ASSIGNMENT_NOT_FOUND,
-        message: 'Zuweisung nicht gefunden',
-      });
-    }
-
-    if (assignment.status !== RentalAssignmentStatus.CONFIRMED) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.ASSIGNMENT_NOT_CONFIRMED,
-        message: 'Zuweisung muss den Status „confirmed“ haben',
-      });
-    }
-
-    const hardware = assignment.rentalHardware;
-
-    // If hardware is a printer with a linked device, reassign device to the org
-    if (hardware.type === RentalHardwareType.PRINTER && hardware.deviceId) {
-      const device = await this.deviceRepository.findOne({
-        where: { id: hardware.deviceId },
-      });
-
-      if (device) {
-        // Reassign device to the rental organization
-        device.organizationId = assignment.organizationId;
-        await this.deviceRepository.save(device);
-
-        // Auto-create printer entry based on hardware config
-        const config = hardware.hardwareConfig;
-        const printer = this.printerRepository.create({
-          organizationId: assignment.organizationId,
-          name: hardware.name,
-          type: (config.printerType as PrinterType) || PrinterType.RECEIPT,
-          connectionType:
-            (config.connectionType as PrinterConnectionType) ||
-            PrinterConnectionType.USB,
-          connectionConfig: {
-            ipAddress: config.ipAddress,
-            port: config.port,
-            usbVendorId: config.usbVendorId as string | undefined,
-            usbProductId: config.usbProductId as string | undefined,
-          },
-          paperWidth: config.paperWidth || 80,
-          deviceId: hardware.deviceId,
-          rentalAssignmentId: assignment.id,
-          isActive: true,
-          isOnline: false,
-        });
-
-        await this.printerRepository.save(printer);
-        this.logger.log(
-          `Auto-created printer ${printer.name} (${printer.id}) for rental activation`,
-        );
-
-        // Push config update to device via WebSocket
-        try {
-          this.gatewayService.notifyPrinterConfigUpdate(
-            assignment.organizationId,
-            hardware.deviceId,
-          );
-        } catch (error) {
-          this.logger.warn(
-            `Failed to push config update to device ${hardware.deviceId}: ${error}`,
-          );
-        }
-      }
-    }
-
-    assignment.status = RentalAssignmentStatus.ACTIVE;
-    await this.rentalAssignmentRepository.save(assignment);
-
-    await this.createAuditLog(
-      adminUserId,
-      assignment.organizationId,
-      AdminAction.ASSIGN_RENTAL,
-      'rental_assignment',
-      assignmentId,
-      { hardwareId: hardware.id, action: 'activate' },
-      ipAddress,
-      userAgent,
-    );
-
-    this.logger.log(`Rental activated: ${assignmentId}`);
-
-    return assignment;
-  }
-
-  async returnRental(
-    assignmentId: string,
-    adminUserId: string,
-    ipAddress: string,
-    userAgent?: string,
-  ): Promise<RentalAssignment> {
-    const assignment = await this.rentalAssignmentRepository.findOne({
-      where: { id: assignmentId },
-      relations: ['rentalHardware'],
-    });
-
-    if (!assignment) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.ASSIGNMENT_NOT_FOUND,
-        message: 'Zuweisung nicht gefunden',
-      });
-    }
-
-    const hardware = assignment.rentalHardware;
-
-    // Delete auto-created printers for this rental assignment
-    const rentalPrinters = await this.printerRepository.find({
-      where: { rentalAssignmentId: assignmentId },
-    });
-
-    if (rentalPrinters.length > 0) {
-      const deviceIds = [
-        ...new Set(rentalPrinters.map((p) => p.deviceId).filter(Boolean)),
-      ] as string[];
-      await this.printerRepository.remove(rentalPrinters);
-      this.logger.log(
-        `Removed ${rentalPrinters.length} rental printers for assignment ${assignmentId}`,
-      );
-
-      // Notify affected devices about config change
-      for (const deviceId of deviceIds) {
-        try {
-          if (assignment.organizationId) {
-            this.gatewayService.notifyPrinterConfigUpdate(
-              assignment.organizationId,
-              deviceId,
-            );
-          }
-        } catch (error) {
-          this.logger.warn(`Failed to notify device ${deviceId}: ${error}`);
-        }
-      }
-    }
-
-    // Unassign device from organization if it was a printer rental with linked device
-    if (hardware.type === RentalHardwareType.PRINTER && hardware.deviceId) {
-      await this.deviceRepository.update(
-        { id: hardware.deviceId },
-        { organizationId: null },
-      );
-    }
-
-    assignment.status = RentalAssignmentStatus.RETURNED;
-    assignment.returnedAt = new Date();
-    await this.rentalAssignmentRepository.save(assignment);
-
-    // Update hardware status
-    await this.rentalHardwareRepository.update(
-      { id: assignment.rentalHardwareId },
-      { status: RentalHardwareStatus.AVAILABLE },
-    );
-
-    await this.createAuditLog(
-      adminUserId,
-      assignment.organizationId,
-      AdminAction.RETURN_RENTAL,
-      'rental_assignment',
-      assignmentId,
-      { hardwareId: assignment.rentalHardwareId },
-      ipAddress,
-      userAgent,
-    );
-
-    this.logger.log(`Rental returned: ${assignmentId}`);
-
-    return assignment;
-  }
-
   // === Printers (Admin) ===
 
-  async findAllPrinters(params?: { organizationId?: string }): Promise<{
-    assigned: Array<Printer & { organization: Organization | null }>;
-    unassigned: UnassignedPrinterDeviceListItem[];
-  }> {
-    const qb = this.printerRepository
-      .createQueryBuilder('printer')
-      .leftJoinAndSelect('printer.organization', 'organization')
-      .leftJoinAndSelect('printer.device', 'device')
-      .orderBy('organization.name', 'ASC')
-      .addOrderBy('printer.name', 'ASC');
-
+  /**
+   * Reine Uebersicht fuer den Super-Admin: je Organisation ihre
+   * Drucker-Agenten mit Druckern und Online-Status. Pairing und Pflege
+   * macht die Organisation selbst.
+   */
+  async printerOverview(params?: {
+    organizationId?: string;
+  }): Promise<AdminPrinterOverviewEntry[]> {
+    const agentQb = this.deviceRepository
+      .createQueryBuilder('device')
+      .leftJoinAndSelect('device.organization', 'organization')
+      .where('device.type = :type', { type: DeviceType.PRINTER_AGENT })
+      .orderBy('organization.name', 'ASC', 'NULLS LAST')
+      .addOrderBy('device.name', 'ASC');
     if (params?.organizationId) {
-      qb.andWhere('printer.organizationId = :orgId', {
+      agentQb.andWhere('device.organizationId = :orgId', {
         orgId: params.organizationId,
       });
-    } else {
-      qb.andWhere('printer.organizationId IS NOT NULL');
+    }
+    const agents = await agentQb.getMany();
+    if (agents.length === 0) return [];
+
+    const agentIds = agents.map((a) => a.id);
+    const [printers, discoveredRows, onlineIds] = await Promise.all([
+      this.printerRepository.find({
+        where: { deviceId: In(agentIds) },
+        order: { name: 'ASC' },
+      }),
+      this.deviceRepository.manager
+        .createQueryBuilder(DiscoveredPrinter, 'd')
+        .select('d.deviceId', 'deviceId')
+        .addSelect('COUNT(*)', 'count')
+        .where('d.deviceId IN (:...agentIds)', { agentIds })
+        .groupBy('d.deviceId')
+        .getRawMany<{ deviceId: string; count: string }>(),
+      this.gatewayService.getAllOnlineDeviceIds(),
+    ]);
+    const online = new Set(onlineIds);
+    const discoveredCount = new Map(
+      discoveredRows.map((r) => [r.deviceId, Number(r.count)]),
+    );
+    const printersByDevice = new Map<string, Printer[]>();
+    for (const printer of printers) {
+      if (!printer.deviceId) continue;
+      const list = printersByDevice.get(printer.deviceId) ?? [];
+      list.push(printer);
+      printersByDevice.set(printer.deviceId, list);
     }
 
-    const assigned = await qb.getMany();
-
-    const unassignedDevices = await this.deviceRepository
-      .createQueryBuilder('device')
-      .where('device.type = :type', { type: DeviceType.PRINTER_AGENT })
-      .andWhere('device.organizationId IS NULL')
-      .orderBy('device.name', 'ASC')
-      .getMany();
-
-    // Pick up Printer rows for each unassigned device so we can preserve the
-    // previously configured name + USB IDs across re-assignments.
-    const deviceIds = unassignedDevices.map((d) => d.id);
-    const previousPrinters = deviceIds.length
-      ? await this.printerRepository
-          .createQueryBuilder('printer')
-          .where('printer.organizationId IS NULL')
-          .andWhere('printer.deviceId IN (:...deviceIds)', { deviceIds })
-          .getMany()
-      : [];
-    const previousByDeviceId = new Map(
-      previousPrinters.map((p) => [p.deviceId, p]),
-    );
-
-    const unassigned: UnassignedPrinterDeviceListItem[] = unassignedDevices.map(
-      (d) => {
-        const prev = d.id ? previousByDeviceId.get(d.id) : undefined;
-        return {
-          id: d.id,
-          name: d.name,
-          suggestedName: d.suggestedName ?? null,
-          type: d.type,
-          status: d.status,
-          lastSeenAt: d.lastSeenAt,
-          createdAt: d.createdAt,
-          previousConfig: prev
-            ? {
-                printerId: prev.id,
-                name: prev.name,
-                type: prev.type,
-                connectionType: prev.connectionType,
-                connectionConfig: prev.connectionConfig,
-                paperWidth: prev.paperWidth,
-                hasCashDrawer: prev.hasCashDrawer,
-              }
+    const byOrg = new Map<string, AdminPrinterOverviewEntry>();
+    for (const agent of agents) {
+      const key = agent.organizationId ?? '';
+      let entry = byOrg.get(key);
+      if (!entry) {
+        entry = {
+          organization: agent.organization
+            ? { id: agent.organization.id, name: agent.organization.name }
             : null,
+          agents: [],
         };
-      },
-    );
-
-    return {
-      assigned: assigned as Array<
-        Printer & { organization: Organization | null }
-      >,
-      unassigned,
-    };
-  }
-
-  async assignPrinterDevice(
-    payload: {
-      deviceId: string;
-      organizationId: string;
-      name: string;
-      type: PrinterType;
-      connectionType: PrinterConnectionType;
-      connectionConfig?: Record<string, unknown>;
-      paperWidth?: number;
-      hasCashDrawer?: boolean;
-    },
-    actor: User,
-    ipAddress: string,
-    userAgent?: string,
-  ): Promise<Printer> {
-    const device = await this.deviceRepository.findOne({
-      where: { id: payload.deviceId },
-    });
-    if (!device) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.DEVICE_NOT_FOUND,
-        message: 'Gerät nicht gefunden',
-      });
-    }
-    if (device.type !== DeviceType.PRINTER_AGENT) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.DEVICE_NOT_PRINTER_AGENT,
-        message: 'Nur Drucker-Agents können als Drucker zugewiesen werden',
-      });
-    }
-    if (device.organizationId) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.DEVICE_ALREADY_ASSIGNED,
-        message: 'Gerät ist bereits einer Organisation zugewiesen',
-      });
-    }
-    const organization = await this.organizationRepository.findOne({
-      where: { id: payload.organizationId },
-    });
-    if (!organization) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
-        message: 'Organisation nicht gefunden',
-      });
-    }
-
-    // Re-use an existing Printer row for this device if it was previously assigned and
-    // unassigned — that keeps name + USB IDs + paperWidth + cash-drawer setting.
-    const existing = await this.printerRepository.findOne({
-      where: { deviceId: device.id },
-    });
-    let saved: Printer;
-    if (existing) {
-      existing.organizationId = payload.organizationId;
-      existing.name = payload.name;
-      existing.type = payload.type;
-      existing.connectionType = payload.connectionType;
-      // Don't clobber a previously detected connectionConfig with an empty object.
-      if (
-        payload.connectionConfig &&
-        Object.keys(payload.connectionConfig).length > 0
-      ) {
-        existing.connectionConfig =
-          payload.connectionConfig as Printer['connectionConfig'];
+        byOrg.set(key, entry);
       }
-      if (payload.paperWidth !== undefined)
-        existing.paperWidth = payload.paperWidth;
-      if (payload.hasCashDrawer !== undefined)
-        existing.hasCashDrawer = payload.hasCashDrawer;
-      existing.isActive = true;
-      saved = await this.printerRepository.save(existing);
-    } else {
-      const printer = this.printerRepository.create({
-        organizationId: payload.organizationId,
-        name: payload.name,
-        type: payload.type,
-        connectionType: payload.connectionType,
-        connectionConfig: (payload.connectionConfig ??
-          {}) as Printer['connectionConfig'],
-        deviceId: device.id,
-        paperWidth: payload.paperWidth ?? 80,
-        hasCashDrawer: payload.hasCashDrawer ?? false,
-        isActive: true,
-      });
-      saved = await this.printerRepository.save(printer);
-    }
-
-    device.organizationId = payload.organizationId;
-    device.status = DeviceStatus.VERIFIED;
-    device.verifiedAt = new Date();
-    device.verifiedById = actor.id;
-    await this.deviceRepository.save(device);
-
-    // If the agent is already connected via WebSocket, move its socket to the
-    // new organization room so the assignment takes effect without a restart.
-    this.gatewayService.reassignDeviceRoom(device.id, payload.organizationId);
-
-    await this.createAuditLog(
-      actor.id,
-      payload.organizationId,
-      AdminAction.EDIT_ORGANIZATION,
-      'printer',
-      saved.id,
-      {
-        operation: 'assign_printer_device',
-        deviceId: device.id,
-        organizationId: payload.organizationId,
-        organizationName: organization.name,
-      },
-      ipAddress,
-      userAgent,
-    );
-
-    this.logger.log(
-      `Admin ${actor.id} assigned device ${device.id} as printer ${saved.id} to org ${payload.organizationId}`,
-    );
-
-    return saved;
-  }
-
-  async updatePrinterAdmin(
-    printerId: string,
-    update: { hasCashDrawer?: boolean },
-  ): Promise<Printer> {
-    const printer = await this.printerRepository.findOne({
-      where: { id: printerId },
-    });
-    if (!printer) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.PRINTER_NOT_FOUND,
-        message: 'Drucker nicht gefunden',
+      entry.agents.push({
+        deviceId: agent.id,
+        name: agent.name,
+        status: agent.status,
+        isOnline: online.has(agent.id),
+        lastSeenAt: agent.lastSeenAt,
+        agentInfo: agent.agentInfo ?? null,
+        discoveredCount: discoveredCount.get(agent.id) ?? 0,
+        printers: (printersByDevice.get(agent.id) ?? []).map((p) => ({
+          id: p.id,
+          name: p.name,
+          type: p.type,
+          connectionType: p.connectionType,
+          connectionConfig: p.connectionConfig,
+          fingerprint: p.fingerprint,
+          paperWidth: p.paperWidth,
+          hasCashDrawer: p.hasCashDrawer,
+          isActive: p.isActive,
+          isOnline: p.isOnline,
+          lastSeenAt: p.lastSeenAt,
+        })),
       });
     }
-    if (update.hasCashDrawer !== undefined) {
-      printer.hasCashDrawer = update.hasCashDrawer;
-    }
-    return this.printerRepository.save(printer);
-  }
-
-  async unassignPrinter(
-    printerId: string,
-    actor: User,
-    ipAddress: string,
-    userAgent?: string,
-  ): Promise<void> {
-    const printer = await this.printerRepository.findOne({
-      where: { id: printerId },
-      relations: ['device', 'organization'],
-    });
-    if (!printer) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.PRINTER_NOT_FOUND,
-        message: 'Drucker nicht gefunden',
-      });
-    }
-
-    const deviceId = printer.deviceId;
-    const organizationId = printer.organizationId;
-
-    // Keep the Printer row (with name, connection config, USB IDs, …) so the
-    // operator can re-assign the same physical device later without losing
-    // setup work. Only the org link gets cleared.
-    // Note: using `update` instead of `save` so the loaded `organization` relation
-    // doesn't override our null assignment when TypeORM resolves the FK.
-    await this.printerRepository.update(
-      { id: printer.id },
-      { organizationId: null },
-    );
-
-    if (deviceId) {
-      const device = await this.deviceRepository.findOne({
-        where: { id: deviceId },
-      });
-      if (device) {
-        // Only drop the org link — keep status=verified so the agent stays
-        // connected via WebSocket and can be reassigned without re-pairing.
-        device.organizationId = null;
-        await this.deviceRepository.save(device);
-      }
-      // Move the agent's socket out of the old org room so it doesn't keep
-      // receiving jobs from that org while it's idle.
-      this.gatewayService.reassignDeviceRoom(deviceId, null);
-    }
-
-    await this.createAuditLog(
-      actor.id,
-      organizationId,
-      AdminAction.EDIT_ORGANIZATION,
-      'printer',
-      printerId,
-      {
-        operation: 'unassign_printer',
-        deviceId,
-        organizationId,
-      },
-      ipAddress,
-      userAgent,
-    );
-
-    this.logger.log(`Admin ${actor.id} unassigned printer ${printerId}`);
+    return [...byOrg.values()];
   }
 
   // === Statistics ===
@@ -1272,7 +630,6 @@ export class AdminService {
   async getOverviewStats(): Promise<{
     totalOrganizations: number;
     totalUsers: number;
-    activeRentals: number;
     activeEvents: number;
     newUsersThisMonth: number;
     newOrganizationsThisMonth: number;
@@ -1286,16 +643,12 @@ export class AdminService {
     const [
       totalOrganizations,
       totalUsers,
-      activeRentals,
       activeEvents,
       newUsersThisMonth,
       newOrganizationsThisMonth,
     ] = await Promise.all([
       this.organizationRepository.count(),
       this.userRepository.count(),
-      this.rentalAssignmentRepository.count({
-        where: { status: RentalAssignmentStatus.ACTIVE },
-      }),
       this.eventRepository.count({
         where: { status: In([EventStatus.ACTIVE, EventStatus.TEST]) },
       }),
@@ -1310,42 +663,42 @@ export class AdminService {
     return {
       totalOrganizations,
       totalUsers,
-      activeRentals,
       activeEvents,
       newUsersThisMonth,
       newOrganizationsThisMonth,
     };
   }
 
+  /**
+   * Einnahmen der Plattform im Zeitraum: freigeschaltete Veranstaltungen
+   * (bezahlt oder auf Rechnung), nach Zahlungsdatum.
+   */
   async getRevenueStats(
     startDate?: string,
     endDate?: string,
   ): Promise<{
     totalRevenue: number;
-    rentalRevenue: number;
+    eventRevenue: number;
   }> {
     const start = startDate
       ? new Date(startDate)
       : new Date(new Date().getFullYear(), 0, 1);
     const end = endDate ? endOfDay(endDate) : new Date();
 
-    const rentalRevenue = await this.rentalAssignmentRepository
-      .createQueryBuilder('assignment')
-      .select('SUM(assignment.totalAmount)', 'total')
-      .where('assignment.status IN (:...statuses)', {
-        statuses: [
-          RentalAssignmentStatus.ACTIVE,
-          RentalAssignmentStatus.RETURNED,
-        ],
+    const row = await this.eventRepository
+      .createQueryBuilder('event')
+      .select('COALESCE(SUM(event.priceCharged), 0)', 'total')
+      .where('event.billingStatus IN (:...statuses)', {
+        statuses: ['paid', 'invoice'],
       })
-      .andWhere('assignment.createdAt BETWEEN :start AND :end', { start, end })
+      .andWhere('event.paidAt BETWEEN :start AND :end', { start, end })
       .getRawOne<{ total: string | null }>();
 
-    const rentalTotal = Number(rentalRevenue?.total || 0);
+    const eventRevenue = Number(row?.total || 0);
 
     return {
-      totalRevenue: rentalTotal,
-      rentalRevenue: rentalTotal,
+      totalRevenue: eventRevenue,
+      eventRevenue,
     };
   }
 
