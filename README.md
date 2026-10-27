@@ -435,6 +435,7 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `UPLOAD_DIR` | Upload-Verzeichnis | ./uploads |
 | `EVENT_PRICE_EUR` | Preis pro abgerechnetem Veranstaltungstag | 25 |
 | `BUSINESS_DAY_START_HOUR` | Tageswechsel der Abrechnung (Stunde 1–23, Ortszeit der Organisation). Ein Veranstaltungstag läuft von 6 bis 6 Uhr; ein Ende bis einschließlich 6:00 zählt zum Vortag (Sa 20 Uhr – So 2 Uhr = 1 Tag). Bereits bezahlte Veranstaltungen behalten ihre Tage. | 6 |
+| `STRIPE_INVOICE_DAYS_UNTIL_DUE` | Zahlungsziel der Stripe-Rechnung beim Kauf auf Rechnung in Tagen (je Organisation überschreibbar) | 14 |
 | `DATABASE_MIGRATIONS_RUN` | Migrationen beim Start ausführen (eine Instanz) | false (Vorlage `docker-compose.prod.yml`: true) |
 | `SHUTDOWN_TIMEOUT_MS` | So lange dürfen offene Anfragen nach SIGTERM noch laufen | 20000 |
 | `SHUTDOWN_DRAIN_DELAY_MS` | Wartezeit nach SIGTERM, in der `/api/health/ready` schon 503 meldet | 0 |
@@ -456,9 +457,37 @@ in `STRIPE_WEBHOOK_SECRET`. Abonniert sein müssen genau diese Ereignisse
 | `checkout.session.expired` | Zahlungsseite abgelaufen → zurück auf „nicht freigeschaltet“, Mail an die Organisation |
 | `refund.updated`, `refund.failed` | Stand der Erstattung nach Storno/Kulanz; gescheitert → Mail an den Betreiber |
 | `charge.dispute.created`, `charge.dispute.closed` | Rückbuchung → Mail an den Betreiber und Admin-Protokoll, keine Sperre |
+| `invoice.finalized`, `invoice.sent` | Kauf auf Rechnung: Nummer, PDF und Rechnungsseite an der Veranstaltung spiegeln |
+| `invoice.paid` | Rechnung bezahlt → Zahlungsstand an der Veranstaltung, Admin-Protokoll, Mail an den Betreiber |
+| `invoice.payment_failed` | Zahlung über die Rechnungsseite gescheitert → Rechnung bleibt offen, Mail an die Organisation |
+| `invoice.voided`, `invoice.marked_uncollectible` | Rechnung im Dashboard storniert/abgeschrieben → ohne Bestellungen zurück auf „nicht freigeschaltet“ und Mail an die Organisation; mit Bestellungen bleibt die Freischaltung, Mail an den Betreiber |
+| `credit_note.created`, `credit_note.voided` | Gutschriften (Stornorechnungen) ins Admin-Protokoll, Nummer an der Stornierung nachtragen |
 
 Ein stündlicher Job gleicht zusätzlich alle Veranstaltungen im Zustand „Zahlung läuft“
 mit Stripe ab (verlorene Webhooks, Altfälle) — siehe `EventCheckoutLifecycleService`.
+
+### Kauf auf Rechnung (Stripe Invoicing)
+
+Organisationen mit `billing_mode = invoice` bekommen beim Freischalten eine Rechnung
+von **Stripe Invoicing**: Stripe legt den Kunden an (Name, Rechnungsadresse,
+E-Mail, Sprache Deutsch), stellt die Rechnung mit einer Position je Freischaltung
+(Veranstaltung, Zeitraum, Tage × Tagespreis, Nachlass als eigene Zeile) und dem
+Hinweis nach § 19 UStG in der Fußzeile aus, verschickt sie mit PDF, Zahlungslink
+und Bankverbindung und erinnert an die Fälligkeit. Die Veranstaltung ist sofort
+freigeschaltet (`billing_status = invoice`); der Zahlungsstand steht getrennt in
+`events.invoice_status`. Zahlungsziel: `STRIPE_INVOICE_DAYS_UNTIL_DUE` (Standard 14),
+je Organisation überschreibbar (`organizations.invoice_days_until_due`).
+
+Storno/Kulanz verzweigen nach Zahlweg: Stripe-Checkout → Erstattung wie bisher;
+Stripe-Rechnung offen → Rechnung storniert (void); bezahlt → Stripe-Gutschrift
+(Stornorechnung) mit Erstattung auf dem Zahlweg (bei Überweisung fragt Stripe die
+Bankverbindung ab); als bezahlt markiert → Gutschrift ohne Erstattung, der Betreiber
+überweist zurück. Super-Admins können Stripes Rechnungsmail erneut senden
+(`POST /admin/events/:id/invoice/resend`) und eine außerhalb bezahlte Rechnung als
+bezahlt verbuchen (`POST /admin/events/:id/invoice/mark-paid`). Ohne
+`STRIPE_SECRET_KEY` bleibt es beim alten Weg (Rechnung von Hand). Im Stripe-Dashboard
+müssen Rechnungen per E-Mail und die gewünschten Zahlungsarten (Überweisung,
+SEPA-Lastschrift, Karte) für Rechnungen aktiviert sein.
 
 ## Docker
 

@@ -15,6 +15,7 @@ import { EventBillingService } from './event-billing.service';
 import { EventUnlockCancellationService } from './event-unlock-cancellation.service';
 import { EventCheckoutLifecycleService } from './event-checkout-lifecycle.service';
 import { BillingAuditService } from './billing-audit.service';
+import { StripeInvoiceService } from './stripe-invoice.service';
 import { StripeDisputeService } from './stripe-dispute.service';
 import {
   STRIPE_WEBHOOK_EVENTS,
@@ -42,17 +43,30 @@ describe('StripeWebhookController dispatch', () => {
       handleAsyncPaymentFailed: jest.fn(),
     };
     const disputes = { handleDispute: jest.fn() };
+    const invoices = {
+      handleInvoiceEvent: jest.fn(),
+      handleCreditNoteEvent: jest.fn(),
+    };
     const controller = new StripeWebhookController(
       stripe as unknown as StripeService,
       billing as unknown as EventBillingService,
       cancellation as unknown as EventUnlockCancellationService,
       lifecycle as unknown as EventCheckoutLifecycleService,
       disputes as unknown as StripeDisputeService,
+      invoices as unknown as StripeInvoiceService,
     );
     const request = {
       rawBody: Buffer.from('{}'),
     } as unknown as RawBodyRequest<Request>;
-    return { controller, request, billing, cancellation, lifecycle, disputes };
+    return {
+      controller,
+      request,
+      billing,
+      cancellation,
+      lifecycle,
+      disputes,
+      invoices,
+    };
   }
 
   it.each([
@@ -113,6 +127,39 @@ describe('StripeWebhookController dispatch', () => {
     );
   });
 
+  it.each([
+    'invoice.finalized',
+    'invoice.sent',
+    'invoice.paid',
+    'invoice.payment_failed',
+    'invoice.voided',
+    'invoice.marked_uncollectible',
+  ])('%s goes to the invoice service with the event id', async (type) => {
+    const invoice = { id: 'in_1', status: 'open' };
+    const t = setup(stripeEvent(type, invoice, 'evt_i1'));
+    await t.controller.handleWebhook(t.request, 'sig');
+    expect(t.invoices.handleInvoiceEvent).toHaveBeenCalledWith(
+      type,
+      invoice,
+      'evt_i1',
+    );
+    expect(t.billing.settleStripePayment).not.toHaveBeenCalled();
+  });
+
+  it.each(['credit_note.created', 'credit_note.voided'])(
+    '%s goes to the invoice service',
+    async (type) => {
+      const note = { id: 'cn_1', invoice: 'in_1' };
+      const t = setup(stripeEvent(type, note, 'evt_c1'));
+      await t.controller.handleWebhook(t.request, 'sig');
+      expect(t.invoices.handleCreditNoteEvent).toHaveBeenCalledWith(
+        type,
+        note,
+        'evt_c1',
+      );
+    },
+  );
+
   it('acknowledges unknown events without doing anything', async () => {
     const t = setup(stripeEvent('customer.created', { id: 'cus_1' }));
     await expect(t.controller.handleWebhook(t.request, 'sig')).resolves.toEqual(
@@ -133,6 +180,14 @@ describe('StripeWebhookController dispatch', () => {
         'checkout.session.expired',
         'refund.failed',
         'refund.updated',
+        'invoice.finalized',
+        'invoice.sent',
+        'invoice.paid',
+        'invoice.payment_failed',
+        'invoice.voided',
+        'invoice.marked_uncollectible',
+        'credit_note.created',
+        'credit_note.voided',
       ].sort(),
     );
   });
@@ -312,6 +367,10 @@ describe('settleStripePayment around expired checkouts', () => {
         wasCheckoutCancelled: jest.fn().mockResolvedValue(false),
       } as unknown as EventUnlockCancellationService,
       audit as unknown as BillingAuditService,
+      {
+        isAvailable: false,
+        daysUntilDue: () => 14,
+      } as unknown as StripeInvoiceService,
     );
     return { service, eventRepository, stripe, email, audit };
   }

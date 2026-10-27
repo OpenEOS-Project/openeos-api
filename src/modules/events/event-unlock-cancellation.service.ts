@@ -21,6 +21,7 @@ import {
   EventBillingCancellationInitiator,
   EventBillingCancellationKind,
   EventRefundStatus,
+  EventRefundVia,
 } from '../../database/entities/event-billing-cancellation.entity';
 import { AdminAction } from '../../database/entities/admin-audit-log.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
@@ -33,6 +34,10 @@ import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { AuditActor, BillingAuditService } from './billing-audit.service';
+import {
+  EventInvoiceSummary,
+  invoiceSummaryOf,
+} from './stripe-invoice.service';
 
 /** Bis so viele Kalendertage vor Beginn ist der Storno kostenlos. */
 export const FREE_CANCELLATION_DAYS = 7;
@@ -65,6 +70,15 @@ export interface CancellationSummary {
   /** Storno (Freischaltung aufgehoben) oder Kulanz (Freischaltung bleibt). */
   kind: EventBillingCancellationKind;
   reason: string | null;
+  /** Auf Rechnung ueber Stripe, noch unbezahlt: die Rechnung wurde storniert. */
+  invoiceVoided: boolean;
+  /** Wie das Geld zurueckgeht (siehe EventRefundVia); null bei Altfaellen. */
+  refundVia: EventRefundVia | null;
+  /**
+   * Die Rueckzahlung braucht noch jemanden: Stripe fragt die Bankverbindung
+   * ab (Ueberweisung) oder der Betreiber ueberweist selbst zurueck.
+   */
+  manualRefundRequired: boolean;
 }
 
 /**
@@ -90,6 +104,10 @@ export interface PlatformCancellationPreview {
   /** Ob die Rechnung (Kauf auf Rechnung) schon gestellt ist. */
   invoiced: boolean;
   onlineRefundAvailable: boolean;
+  /** Auf Rechnung ueber Stripe: die Rechnung zur Freischaltung. */
+  invoice: EventInvoiceSummary | null;
+  /** Bisherige Stornierungen und Kulanzen, neueste zuerst — mit Gutschriften. */
+  history: CancellationSummary[];
 }
 
 /** Ergebnis der Stripe-Seite eines Stornos. */
@@ -100,6 +118,8 @@ interface StripeRefundOutcome {
   creditNoteNumber: string | null;
   stripeRefundId: string | null;
   refundStatus: EventRefundStatus | null;
+  refundVia: EventRefundVia | null;
+  invoiceVoided: boolean;
 }
 
 const DEFAULT_TIMEZONE = 'Europe/Berlin';
@@ -147,6 +167,11 @@ export function toCancellationSummary(
     creditNoteNumber: record.creditNoteNumber,
     kind: record.kind ?? 'cancellation',
     reason: record.reason ?? null,
+    invoiceVoided: !!record.invoiceVoided,
+    refundVia: record.refundVia ?? null,
+    manualRefundRequired:
+      record.refundVia === 'credit_note_out_of_band' ||
+      record.refundStatus === 'requires_action',
   };
 }
 
@@ -206,8 +231,11 @@ function refundStatusOf(status: string | null | undefined): EventRefundStatus {
  *   (siehe cancelForPlatform),
  * - Stripe: volle Erstattung, bei einer Rechnung aus dem Checkout als
  *   Stripe-Gutschrift (Stornorechnung) mit Erstattung,
- * - Rechnung: keine Zahlung zurueck; war die Rechnung schon gestellt, muss
- *   der Betreiber die Stornorechnung stellen (sie liegt nicht in OpenEOS),
+ * - Rechnung ueber Stripe Invoicing: eine offene Rechnung wird storniert
+ *   (void), eine bezahlte per Stripe-Gutschrift erstattet (siehe
+ *   settleStripeInvoice),
+ * - Rechnung von Hand (Altfall): keine Zahlung zurueck; war die Rechnung
+ *   schon gestellt, muss der Betreiber die Stornorechnung stellen,
  * - danach "nicht freigeschaltet"; eine aktive Veranstaltung faellt in den
  *   Testmodus zurueck. Der Starterbonus ist wieder frei, weil
  *   hasBilledEventBefore nur bezahlte/bestellte Veranstaltungen zaehlt.
@@ -266,6 +294,10 @@ export class EventUnlockCancellationService {
       event.billingStatus === 'paid' &&
       (!this.stripeService.isConfigured || !event.stripeCheckoutSessionId)
     ) {
+      return info('online_refund_unavailable');
+    }
+    // Stripe-Rechnung: stornieren bzw. gutschreiben geht nur ueber Stripe.
+    if (event.stripeInvoiceId && !this.stripeService.isConfigured) {
       return info('online_refund_unavailable');
     }
     return info(null);
@@ -417,8 +449,11 @@ export class EventUnlockCancellationService {
       deadlinePassed: !!deadline && now.getTime() >= deadline.getTime(),
       invoiced: !!event.invoicedAt,
       onlineRefundAvailable:
-        event.billingStatus !== 'paid' ||
-        (this.stripeService.isConfigured && !!event.stripeCheckoutSessionId),
+        event.billingStatus === 'paid'
+          ? this.stripeService.isConfigured && !!event.stripeCheckoutSessionId
+          : !event.stripeInvoiceId || this.stripeService.isConfigured,
+      invoice: invoiceSummaryOf(event, now),
+      history: rows.map(toCancellationSummary),
     };
   }
 
@@ -619,11 +654,42 @@ export class EventUnlockCancellationService {
           billedDays: event.billedDays ?? null,
           deadline: enforceDeadline ? deadline : null,
           stripeCheckoutSessionId: event.stripeCheckoutSessionId,
+          stripeInvoiceId: event.stripeInvoiceId,
           invoicedAt: event.invoicedAt,
           invoiceNote: event.invoiceNote,
+          invoiceVoided: false,
+          refundVia: null,
+          /* Altfall: Rechnung von Hand gestellt, liegt nicht in OpenEOS —
+             die Stornorechnung muss der Betreiber stellen. Eine
+             Stripe-Rechnung dagegen wird gleich hier storniert oder
+             gutgeschrieben. */
           manualCreditNoteRequired:
-            previousBillingStatus === 'invoice' && !!event.invoicedAt,
+            previousBillingStatus === 'invoice' &&
+            !!event.invoicedAt &&
+            !event.stripeInvoiceId,
         });
+
+        if (previousBillingStatus === 'invoice' && event.stripeInvoiceId) {
+          Object.assign(
+            record,
+            await this.settleStripeInvoice(event, {
+              kind,
+              amountInCents: requestedCents,
+              keySuffix:
+                kind === 'goodwill'
+                  ? `:goodwill:${earlier.count + 1}:${requestedCents}`
+                  : earlier.count > 0
+                    ? `:rest:${requestedCents}`
+                    : '',
+              memo:
+                kind === 'goodwill'
+                  ? `Kulanzerstattung · ${event.name}`
+                  : `Stornierung der Freischaltung · ${event.name}`,
+            }),
+          );
+        } else if (previousBillingStatus === 'invoice') {
+          record.refundVia = 'manual';
+        }
 
         if (previousBillingStatus === 'paid') {
           Object.assign(
@@ -649,6 +715,7 @@ export class EventUnlockCancellationService {
         }
 
         const statusBefore = event.status;
+        const invoiceNumber = event.stripeInvoiceNumber ?? null;
         if (kind === 'cancellation') {
           event.billingStatus = 'none';
           event.paidAt = null;
@@ -659,6 +726,13 @@ export class EventUnlockCancellationService {
           event.invoicedAt = null;
           event.invoicedBy = null;
           event.invoiceNote = null;
+          event.stripeInvoiceId = null;
+          event.stripeInvoiceNumber = null;
+          event.invoiceStatus = null;
+          event.invoiceDueAt = null;
+          event.invoicePaidAt = null;
+          event.invoiceHostedUrl = null;
+          event.invoicePdfUrl = null;
           // Aktiv heisst: es wird verkauft. Ohne Freischaltung geht das nur
           // noch im Testmodus.
           if (event.status === EventStatus.ACTIVE) {
@@ -675,6 +749,7 @@ export class EventUnlockCancellationService {
           replayed: false,
           statusChanged: statusBefore !== event.status,
           realOrders: orders,
+          invoiceNumber,
         };
       },
     );
@@ -682,6 +757,7 @@ export class EventUnlockCancellationService {
     if (outcome.replayed) return outcome.cancellation;
 
     const { event, organization, cancellation, statusChanged } = outcome;
+    const invoiceNumber = outcome.invoiceNumber ?? null;
     this.logger.log(
       `Freischaltung ${cancellation.kind === 'goodwill' ? 'per Kulanz erstattet' : 'storniert'}: ` +
         `event=${event.id} org=${event.organizationId} ` +
@@ -720,13 +796,23 @@ export class EventUnlockCancellationService {
           via: cancellation.previousBillingStatus,
           realOrders: outcome.realOrders ?? 0,
           stripeRefundId: cancellation.stripeRefundId,
+          stripeInvoiceId: cancellation.stripeInvoiceId,
+          stripeCreditNoteId: cancellation.stripeCreditNoteId,
           creditNoteNumber: cancellation.creditNoteNumber,
+          invoiceVoided: cancellation.invoiceVoided,
+          refundVia: cancellation.refundVia,
           keepsUnlock: cancellation.kind === 'goodwill',
         },
       });
     }
 
-    await this.notifyCancelled(event, organization, cancellation, actor);
+    await this.notifyCancelled(
+      event,
+      organization,
+      cancellation,
+      actor,
+      invoiceNumber,
+    );
     return cancellation;
   }
 
@@ -816,6 +902,8 @@ export class EventUnlockCancellationService {
           creditNoteNumber: creditNote.number ?? null,
           stripeRefundId: refundId,
           refundStatus: refund ? refundStatusOf(refund.status) : 'pending',
+          refundVia: 'credit_note_refund',
+          invoiceVoided: false,
         };
       }
 
@@ -835,6 +923,156 @@ export class EventUnlockCancellationService {
         creditNoteNumber: null,
         stripeRefundId: refund.id,
         refundStatus: refundStatusOf(refund.status),
+        refundVia: 'stripe_refund',
+        invoiceVoided: false,
+      };
+    } catch (error) {
+      if (
+        error instanceof BadGatewayException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      return fail((error as Error).message);
+    }
+  }
+
+  /**
+   * Die Stripe-Seite beim Kauf auf Rechnung ueber Stripe Invoicing.
+   *
+   * - Rechnung offen, Storno: die Rechnung wird storniert (void) — nichts
+   *   wurde bezahlt, nichts ist zu erstatten.
+   * - Rechnung offen, Kulanz: Gutschrift auf die Rechnung, der offene
+   *   Betrag sinkt.
+   * - Rechnung bezahlt: Gutschrift (Stornorechnung) ueber den Betrag. Ueber
+   *   Stripe bezahlt (Karte, Lastschrift, Ueberweisung auf Stripes Konto):
+   *   Stripe erstattet auf demselben Weg, bei Ueberweisung fragt es die
+   *   Bankverbindung beim Kunden ab (refund_status 'requires_action').
+   *   Als bezahlt markiert (Geld kam ausserhalb von Stripe): Gutschrift
+   *   ohne Erstattung, der Betreiber ueberweist zurueck.
+   * - Rechnung schon storniert/abgeschrieben: nichts mehr zu tun.
+   *
+   * Idempotenzschluessel haengen an der Rechnung: dieselbe Rechnung wird
+   * nie zweimal gutgeschrieben, eine spaetere neue Rechnung fuer dieselbe
+   * Veranstaltung sehr wohl.
+   */
+  private async settleStripeInvoice(
+    event: Event,
+    options: {
+      kind: EventBillingCancellationKind;
+      amountInCents: number;
+      keySuffix: string;
+      memo: string;
+    },
+  ): Promise<StripeRefundOutcome> {
+    const fail = (detail: string): never => {
+      this.logger.error(
+        `Storno der Stripe-Rechnung für Event ${event.id} fehlgeschlagen: ${detail}`,
+      );
+      throw new BadGatewayException({
+        code: ErrorCodes.STRIPE_API_ERROR,
+        reason: ErrorReasons.REFUND_FAILED,
+        message:
+          'Die Stornierung über Stripe ist fehlgeschlagen. Es wurde nichts storniert — bitte versuche es später noch einmal.',
+      });
+    };
+    const invoiceId = event.stripeInvoiceId;
+    if (!this.stripeService.isConfigured || !invoiceId) {
+      return fail('Stripe nicht konfiguriert oder keine Rechnung');
+    }
+
+    const metadata = {
+      eventId: event.id,
+      organizationId: event.organizationId,
+      reason:
+        options.kind === 'goodwill'
+          ? 'event_unlock_goodwill'
+          : 'event_unlock_cancellation',
+    };
+    const keyBase = `event-invoice-cancel:${event.id}:${invoiceId}${options.keySuffix}`;
+    const none: StripeRefundOutcome = {
+      stripePaymentIntentId: null,
+      stripeInvoiceId: invoiceId,
+      stripeCreditNoteId: null,
+      creditNoteNumber: null,
+      stripeRefundId: null,
+      refundStatus: null,
+      refundVia: null,
+      invoiceVoided: false,
+    };
+
+    try {
+      const invoice =
+        await this.stripeService.getInvoiceWithPayments(invoiceId);
+
+      if (invoice.status === 'void' || invoice.status === 'uncollectible') {
+        // Stripe hat sie schon geschlossen — es gibt nichts zu erstatten.
+        return {
+          ...none,
+          invoiceVoided: invoice.status === 'void',
+          refundVia: invoice.status === 'void' ? 'void' : null,
+        };
+      }
+
+      if (invoice.status !== 'paid') {
+        if (options.kind === 'cancellation') {
+          await this.stripeService.voidInvoice(invoiceId);
+          return { ...none, invoiceVoided: true, refundVia: 'void' };
+        }
+        const creditNote = await this.stripeService.createCreditNote({
+          invoiceId,
+          amountInCents: options.amountInCents,
+          mode: 'credit',
+          memo: options.memo,
+          metadata,
+          idempotencyKey: `${keyBase}:credit-note`,
+        });
+        return {
+          ...none,
+          stripeCreditNoteId: creditNote.id,
+          creditNoteNumber: creditNote.number ?? null,
+          refundVia: 'credit_note_open',
+        };
+      }
+
+      // Was von der Rechnung noch nicht gutgeschrieben ist.
+      const creditable =
+        invoice.amount_paid - (invoice.post_payment_credit_notes_amount ?? 0);
+      if (options.amountInCents > creditable) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.REFUND_EXCEEDS_REFUNDABLE,
+          message: `Erstattbar sind höchstens ${(creditable / 100).toFixed(2)}`,
+          params: { max: (creditable / 100).toFixed(2) },
+        });
+      }
+      const throughStripe =
+        this.stripeService.isInvoicePaidThroughStripe(invoice);
+      const creditNote = await this.stripeService.createCreditNote({
+        invoiceId,
+        amountInCents: options.amountInCents,
+        mode: throughStripe ? 'refund' : 'out_of_band',
+        memo: options.memo,
+        metadata,
+        idempotencyKey: `${keyBase}:credit-note`,
+      });
+      const refundId = this.stripeService.refundIdOfCreditNote(creditNote);
+      const refund = refundId
+        ? await this.stripeService.retrieveRefund(refundId)
+        : null;
+      return {
+        ...none,
+        stripeCreditNoteId: creditNote.id,
+        creditNoteNumber: creditNote.number ?? null,
+        stripeRefundId: refundId,
+        refundStatus: refund
+          ? refundStatusOf(refund.status)
+          : throughStripe
+            ? 'pending'
+            : null,
+        refundVia: throughStripe
+          ? 'credit_note_refund'
+          : 'credit_note_out_of_band',
       };
     } catch (error) {
       if (
@@ -908,6 +1146,7 @@ export class EventUnlockCancellationService {
     organization: Organization | null,
     cancellation: EventBillingCancellation,
     actor: User,
+    invoiceNumber: string | null = null,
   ): Promise<void> {
     const via =
       cancellation.previousBillingStatus === 'paid' ? 'stripe' : 'invoice';
@@ -927,6 +1166,8 @@ export class EventUnlockCancellationService {
           currency: cancellation.currency,
           via,
           creditNoteNumber: cancellation.creditNoteNumber,
+          refundVia: cancellation.refundVia ?? null,
+          invoiceNumber,
         });
       } catch (error) {
         this.logger.warn(
@@ -945,6 +1186,9 @@ export class EventUnlockCancellationService {
           currency: cancellation.currency,
           via,
           creditNoteNumber: cancellation.creditNoteNumber,
+          invoiceVoided: !!cancellation.invoiceVoided,
+          refundVia: cancellation.refundVia ?? null,
+          invoiceNumber,
         });
       } catch (error) {
         this.logger.warn(
@@ -972,6 +1216,9 @@ export class EventUnlockCancellationService {
           invoiceNote: cancellation.invoiceNote,
           kind: cancellation.kind,
           reason: cancellation.reason,
+          invoiceNumber,
+          invoiceVoided: !!cancellation.invoiceVoided,
+          refundVia: cancellation.refundVia ?? null,
         });
       }
     } catch (error) {

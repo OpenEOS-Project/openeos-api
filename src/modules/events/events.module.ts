@@ -12,6 +12,7 @@ import { TestOrderCleanupService } from './test-order-cleanup.service';
 import { BillingAuditService } from './billing-audit.service';
 import { EventCheckoutLifecycleService } from './event-checkout-lifecycle.service';
 import { StripeDisputeService } from './stripe-dispute.service';
+import { StripeInvoiceService } from './stripe-invoice.service';
 import { GatewayModule } from '../gateway/gateway.module';
 import { SumUpModule } from '../sumup/sumup.module';
 import { StripeModule } from '../stripe/stripe.module';
@@ -69,12 +70,14 @@ import {
     BillingAuditService,
     EventCheckoutLifecycleService,
     StripeDisputeService,
+    StripeInvoiceService,
   ],
   exports: [
     EventsService,
     EventBillingService,
     EventUnlockCancellationService,
     BillingAuditService,
+    StripeInvoiceService,
   ],
 })
 export class EventsModule {}

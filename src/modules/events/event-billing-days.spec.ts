@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { EventBillingService } from './event-billing.service';
 import { BillingAuditService } from './billing-audit.service';
+import { StripeInvoiceService } from './stripe-invoice.service';
 import { Event } from '../../database/entities/event.entity';
 import { Organization } from '../../database/entities/organization.entity';
 import { User } from '../../database/entities';
@@ -115,6 +116,10 @@ describe('EventBillingService – Veranstaltungstage', () => {
         record: jest.fn(),
         hasEntryWithDetail: jest.fn().mockResolvedValue(false),
       } as unknown as BillingAuditService,
+      {
+        isAvailable: false,
+        daysUntilDue: () => 14,
+      } as unknown as StripeInvoiceService,
     );
 
     return { service, event, eventRepository, stripeService };

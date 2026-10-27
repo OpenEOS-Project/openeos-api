@@ -15,6 +15,7 @@ import { EventBillingService } from './event-billing.service';
 import { EventUnlockCancellationService } from './event-unlock-cancellation.service';
 import { EventCheckoutLifecycleService } from './event-checkout-lifecycle.service';
 import { StripeDisputeService } from './stripe-dispute.service';
+import { StripeInvoiceService } from './stripe-invoice.service';
 import { StripeService } from '../stripe/stripe.service';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 
@@ -32,6 +33,15 @@ export const STRIPE_WEBHOOK_EVENTS = [
   'refund.failed',
   'charge.dispute.created',
   'charge.dispute.closed',
+  // Kauf auf Rechnung ueber Stripe Invoicing
+  'invoice.finalized',
+  'invoice.sent',
+  'invoice.paid',
+  'invoice.payment_failed',
+  'invoice.voided',
+  'invoice.marked_uncollectible',
+  'credit_note.created',
+  'credit_note.voided',
 ] as const;
 
 /**
@@ -57,6 +67,7 @@ export class StripeWebhookController {
     private readonly cancellationService: EventUnlockCancellationService,
     private readonly checkoutLifecycle: EventCheckoutLifecycleService,
     private readonly disputeService: StripeDisputeService,
+    private readonly invoiceService: StripeInvoiceService,
   ) {}
 
   @Post('webhook')
@@ -134,6 +145,27 @@ export class StripeWebhookController {
         await this.disputeService.handleDispute(
           event.data.object,
           'closed',
+          event.id,
+        );
+        break;
+      case 'invoice.finalized':
+      case 'invoice.sent':
+      case 'invoice.paid':
+      case 'invoice.payment_failed':
+      case 'invoice.voided':
+      case 'invoice.marked_uncollectible':
+        // Kauf auf Rechnung: Stand der Stripe-Rechnung.
+        await this.invoiceService.handleInvoiceEvent(
+          event.type,
+          event.data.object,
+          event.id,
+        );
+        break;
+      case 'credit_note.created':
+      case 'credit_note.voided':
+        await this.invoiceService.handleCreditNoteEvent(
+          event.type,
+          event.data.object,
           event.id,
         );
         break;
