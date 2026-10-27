@@ -54,6 +54,29 @@ export const EVENT_PAID_BILLING_STATUSES: readonly EventBillingStatus[] = [
   'invoice',
 ];
 
+/**
+ * Zahlungsstand der Stripe-Rechnung beim Kauf auf Rechnung — Stripes eigene
+ * Zustaende. "Ueberfaellig" ist keiner davon: eine offene Rechnung nach dem
+ * Faelligkeitsdatum, siehe isInvoiceOverdue().
+ */
+export type EventInvoiceStatus =
+  | 'draft'
+  | 'open'
+  | 'paid'
+  | 'void'
+  | 'uncollectible';
+
+export function isInvoiceOverdue(
+  event: Pick<Event, 'invoiceStatus' | 'invoiceDueAt'>,
+  now: Date = new Date(),
+): boolean {
+  return (
+    event.invoiceStatus === 'open' &&
+    !!event.invoiceDueAt &&
+    new Date(event.invoiceDueAt).getTime() < now.getTime()
+  );
+}
+
 export function isEventBillingUnlocked(status: EventBillingStatus): boolean {
   return EVENT_UNLOCKED_BILLING_STATUSES.includes(status);
 }
@@ -226,6 +249,57 @@ export class Event extends SoftDeleteEntity {
    */
   @Column({ name: 'billed_days', type: 'int', nullable: true })
   billedDays: number | null;
+
+  /**
+   * Kauf auf Rechnung ueber Stripe Invoicing: die Rechnung zur
+   * Freischaltung. Stripe stellt sie aus, verschickt sie und meldet den
+   * Zahlungseingang per Webhook; hier liegt nur der Spiegel fuer Listen und
+   * Dialoge. Leer bei Altfaellen (Rechnung von Hand) und bei Stripe-Checkout.
+   */
+  @Column({
+    name: 'stripe_invoice_id',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  stripeInvoiceId: string | null;
+
+  @Column({
+    name: 'stripe_invoice_number',
+    type: 'varchar',
+    length: 100,
+    nullable: true,
+  })
+  stripeInvoiceNumber: string | null;
+
+  @Column({
+    name: 'invoice_status',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
+  invoiceStatus: EventInvoiceStatus | null;
+
+  @Column({
+    name: 'invoice_due_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  invoiceDueAt: Date | null;
+
+  @Column({
+    name: 'invoice_paid_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  invoicePaidAt: Date | null;
+
+  /** Stripes Rechnungsseite — dort laesst sich auch online bezahlen. */
+  @Column({ name: 'invoice_hosted_url', type: 'text', nullable: true })
+  invoiceHostedUrl: string | null;
+
+  @Column({ name: 'invoice_pdf_url', type: 'text', nullable: true })
+  invoicePdfUrl: string | null;
 
   /**
    * Beginn der Veranstaltung beim Freischalten. Die kostenlose Stornofrist

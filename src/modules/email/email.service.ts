@@ -14,6 +14,8 @@ import {
 } from './email-template';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import type { EventRefundVia } from '../../database/entities/event-billing-cancellation.entity';
+import { VAT_EXEMPT_NOTE } from '../events/stripe-invoice.service';
 import type { Transporter } from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 
@@ -22,6 +24,39 @@ export interface SendEmailOptions {
   subject: string;
   html: string;
   text?: string;
+}
+
+/**
+ * Wie das Geld nach Storno/Kulanz zurueckgeht — je nach Zahlweg der
+ * Freischaltung (Stripe-Checkout, Stripe-Rechnung, Altfall auf Rechnung).
+ */
+function rueckwegText(
+  options: {
+    via: 'stripe' | 'invoice';
+    invoiceVoided?: boolean;
+    refundVia?: EventRefundVia | null;
+  },
+  kulanz: boolean,
+): string {
+  if (options.via === 'stripe') {
+    return kulanz
+      ? 'Der Betrag geht auf die Karte bzw. das Konto zurück, mit dem du bezahlt hast – bei Karten meist in 5–10 Werktagen, bei Lastschrift in etwa 5 Werktagen. Die Gutschrift findest du unter Rechnungen.'
+      : 'Der volle Betrag geht auf die Karte bzw. das Konto zurück, mit dem du bezahlt hast – bei Karten meist in 5–10 Werktagen, bei Lastschrift in etwa 5 Werktagen. Die Stornorechnung findest du unter Rechnungen.';
+  }
+  switch (options.refundVia) {
+    case 'void':
+      return 'Die Rechnung von Stripe ist storniert – du musst nichts mehr bezahlen. Unter Rechnungen steht sie als storniert.';
+    case 'credit_note_open':
+      return 'Die Rechnung war noch offen. Stripe hat eine Gutschrift darauf ausgestellt, der offene Betrag ist entsprechend gesunken – bezahle bitte nur noch den Rest.';
+    case 'credit_note_refund':
+      return 'Du hattest die Rechnung schon bezahlt. Stripe hat dazu eine Stornorechnung ausgestellt und erstattet den Betrag auf dem Weg, auf dem du bezahlt hast – bei Karte und Lastschrift automatisch innerhalb weniger Werktage.';
+    case 'credit_note_out_of_band':
+      return 'Du hattest die Rechnung schon bezahlt. Stripe hat dazu eine Stornorechnung ausgestellt; den Betrag überweisen wir dir in den nächsten Tagen zurück.';
+    default:
+      return kulanz
+        ? 'Du hattest auf Rechnung bestellt. Wir verrechnen den Betrag mit deiner Rechnung bzw. schicken dir eine Gutschrift; einen bereits überwiesenen Anteil erstatten wir zurück.'
+        : 'Du hattest auf Rechnung bestellt. Ist die Rechnung schon gestellt, bekommst du von uns eine Stornorechnung; einen bereits überwiesenen Betrag erstatten wir zurück.';
+  }
 }
 
 @Injectable()
@@ -338,14 +373,25 @@ export class EmailService {
       city: string;
       country: string;
     };
+    /** Auf Rechnung ueber Stripe: Nummer und Faelligkeit der Stripe-Rechnung. */
+    invoice?: { number: string | null; dueAt: Date | null } | null;
   }): Promise<boolean> {
     const perRechnung = options.paymentMethod === 'invoice';
     const subject = perRechnung
       ? 'Neue Veranstaltungs-Bestellung (auf Rechnung)'
       : 'Veranstaltung bezahlt (Stripe)';
     const einleitung = perRechnung
-      ? 'Eine Organisation hat soeben eine Veranstaltung auf Rechnung bestellt:'
+      ? options.invoice
+        ? 'Eine Organisation hat soeben eine Veranstaltung auf Rechnung bestellt. Stripe hat die Rechnung ausgestellt und verschickt – es ist nichts von Hand zu stellen:'
+        : 'Eine Organisation hat soeben eine Veranstaltung auf Rechnung bestellt:'
       : 'Eine Organisation hat soeben eine Veranstaltung über Stripe bezahlt:';
+    const invoiceRow = options.invoice
+      ? `<tr><td style="padding: 6px 0; color: #666;">Rechnung:</td><td style="padding: 6px 0;"><strong>${escapeHtml(options.invoice.number ?? '–')}</strong>${
+          options.invoice.dueAt
+            ? ` (zahlbar bis ${options.invoice.dueAt.toLocaleDateString('de-DE', { dateStyle: 'medium' })})`
+            : ''
+        }</td></tr>`
+      : '';
     const dateLabel = options.eventDate
       ? options.eventDate.toLocaleDateString('de-DE', { dateStyle: 'medium' })
       : '–';
@@ -373,6 +419,7 @@ export class EmailService {
         <tr><td style="padding: 6px 0; color: #666;">Veranstaltung:</td><td style="padding: 6px 0;"><strong>${escapeHtml(options.eventName)}</strong></td></tr>
         <tr><td style="padding: 6px 0; color: #666;">Datum:</td><td style="padding: 6px 0;"><strong>${dateLabel}</strong></td></tr>
         <tr><td style="padding: 6px 0; color: #666;">Preis:</td><td style="padding: 6px 0;"><strong>${priceLabel}</strong></td></tr>
+        ${invoiceRow}
         ${addressRow}
       </table>
     `);
@@ -398,6 +445,11 @@ export class EmailService {
     currency: string;
     via: 'stripe' | 'invoice';
     creditNoteNumber: string | null;
+    /** Auf Rechnung ueber Stripe: offene Rechnung storniert (void). */
+    invoiceVoided?: boolean;
+    /** Auf Rechnung ueber Stripe: wie das Geld zurueckgeht. */
+    refundVia?: EventRefundVia | null;
+    invoiceNumber?: string | null;
   }): Promise<boolean> {
     const subject = `Freischaltung storniert – ${options.eventName}`;
     const betrag = new Intl.NumberFormat('de-DE', {
@@ -414,16 +466,23 @@ export class EmailService {
     const zeilen: [string, string][] = [
       ['Veranstaltung', options.eventName],
       ['Beginn', beginn],
-      [options.via === 'stripe' ? 'Erstattung' : 'Betrag', betrag],
+      [
+        options.via === 'stripe' ||
+        options.refundVia === 'credit_note_refund' ||
+        options.refundVia === 'credit_note_out_of_band'
+          ? 'Erstattung'
+          : 'Betrag',
+        betrag,
+      ],
     ];
+    if (options.invoiceNumber) {
+      zeilen.push(['Rechnung', options.invoiceNumber]);
+    }
     if (options.creditNoteNumber) {
       zeilen.push(['Stornorechnung', options.creditNoteNumber]);
     }
 
-    const rueckweg =
-      options.via === 'stripe'
-        ? 'Der volle Betrag geht auf die Karte bzw. das Konto zurück, mit dem du bezahlt hast – bei Karten meist in 5–10 Werktagen, bei Lastschrift in etwa 5 Werktagen. Die Stornorechnung findest du unter Rechnungen.'
-        : 'Du hattest auf Rechnung bestellt. Ist die Rechnung schon gestellt, bekommst du von uns eine Stornorechnung; einen bereits überwiesenen Betrag erstatten wir zurück.';
+    const rueckweg = rueckwegText(options, false);
 
     const html = rahmen({
       kontext: 'Freischaltung',
@@ -441,6 +500,12 @@ export class EmailService {
           ),
         datenblock('Storno', zeilen),
         absatz(rueckweg),
+        options.refundVia === 'credit_note_refund'
+          ? hinweis(
+              'Per Überweisung bezahlt?',
+              'Dann schickt dir Stripe eine E-Mail, in der du die Bankverbindung für die Rücküberweisung angibst. Ohne diese Angabe kann der Betrag nicht zurückfließen.',
+            )
+          : null,
         absatz(
           'Die Veranstaltung läuft im Testmodus weiter, deine Einrichtung bleibt. Du kannst sie jederzeit erneut freischalten; der Preis wird dann neu berechnet.',
         ),
@@ -471,6 +536,10 @@ export class EmailService {
     kind?: 'cancellation' | 'goodwill';
     /** Begruendung der Plattform. */
     reason?: string | null;
+    /** Auf Rechnung ueber Stripe: Rechnung, Stornoweg. */
+    invoiceNumber?: string | null;
+    invoiceVoided?: boolean;
+    refundVia?: EventRefundVia | null;
   }): Promise<boolean> {
     const kulanz = options.kind === 'goodwill';
     const subject = kulanz
@@ -497,8 +566,19 @@ export class EmailService {
         options.initiatedBy === 'platform' ? 'Plattform-Admin' : 'Organisation',
       ],
     ];
+    if (options.invoiceNumber) {
+      zeilen.push([
+        'Rechnung',
+        options.invoiceVoided
+          ? `${options.invoiceNumber} (storniert)`
+          : options.invoiceNumber,
+      ]);
+    }
     if (options.creditNoteNumber) {
       zeilen.push(['Stornorechnung', options.creditNoteNumber]);
+    }
+    if (options.refundVia === 'credit_note_open') {
+      zeilen.push(['Erstattung', 'Gutschrift auf die offene Rechnung']);
     }
     if (options.invoiceNote) {
       zeilen.push(['Rechnungsvermerk', options.invoiceNote]);
@@ -526,7 +606,12 @@ export class EmailService {
                 ? 'Die Rechnung zu dieser Bestellung war schon gestellt. Bitte über den Betrag eine Gutschrift (Teilstorno) ausstellen und einen bereits gezahlten Anteil zurücküberweisen.'
                 : 'Die Rechnung zu dieser Bestellung war schon gestellt. Bitte eine Stornorechnung dazu ausstellen und einen bereits gezahlten Betrag zurücküberweisen.',
             )
-          : null,
+          : options.refundVia === 'credit_note_out_of_band'
+            ? hinweis(
+                'Zurücküberweisen',
+                'Die Rechnung war außerhalb von Stripe bezahlt (als bezahlt markiert). Stripe hat die Gutschrift ausgestellt, erstattet aber nichts — bitte den Betrag selbst zurücküberweisen.',
+              )
+            : null,
         knopf(`${this.appUrl}/admin/events`, 'Im Adminbereich ansehen'),
       ),
     });
@@ -546,6 +631,8 @@ export class EmailService {
     currency: string;
     via: 'stripe' | 'invoice';
     creditNoteNumber: string | null;
+    refundVia?: EventRefundVia | null;
+    invoiceNumber?: string | null;
   }): Promise<boolean> {
     const subject = `Erstattung – ${options.eventName}`;
     const betrag = new Intl.NumberFormat('de-DE', {
@@ -555,16 +642,21 @@ export class EmailService {
 
     const zeilen: [string, string][] = [
       ['Veranstaltung', options.eventName],
-      [options.via === 'stripe' ? 'Erstattung' : 'Gutschrift', betrag],
+      [
+        options.via === 'stripe' || options.refundVia === 'credit_note_refund'
+          ? 'Erstattung'
+          : 'Gutschrift',
+        betrag,
+      ],
     ];
+    if (options.invoiceNumber) {
+      zeilen.push(['Rechnung', options.invoiceNumber]);
+    }
     if (options.creditNoteNumber) {
       zeilen.push(['Gutschrift', options.creditNoteNumber]);
     }
 
-    const rueckweg =
-      options.via === 'stripe'
-        ? 'Der Betrag geht auf die Karte bzw. das Konto zurück, mit dem du bezahlt hast – bei Karten meist in 5–10 Werktagen, bei Lastschrift in etwa 5 Werktagen. Die Gutschrift findest du unter Rechnungen.'
-        : 'Du hattest auf Rechnung bestellt. Wir verrechnen den Betrag mit deiner Rechnung bzw. schicken dir eine Gutschrift; einen bereits überwiesenen Anteil erstatten wir zurück.';
+    const rueckweg = rueckwegText(options, true);
 
     const html = rahmen({
       kontext: 'Freischaltung',
@@ -579,10 +671,210 @@ export class EmailService {
           ),
         datenblock('Erstattung', zeilen),
         absatz(rueckweg),
+        options.refundVia === 'credit_note_refund'
+          ? hinweis(
+              'Per Überweisung bezahlt?',
+              'Dann schickt dir Stripe eine E-Mail, in der du die Bankverbindung für die Rücküberweisung angibst. Ohne diese Angabe kann der Betrag nicht zurückfließen.',
+            )
+          : null,
         absatz(
           'Deine Freischaltung bleibt bestehen; Bestellungen und Auswertungen der Veranstaltung bleiben unverändert.',
         ),
         knopf(`${this.appUrl}/events`, 'Zu den Veranstaltungen'),
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /**
+   * Bestaetigung an die Organisation: auf Rechnung freigeschaltet. Die
+   * Rechnung selbst kommt von Stripe (eigene Mail mit PDF und
+   * Zahlungslink); hier steht, dass die Veranstaltung schon frei ist, und
+   * der Link auf dieselbe Rechnungsseite.
+   */
+  async sendEventInvoiceIssuedEmail(options: {
+    to: string;
+    organizationName: string;
+    eventName: string;
+    eventDate: Date | null;
+    timeZone: string;
+    amount: number;
+    currency: string;
+    invoiceNumber: string | null;
+    dueAt: Date | null;
+    hostedUrl: string | null;
+  }): Promise<boolean> {
+    const subject = `Freigeschaltet – Rechnung für ${options.eventName}`;
+    const betrag = new Intl.NumberFormat('de-DE', {
+      style: 'currency',
+      currency: options.currency || 'EUR',
+    }).format(options.amount);
+    const datum = new Intl.DateTimeFormat('de-DE', {
+      dateStyle: 'medium',
+      timeZone: options.timeZone,
+    });
+    const zeilen: [string, string][] = [
+      ['Veranstaltung', options.eventName],
+      ['Beginn', options.eventDate ? datum.format(options.eventDate) : '–'],
+      ['Betrag', betrag],
+    ];
+    if (options.invoiceNumber) {
+      zeilen.push(['Rechnung', options.invoiceNumber]);
+    }
+    if (options.dueAt) {
+      zeilen.push(['Zahlbar bis', datum.format(options.dueAt)]);
+    }
+
+    const html = rahmen({
+      kontext: 'Freischaltung',
+      titel: `OpenEOS — ${subject}`,
+      preheader: `„${options.eventName}“ ist freigeschaltet. Die Rechnung über ${betrag} kommt getrennt von Stripe.`,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Freigeschaltet. Die Rechnung folgt.') +
+          absatz(
+            `„${options.eventName}“${options.organizationName ? ` (${options.organizationName})` : ''} ist auf Rechnung freigeschaltet – du kannst sofort loslegen.`,
+          ),
+        datenblock('Freischaltung', zeilen),
+        absatz(
+          'Die Rechnung stellt unser Zahlungsdienstleister Stripe aus. Sie kommt in einer eigenen E-Mail mit PDF, Bankverbindung für die Überweisung und einem Link, über den du auch per Karte oder Lastschrift bezahlen kannst. Gib bei einer Überweisung bitte die Rechnungsnummer als Verwendungszweck an.',
+        ),
+        absatz(VAT_EXEMPT_NOTE),
+        options.hostedUrl
+          ? knopf(options.hostedUrl, 'Rechnung ansehen und bezahlen')
+          : knopf(`${this.appUrl}/invoices`, 'Zu den Rechnungen'),
+        options.hostedUrl ? ersatzlink(options.hostedUrl) : null,
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /**
+   * An die Organisation: die Zahlung der Rechnung ueber die Rechnungsseite
+   * ist gescheitert. Die Rechnung bleibt offen, die Freischaltung bleibt.
+   */
+  async sendEventInvoicePaymentFailedEmail(options: {
+    to: string;
+    organizationName: string;
+    eventName: string;
+    invoiceNumber: string | null;
+    amount: number;
+    currency: string;
+    dueAt: Date | null;
+    hostedUrl: string | null;
+    failureReason: string | null;
+  }): Promise<boolean> {
+    const subject = `Zahlung der Rechnung fehlgeschlagen – ${options.eventName}`;
+    const betrag = new Intl.NumberFormat('de-DE', {
+      style: 'currency',
+      currency: options.currency || 'EUR',
+    }).format(options.amount);
+    const zeilen: [string, string][] = [
+      ['Veranstaltung', options.eventName],
+      ['Rechnung', options.invoiceNumber ?? '–'],
+      ['Offen', betrag],
+    ];
+    if (options.dueAt) {
+      zeilen.push([
+        'Zahlbar bis',
+        new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium' }).format(
+          options.dueAt,
+        ),
+      ]);
+    }
+    if (options.failureReason) {
+      zeilen.push(['Grund', options.failureReason]);
+    }
+
+    const html = rahmen({
+      kontext: 'Freischaltung',
+      titel: `OpenEOS — ${subject}`,
+      preheader:
+        'Die Rechnung ist weiterhin offen – bitte versuche es noch einmal.',
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Zahlung fehlgeschlagen.') +
+          absatz(
+            `Die Zahlung der Rechnung für „${options.eventName}“${options.organizationName ? ` (${options.organizationName})` : ''} konnte nicht abgeschlossen werden. Es wurde nichts abgebucht.`,
+          ),
+        datenblock('Rechnung', zeilen),
+        absatz(
+          'Die Rechnung bleibt offen, deine Freischaltung bleibt bestehen. Du kannst über die Rechnungsseite erneut bezahlen – per Karte, Lastschrift oder Überweisung auf die dort genannte Bankverbindung.',
+        ),
+        options.hostedUrl
+          ? knopf(options.hostedUrl, 'Rechnung bezahlen')
+          : knopf(`${this.appUrl}/invoices`, 'Zu den Rechnungen'),
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /**
+   * An die Organisation: Stripe hat die Rechnung storniert oder
+   * abgeschrieben. Ohne Bestellungen ist die Freischaltung damit aufgehoben
+   * (Testmodus), mit Bestellungen bleibt sie — dann meldet sich der
+   * Betreiber.
+   */
+  async sendEventInvoiceClosedEmail(options: {
+    to: string;
+    organizationName: string;
+    eventName: string;
+    eventDate: Date | null;
+    timeZone: string;
+    invoiceNumber: string | null;
+    reason: 'void' | 'uncollectible';
+    activationReleased: boolean;
+  }): Promise<boolean> {
+    const subject = options.activationReleased
+      ? `Rechnung storniert, Freischaltung aufgehoben – ${options.eventName}`
+      : `Rechnung storniert – ${options.eventName}`;
+    const beginn = options.eventDate
+      ? new Intl.DateTimeFormat('de-DE', {
+          dateStyle: 'medium',
+          timeZone: options.timeZone,
+        }).format(options.eventDate)
+      : '–';
+    const zeilen: [string, string][] = [
+      ['Veranstaltung', options.eventName],
+      ['Beginn', beginn],
+      ['Rechnung', options.invoiceNumber ?? '–'],
+      [
+        'Stand',
+        options.reason === 'void'
+          ? 'storniert'
+          : 'als uneinbringlich geschlossen',
+      ],
+    ];
+
+    const html = rahmen({
+      kontext: 'Freischaltung',
+      titel: `OpenEOS — ${subject}`,
+      preheader: options.activationReleased
+        ? 'Die Rechnung ist aufgehoben, die Veranstaltung läuft im Testmodus weiter.'
+        : 'Die Rechnung ist aufgehoben, deine Freischaltung bleibt vorerst bestehen.',
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Rechnung aufgehoben.') +
+          absatz(
+            `Die Rechnung zur Freischaltung von „${options.eventName}“${options.organizationName ? ` (${options.organizationName})` : ''} wurde aufgehoben. Du musst sie nicht mehr bezahlen.`,
+          ),
+        datenblock('Rechnung', zeilen),
+        absatz(
+          options.activationReleased
+            ? 'Die Freischaltung ist damit aufgehoben: Die Veranstaltung läuft im Testmodus weiter, deine Einrichtung bleibt. Du kannst sie jederzeit erneut freischalten; der Preis wird dann neu berechnet.'
+            : 'In der Veranstaltung gibt es schon Bestellungen, deshalb bleibt die Freischaltung bestehen. Wie es mit der Abrechnung weitergeht, klärt der Support mit dir.',
+        ),
+        knopf(`${this.appUrl}/events`, 'Zu den Veranstaltungen'),
+        hinweis(
+          'Fragen dazu?',
+          'Dann melde dich beim Support – wir helfen weiter.',
+        ),
       ),
     });
 

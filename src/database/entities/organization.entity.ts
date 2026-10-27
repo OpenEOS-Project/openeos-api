@@ -273,6 +273,13 @@ export class Organization extends SoftDeleteEntity {
   })
   eventPriceOverride: number | null;
 
+  /**
+   * Zahlungsziel fuer Rechnungen (Kauf auf Rechnung ueber Stripe) in Tagen.
+   * Leer: der Standard der Plattform (STRIPE_INVOICE_DAYS_UNTIL_DUE).
+   */
+  @Column({ name: 'invoice_days_until_due', type: 'int', nullable: true })
+  invoiceDaysUntilDue: number | null;
+
   // Support Chat
   @Column({ name: 'priority_support', type: 'boolean', default: false })
   prioritySupport: boolean;

@@ -70,7 +70,7 @@ export class BillingAuditService {
    */
   async hasEntryWithDetail(
     action: AdminAction,
-    key: 'stripeEventId' | 'sessionId',
+    key: 'stripeEventId' | 'sessionId' | 'invoiceId' | 'creditNoteId',
     value: string,
   ): Promise<boolean> {
     const count = await this.auditLogRepository

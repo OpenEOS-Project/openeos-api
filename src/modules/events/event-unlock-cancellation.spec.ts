@@ -19,9 +19,11 @@ import { PlatformSettingsService } from '../platform-settings/platform-settings.
 import { GatewayService } from '../gateway/gateway.service';
 import { EventBillingService } from './event-billing.service';
 import { BillingAuditService } from './billing-audit.service';
+import { StripeInvoiceService } from './stripe-invoice.service';
 import {
   EventUnlockCancellationService,
   cancellationDeadline,
+  toCancellationSummary,
 } from './event-unlock-cancellation.service';
 
 /** expect.objectContaining ohne `any` — fuer verschachtelte Erwartungen. */
@@ -159,6 +161,10 @@ describe('EventUnlockCancellationService', () => {
       refundError?: Error;
       refundStatus?: string;
       history?: EventBillingCancellation[];
+      /** Stripe-Rechnung (Kauf auf Rechnung ueber Stripe Invoicing). */
+      invoice?: Partial<Stripe.Invoice>;
+      paidThroughStripe?: boolean;
+      voidError?: Error;
     } = {},
   ) {
     const event = options.event ?? paidEvent();
@@ -273,6 +279,35 @@ describe('EventUnlockCancellationService', () => {
         return options.refundError
           ? Promise.reject(options.refundError)
           : Promise.resolve({ id: 're_2', status: 'succeeded' });
+      }),
+      getInvoiceWithPayments: jest.fn().mockResolvedValue({
+        id: 'in_inv',
+        status: 'open',
+        amount_paid: 0,
+        post_payment_credit_notes_amount: 0,
+        ...options.invoice,
+      }),
+      isInvoicePaidThroughStripe: jest.fn(
+        () => options.paidThroughStripe ?? true,
+      ),
+      voidInvoice: jest.fn(() => {
+        log.push('stripe:void');
+        return options.voidError
+          ? Promise.reject(options.voidError)
+          : Promise.resolve({ id: 'in_inv', status: 'void' });
+      }),
+      createCreditNote: jest.fn((params: { mode: string }) => {
+        log.push(`stripe:credit-note:${params.mode}`);
+        return options.creditNoteError
+          ? Promise.reject(options.creditNoteError)
+          : Promise.resolve({
+              id: 'cn_inv',
+              number: 'INV-0007-CN-01',
+              refunds:
+                params.mode === 'refund'
+                  ? [{ refund: 're_inv', amount_refunded: 4000 }]
+                  : [],
+            });
       }),
     };
 
@@ -563,6 +598,279 @@ describe('EventUnlockCancellationService', () => {
       });
       await service.cancelForOrganization(ORG, EVENT_ID, admin, IN_TIME);
       expect(saved[0].manualCreditNoteRequired).toBe(false);
+    });
+  });
+
+  describe('invoice orders via Stripe Invoicing', () => {
+    const stripeInvoiceEvent = (overrides: Partial<Event> = {}) =>
+      paidEvent({
+        billingStatus: 'invoice',
+        stripeCheckoutSessionId: null,
+        invoicedAt: new Date('2026-08-01T10:00:00.000Z'),
+        invoiceNote: 'Stripe-Rechnung INV-0007',
+        stripeInvoiceId: 'in_inv',
+        stripeInvoiceNumber: 'INV-0007',
+        invoiceStatus: 'open',
+        invoiceDueAt: new Date('2026-09-15T00:00:00.000Z'),
+        invoiceHostedUrl: 'https://invoice.stripe.com/i/in_inv',
+        invoicePdfUrl: 'https://pay.stripe.com/invoice/in_inv/pdf',
+        ...overrides,
+      });
+
+    it('open invoice: voids it, moves no money, no manual credit note', async () => {
+      const { service, stripe, saved, event, email, log } = setup({
+        event: stripeInvoiceEvent(),
+      });
+      await service.cancelForOrganization(ORG, EVENT_ID, admin, IN_TIME);
+
+      expect(stripe.voidInvoice).toHaveBeenCalledWith('in_inv');
+      expect(stripe.createCreditNote).not.toHaveBeenCalled();
+      expect(stripe.getCheckoutSessionForRefund).not.toHaveBeenCalled();
+      expect(saved[0]).toMatchObject({
+        previousBillingStatus: 'invoice',
+        stripeInvoiceId: 'in_inv',
+        invoiceVoided: true,
+        refundVia: 'void',
+        manualCreditNoteRequired: false,
+        stripeCreditNoteId: null,
+      });
+      // Der Rechnungsspiegel geht mit der Freischaltung.
+      expect(event).toMatchObject({
+        billingStatus: 'none',
+        stripeInvoiceId: null,
+        stripeInvoiceNumber: null,
+        invoiceStatus: null,
+        invoiceHostedUrl: null,
+      });
+      expect(log).toEqual([
+        'lock',
+        'stripe:void',
+        'save-event:none:test',
+        'save-cancellation',
+        'commit',
+      ]);
+      expect(email.sendEventUnlockCancelledEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          via: 'invoice',
+          invoiceVoided: true,
+          refundVia: 'void',
+          invoiceNumber: 'INV-0007',
+          creditNoteNumber: null,
+        }),
+      );
+      expect(
+        email.sendAdminEventUnlockCancelledNotification,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          manualCreditNoteRequired: false,
+          invoiceVoided: true,
+          invoiceNumber: 'INV-0007',
+        }),
+      );
+    });
+
+    it('paid through Stripe: credit note with refund on the invoice', async () => {
+      const { service, stripe, saved } = setup({
+        event: stripeInvoiceEvent({ invoiceStatus: 'paid' }),
+        invoice: { status: 'paid', amount_paid: 4000 },
+      });
+      await service.cancelForOrganization(ORG, EVENT_ID, admin, IN_TIME);
+
+      expect(stripe.voidInvoice).not.toHaveBeenCalled();
+      expect(stripe.createCreditNote).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invoiceId: 'in_inv',
+          amountInCents: 4000,
+          mode: 'refund',
+          idempotencyKey:
+            'event-invoice-cancel:' + EVENT_ID + ':in_inv:credit-note',
+        }),
+      );
+      expect(saved[0]).toMatchObject({
+        invoiceVoided: false,
+        refundVia: 'credit_note_refund',
+        stripeCreditNoteId: 'cn_inv',
+        creditNoteNumber: 'INV-0007-CN-01',
+        stripeRefundId: 're_inv',
+        refundStatus: 'pending',
+      });
+    });
+
+    it('paid outside Stripe (marked paid): credit note without refund, operator pays back', async () => {
+      const { service, stripe, saved } = setup({
+        event: stripeInvoiceEvent({ invoiceStatus: 'paid' }),
+        invoice: { status: 'paid', amount_paid: 4000 },
+        paidThroughStripe: false,
+      });
+      const record = await service.cancelForOrganization(
+        ORG,
+        EVENT_ID,
+        admin,
+        IN_TIME,
+      );
+      expect(stripe.createCreditNote).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: 'out_of_band', amountInCents: 4000 }),
+      );
+      expect(saved[0]).toMatchObject({
+        refundVia: 'credit_note_out_of_band',
+        stripeRefundId: null,
+        refundStatus: null,
+      });
+      expect(toCancellationSummary(record).manualRefundRequired).toBe(true);
+    });
+
+    it('a bank-transfer refund that needs the customer bank details counts as manual', () => {
+      expect(
+        toCancellationSummary({
+          id: 'c',
+          createdAt: new Date(),
+          amount: 40,
+          currency: 'EUR',
+          previousBillingStatus: 'invoice',
+          refundStatus: 'requires_action',
+          refundVia: 'credit_note_refund',
+          creditNoteNumber: 'INV-0007-CN-01',
+          kind: 'cancellation',
+          reason: null,
+          invoiceVoided: false,
+        } as unknown as EventBillingCancellation).manualRefundRequired,
+      ).toBe(true);
+    });
+
+    it('platform goodwill on a paid invoice: partial credit note with refund, unlock stays', async () => {
+      const { service, stripe, saved, event } = setup({
+        event: stripeInvoiceEvent({ invoiceStatus: 'paid' }),
+        invoice: { status: 'paid', amount_paid: 4000 },
+        realOrders: 3,
+      });
+      await service.cancelForPlatform(
+        EVENT_ID,
+        admin,
+        { reason: 'Regen', amount: 15 },
+        IN_TIME,
+      );
+      expect(stripe.createCreditNote).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'refund',
+          amountInCents: 1500,
+          memo: 'Kulanzerstattung · Sommerfest',
+        }),
+      );
+      expect(saved[0]).toMatchObject({
+        kind: 'goodwill',
+        refundVia: 'credit_note_refund',
+        invoiceVoided: false,
+      });
+      expect(event.billingStatus).toBe('invoice');
+      expect(event.stripeInvoiceId).toBe('in_inv');
+    });
+
+    it('platform goodwill on an open invoice: credit on the invoice, nothing refunded', async () => {
+      const { service, stripe, saved, email } = setup({
+        event: stripeInvoiceEvent(),
+        realOrders: 3,
+      });
+      await service.cancelForPlatform(
+        EVENT_ID,
+        admin,
+        { reason: 'Regen', amount: 10 },
+        IN_TIME,
+      );
+      expect(stripe.voidInvoice).not.toHaveBeenCalled();
+      expect(stripe.createCreditNote).toHaveBeenCalledWith(
+        expect.objectContaining({ mode: 'credit', amountInCents: 1000 }),
+      );
+      expect(saved[0]).toMatchObject({
+        kind: 'goodwill',
+        refundVia: 'credit_note_open',
+        stripeRefundId: null,
+      });
+      expect(email.sendEventGoodwillRefundEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          via: 'invoice',
+          refundVia: 'credit_note_open',
+          invoiceNumber: 'INV-0007',
+        }),
+      );
+    });
+
+    it('caps a credit note at what the invoice still holds', async () => {
+      const { service, stripe } = setup({
+        event: stripeInvoiceEvent({ invoiceStatus: 'paid' }),
+        invoice: {
+          status: 'paid',
+          amount_paid: 4000,
+          post_payment_credit_notes_amount: 3000,
+        },
+      });
+      await expect(
+        service.cancelForPlatform(
+          EVENT_ID,
+          admin,
+          { reason: 'Regen', amount: 20 },
+          IN_TIME,
+        ),
+      ).rejects.toMatchObject({
+        response: { reason: 'REFUND_EXCEEDS_REFUNDABLE' },
+      });
+      expect(stripe.createCreditNote).not.toHaveBeenCalled();
+    });
+
+    it('changes nothing when Stripe refuses to void', async () => {
+      const { service, saved, event, isCommitted } = setup({
+        event: stripeInvoiceEvent(),
+        voidError: new Error('Stripe down'),
+      });
+      await expect(
+        service.cancelForOrganization(ORG, EVENT_ID, admin, IN_TIME),
+      ).rejects.toMatchObject({ response: { reason: 'REFUND_FAILED' } });
+      expect(saved).toHaveLength(0);
+      expect(event.billingStatus).toBe('invoice');
+      expect(isCommitted()).toBe(false);
+    });
+
+    it('an invoice Stripe already voided: records the cancellation without touching Stripe', async () => {
+      const { service, stripe, saved } = setup({
+        event: stripeInvoiceEvent({ invoiceStatus: 'void' }),
+        invoice: { status: 'void' },
+      });
+      await service.cancelForOrganization(ORG, EVENT_ID, admin, IN_TIME);
+      expect(stripe.voidInvoice).not.toHaveBeenCalled();
+      expect(stripe.createCreditNote).not.toHaveBeenCalled();
+      expect(saved[0]).toMatchObject({
+        invoiceVoided: true,
+        refundVia: 'void',
+      });
+    });
+
+    it('is blocked without Stripe, like an online refund', async () => {
+      const { service } = setup({
+        event: stripeInvoiceEvent(),
+        stripeConfigured: false,
+      });
+      const info = await service.describe(
+        stripeInvoiceEvent(),
+        organization(),
+        IN_TIME,
+      );
+      expect(info.blockedReason).toBe('online_refund_unavailable');
+      await expect(
+        service.cancelForOrganization(ORG, EVENT_ID, admin, IN_TIME),
+      ).rejects.toMatchObject({ response: { reason: 'REFUND_FAILED' } });
+    });
+
+    it('preview names the invoice', async () => {
+      const { service } = setup({ event: stripeInvoiceEvent() });
+      const preview = await service.platformPreview(EVENT_ID, IN_TIME);
+      expect(preview.via).toBe('invoice');
+      expect(preview.invoice).toMatchObject({
+        id: 'in_inv',
+        number: 'INV-0007',
+        status: 'open',
+        hostedUrl: 'https://invoice.stripe.com/i/in_inv',
+        hasPdf: true,
+      });
+      expect(preview.onlineRefundAvailable).toBe(true);
     });
   });
 
@@ -905,8 +1213,13 @@ describe('EventUnlockCancellationService', () => {
 
     it('preview: charged, refunded so far, refundable, real orders, deadline', async () => {
       const earlier = {
+        id: 'cancel-0',
         kind: 'goodwill',
         amount: 12.5,
+        currency: 'EUR',
+        previousBillingStatus: 'paid',
+        createdAt: new Date('2026-08-20T10:00:00.000Z'),
+        creditNoteNumber: 'ABCD-0001-CN-01',
       } as unknown as EventBillingCancellation;
       const { service } = setup({ history: [earlier], realOrders: 7 });
       await expect(
@@ -925,6 +1238,16 @@ describe('EventUnlockCancellationService', () => {
         deadlinePassed: true,
         invoiced: false,
         onlineRefundAvailable: true,
+        invoice: null,
+        // Gutschriften der bisherigen Kulanzen stehen in der Vorschau.
+        history: [
+          expect.objectContaining({
+            id: 'cancel-0',
+            kind: 'goodwill',
+            amount: 12.5,
+            creditNoteNumber: 'ABCD-0001-CN-01',
+          }),
+        ],
       });
     });
 
@@ -1016,6 +1339,10 @@ describe('starter bonus after a cancellation', () => {
       } as unknown as ConfigService,
       {} as EventUnlockCancellationService,
       {} as BillingAuditService,
+      {
+        isAvailable: false,
+        daysUntilDue: () => 14,
+      } as unknown as StripeInvoiceService,
     );
   }
 
@@ -1085,6 +1412,10 @@ describe('settling a checkout after its cancellation', () => {
         wasCheckoutCancelled: jest.fn().mockResolvedValue(true),
       } as unknown as EventUnlockCancellationService,
       {} as BillingAuditService,
+      {
+        isAvailable: false,
+        daysUntilDue: () => 14,
+      } as unknown as StripeInvoiceService,
     );
 
     const result = await service.settleStripePayment('cs_paid');

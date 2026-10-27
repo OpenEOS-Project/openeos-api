@@ -13,6 +13,26 @@ export type EventBillingCancellationInitiator = 'organization' | 'platform';
  */
 export type EventBillingCancellationKind = 'cancellation' | 'goodwill';
 
+/**
+ * Wie das Geld zurueckgeht.
+ * - `stripe_refund`: Erstattung der Checkout-Zahlung (ohne Rechnung),
+ * - `credit_note_refund`: Stripe-Gutschrift mit Erstattung der Zahlung
+ *   (Checkout-Rechnung oder bezahlte Stripe-Rechnung),
+ * - `credit_note_out_of_band`: Gutschrift zu einer ausserhalb von Stripe
+ *   bezahlten Rechnung — der Betreiber ueberweist selbst zurueck,
+ * - `credit_note_open`: Gutschrift auf eine noch offene Rechnung (Kulanz
+ *   vor der Zahlung) — kein Geld fliesst, der Rechnungsbetrag sinkt,
+ * - `void`: offene Rechnung storniert, nichts zu erstatten,
+ * - `manual`: Altfall ohne Stripe-Rechnung, Betreiber von Hand.
+ */
+export type EventRefundVia =
+  | 'stripe_refund'
+  | 'credit_note_refund'
+  | 'credit_note_out_of_band'
+  | 'credit_note_open'
+  | 'void'
+  | 'manual';
+
 /** Stand der Stripe-Erstattung, wie Stripe ihn meldet. */
 export type EventRefundStatus =
   | 'pending'
@@ -145,6 +165,13 @@ export class EventBillingCancellation extends BaseEntity {
     nullable: true,
   })
   creditNoteNumber: string | null;
+
+  /** Kauf auf Rechnung ueber Stripe, noch unbezahlt: Rechnung storniert (void). */
+  @Column({ name: 'invoice_voided', type: 'boolean', default: false })
+  invoiceVoided: boolean;
+
+  @Column({ name: 'refund_via', type: 'varchar', length: 30, nullable: true })
+  refundVia: EventRefundVia | null;
 
   /**
    * Kauf auf Rechnung, Rechnung schon gestellt: die Rechnung liegt nicht in

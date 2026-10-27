@@ -29,6 +29,15 @@ export enum AdminAction {
   EVENT_PAYMENT_DISPUTE_OPENED = 'event_payment_dispute_opened',
   EVENT_PAYMENT_DISPUTE_CLOSED = 'event_payment_dispute_closed',
   EVENT_DUPLICATE_PAYMENT = 'event_duplicate_payment',
+  // Kauf auf Rechnung ueber Stripe Invoicing
+  EVENT_INVOICE_ISSUED = 'event_invoice_issued',
+  EVENT_INVOICE_PAID = 'event_invoice_paid',
+  EVENT_INVOICE_PAYMENT_FAILED = 'event_invoice_payment_failed',
+  EVENT_INVOICE_VOIDED = 'event_invoice_voided',
+  EVENT_INVOICE_UNCOLLECTIBLE = 'event_invoice_uncollectible',
+  EVENT_INVOICE_CREDIT_NOTE = 'event_invoice_credit_note',
+  EVENT_INVOICE_RESENT = 'event_invoice_resent',
+  EVENT_INVOICE_MARKED_PAID = 'event_invoice_marked_paid',
 }
 
 /**
