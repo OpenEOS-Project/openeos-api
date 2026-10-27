@@ -172,8 +172,10 @@ export class PrinterAgentsService {
 
   /**
    * `agentHeartbeat`: Agent-Info am Geraet ablegen und die uebernommenen
-   * Drucker (nach Fingerprint) online/offline setzen. Nur Wechsel werden
-   * als `printerStatusChanged` an die Kassen gemeldet.
+   * Drucker online/offline setzen. Gefundene Drucker werden ueber den
+   * Fingerprint zugeordnet, manuell angelegte (ohne Fingerprint) ueber
+   * `printerId` — in beiden Faellen nur Drucker dieses Agenten. Nur Wechsel
+   * werden als `printerStatusChanged` an die Kassen gemeldet.
    */
   async handleAgentHeartbeat(
     deviceId: string,
@@ -195,25 +197,57 @@ export class PrinterAgentsService {
     );
 
     const reported = (payload?.printers ?? []).filter(
-      (p) => p && typeof p.fingerprint === 'string',
+      (p) =>
+        p &&
+        (typeof p.fingerprint === 'string' || typeof p.printerId === 'string'),
     );
     if (reported.length === 0) return;
 
+    const fingerprints = reported
+      .map((p) => p.fingerprint)
+      .filter((f): f is string => typeof f === 'string');
+    const printerIds = reported
+      .map((p) => p.printerId)
+      .filter((id): id is string => typeof id === 'string');
+
+    // Beide Lookups sind auf den Agenten und seine Organisation beschraenkt:
+    // eine fremde `printerId` im Heartbeat trifft nichts.
     const printers = await this.printerRepository.find({
-      where: {
-        deviceId,
-        organizationId,
-        fingerprint: In(reported.map((p) => p.fingerprint)),
-      },
+      where: [
+        ...(fingerprints.length > 0
+          ? [{ deviceId, organizationId, fingerprint: In(fingerprints) }]
+          : []),
+        ...(printerIds.length > 0
+          ? [{ deviceId, organizationId, id: In(printerIds) }]
+          : []),
+      ],
       select: { id: true, fingerprint: true, isOnline: true },
     });
     const byFingerprint = new Map(
-      printers.map((p) => [p.fingerprint as string, p]),
+      printers
+        .filter((p) => typeof p.fingerprint === 'string')
+        .map((p) => [p.fingerprint as string, p]),
     );
+    const byId = new Map(printers.map((p) => [p.id, p]));
 
+    // Derselbe Drucker mehrfach gemeldet: der letzte Eintrag gewinnt.
+    const updates = new Map<
+      string,
+      { printer: (typeof printers)[number]; entry: (typeof reported)[number] }
+    >();
     for (const entry of reported) {
-      const printer = byFingerprint.get(entry.fingerprint);
+      const printer =
+        (typeof entry.fingerprint === 'string'
+          ? byFingerprint.get(entry.fingerprint)
+          : undefined) ??
+        (typeof entry.printerId === 'string'
+          ? byId.get(entry.printerId)
+          : undefined);
       if (!printer) continue;
+      updates.set(printer.id, { printer, entry });
+    }
+
+    for (const { printer, entry } of updates.values()) {
       const isOnline = Boolean(entry.online);
       await this.printerRepository.update(
         { id: printer.id },
@@ -232,6 +266,38 @@ export class PrinterAgentsService {
         );
       }
     }
+  }
+
+  /**
+   * Der Agent ist weg (Socket getrennt, Geraet gesperrt oder entfernt):
+   * alle seine Drucker gelten als offline. `lastSeenAt` bleibt stehen —
+   * es sagt, wann der Drucker zuletzt wirklich erreichbar war. Gemeldet
+   * wird nur, was vorher online war.
+   */
+  async markAgentOffline(
+    deviceId: string,
+    organizationId: string,
+  ): Promise<void> {
+    const printers = await this.printerRepository.find({
+      where: { deviceId, organizationId, isOnline: true },
+      select: { id: true, lastSeenAt: true },
+    });
+    if (printers.length === 0) return;
+
+    await this.printerRepository.update(
+      { id: In(printers.map((p) => p.id)) },
+      { isOnline: false },
+    );
+    for (const printer of printers) {
+      this.gatewayService.notifyPrinterStatusChanged(organizationId, {
+        printerId: printer.id,
+        isOnline: false,
+        lastSeenAt: (printer.lastSeenAt ?? new Date()).toISOString(),
+      });
+    }
+    this.logger.debug(
+      `Agent ${deviceId} offline: ${printers.length} printer(s) marked offline`,
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -293,6 +359,8 @@ export class PrinterAgentsService {
     const printerIds = printers.map((p) => p.id);
 
     if (device.organizationId && printerIds.length > 0) {
+      // Kassen sehen die Drucker sofort als offline, bevor sie verschwinden.
+      await this.markAgentOffline(device.id, device.organizationId);
       await this.printersService.clearPrinterReferences(
         device.organizationId,
         printerIds,

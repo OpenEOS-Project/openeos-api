@@ -211,15 +211,52 @@ export class AppGateway
     }
   }
 
-  handleDisconnect(client: AuthenticatedSocket) {
+  async handleDisconnect(client: AuthenticatedSocket) {
     if (client.user) {
       this.logger.log(`User disconnected: ${client.user.email} (${client.id})`);
     } else if (client.device) {
       this.logger.log(
         `Device disconnected: ${client.device.id} (${client.id})`,
       );
+      await this.markPrinterAgentOffline(client);
     } else {
       this.logger.log(`Client disconnected: ${client.id}`);
+    }
+  }
+
+  /**
+   * Ein Drucker-Agent ohne Verbindung kann nicht drucken — seine Drucker
+   * gelten ab sofort als offline (wie beim Heartbeat per
+   * `printerStatusChanged` gemeldet). Der eigene Online-Zustand des
+   * Agenten kommt aus den verbundenen Sockets, dafuer ist nichts zu tun.
+   *
+   * Beim Reconnect kann der neue Socket vor dem Ende des alten stehen;
+   * dann haengt der Agent noch und die Drucker bleiben, wie sie sind.
+   */
+  private async markPrinterAgentOffline(
+    client: AuthenticatedSocket,
+  ): Promise<void> {
+    const device = client.device;
+    if (
+      !device ||
+      !device.organizationId ||
+      device.type !== (DeviceType.PRINTER_AGENT as string)
+    ) {
+      return;
+    }
+    try {
+      // Der getrennte Socket hat seine Raeume bereits verlassen.
+      if (await this.isDeviceOnline(device.id)) return;
+      await this.printerAgentsService.markAgentOffline(
+        device.id,
+        device.organizationId,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to mark printers of agent ${device.id} offline: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
     }
   }
 

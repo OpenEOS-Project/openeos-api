@@ -249,7 +249,9 @@ export interface PrinterDiscoverEvent {
 
 /**
  * Agent → Server, alle 30 s: wer der Agent ist und welche seiner
- * uebernommenen Drucker (nach Fingerprint) gerade erreichbar sind.
+ * uebernommenen Drucker gerade erreichbar sind. Gefundene Drucker werden
+ * ueber `fingerprint` zugeordnet, manuell angelegte Netzwerkdrucker haben
+ * keinen Fingerprint und melden sich ueber `printerId`.
  */
 export interface AgentHeartbeatEvent {
   version?: string;
@@ -264,7 +266,8 @@ export interface AgentHeartbeatEvent {
     spooler?: boolean;
   };
   printers?: Array<{
-    fingerprint: string;
+    fingerprint?: string;
+    printerId?: string;
     online: boolean;
     lastError?: string;
   }>;
