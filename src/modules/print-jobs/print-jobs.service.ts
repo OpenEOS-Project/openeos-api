@@ -81,13 +81,18 @@ export class PrintJobsService {
       });
     }
 
+    const templateName = await this.resolveTemplateName(
+      organizationId,
+      createDto.templateId || null,
+    );
+
     const printJob = this.printJobRepository.create({
       organizationId,
       printerId: createDto.printerId,
       templateId: createDto.templateId || null,
       orderId: createDto.orderId || null,
       orderItemId: createDto.orderItemId || null,
-      payload: createDto.payload,
+      payload: { ...createDto.payload, templateName },
       status: PrintJobStatus.QUEUED,
       attempts: 0,
     });
@@ -97,29 +102,37 @@ export class PrintJobsService {
       `Print job created: ${printJob.id} for printer ${printer.name}`,
     );
 
-    // Resolve template name for the agent
-    let templateName = 'receipt';
-    if (createDto.templateId) {
-      const template = await this.printTemplateRepository.findOne({
-        where: { id: createDto.templateId, organizationId },
-      });
-      if (template) {
-        templateName = template.type;
-      }
-    }
-
     // Send full print data to agent via WebSocket — targeted at the printer's
     // agent device. On ack the job moves to PRINTING; unacked jobs stay
     // QUEUED and are replayed when the agent (re)connects.
-    this.dispatchJobToAgent(organizationId, printer.deviceId, {
-      jobId: printJob.id,
-      printerId: createDto.printerId,
-      templateName,
-      copies: (createDto.payload?.copies as number) || 1,
-      payload: createDto.payload?.data || createDto.payload,
-    });
+    this.dispatchJobToAgent(
+      organizationId,
+      printer.deviceId,
+      this.buildAgentJobEvent(printJob),
+    );
 
     return printJob;
+  }
+
+  /**
+   * Resolve the template name the agent should render with. A custom template
+   * wins; otherwise the workflow-specific default (`kitchen_ticket`,
+   * `order_ticket`, `receipt`) is used — those names match the agent's
+   * built-in template files. Resolved once at creation and persisted on the
+   * job so that every later (re-)delivery uses the identical name.
+   */
+  private async resolveTemplateName(
+    organizationId: string,
+    templateId: string | null,
+    fallback: string = 'receipt',
+  ): Promise<string> {
+    if (!templateId) {
+      return fallback;
+    }
+    const template = await this.printTemplateRepository.findOne({
+      where: { id: templateId, organizationId },
+    });
+    return template?.type || fallback;
   }
 
   /**
@@ -245,25 +258,12 @@ export class PrintJobsService {
 
     this.logger.log(`Print job retry: ${job.id} (attempt ${job.attempts})`);
 
-    // Resolve template name for the agent
-    let templateName = 'receipt';
-    if (job.templateId) {
-      const template = await this.printTemplateRepository.findOne({
-        where: { id: job.templateId, organizationId },
-      });
-      if (template) {
-        templateName = template.type;
-      }
-    }
-
-    // Resend to agent
-    this.dispatchJobToAgent(organizationId, job.printer?.deviceId ?? null, {
-      jobId: job.id,
-      printerId: job.printerId,
-      templateName,
-      copies: (job.payload?.copies as number) || 1,
-      payload: job.payload?.data || job.payload,
-    });
+    // Resend to agent — same payload as the original dispatch
+    this.dispatchJobToAgent(
+      organizationId,
+      job.printer?.deviceId ?? null,
+      this.buildAgentJobEvent(job),
+    );
 
     return job;
   }
@@ -329,13 +329,19 @@ export class PrintJobsService {
       });
     }
 
+    const templateName = await this.resolveTemplateName(
+      organizationId,
+      templateId || null,
+      defaultTemplateName,
+    );
+
     const printJob = this.printJobRepository.create({
       organizationId,
       printerId,
       templateId: templateId || null,
       orderId: orderId || null,
       orderItemId: orderItemId || null,
-      payload: { copies, data: payload || {} },
+      payload: { copies, templateName, data: payload || {} },
       status: PrintJobStatus.QUEUED,
       attempts: 0,
     });
@@ -345,27 +351,12 @@ export class PrintJobsService {
       `Print job created from auto-print: ${printJob.id} for printer ${printer.name}`,
     );
 
-    // Resolve template name for the agent. Falls back to the workflow-specific
-    // default (kitchen_ticket / order_ticket / receipt) when no custom
-    // templateId is provided — those names match the agent's built-in files.
-    let templateName = defaultTemplateName;
-    if (templateId) {
-      const template = await this.printTemplateRepository.findOne({
-        where: { id: templateId, organizationId },
-      });
-      if (template) {
-        templateName = template.type;
-      }
-    }
-
     // Send to agent via WebSocket
-    this.dispatchJobToAgent(organizationId, printer.deviceId, {
-      jobId: printJob.id,
-      printerId,
-      templateName,
-      copies,
-      payload: payload || {},
-    });
+    this.dispatchJobToAgent(
+      organizationId,
+      printer.deviceId,
+      this.buildAgentJobEvent(printJob),
+    );
 
     return printJob;
   }
@@ -414,19 +405,21 @@ export class PrintJobsService {
     );
   }
 
-  /** Build the websocket payload for an agent from a persisted job (same shape as create()). */
-  buildAgentJobEvent(job: PrintJob): {
-    jobId: string;
-    printerId: string;
-    templateName: string;
-    copies: number;
-    payload: Record<string, unknown>;
-  } {
+  /**
+   * Build the websocket payload for an agent from a persisted job. Used for
+   * the initial dispatch, manual retries and replay on agent reconnect alike,
+   * so all three send the identical event.
+   *
+   * The template name persisted at creation wins. Jobs created before it was
+   * persisted fall back to the loaded custom template, then to `receipt`.
+   */
+  buildAgentJobEvent(job: PrintJob): AgentJobEvent {
     return {
       jobId: job.id,
       printerId: job.printerId,
-      templateName: job.template?.type || 'receipt',
-      copies: (job.payload?.copies as number) || 1,
+      templateName:
+        job.payload?.templateName || job.template?.type || 'receipt',
+      copies: job.payload?.copies || 1,
       payload: job.payload?.data || job.payload,
     };
   }

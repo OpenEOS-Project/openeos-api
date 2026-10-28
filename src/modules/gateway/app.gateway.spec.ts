@@ -1,5 +1,8 @@
 import { AppGateway } from './app.gateway';
 import { DeviceType } from '../../database/entities/device.entity';
+import { PrintJob } from '../../database/entities/print-job.entity';
+import { PrintJobsService } from '../print-jobs/print-jobs.service';
+import { GatewayEvents } from './dto';
 
 const ORG = 'org-1';
 const AGENT = 'agent-1';
@@ -12,6 +15,13 @@ function setup(remainingSockets = 0) {
   const printerAgentsService = {
     markAgentOffline: jest.fn(() => Promise.resolve()),
   };
+  const printJobsService = {
+    getQueuedJobsForDevice: jest.fn(() => Promise.resolve([] as PrintJob[])),
+    // The real builder: replay must send what the original dispatch sent.
+    buildAgentJobEvent: (job: PrintJob) =>
+      PrintJobsService.prototype.buildAgentJobEvent.call(undefined, job),
+    markJobPrinting: jest.fn(() => Promise.resolve()),
+  };
   const none = undefined as never;
   const gateway = new AppGateway(
     none,
@@ -19,11 +29,11 @@ function setup(remainingSockets = 0) {
     none,
     none,
     printerAgentsService as never,
-    none,
+    printJobsService as never,
     none,
   );
   gateway.server = server as never;
-  return { gateway, server, printerAgentsService };
+  return { gateway, server, printerAgentsService, printJobsService };
 }
 
 function client(device?: { id: string; organizationId: string; type: string }) {
@@ -94,5 +104,41 @@ describe('AppGateway.handleDisconnect', () => {
         }),
       ),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('AppGateway print job replay on reconnect', () => {
+  it('re-sends queued jobs with their persisted template name (not receipt)', async () => {
+    const { gateway, printJobsService } = setup();
+    const data = { station_name: 'Grill', items: [{ name: 'Bratwurst' }] };
+    printJobsService.getQueuedJobsForDevice.mockResolvedValue([
+      {
+        id: 'job-1',
+        printerId: 'printer-1',
+        template: null,
+        payload: { copies: 1, templateName: 'kitchen_ticket', data },
+      } as unknown as PrintJob,
+    ]);
+    const emit = jest.fn();
+    const client = { timeout: jest.fn(() => ({ emit })) };
+
+    await (
+      gateway as unknown as {
+        replayQueuedPrintJobs(c: unknown, d: string): Promise<void>;
+      }
+    ).replayQueuedPrintJobs(client, AGENT);
+
+    expect(printJobsService.getQueuedJobsForDevice).toHaveBeenCalledWith(AGENT);
+    expect(emit).toHaveBeenCalledWith(
+      GatewayEvents.PRINTER_JOB,
+      {
+        jobId: 'job-1',
+        printerId: 'printer-1',
+        templateName: 'kitchen_ticket',
+        copies: 1,
+        payload: data,
+      },
+      expect.any(Function),
+    );
   });
 });
