@@ -20,7 +20,11 @@ import {
   PrinterConnectionType,
 } from '../../../database/entities/printer.entity';
 import {
+  DISCOVERED_ESCPOS,
+  DISCOVERED_KIND,
   DISCOVERED_VIA,
+  type DiscoveredEscpos,
+  type DiscoveredKind,
   type DiscoveredVia,
 } from '../../../database/entities/discovered-printer.entity';
 
@@ -98,6 +102,30 @@ export class DiscoveredPrinterDetailsDto {
   @IsString()
   @MaxLength(255)
   driverName?: string;
+
+  @ApiPropertyOptional({
+    enum: DISCOVERED_ESCPOS,
+    description:
+      'Ob das Gerät auf die ESC/POS-Modellabfrage (GS I) geantwortet hat',
+  })
+  @IsOptional()
+  @IsIn(DISCOVERED_ESCPOS)
+  escpos?: DiscoveredEscpos;
+
+  @ApiPropertyOptional({
+    enum: DISCOVERED_KIND,
+    description:
+      'Einschätzung des Agents: Bondrucker, Etikettendrucker, Bürodrucker',
+  })
+  @IsOptional()
+  @IsIn(DISCOVERED_KIND)
+  kind?: DiscoveredKind;
+
+  @ApiPropertyOptional({ example: 'antwortet auf ESC/POS-Modellabfrage' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  kindReason?: string;
 }
 
 /** `DiscoveredPrinterInput` aus der Spezifikation. */
