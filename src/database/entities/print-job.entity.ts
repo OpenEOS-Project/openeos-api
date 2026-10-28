@@ -16,6 +16,15 @@ export enum PrintJobStatus {
 export interface PrintJobPayload {
   type: string;
   data: Record<string, unknown>;
+  /** Number of copies the agent should print (defaults to 1). */
+  copies?: number;
+  /**
+   * Template name resolved when the job was created (custom template type or
+   * the workflow default such as `kitchen_ticket`). Persisted so replay on
+   * agent reconnect and manual retries send exactly what the first dispatch
+   * sent instead of falling back to `receipt`.
+   */
+  templateName?: string;
   [key: string]: unknown;
 }
 
