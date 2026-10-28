@@ -13,6 +13,19 @@ export const DISCOVERED_VIA = [
 ] as const;
 export type DiscoveredVia = (typeof DISCOVERED_VIA)[number];
 
+/** Ergebnis der ESC/POS-Modellabfrage (`GS I`) des Agents. */
+export const DISCOVERED_ESCPOS = ['yes', 'no', 'unknown'] as const;
+export type DiscoveredEscpos = (typeof DISCOVERED_ESCPOS)[number];
+
+/** Einschaetzung des Agents, um was fuer ein Geraet es sich handelt. */
+export const DISCOVERED_KIND = [
+  'receipt',
+  'label',
+  'office',
+  'unknown',
+] as const;
+export type DiscoveredKind = (typeof DISCOVERED_KIND)[number];
+
 /** Was der Agent ueber einen gefundenen Drucker weiss — alles optional. */
 export interface DiscoveredPrinterDetails {
   manufacturer?: string;
@@ -27,6 +40,12 @@ export interface DiscoveredPrinterDetails {
   macAddress?: string;
   windowsPrinterName?: string;
   driverName?: string;
+  /** Antwortet das Geraet auf die ESC/POS-Modellabfrage? */
+  escpos?: DiscoveredEscpos;
+  /** Bondrucker, Etikettendrucker, Buerodrucker oder unbekannt. */
+  kind?: DiscoveredKind;
+  /** Kurze Begruendung fuer `kind`, z. B. "Hersteller-ID Epson". */
+  kindReason?: string;
   [key: string]: unknown;
 }
 
