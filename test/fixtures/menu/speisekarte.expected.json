@@ -1,0 +1,143 @@
+{
+  "categories": [
+    {
+      "key": "c1",
+      "name": "Vom Grill"
+    },
+    {
+      "key": "c2",
+      "name": "Süßes"
+    },
+    {
+      "key": "c3",
+      "name": "Getränke",
+      "existingCategoryId": "11111111-1111-4111-8111-111111111111"
+    }
+  ],
+  "products": [
+    {
+      "key": "p1",
+      "categoryKey": "c1",
+      "name": "Grillwurst im Brötchen",
+      "price": 3.5,
+      "taxRate": 19,
+      "confidence": "high"
+    },
+    {
+      "key": "p2",
+      "categoryKey": "c1",
+      "name": "Currywurst mit Pommes",
+      "price": 6.5,
+      "taxRate": 19,
+      "confidence": "high"
+    },
+    {
+      "key": "p3",
+      "categoryKey": "c1",
+      "name": "Steak im Brötchen",
+      "price": 5,
+      "taxRate": 19,
+      "confidence": "high"
+    },
+    {
+      "key": "p4",
+      "categoryKey": "c1",
+      "name": "Pommes rot-weiß",
+      "description": "mit Ketchup und Mayo",
+      "price": 3,
+      "taxRate": 19,
+      "confidence": "high"
+    },
+    {
+      "key": "p5",
+      "categoryKey": "c2",
+      "name": "Crêpe mit Nutella",
+      "price": 3.5,
+      "taxRate": 19,
+      "confidence": "high"
+    },
+    {
+      "key": "p6",
+      "categoryKey": "c2",
+      "name": "Crêpe mit Puderzucker",
+      "price": 2.5,
+      "taxRate": 19,
+      "confidence": "high"
+    },
+    {
+      "key": "p7",
+      "categoryKey": "c3",
+      "name": "Pils",
+      "price": 2.5,
+      "taxRate": 19,
+      "variants": [
+        {
+          "name": "0,3 l",
+          "priceModifier": 0
+        },
+        {
+          "name": "0,5 l",
+          "priceModifier": 1
+        }
+      ],
+      "confidence": "high"
+    },
+    {
+      "key": "p8",
+      "categoryKey": "c3",
+      "name": "Radler",
+      "price": 3.5,
+      "taxRate": 19,
+      "variants": [
+        {
+          "name": "0,5 l",
+          "priceModifier": 0
+        }
+      ],
+      "existingProductId": "22222222-2222-4222-8222-222222222222",
+      "confidence": "high"
+    },
+    {
+      "key": "p9",
+      "categoryKey": "c3",
+      "name": "Apfelschorle 0,5 l",
+      "price": 2.5,
+      "taxRate": 19,
+      "confidence": "high"
+    },
+    {
+      "key": "p10",
+      "categoryKey": "c3",
+      "name": "Cola 0,33 l (Flasche)",
+      "price": 2.5,
+      "taxRate": 19,
+      "pfand": {
+        "suggested": true,
+        "amount": 2
+      },
+      "confidence": "high"
+    },
+    {
+      "key": "p11",
+      "categoryKey": "c3",
+      "name": "Weinschorle rot 0,25 l",
+      "price": 3,
+      "taxRate": 19,
+      "confidence": "medium",
+      "note": "Preis schwer lesbar"
+    },
+    {
+      "key": "p12",
+      "categoryKey": "c3",
+      "name": "Mineralwasser 0,5 l",
+      "price": 2,
+      "taxRate": 19,
+      "confidence": "high"
+    }
+  ],
+  "warnings": [
+    "2 Einträge waren unvollständig und wurden übersprungen",
+    "Die rechte untere Ecke ist abgeschnitten",
+    "Ein Produkt gibt es in dieser Veranstaltung schon"
+  ]
+}

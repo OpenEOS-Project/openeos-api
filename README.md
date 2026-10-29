@@ -79,11 +79,13 @@ pnpm format           # Prettier
 
 ### Swagger UI
 
-Im Development-Modus ist die interaktive API-Dokumentation verfügbar unter:
+Im Development-Modus (`NODE_ENV` ≠ `production`) ist die interaktive API-Dokumentation verfügbar unter:
 
 ```
 http://localhost:3000/docs
 ```
+
+In Produktion wird `/docs` derzeit nicht ausgeliefert; die generierte Spezifikation liegt unter `docs/openapi.json` / `docs/openapi.yaml` (`pnpm docs:generate`, braucht eine erreichbare Datenbank und Redis).
 
 ### Projektstruktur
 
@@ -448,6 +450,14 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `SHUTDOWN_TIMEOUT_MS` | So lange dürfen offene Anfragen nach SIGTERM noch laufen | 20000 |
 | `SHUTDOWN_DRAIN_DELAY_MS` | Wartezeit nach SIGTERM, in der `/api/health/ready` schon 503 meldet | 0 |
 | `DEPLOY_GUARD_TOKEN` | Token für `GET /api/internal/deploy-guard` (leer: Endpunkt aus) | – |
+| `AI_PROVIDER` | Assistent: `none`, `anthropic` oder `openai` (siehe „Assistent“) | none |
+| `ANTHROPIC_API_KEY` | Schlüssel für `AI_PROVIDER=anthropic` | – |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` | Schlüssel und Basis-URL für `AI_PROVIDER=openai` (OpenAI-kompatible Chat Completions) | – / https://api.openai.com/v1 |
+| `AI_MODEL_EXTRACT` / `AI_MODEL_CLASSIFY` | Modell für die Speisekarten-Extraktion / für Klassifikationen (leer: Standard je Anbieter) | – |
+| `AI_MENU_IMPORTS_PER_DAY` | Speisekarten-Importe je Organisation und Tag (Europe/Berlin) | 5 |
+| `AI_MENU_PAGES_PER_IMPORT` | Bilder je Import | 6 |
+| `AI_CLASSIFY_PER_DAY` | Klassifikationen (Icon-Vorschläge per Modell) je Organisation und Tag | 500 |
+| `AI_MAX_UPLOAD_MB` | Maximale Dateigröße je hochgeladener Speisekarte | 10 |
 
 Siehe `.env.example` für alle verfügbaren Variablen.
 
@@ -496,6 +506,26 @@ bezahlt verbuchen (`POST /admin/events/:id/invoice/mark-paid`). Ohne
 `STRIPE_SECRET_KEY` bleibt es beim alten Weg (Rechnung von Hand). Im Stripe-Dashboard
 müssen Rechnungen per E-Mail und die gewünschten Zahlungsarten (Überweisung,
 SEPA-Lastschrift, Karte) für Rechnungen aktiviert sein.
+
+## Assistent (KI-Funktionen)
+
+Der Assistent hilft Vereinen beim Einrichten: **Speisekarten-Import** (Foto, PDF oder Text → Kategorien, Produkte, Preise, MwSt-Vorschlag, Pfand, Größenvarianten als Vorschau) und **Icon-Vorschläge** aus `@openeos/pos-icons`. Er ist je Organisation **opt-in** (Admin, `PATCH /api/organizations/:id/assistant`, protokolliert) und auf dem Server nur aktiv, wenn ein Anbieter konfiguriert ist (`AI_PROVIDER`). Ohne Anbieter antworten alle Assistent-Endpunkte mit `404 AI_DISABLED`, ohne Opt-in mit `403 ASSISTANT_DISABLED`. Konzept und Vertrag: `ki-plan.md` im Projekt-Root (Abschnitt 6).
+
+**Anbieter**
+
+- `anthropic`: Claude über die Messages API (`@anthropic-ai/sdk`), strukturierte Ausgabe per JSON-Schema, Bilder und PDFs als Base64-Blöcke in einem Aufruf.
+- `openai`: Chat Completions über das offizielle `openai`-SDK mit konfigurierbarer `OPENAI_BASE_URL` — damit lassen sich auch andere OpenAI-kompatible Dienste anbinden. Strukturierte Ausgabe per `response_format: json_schema` (strict), Bilder als Data-URLs. **PDFs liest dieser Anbieter nicht** (Chat Completions kennt bei den meisten Diensten keine Dokument-Eingabe, und die API hat keine Bibliothek, die Seiten rendert): ein PDF-Upload wird für ihn mit `400 MENU_IMPORT_INVALID_FILES` abgelehnt, Fotos der Seiten gehen immer.
+- `none`: aus (Standard).
+
+Modell-IDs stehen in der Konfiguration (`AI_MODEL_EXTRACT`, `AI_MODEL_CLASSIFY`), nicht im Code.
+
+**Kontingente und Protokoll.** Jeder Modellaufruf steht in `ai_usage` (Organisation, Funktion, Modell, Tokens, Dauer, Status). Daraus zählt `AiQuotaService` je Organisation und Kalendertag (Europe/Berlin): `AI_MENU_IMPORTS_PER_DAY` Importe, `AI_CLASSIFY_PER_DAY` Klassifikationen. Aufrufe, die beim Anbieter scheitern, kosten kein Kontingent. Bei Überschreitung antwortet die API mit `429 AI_QUOTA_EXCEEDED` und `params.resetAt`.
+
+**Speisekarten-Import.** `POST /api/organizations/:orgId/events/:eventId/menu-imports` (multipart `files[]` oder Feld `text`) legt einen Job an (`202 { id, status: 'queued' }`); die Auswertung läuft im Hintergrund auf der Instanz, die den Upload bekam, liegengebliebene Jobs holt ein Minuten-Cron nach (Redis-Sperre, bedingtes UPDATE als Lock — kein BullMQ). Status per `GET …/menu-imports/:id` (alle 2 s pollen) oder Socket-Event `menuImportUpdated { id, eventId, status }` im Organisations-Raum. `POST …/:id/apply` legt die bestätigten Zeilen an, `DELETE` verwirft. Hochgeladene Dateien liegen unter `<UPLOAD_DIR>/menu-imports/<id>/`, sind **nicht** öffentlich (der Pfad `/uploads/menu-imports` ist in `main.ts` gesperrt) und werden beim Anwenden, Verwerfen oder nach 24 h gelöscht; der Vorschlag selbst nach 30 Tagen.
+
+**Sicherheit.** Speisekarten sind fremder Inhalt: Das Modell liefert ausschließlich strukturierte Ausgabe gegen ein festes Schema, Text wird als `<untrusted>`-Daten übergeben, die Antwort wird vor dem Speichern Zeile für Zeile mit class-validator geprüft und nur als Vorschlag gespeichert — angelegt wird erst, was ein Mensch in der Vorschau bestätigt. Dateiinhalte und Schlüssel erscheinen nie im Log.
+
+**Icon-Vorschläge.** `POST /api/organizations/:orgId/assistant/icon-suggestions { names[] }`. Stufe 1 ohne Modell: Namen und Suchbegriffe der Icons aus `@openeos/pos-icons` (schlanker Index im Repo, `pnpm icons:sync` nach einem Paket-Update). Stufe 2 nur für unklare Namen und nur mit freiem Kontingent: das Klassifikationsmodell wählt aus den zehn besten Kandidaten.
 
 ## Docker
 

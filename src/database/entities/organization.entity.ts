@@ -86,6 +86,16 @@ export interface OrganizationSettings {
     /** Letzte Umschaltung (ISO); Verlauf in organization_cashless_changes. */
     changedAt?: string;
   };
+  /**
+   * Assistent-Funktionen (Speisekarten-Import, Icon-Vorschlaege). Opt-in
+   * je Organisation durch einen Admin; das Einschalten steht im
+   * Admin-Protokoll. Siehe ki-plan.md Abschnitt 6.2.
+   */
+  assistant?: {
+    enabled: boolean;
+    enabledAt?: string;
+    enabledByUserId?: string;
+  };
   onlineOrdering?: {
     enabled: boolean;
     requirePayment: boolean;

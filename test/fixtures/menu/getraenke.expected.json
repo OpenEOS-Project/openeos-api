@@ -1,0 +1,51 @@
+{
+  "categories": [
+    {
+      "key": "c1",
+      "name": "Getränke"
+    },
+    {
+      "key": "c2",
+      "name": "Sonstiges"
+    }
+  ],
+  "products": [
+    {
+      "key": "p1",
+      "categoryKey": "c1",
+      "name": "Spezi",
+      "price": 3,
+      "taxRate": 0,
+      "variants": [
+        {
+          "name": "0,3 l",
+          "priceModifier": 0
+        },
+        {
+          "name": "0,5 l",
+          "priceModifier": 1
+        }
+      ],
+      "confidence": "high"
+    },
+    {
+      "key": "p2",
+      "categoryKey": "c1",
+      "name": "Pils",
+      "price": 3.2,
+      "taxRate": 0,
+      "confidence": "high"
+    },
+    {
+      "key": "p3",
+      "categoryKey": "c2",
+      "name": "Hauswein",
+      "price": 3.5,
+      "taxRate": 0,
+      "confidence": "medium"
+    }
+  ],
+  "warnings": [
+    "Deine Organisation weist keine Umsatzsteuer aus — alle Steuersätze wurden auf 0 % gesetzt"
+  ]
+}

@@ -6052,6 +6052,17 @@ paths:
               - event_payment_dispute_opened
               - event_payment_dispute_closed
               - event_duplicate_payment
+              - event_invoice_issued
+              - event_invoice_paid
+              - event_invoice_payment_failed
+              - event_invoice_voided
+              - event_invoice_uncollectible
+              - event_invoice_credit_note
+              - event_invoice_resent
+              - event_invoice_marked_paid
+              - assistant_enabled
+              - assistant_disabled
+              - menu_import_applied
         - name: startDate
           required: false
           in: query
@@ -6358,6 +6369,54 @@ paths:
               $ref: "#/components/schemas/PlatformCancelBillingDto"
       responses:
         201:
+          description: ""
+      security:
+        - "JWT-auth": []
+      tags:
+        - Admin
+  "/api/admin/events/{id}/invoice/resend":
+    post:
+      operationId: AdminEventsController_resendInvoice
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        201:
+          description: ""
+      security:
+        - "JWT-auth": []
+      tags:
+        - Admin
+  "/api/admin/events/{id}/invoice/mark-paid":
+    post:
+      operationId: AdminEventsController_markInvoicePaid
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        201:
+          description: ""
+      security:
+        - "JWT-auth": []
+      tags:
+        - Admin
+  "/api/admin/events/{id}/invoice/pdf":
+    get:
+      operationId: AdminEventsController_invoicePdf
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
           description: ""
       security:
         - "JWT-auth": []
@@ -8453,6 +8512,218 @@ paths:
       summary: Is an event selling right now?
       tags:
         - Internal
+  "/api/organizations/{organizationId}/assistant":
+    get:
+      description: "enabled: Opt-in der Organisation; available: ein Modellanbieter ist auf dem Server konfiguriert; quotas: Tageskontingente (Europe/Berlin) mit limit/used/remaining/resetAt."
+      operationId: AssistantController_getStatus
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: "{ data: { enabled, available, quotas } }"
+      security:
+        - "JWT-auth": []
+      summary: Status der Assistent-Funktionen
+      tags:
+        - Assistant
+    patch:
+      operationId: AssistantController_setEnabled
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAssistantDto"
+      responses:
+        200:
+          description: "{ data: { enabled, available, quotas } }"
+      security:
+        - "JWT-auth": []
+      summary: Assistent-Funktionen ein- oder ausschalten (Admin, protokolliert)
+      tags:
+        - Assistant
+  "/api/organizations/{organizationId}/assistant/icon-suggestions":
+    post:
+      description: "Stufe 1 ohne Modell (Namen/Suchbegriffe der Icons), Stufe 2 fragt bei unklaren Namen das Klassifikationsmodell (Kontingent classifications). icon ist die Referenz `pos-icon:<id>`. 404 AI_DISABLED ohne Anbieter, 403 ASSISTANT_DISABLED ohne Opt-in."
+      operationId: AssistantController_iconSuggestions
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IconSuggestionsDto"
+      responses:
+        201:
+          description: "{ data: [{ name, suggestions: [{ icon, score }] }] }"
+      security:
+        - "JWT-auth": []
+      summary: Icon-Vorschläge aus @openeos/pos-icons für Produktnamen
+      tags:
+        - Assistant
+  "/api/organizations/{organizationId}/events/{eventId}/menu-imports":
+    post:
+      description: "multipart: `files[]` (1–AI_MENU_PAGES_PER_IMPORT Bilder jpg/png/webp oder genau eine PDF ≤ AI_MAX_UPLOAD_MB) oder Feld `text`. Antwort 202 mit Job-ID; Status per GET pollen (alle 2 s) oder Socket-Event `menuImportUpdated { id, eventId, status }` im Organisations-Raum. Fehler: 404 AI_DISABLED, 403 ASSISTANT_DISABLED, 429 AI_QUOTA_EXCEEDED (params.resetAt), 400 MENU_IMPORT_INVALID_FILES."
+      operationId: MenuImportController_create
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: eventId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          "multipart/form-data":
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: Bis zu AI_MENU_PAGES_PER_IMPORT Bilder (jpg/png/webp) oder genau eine PDF
+                text:
+                  type: string
+                  description: "Alternativ zum Upload: die Speisekarte als Text (max. 20.000 Zeichen)"
+      responses:
+        202:
+          description: "{ data: { id, status: 'queued' } }"
+      security:
+        - "JWT-auth": []
+      summary: Speisekarte zur Auswertung einreichen
+      tags:
+        - Assistant
+    get:
+      operationId: MenuImportController_list
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: eventId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: "{ data: [{ id, status, source, error?, createdAt, finishedAt?, appliedAt?, usage? }] }"
+      security:
+        - "JWT-auth": []
+      summary: Die letzten 20 Importe der Veranstaltung (ohne Vorschlag)
+      tags:
+        - Assistant
+  "/api/organizations/{organizationId}/events/{eventId}/menu-imports/{id}":
+    get:
+      description: "status: queued | processing | done | failed | applied. Bei done enthält `suggestion` { categories[{ key, name, existingCategoryId? }], products[{ key, categoryKey, name, description?, price, taxRate, pfand?, variants?, existingProductId?, iconSuggestions?, confidence, note? }], warnings[] }. Bei failed steht die Ursache in `error`."
+      operationId: MenuImportController_findOne
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: eventId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: "{ data: { id, status, source, error?, createdAt, finishedAt?, appliedAt?, suggestion?, usage? } }"
+      security:
+        - "JWT-auth": []
+      summary: Status und Vorschlag eines Imports
+      tags:
+        - Assistant
+    delete:
+      operationId: MenuImportController_remove
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: eventId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        200:
+          description: "{ data: { success: true } }"
+      security:
+        - "JWT-auth": []
+      summary: Import verwerfen (löscht Dateien und Vorschlag)
+      tags:
+        - Assistant
+  "/api/organizations/{organizationId}/events/{eventId}/menu-imports/{id}/apply":
+    post:
+      description: Legt Kategorien (neu oder vorhanden) und Produkte an bzw. aktualisiert sie (action create | update | skip). Varianten werden options.groups[0] (single). Danach status applied; Audit-Eintrag menu_import_applied.
+      operationId: MenuImportController_apply
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: eventId
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyMenuImportDto"
+      responses:
+        201:
+          description: "{ data: { createdCategories, createdProducts, updatedProducts } }"
+      security:
+        - "JWT-auth": []
+      summary: Ausgewählte Kategorien und Produkte anlegen
+      tags:
+        - Assistant
 info:
   title: OpenEOS API
   description: |
@@ -8544,6 +8815,8 @@ tags:
     description: File upload management
   - name: Inventory
     description: Inventory and stock management
+  - name: Assistant
+    description: "Assistent: Opt-in je Organisation, Speisekarten-Import, Icon-Vorschläge"
   - name: Health
     description: Health check endpoints
 servers:
@@ -9474,6 +9747,24 @@ components:
           type: string
         driverName:
           type: string
+        escpos:
+          type: string
+          enum:
+            - "yes"
+            - "no"
+            - unknown
+          description: Ob das Gerät auf die ESC/POS-Modellabfrage (GS I) geantwortet hat
+        kind:
+          type: string
+          enum:
+            - receipt
+            - label
+            - office
+            - unknown
+          description: "Einschätzung des Agents: Bondrucker, Etikettendrucker, Bürodrucker"
+        kindReason:
+          type: string
+          example: antwortet auf ESC/POS-Modellabfrage
     DiscoveredPrinterInputDto:
       type: object
       properties:
@@ -11405,6 +11696,11 @@ components:
           type: number
           example: 20
           description: Individueller Event-Preis in Euro (überschreibt den Standardpreis)
+        invoiceDaysUntilDue:
+          type: object
+          example: 14
+          nullable: true
+          description: Zahlungsziel für Rechnungen (Kauf auf Rechnung über Stripe) in Tagen; leer = Standard der Plattform
         prioritySupport:
           type: boolean
           example: false
@@ -12060,3 +12356,120 @@ components:
         - email
         - message
         - startedAt
+    UpdateAssistantDto:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          example: true
+          description: Assistent-Funktionen für die Organisation ein- oder ausschalten (Admin)
+      required:
+        - enabled
+    IconSuggestionsDto:
+      type: object
+      properties:
+        names:
+          example:
+            - Currywurst mit Pommes
+            - Radler 0,5 l
+          description: Produktnamen (1–100)
+          type: array
+          items:
+            type: string
+      required:
+        - names
+    ApplyMenuCategoryDto:
+      type: object
+      properties:
+        key:
+          type: string
+          example: c1
+          description: Schlüssel aus dem Vorschlag
+        name:
+          type: string
+          example: Vom Grill
+        existingCategoryId:
+          type: string
+          description: Vorhandene Kategorie der Veranstaltung verwenden statt neu anzulegen
+      required:
+        - key
+        - name
+    ApplyMenuVariantDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: 0,5 l
+        priceModifier:
+          type: number
+          example: 1.5
+          description: Aufpreis zur Basis in Euro
+      required:
+        - name
+        - priceModifier
+    ApplyMenuProductDto:
+      type: object
+      properties:
+        key:
+          type: string
+          example: p1
+        categoryKey:
+          type: string
+          example: c1
+          description: Schlüssel der Kategorie aus `categories`
+        name:
+          type: string
+          example: Currywurst mit Pommes
+        description:
+          type: string
+        price:
+          type: number
+          example: 6.5
+          description: Preis in Euro (ohne Pfand)
+        taxRate:
+          type: number
+          example: 19
+          enum:
+            - 0
+            - 7
+            - 19
+        icon:
+          type: string
+          example: "pos-icon:currywurst-pommes"
+        pfandTypeId:
+          type: object
+          description: Pfand-Typ der Organisation
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplyMenuVariantDto"
+        action:
+          type: string
+          enum:
+            - create
+            - update
+            - skip
+        existingProductId:
+          type: string
+          description: "Bei `update`: Produkt, das aktualisiert wird"
+      required:
+        - key
+        - categoryKey
+        - name
+        - price
+        - taxRate
+        - action
+    ApplyMenuImportDto:
+      type: object
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplyMenuCategoryDto"
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplyMenuProductDto"
+      required:
+        - categories
+        - products

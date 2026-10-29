@@ -1,0 +1,9 @@
+{
+  "categories": [{ "name": "Getränke", "position": 1 }],
+  "products": [
+    { "name": "Spezi", "category": "Getränke", "description": null, "price": 2.5, "taxRate": 19, "deposit": null, "variants": [ { "name": "0,3 l", "priceModifier": 0.5 }, { "name": "0,5 l", "priceModifier": 1.5 } ], "confidence": "high", "note": null },
+    { "name": "Pils", "category": "Getränke", "description": null, "price": 3.2, "taxRate": 19, "deposit": null, "variants": null, "confidence": "high", "note": null },
+    { "name": "Hauswein", "category": "", "description": null, "price": 3.5, "taxRate": 19, "deposit": null, "variants": null, "confidence": "medium", "note": null }
+  ],
+  "warnings": []
+}

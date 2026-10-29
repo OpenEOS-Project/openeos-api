@@ -38,6 +38,10 @@ export enum AdminAction {
   EVENT_INVOICE_CREDIT_NOTE = 'event_invoice_credit_note',
   EVENT_INVOICE_RESENT = 'event_invoice_resent',
   EVENT_INVOICE_MARKED_PAID = 'event_invoice_marked_paid',
+  // Assistent-Funktionen (ki-plan.md Abschnitt 6)
+  ASSISTANT_ENABLED = 'assistant_enabled',
+  ASSISTANT_DISABLED = 'assistant_disabled',
+  MENU_IMPORT_APPLIED = 'menu_import_applied',
 }
 
 /**

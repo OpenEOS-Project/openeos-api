@@ -109,6 +109,7 @@ Real-time Updates über Socket.io unter \`/\` mit Namespaces:
     .addTag('Reports', 'Reporting and analytics')
     .addTag('Uploads', 'File upload management')
     .addTag('Inventory', 'Inventory and stock management')
+    .addTag('Assistant', 'Assistent: Opt-in je Organisation, Speisekarten-Import, Icon-Vorschläge')
     .addTag('Health', 'Health check endpoints')
     .build();
 

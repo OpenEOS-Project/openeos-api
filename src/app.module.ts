@@ -57,6 +57,8 @@ import { SupportModule } from './modules/support';
 import { ContactModule } from './modules/contact';
 import { ChangelogModule } from './modules/changelog';
 import { DeployGuardModule } from './modules/deploy-guard/deploy-guard.module';
+import { AiModule } from './modules/ai';
+import { AssistantModule } from './modules/assistant';
 
 @Module({
   imports: [
@@ -189,6 +191,9 @@ import { DeployGuardModule } from './modules/deploy-guard/deploy-guard.module';
     SupportModule,
     ContactModule,
     DeployGuardModule,
+    // Assistent: Modellanbieter + Kontingente (global) und die Funktionen
+    AiModule,
+    AssistantModule,
   ],
   controllers: [],
   providers: [
