@@ -72,6 +72,20 @@ export const ErrorCodes = {
   // Stripe Errors
   STRIPE_NOT_CONFIGURED: 'STRIPE_NOT_CONFIGURED',
   STRIPE_API_ERROR: 'STRIPE_API_ERROR',
+
+  // Assistent (KI-Funktionen, siehe ki-plan.md Abschnitt 6.5)
+  // Kein Anbieter konfiguriert (AI_PROVIDER=none) — 404
+  AI_DISABLED: 'AI_DISABLED',
+  // Organisation hat die Assistent-Funktionen nicht eingeschaltet — 403
+  ASSISTANT_DISABLED: 'ASSISTANT_DISABLED',
+  // Tageskontingent der Organisation aufgebraucht — 429, params.resetAt
+  AI_QUOTA_EXCEEDED: 'AI_QUOTA_EXCEEDED',
+  MENU_IMPORT_NOT_FOUND: 'MENU_IMPORT_NOT_FOUND',
+  MENU_IMPORT_INVALID_FILES: 'MENU_IMPORT_INVALID_FILES',
+  // Steht im `status`/`error` eines Imports, nicht als HTTP-Fehler
+  MENU_IMPORT_FAILED: 'MENU_IMPORT_FAILED',
+  // Der Modellanbieter hat nicht geantwortet oder abgelehnt — 502
+  AI_PROVIDER_ERROR: 'AI_PROVIDER_ERROR',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -145,6 +159,20 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.STRIPE_NOT_CONFIGURED]:
     'Online-Zahlung ist derzeit nicht verfügbar',
   [ErrorCodes.STRIPE_API_ERROR]: 'Stripe hat die Anfrage abgelehnt',
+
+  [ErrorCodes.AI_DISABLED]:
+    'Die Assistent-Funktionen sind auf diesem Server nicht eingerichtet',
+  [ErrorCodes.ASSISTANT_DISABLED]:
+    'Die Assistent-Funktionen sind für deine Organisation ausgeschaltet',
+  [ErrorCodes.AI_QUOTA_EXCEEDED]:
+    'Das Tageskontingent ist aufgebraucht — morgen geht es weiter',
+  [ErrorCodes.MENU_IMPORT_NOT_FOUND]: 'Import nicht gefunden',
+  [ErrorCodes.MENU_IMPORT_INVALID_FILES]:
+    'Bitte lade bis zu 6 Bilder (JPG, PNG, WebP) oder eine PDF-Datei hoch — oder füge den Text ein',
+  [ErrorCodes.MENU_IMPORT_FAILED]:
+    'Die Speisekarte konnte nicht ausgewertet werden',
+  [ErrorCodes.AI_PROVIDER_ERROR]:
+    'Der Assistent ist gerade nicht erreichbar — bitte versuch es später noch einmal',
 };
 
 /**
@@ -234,6 +262,8 @@ export const ErrorReasons = {
   MEMBER_ACCOUNT_DETAILS_REQUIRED: 'MEMBER_ACCOUNT_DETAILS_REQUIRED',
   MEMBER_ACCOUNT_EXISTS: 'MEMBER_ACCOUNT_EXISTS',
   MEMBER_NOT_FOUND: 'MEMBER_NOT_FOUND',
+  MENU_IMPORT_CATEGORY_KEY_UNKNOWN: 'MENU_IMPORT_CATEGORY_KEY_UNKNOWN',
+  MENU_IMPORT_NOT_READY: 'MENU_IMPORT_NOT_READY',
   MESSAGE_EMPTY: 'MESSAGE_EMPTY',
   NOT_AUTHENTICATED: 'NOT_AUTHENTICATED',
   NOT_ORGANIZATION_MEMBER: 'NOT_ORGANIZATION_MEMBER',

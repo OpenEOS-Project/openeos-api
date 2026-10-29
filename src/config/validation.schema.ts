@@ -105,6 +105,22 @@ export const validationSchema = Joi.object({
   TEST_EVENT_MAX_ORDERS: Joi.number().default(25),
   OPENREGISTER_API_KEY: Joi.string().allow('').default(''),
 
+  // Assistent (KI): Anbieter und Kontingente, siehe README „Assistent“.
+  AI_PROVIDER: Joi.string()
+    .valid('anthropic', 'openai', 'none')
+    .default('none'),
+  ANTHROPIC_API_KEY: Joi.string().allow('').default(''),
+  OPENAI_API_KEY: Joi.string().allow('').default(''),
+  OPENAI_BASE_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .default('https://api.openai.com/v1'),
+  AI_MODEL_EXTRACT: Joi.string().allow('').default(''),
+  AI_MODEL_CLASSIFY: Joi.string().allow('').default(''),
+  AI_MENU_IMPORTS_PER_DAY: Joi.number().integer().min(0).default(5),
+  AI_MENU_PAGES_PER_IMPORT: Joi.number().integer().min(1).max(20).default(6),
+  AI_CLASSIFY_PER_DAY: Joi.number().integer().min(0).default(500),
+  AI_MAX_UPLOAD_MB: Joi.number().integer().min(1).max(50).default(10),
+
   // Empfänger für Support-Nachrichten und Kontaktanfragen (optional)
   SUPPORT_NOTIFY_EMAIL: Joi.string().allow('').default(''),
 
