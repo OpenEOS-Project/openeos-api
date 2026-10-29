@@ -23,7 +23,7 @@ import { User } from '../../database/entities';
  * derselbe, braucht aber zusätzlich einen Organisationsbezug und die
  * bestehenden Modul-Berechtigungen — das kommt, wenn es gebraucht wird.
  */
-@ApiTags('API-Tokens')
+@ApiTags('Admin')
 @ApiBearerAuth('JWT-auth')
 @Controller('admin/api-tokens')
 @UseGuards(SuperAdminGuard)

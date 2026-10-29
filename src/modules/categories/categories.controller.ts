@@ -17,7 +17,8 @@ import {
   UpdateCategoryDto,
   ReorderCategoriesDto,
 } from './dto';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 
 @ApiTags('Categories')
@@ -26,6 +27,7 @@ import { User } from '../../database/entities';
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
+  @ApiTokenAccess(TokenScope.CATALOG_WRITE)
   @Post()
   async create(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -40,6 +42,7 @@ export class CategoriesController {
     return { data: category };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get()
   async findAll(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -49,6 +52,7 @@ export class CategoriesController {
     return { data: categories };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':categoryId')
   async findOne(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -68,6 +72,7 @@ export class CategoriesController {
      Platzhalter — stand sie danach, landete der Aufruf im Bearbeiten-
      Handler mit categoryId = "reorder" und scheiterte an der UUID-Pruefung.
      Genau das ist passiert, die Route war nie erreichbar. */
+  @ApiTokenAccess(TokenScope.CATALOG_WRITE)
   @Patch('reorder')
   async reorder(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -78,6 +83,7 @@ export class CategoriesController {
     return { message: 'Kategorien neu sortiert' };
   }
 
+  @ApiTokenAccess(TokenScope.CATALOG_WRITE)
   @Patch(':categoryId')
   async update(
     @Param('eventId', ParseUUIDPipe) eventId: string,

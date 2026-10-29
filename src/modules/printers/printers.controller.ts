@@ -13,7 +13,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PrintersService } from './printers.service';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CreatePrinterDto, UpdatePrinterDto } from './dto';
@@ -33,6 +34,7 @@ export class PrintersController {
     return this.printersService.create(organizationId, createDto, user);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get()
   findAll(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -42,6 +44,7 @@ export class PrintersController {
     return this.printersService.findAll(organizationId, user, pagination);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':printerId')
   findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

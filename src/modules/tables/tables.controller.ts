@@ -12,7 +12,8 @@ import {
   Put,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { TablesService } from './tables.service';
 import {
@@ -38,6 +39,7 @@ export class TablesController {
 
   // Bereiche
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('table-areas')
   @ApiOperation({ summary: 'Bereiche inkl. Tische (aktiv und inaktiv)' })
   async listAreas(
@@ -47,6 +49,7 @@ export class TablesController {
     return { data: await this.tablesService.listAreas(organizationId, user) };
   }
 
+  @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Post('table-areas')
   @ApiOperation({ summary: 'Bereich anlegen' })
   async createArea(
@@ -60,6 +63,7 @@ export class TablesController {
   }
 
   // Vor `:areaId`, sonst greift die UUID-Pruefung auf „order“.
+  @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Patch('table-areas/order')
   @ApiOperation({ summary: 'Bereiche sortieren' })
   async reorderAreas(
@@ -72,6 +76,7 @@ export class TablesController {
     };
   }
 
+  @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Patch('table-areas/:areaId')
   @ApiOperation({ summary: 'Bereich ändern (Name, Größe, Raster, Deko)' })
   async updateArea(
@@ -90,6 +95,7 @@ export class TablesController {
     };
   }
 
+  @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Put('table-areas/:areaId/layout')
   @ApiOperation({ summary: 'Karte eines Bereichs speichern (Autosave)' })
   async putLayout(
@@ -121,6 +127,7 @@ export class TablesController {
 
   // Tische
 
+  @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Post('tables')
   @ApiOperation({ summary: 'Tisch anlegen' })
   async createTable(
@@ -133,6 +140,7 @@ export class TablesController {
     };
   }
 
+  @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Post('tables/bulk')
   @ApiOperation({ summary: 'Serie anlegen (z. B. A01–A12)' })
   async bulkCreate(
@@ -145,6 +153,7 @@ export class TablesController {
     };
   }
 
+  @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Patch('tables/:tableId')
   @ApiOperation({ summary: 'Tisch ändern, umbenennen oder verschieben' })
   async updateTable(

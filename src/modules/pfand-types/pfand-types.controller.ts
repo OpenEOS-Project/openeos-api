@@ -13,7 +13,8 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PfandTypesService } from './pfand-types.service';
 import { CreatePfandTypeDto, UpdatePfandTypeDto } from './dto';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 
 @ApiTags('Pfand Types')
@@ -22,6 +23,7 @@ import { User } from '../../database/entities';
 export class PfandTypesController {
   constructor(private readonly pfandTypesService: PfandTypesService) {}
 
+  @ApiTokenAccess(TokenScope.CATALOG_WRITE)
   @Post()
   async create(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -36,6 +38,7 @@ export class PfandTypesController {
     return { data: pfandType };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get()
   async findAll(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -48,6 +51,7 @@ export class PfandTypesController {
     return { data: pfandTypes };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':pfandTypeId')
   async findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -62,6 +66,7 @@ export class PfandTypesController {
     return { data: pfandType };
   }
 
+  @ApiTokenAccess(TokenScope.CATALOG_WRITE)
   @Patch(':pfandTypeId')
   async update(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

@@ -16,7 +16,11 @@ import {
   validationSchema,
 } from './config';
 import type { PoolOptions } from './config/database.config';
-import { JwtAuthGuard, DeploymentModeGuard } from './common/guards';
+import {
+  JwtAuthGuard,
+  DeploymentModeGuard,
+  ApiTokenThrottlerGuard,
+} from './common/guards';
 import { CommonModule } from './common/common.module';
 import { RedisModule } from './common/redis/redis.module';
 import { redisUrl } from './common/redis/redis.constants';
@@ -211,6 +215,11 @@ import { AssistantModule } from './modules/assistant';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    // Zusaetzliche Grenze je API-Token (120/min, 5000/Tag)
+    {
+      provide: APP_GUARD,
+      useClass: ApiTokenThrottlerGuard,
     },
     // Blendet die Endpunkte des gehosteten Angebots aus, wenn diese
     // Installation eigenstaendig laeuft (DEPLOYMENT_MODE=selfhosted).

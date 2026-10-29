@@ -31,6 +31,32 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    # Datenbank und Redis nur fuer `pnpm docs:check`: AppModule verbindet
+    # beim Start, und die eingecheckte OpenAPI-Beschreibung (docs/) muss
+    # zum Code passen — die Doku-Seite rendert sie.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: openeos
+          POSTGRES_PASSWORD: openeos_dev_password
+          POSTGRES_DB: openeos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U openeos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -54,6 +80,13 @@ jobs:
 
       - name: Lint
         run: pnpm lint
+
+      - name: OpenAPI spec in sync (docs/openapi.json|yaml)
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-docs-check
+          DATABASE_LOGGING: 'false'
+        run: pnpm docs:check
 
       # Der `eslint --fix`-Lauf, den der frühere Kommentar hier gefordert
       # hat, ist erfolgt: rund 2250 Befunde bereinigt. Was blieb, ist

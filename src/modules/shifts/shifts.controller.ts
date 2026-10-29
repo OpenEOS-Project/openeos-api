@@ -33,7 +33,8 @@ import {
   AdminCreateRegistrationDto,
   AdminUpdateRegistrationDto,
 } from './dto';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { OrganizationGuard } from '../../common/guards/organization.guard';
 
@@ -49,6 +50,7 @@ export class ShiftsController {
 
   // ============ Shift Plans ============
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post()
   async createPlan(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -58,6 +60,7 @@ export class ShiftsController {
     return { data: plan };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get()
   async findAllPlans(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -66,6 +69,7 @@ export class ShiftsController {
     return { data: plans };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':planId')
   async findOnePlan(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -75,6 +79,7 @@ export class ShiftsController {
     return { data: plan };
   }
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Patch(':planId')
   async updatePlan(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -98,6 +103,7 @@ export class ShiftsController {
     await this.shiftsService.deletePlan(organizationId, planId);
   }
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post(':planId/publish')
   async publishPlan(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -107,6 +113,7 @@ export class ShiftsController {
     return { data: plan };
   }
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post(':planId/close')
   async closePlan(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -116,6 +123,7 @@ export class ShiftsController {
     return { data: plan };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':planId/export/pdf')
   async exportPdf(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -138,6 +146,7 @@ export class ShiftsController {
 
   // ============ Jobs ============
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post(':planId/jobs')
   async createJob(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -148,6 +157,7 @@ export class ShiftsController {
     return { data: job };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':planId/jobs')
   async findAllJobs(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -157,6 +167,7 @@ export class ShiftsController {
     return { data: jobs };
   }
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Patch('jobs/:jobId')
   async updateJob(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -178,6 +189,7 @@ export class ShiftsController {
 
   // ============ Shifts ============
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post('jobs/:jobId/shifts')
   async createShift(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -192,6 +204,7 @@ export class ShiftsController {
     return { data: shift };
   }
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post('jobs/:jobId/shifts/bulk')
   async createShiftsBulk(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -206,6 +219,7 @@ export class ShiftsController {
     return { data: shifts };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('jobs/:jobId/shifts')
   async findAllShifts(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -218,6 +232,7 @@ export class ShiftsController {
     return { data: shifts };
   }
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Patch('shifts/:shiftId')
   async updateShift(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -243,6 +258,7 @@ export class ShiftsController {
 
   // ============ Registrations ============
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':planId/registrations')
   async findAllRegistrations(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -255,6 +271,7 @@ export class ShiftsController {
     return { data: registrations };
   }
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post('registrations/:registrationId/approve')
   async approveRegistration(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -271,6 +288,7 @@ export class ShiftsController {
     return { data: registration };
   }
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post('registrations/:registrationId/reject')
   async rejectRegistration(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -355,6 +373,7 @@ export class ShiftsController {
     return { data: registration };
   }
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Patch('registrations/:registrationId/notes')
   async updateRegistrationNotes(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -369,6 +388,7 @@ export class ShiftsController {
     return { data: registration };
   }
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post('shifts/:shiftId/registrations')
   async adminCreateRegistration(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -383,6 +403,7 @@ export class ShiftsController {
     return { data: registration };
   }
 
+  @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Patch('registrations/:registrationId')
   async adminUpdateRegistration(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

@@ -16,7 +16,8 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { OrganizationGuard } from '../../common/guards/organization.guard';
 import { User } from '../../database/entities';
 import { AssistantService } from './assistant.service';
@@ -80,6 +81,7 @@ export class AssistantController {
     };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Post('icon-suggestions')
   @ApiOperation({
     summary: 'Icon-Vorschläge aus @openeos/pos-icons für Produktnamen',

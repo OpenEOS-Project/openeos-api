@@ -13,7 +13,8 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ProductionStationsService } from './production-stations.service';
 import { CreateProductionStationDto, UpdateProductionStationDto } from './dto';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 
 @ApiTags('Production Stations')
@@ -24,6 +25,7 @@ export class ProductionStationsController {
     private readonly productionStationsService: ProductionStationsService,
   ) {}
 
+  @ApiTokenAccess(TokenScope.EVENTS_WRITE)
   @Post()
   async create(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -38,6 +40,7 @@ export class ProductionStationsController {
     return { data: station };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get()
   async findAll(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -50,6 +53,7 @@ export class ProductionStationsController {
     return { data: stations };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':stationId')
   async findOne(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -64,6 +68,7 @@ export class ProductionStationsController {
     return { data: station };
   }
 
+  @ApiTokenAccess(TokenScope.EVENTS_WRITE)
   @Patch(':stationId')
   async update(
     @Param('eventId', ParseUUIDPipe) eventId: string,
