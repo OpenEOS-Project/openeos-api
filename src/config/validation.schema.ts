@@ -111,8 +111,11 @@ export const validationSchema = Joi.object({
     .default('none'),
   ANTHROPIC_API_KEY: Joi.string().allow('').default(''),
   OPENAI_API_KEY: Joi.string().allow('').default(''),
+  // Leer (z. B. `${OPENAI_BASE_URL:-}` in docker-compose) gilt wie nicht
+  // gesetzt: configuration.ts faellt auf den Standard zurueck.
   OPENAI_BASE_URL: Joi.string()
     .uri({ scheme: ['http', 'https'] })
+    .allow('')
     .default('https://api.openai.com/v1'),
   AI_MODEL_EXTRACT: Joi.string().allow('').default(''),
   AI_MODEL_CLASSIFY: Joi.string().allow('').default(''),
