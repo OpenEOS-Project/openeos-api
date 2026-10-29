@@ -1,0 +1,196 @@
+import { DocumentBuilder, type OpenAPIObject } from '@nestjs/swagger';
+
+import { API_TOKEN_SECURITY_SCHEME } from '../decorators/api-token-access.decorator';
+import {
+  ORGANIZATION_TOKEN_SCOPES,
+  SCOPE_DESCRIPTIONS,
+} from '../../modules/api-tokens/api-scopes';
+import { API_TOKEN_LIMITS } from '../guards/api-token-throttler.guard';
+import { MAX_ACTIVE_TOKENS_PER_ORGANIZATION } from '../../modules/api-tokens/api-tokens.service';
+
+/** Oeffentliche Adresse des gehosteten Angebots. */
+export const PUBLIC_API_URL = 'https://api.openeos.de';
+
+/**
+ * Reihenfolge und Beschreibung der Tags — so erscheinen sie in Swagger UI
+ * und in der Doku-Seite (openeos-docs rendert `docs/openapi.json`).
+ * Zuerst, was ein API-Token erreicht; die Sitzungs-, Kassen- und
+ * Plattform-Endpunkte folgen.
+ */
+export const OPENAPI_TAGS: ReadonlyArray<[name: string, description: string]> =
+  [
+    [
+      'API Tokens',
+      'API-Tokens einer Organisation ausstellen und widerrufen (nur mit Anmeldung)',
+    ],
+    ['Organizations', 'Organisation, Mitglieder, Einladungen'],
+    ['Events', 'Veranstaltungen anlegen, bearbeiten, freischalten'],
+    ['Categories', 'Kategorien je Veranstaltung'],
+    ['Products', 'Produkte je Veranstaltung'],
+    ['Pfand Types', 'Pfandarten der Organisation'],
+    ['Tables', 'Bereiche, Tische und Tischplan'],
+    [
+      'Production Stations',
+      'Produktionsstationen (Küche, Ausgabe) je Veranstaltung',
+    ],
+    ['Print Templates', 'Bon-Vorlagen'],
+    ['Printers', 'Drucker, Drucker-Agenten und erkannte Drucker'],
+    ['Shift Plans', 'Schichtpläne, Jobs, Schichten, Helfer-Anmeldungen'],
+    ['Reports', 'Berichte und Auswertungen'],
+    ['Orders', 'Bestellungen'],
+    ['Devices', 'Kassen und Displays: verwalten, koppeln, registrieren'],
+    [
+      'Assistant',
+      'Assistent: Opt-in je Organisation, Speisekarten-Import, Icon-Vorschläge',
+    ],
+    ['Auth', 'Anmeldung, Registrierung, zweiter Faktor'],
+    ['Users', 'Eigenes Profil und Sitzungen'],
+    ['Payments', 'Zahlungen und Erstattungen'],
+    ['Discount Vouchers', 'Rabattgutscheine'],
+    ['Inventory', 'Inventur und Bestandsbewegungen'],
+    ['Print Jobs', 'Druckaufträge'],
+    ['QR Codes', 'QR-Codes'],
+    ['Uploads', 'Dateien hochladen'],
+    ['Invoices', 'Rechnungen der Organisation'],
+    [
+      'Event Billing',
+      'Freischaltung und Abrechnung von Veranstaltungen (SaaS)',
+    ],
+    ['SumUp', 'SumUp-Kartenleser'],
+    ['Support', 'Support-Nachrichten'],
+    ['Onboarding', 'Einrichtungsstatus'],
+    ['Online Orders', 'Öffentliche Online-Bestellung (Session-Token)'],
+    ['Shop (Public)', 'Öffentlicher Shop (Vorbestellung)'],
+    ['Shop Checkout (Public)', 'Bezahlung im öffentlichen Shop'],
+    ['Shifts (Public)', 'Öffentliche Helfer-Anmeldung'],
+    ['Device API', 'Kassen- und Display-Geräte (Geräte-Token)'],
+    ['Admin', 'Super-Admin (Plattform)'],
+    ['Admin Support', 'Super-Admin: Support-Nachrichten'],
+    ['Admin — Zuschriften', 'Super-Admin: Kontaktanfragen'],
+    ['Monitoring', 'Plattform-Kennzahlen (Super-Admin-Token)'],
+    ['Changelog', 'Öffentliches Änderungsprotokoll'],
+    ['Contact', 'Kontaktformular'],
+    ['Setup', 'Ersteinrichtung (Self-Hosting)'],
+    ['Internal', 'Interne Endpunkte (Deploy-Schutz)'],
+    ['Health', 'Health-Checks'],
+  ];
+
+function scopeList(): string {
+  return ORGANIZATION_TOKEN_SCOPES.map(
+    (scope) => `| \`${scope}\` | ${SCOPE_DESCRIPTIONS[scope]} |`,
+  ).join('\n');
+}
+
+function limitList(): string {
+  return API_TOKEN_LIMITS.map((grenze) =>
+    grenze.ttl <= 60 * 1000
+      ? `- ${grenze.limit} Aufrufe je Minute`
+      : `- ${grenze.limit} Aufrufe je Tag`,
+  ).join('\n');
+}
+
+/** Einleitung der API-Beschreibung (Markdown). */
+export function openApiDescription(): string {
+  return `
+OpenEOS ist ein Kassen- und Bestellsystem für Vereinsfeste. Diese Referenz beschreibt die REST-API unter \`${PUBLIC_API_URL}/api\` (selbst gehostet: \`https://<deine-api>/api\`).
+
+## Zugang mit API-Token
+
+Für Skripte, Automatisierungen (z. B. Zapier) und KI-Agenten (MCP) gibt es **API-Tokens je Organisation**. Ein Token wirkt wie die Person, die ihn ausgestellt hat — beschränkt auf eine Organisation, auf die gewählten Scopes und auf die hier mit *API-token* markierten Endpunkte. Alles andere (Kasse, Zahlungen, Mitglieder, Abrechnung, Löschen, Freischaltung) bleibt der Anmeldung in der App vorbehalten.
+
+**Token anlegen:** In der Web-App unter *Einstellungen → API-Zugänge* (Organisations-Admin) oder per \`POST /api/organizations/{organizationId}/api-tokens\` mit einer angemeldeten Sitzung. Der Token (\`oeos_…\`) wird genau einmal angezeigt; gespeichert wird nur ein Hash. Höchstens ${MAX_ACTIVE_TOKENS_PER_ORGANIZATION} aktive Tokens je Organisation.
+
+**Verwenden:** \`Authorization: Bearer oeos_…\` — derselbe Header wie für Sitzungs-JWTs. Welche Organisation gemeint ist, steht im Pfad; ein Token erreicht nur seine eigene (sonst \`403 API_TOKEN_WRONG_ORGANIZATION\`).
+
+### Scopes
+
+| Scope | Erlaubt |
+|---|---|
+${scopeList()}
+
+Schreib-Scopes schließen \`read\` nicht ein. Jeder Endpunkt nennt den nötigen Scope als \`x-api-token-scope\`; fehlt er am Token, antwortet die API mit \`403 API_TOKEN_SCOPE_MISSING\`, bei nicht freigegebenen Endpunkten mit \`403 API_TOKEN_NOT_ALLOWED\`.
+
+### Grenzen
+
+Je Token:
+${limitList()}
+
+Darüber hinaus \`429 API_TOKEN_RATE_LIMITED\` mit \`Retry-After\`. Zusätzlich gilt die allgemeine Grenze je IP-Adresse.
+
+### Fehler
+
+Jede Fehlerantwort hat die Form \`{ "error": { "code", "reason", "message", "params", "details", "requestId", "timestamp" } }\`. \`code\` ist die allgemeine Klasse (\`FORBIDDEN\`, \`NOT_FOUND\`, …), \`reason\` der konkrete Fall (\`API_TOKEN_SCOPE_MISSING\`, \`EVENT_NOT_FOUND\`, …).
+
+## Sitzungen (Web-App)
+
+Die Web-App meldet sich mit E-Mail/Passwort (\`POST /api/auth/login\`) an und erhält ein kurzlebiges Access-Token (JWT, \`Authorization: Bearer\`) sowie ein Refresh-Token als httpOnly-Cookie. Diese Endpunkte sind hier der Vollständigkeit halber dokumentiert; für Integrationen nimm ein API-Token.
+
+## Geräte
+
+Kassen und Displays sprechen \`/api/device-api/*\` mit einem Geräte-Token (\`X-Device-Token\`). Diese Endpunkte sind nicht für Integrationen gedacht.
+`.trim();
+}
+
+/**
+ * Die gemeinsame OpenAPI-Konfiguration fuer Swagger UI (Entwicklung) und
+ * fuer \`pnpm docs:generate\` (docs/openapi.json, von der Doku-Seite
+ * gerendert) — damit beide dasselbe zeigen.
+ */
+export function buildOpenApiConfig(): Omit<OpenAPIObject, 'paths'> {
+  const builder = new DocumentBuilder()
+    .setTitle('OpenEOS API')
+    .setDescription(openApiDescription())
+    .setVersion('1.0')
+    .setContact('OpenEOS', 'https://openeos.de', 'info@openeos.de')
+    .setLicense(
+      'AGPL-3.0-or-later',
+      'https://www.gnu.org/licenses/agpl-3.0.html',
+    )
+    .addServer(PUBLIC_API_URL, 'OpenEOS (gehostet)')
+    .addServer('http://localhost:3000', 'Lokale Entwicklung')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'oeos_…',
+        description:
+          'API-Token der Organisation (Einstellungen → API-Zugänge). ' +
+          'Erreicht nur die mit diesem Schema markierten Endpunkte, und ' +
+          'nur mit dem jeweils genannten Scope (`x-api-token-scope`).',
+      },
+      API_TOKEN_SECURITY_SCHEME,
+    )
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Access-Token einer angemeldeten Sitzung (Web-App)',
+      },
+      'JWT-auth',
+    )
+    .addApiKey(
+      {
+        type: 'apiKey',
+        name: 'X-Organization-Id',
+        in: 'header',
+        description: 'Organisation, falls nicht im Pfad',
+      },
+      'X-Organization-Id',
+    )
+    .addApiKey(
+      {
+        type: 'apiKey',
+        name: 'X-Session-Token',
+        in: 'header',
+        description: 'Session-Token der Online-Bestellung',
+      },
+      'X-Session-Token',
+    );
+
+  for (const [name, description] of OPENAPI_TAGS) {
+    builder.addTag(name, description);
+  }
+
+  return builder.build();
+}

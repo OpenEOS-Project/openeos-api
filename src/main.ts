@@ -5,7 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { join } from 'path';
@@ -20,6 +20,7 @@ import {
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 import { RedactSecretsInterceptor } from './common/interceptors/redact-secrets.interceptor';
 import { parseTrustProxy } from './common/utils/trust-proxy.util';
+import { buildOpenApiConfig } from './common/openapi/openapi-config';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -143,70 +144,15 @@ async function bootstrap() {
   const apiPrefix = configService.get<string>('apiPrefix') || 'api';
   app.setGlobalPrefix(apiPrefix);
 
-  // Swagger API Documentation
+  // Swagger UI — nur ausserhalb der Produktion. Die oeffentliche
+  // API-Referenz rendert die Doku-Seite (openeos-docs) aus docs/openapi.json,
+  // das `pnpm docs:generate` aus derselben Konfiguration erzeugt.
   const nodeEnv = configService.get<string>('nodeEnv');
   if (nodeEnv !== 'production') {
-    const swaggerConfig = new DocumentBuilder()
-      .setTitle('OpenEOS API')
-      .setDescription('Open Event Ordering System - REST API Documentation')
-      .setVersion('1.0')
-      .addBearerAuth(
-        {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-          name: 'JWT',
-          description: 'Enter JWT token',
-          in: 'header',
-        },
-        'JWT-auth',
-      )
-      .addApiKey(
-        {
-          type: 'apiKey',
-          name: 'X-Organization-Id',
-          in: 'header',
-          description: 'Organization ID for multi-tenant requests',
-        },
-        'X-Organization-Id',
-      )
-      .addApiKey(
-        {
-          type: 'apiKey',
-          name: 'X-Session-Token',
-          in: 'header',
-          description: 'Session token for online orders',
-        },
-        'X-Session-Token',
-      )
-      .addTag('Auth', 'Authentication endpoints')
-      .addTag('Organizations', 'Organization management')
-      .addTag('Events', 'Event management')
-      .addTag('Categories', 'Product category management')
-      .addTag('Products', 'Product management')
-      .addTag('Orders', 'Order management')
-      .addTag('Payments', 'Payment processing')
-      .addTag('Devices', 'Device management')
-      .addTag('Printers', 'Printer management')
-      .addTag('Print Templates', 'Print template management')
-      .addTag('Print Jobs', 'Print job management')
-      .addTag('QR Codes', 'QR code generation and management')
-      .addTag('Online Orders', 'Public online ordering endpoints')
-      .addTag('Credits', 'Credit management')
-      .addTag('Invoices', 'Invoice management')
-      .addTag('Admin', 'Super admin endpoints')
-      .addTag('Reports', 'Reporting and analytics')
-      .addTag('Uploads', 'File upload management')
-      .addTag('Inventory', 'Inventory and stock management')
-      .addTag(
-        'Assistant',
-        'Assistent: Opt-in je Organisation, Speisekarten-Import, Icon-Vorschläge',
-      )
-      .addTag('Health', 'Health check endpoints')
-      .build();
-
-    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    const document = SwaggerModule.createDocument(app, buildOpenApiConfig());
     SwaggerModule.setup('docs', app, document, {
+      jsonDocumentUrl: 'docs-json',
+      yamlDocumentUrl: 'docs-yaml',
       swaggerOptions: {
         persistAuthorization: true,
         docExpansion: 'none',

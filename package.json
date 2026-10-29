@@ -26,6 +26,7 @@
     "migration:run:prod": "node node_modules/typeorm/cli.js migration:run -d dist/src/config/data-source.js",
     "seed": "ts-node -r tsconfig-paths/register src/database/seeds/seed.ts",
     "docs:generate": "ts-node -r tsconfig-paths/register scripts/generate-openapi.ts",
+    "docs:check": "ts-node -r tsconfig-paths/register scripts/generate-openapi.ts --check",
     "lint:fix": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "icons:sync": "ts-node -r tsconfig-paths/register scripts/sync-pos-icon-index.ts && prettier --write src/modules/assistant/icons/pos-icon-index.ts"
   },
@@ -108,7 +109,8 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.20.0"
+    "typescript-eslint": "^8.20.0",
+    "yaml": "^2.8.1"
   },
   "jest": {
     "moduleFileExtensions": [

@@ -85,7 +85,27 @@ Im Development-Modus (`NODE_ENV` ≠ `production`) ist die interaktive API-Dokum
 http://localhost:3000/docs
 ```
 
-In Produktion wird `/docs` derzeit nicht ausgeliefert; die generierte Spezifikation liegt unter `docs/openapi.json` / `docs/openapi.yaml` (`pnpm docs:generate`, braucht eine erreichbare Datenbank und Redis).
+(Rohe Spezifikation: `/docs-json`, `/docs-yaml`.) In Produktion wird `/docs` nicht ausgeliefert; die öffentliche API-Referenz rendert die Doku-Seite (openeos-docs) aus der eingecheckten Spezifikation `docs/openapi.json` / `docs/openapi.yaml`.
+
+Beide entstehen aus derselben Konfiguration wie Swagger UI (`src/common/openapi/openapi-config.ts`, Einleitung, Sicherheitsschemata, Tag-Reihenfolge):
+
+```bash
+pnpm docs:generate   # schreibt docs/openapi.json und docs/openapi.yaml
+pnpm docs:check      # Exit 1, wenn die eingecheckte Fassung nicht zum Code passt (läuft in CI)
+```
+
+Beide brauchen eine erreichbare Datenbank und Redis (`docker compose up -d postgres redis`), weil `AppModule` beim Start verbindet. Nach jeder Änderung an Controllern oder DTOs: `pnpm docs:generate` und das Ergebnis mit committen.
+
+### API-Zugänge (API-Tokens)
+
+Für Skripte, Automatisierungen und KI-Agenten (MCP) gibt es API-Tokens je Organisation (Details und Matrix: `ki-plan.md`, Abschnitt 8).
+
+- **Anlegen:** `POST /api/organizations/:organizationId/api-tokens` `{ name, scopes[], expiresAt? }` — nur Organisations-Admins, nur mit Anmeldung (JWT). Antwort enthält `token` (`oeos_…`) genau einmal; gespeichert wird nur der SHA-256-Hash. Höchstens 20 aktive Tokens je Organisation. `GET …/api-tokens` listet (ohne Geheimnis), `DELETE …/api-tokens/:id` widerruft. Beides schreibt ins Audit-Log (`api_token_created`, `api_token_revoked`).
+- **Verwenden:** `Authorization: Bearer oeos_…` — derselbe Header wie für Sitzungs-JWTs; der `JwtAuthGuard` erkennt Tokens am Präfix.
+- **Scopes** (`TokenScope` in `src/modules/api-tokens/api-scopes.ts`): `read`, `catalog:write`, `events:write`, `tables:write`, `staff:write`, `devices:write`, `settings:write`. Schreib-Scopes schließen `read` nicht ein. Super-Admin-Tokens (`/api/admin/api-tokens`) tragen nur `monitoring:read`.
+- **Regeln im Guard:** Ein Token wirkt wie sein Besitzer (Rolle und Modul-Berechtigungen gelten weiter), aber nur in seiner Organisation (`403 API_TOKEN_WRONG_ORGANIZATION`), nur an Endpunkten mit `@ApiTokenAccess(scope)` (`403 API_TOKEN_NOT_ALLOWED`) und nur mit passendem Scope (`403 API_TOKEN_SCOPE_MISSING`). Verlässt der Besitzer die Organisation, ist der Token wertlos (`401 API_TOKEN_INVALID`). Es gibt keine Freigaben für Kasse, Zahlungen, Mitglieder, Abrechnung, Löschen oder Freischaltung — `api-token-allowlist.spec.ts` prüft das und hält die Matrix als Snapshot.
+- **Rate-Limit je Token:** 120 Aufrufe/min, 5 000/Tag (`ApiTokenThrottlerGuard`, Zähler je Instanz; `429 API_TOKEN_RATE_LIMITED`).
+- **Neuen Endpunkt freigeben:** `@ApiTokenAccess(TokenScope.…)` an den Handler; der Decorator trägt zugleich das Sicherheitsschema und `x-api-token-scope` in die OpenAPI-Beschreibung ein. Danach `pnpm docs:generate` und den Snapshot aktualisieren.
 
 ### Projektstruktur
 

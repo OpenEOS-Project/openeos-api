@@ -43,7 +43,7 @@
         ],
         "summary": "List your API tokens (never the secrets)",
         "tags": [
-          "API-Tokens"
+          "Admin"
         ]
       },
       "post": {
@@ -72,7 +72,7 @@
         ],
         "summary": "Issue an API token",
         "tags": [
-          "API-Tokens"
+          "Admin"
         ]
       }
     },
@@ -101,7 +101,120 @@
         ],
         "summary": "Revoke a token",
         "tags": [
-          "API-Tokens"
+          "Admin"
+        ]
+      }
+    },
+    "/api/organizations/{organizationId}/api-tokens": {
+      "get": {
+        "description": "All tokens of the organization, including revoked and expired ones, newest first. `tokenPrefix` is the only part of the secret that is ever shown again.",
+        "operationId": "OrganizationApiTokensController_list",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List the organization’s API tokens (never the secrets)",
+        "tags": [
+          "API Tokens"
+        ]
+      },
+      "post": {
+        "description": "The secret (`token`, `oeos_…`) is returned exactly once, here. It is stored only as a SHA-256 hash, so a lost token cannot be recovered — revoke it and issue a new one. At most 20 active tokens per organization (409 `API_TOKEN_LIMIT_REACHED`).",
+        "operationId": "OrganizationApiTokensController_create",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganizationApiTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token issued; `data.token` holds the secret"
+          },
+          "409": {
+            "description": "API_TOKEN_LIMIT_REACHED"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Issue an API token",
+        "tags": [
+          "API Tokens"
+        ]
+      }
+    },
+    "/api/organizations/{organizationId}/api-tokens/{id}": {
+      "delete": {
+        "description": "Revoked, not deleted: the entry stays in the list with `revokedAt` set. Any admin of the organization may revoke any of its tokens.",
+        "operationId": "OrganizationApiTokensController_revoke",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Revoke a token",
+        "tags": [
+          "API Tokens"
         ]
       }
     },
@@ -118,12 +231,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Platform counters for monitoring",
         "tags": [
           "Monitoring"
-        ]
+        ],
+        "x-api-token-scope": "monitoring:read"
       }
     },
     "/api/auth/register": {
@@ -1482,11 +1599,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Organizations"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "patch": {
         "operationId": "OrganizationsController_update",
@@ -1518,11 +1639,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Organizations"
-        ]
+        ],
+        "x-api-token-scope": "settings:write"
       },
       "delete": {
         "operationId": "OrganizationsController_remove",
@@ -2196,11 +2321,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Devices"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/devices/{deviceId}": {
@@ -2232,11 +2361,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Devices"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "patch": {
         "operationId": "DevicesController_update",
@@ -2500,11 +2633,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Devices"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/devices/online/ids": {
@@ -2528,11 +2665,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Devices"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/devices/init": {
@@ -4026,11 +4167,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Printers"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/printers/{printerId}": {
@@ -4062,11 +4207,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Printers"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "patch": {
         "operationId": "PrintersController_update",
@@ -4804,11 +4953,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Orders"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/orders/stats": {
@@ -4983,11 +5136,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Orders"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/orders/{orderId}": {
@@ -5019,11 +5176,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Orders"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "patch": {
         "operationId": "OrdersController_update",
@@ -6129,11 +6290,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Pfand Types"
-        ]
+        ],
+        "x-api-token-scope": "catalog:write"
       },
       "get": {
         "operationId": "PfandTypesController_findAll",
@@ -6155,11 +6320,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Pfand Types"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/pfand-types/{pfandTypeId}": {
@@ -6191,11 +6360,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Pfand Types"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "patch": {
         "operationId": "PfandTypesController_update",
@@ -6235,11 +6408,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Pfand Types"
-        ]
+        ],
+        "x-api-token-scope": "catalog:write"
       },
       "delete": {
         "operationId": "PfandTypesController_remove",
@@ -6297,12 +6474,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Bereiche inkl. Tische (aktiv und inaktiv)",
         "tags": [
           "Tables"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "post": {
         "operationId": "TablesController_createArea",
@@ -6334,12 +6515,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Bereich anlegen",
         "tags": [
           "Tables"
-        ]
+        ],
+        "x-api-token-scope": "tables:write"
       }
     },
     "/api/organizations/{organizationId}/table-areas/order": {
@@ -6373,12 +6558,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Bereiche sortieren",
         "tags": [
           "Tables"
-        ]
+        ],
+        "x-api-token-scope": "tables:write"
       }
     },
     "/api/organizations/{organizationId}/table-areas/{areaId}": {
@@ -6420,12 +6609,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Bereich ändern (Name, Größe, Raster, Deko)",
         "tags": [
           "Tables"
-        ]
+        ],
+        "x-api-token-scope": "tables:write"
       },
       "delete": {
         "operationId": "TablesController_removeArea",
@@ -6502,12 +6695,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Karte eines Bereichs speichern (Autosave)",
         "tags": [
           "Tables"
-        ]
+        ],
+        "x-api-token-scope": "tables:write"
       }
     },
     "/api/organizations/{organizationId}/tables": {
@@ -6541,12 +6738,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Tisch anlegen",
         "tags": [
           "Tables"
-        ]
+        ],
+        "x-api-token-scope": "tables:write"
       }
     },
     "/api/organizations/{organizationId}/tables/bulk": {
@@ -6580,12 +6781,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Serie anlegen (z. B. A01–A12)",
         "tags": [
           "Tables"
-        ]
+        ],
+        "x-api-token-scope": "tables:write"
       }
     },
     "/api/organizations/{organizationId}/tables/{tableId}": {
@@ -6627,12 +6832,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Tisch ändern, umbenennen oder verschieben",
         "tags": [
           "Tables"
-        ]
+        ],
+        "x-api-token-scope": "tables:write"
       },
       "delete": {
         "operationId": "TablesController_removeTable",
@@ -6701,11 +6910,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Events"
-        ]
+        ],
+        "x-api-token-scope": "events:write"
       },
       "get": {
         "operationId": "EventsController_findAll",
@@ -6727,11 +6940,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Events"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/events/active": {
@@ -6755,12 +6972,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Liefert das aktuell aktive oder im Test-Modus befindliche Event der Organisation (oder null)",
         "tags": [
           "Events"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/events/{eventId}": {
@@ -6792,11 +7013,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Events"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "patch": {
         "operationId": "EventsController_update",
@@ -6836,11 +7061,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Events"
-        ]
+        ],
+        "x-api-token-scope": "events:write"
       },
       "delete": {
         "operationId": "EventsController_remove",
@@ -7035,12 +7264,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Kopiert Kategorien und Produkte von einem anderen Event",
         "tags": [
           "Events"
-        ]
+        ],
+        "x-api-token-scope": "events:write"
       }
     },
     "/api/public/shop/{eventId}": {
@@ -7563,11 +7796,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Categories"
-        ]
+        ],
+        "x-api-token-scope": "catalog:write"
       },
       "get": {
         "operationId": "CategoriesController_findAll",
@@ -7589,11 +7826,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Categories"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/events/{eventId}/categories/{categoryId}": {
@@ -7625,11 +7866,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Categories"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "patch": {
         "operationId": "CategoriesController_update",
@@ -7669,11 +7914,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Categories"
-        ]
+        ],
+        "x-api-token-scope": "catalog:write"
       },
       "delete": {
         "operationId": "CategoriesController_remove",
@@ -7741,11 +7990,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Categories"
-        ]
+        ],
+        "x-api-token-scope": "catalog:write"
       }
     },
     "/api/events/{eventId}/products": {
@@ -7779,11 +8032,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Products"
-        ]
+        ],
+        "x-api-token-scope": "catalog:write"
       },
       "get": {
         "operationId": "ProductsController_findAll",
@@ -7805,11 +8062,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Products"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/events/{eventId}/products/import": {
@@ -7843,11 +8104,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Products"
-        ]
+        ],
+        "x-api-token-scope": "catalog:write"
       }
     },
     "/api/events/{eventId}/products/low-stock": {
@@ -7871,11 +8136,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Products"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/events/{eventId}/products/{productId}": {
@@ -7907,11 +8176,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Products"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "patch": {
         "operationId": "ProductsController_update",
@@ -7951,11 +8224,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Products"
-        ]
+        ],
+        "x-api-token-scope": "catalog:write"
       },
       "delete": {
         "operationId": "ProductsController_remove",
@@ -8021,11 +8298,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Products"
-        ]
+        ],
+        "x-api-token-scope": "catalog:write"
       }
     },
     "/api/events/{eventId}/products/{productId}/stock/adjust": {
@@ -8381,11 +8662,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Print Templates"
-        ]
+        ],
+        "x-api-token-scope": "devices:write"
       },
       "get": {
         "operationId": "PrintTemplatesController_findAll",
@@ -8407,11 +8692,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Print Templates"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/print-templates/{templateId}": {
@@ -8443,11 +8732,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Print Templates"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "patch": {
         "operationId": "PrintTemplatesController_update",
@@ -8487,11 +8780,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Print Templates"
-        ]
+        ],
+        "x-api-token-scope": "devices:write"
       },
       "delete": {
         "operationId": "PrintTemplatesController_remove",
@@ -8557,11 +8854,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Print Templates"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/qr-codes": {
@@ -9950,7 +10251,9 @@
                 "event_invoice_marked_paid",
                 "assistant_enabled",
                 "assistant_disabled",
-                "menu_import_applied"
+                "menu_import_applied",
+                "api_token_created",
+                "api_token_revoked"
               ]
             }
           },
@@ -10640,11 +10943,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/products": {
@@ -10708,11 +11015,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/payments": {
@@ -10776,11 +11087,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/hourly": {
@@ -10844,11 +11159,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/channels": {
@@ -10912,11 +11231,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/categories": {
@@ -10980,11 +11303,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/net-summary": {
@@ -11049,12 +11376,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Abgleich Produkte/Kategorien mit dem Umsatz netto",
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/devices": {
@@ -11118,11 +11449,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/inventory": {
@@ -11137,11 +11472,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/stock-movements": {
@@ -11205,11 +11544,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/export": {
@@ -11296,11 +11639,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/system-status": {
@@ -11315,11 +11662,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/reports/activity": {
@@ -11334,11 +11685,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Reports"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/events/{eventId}/inventory/counts": {
@@ -12127,11 +12482,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       },
       "get": {
         "operationId": "ShiftsController_findAllPlans",
@@ -12153,11 +12512,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/{planId}": {
@@ -12189,11 +12552,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "patch": {
         "operationId": "ShiftsController_updatePlan",
@@ -12233,11 +12600,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       },
       "delete": {
         "operationId": "ShiftsController_deletePlan",
@@ -12303,11 +12674,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/{planId}/close": {
@@ -12339,11 +12714,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/{planId}/export/pdf": {
@@ -12375,11 +12754,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/{planId}/jobs": {
@@ -12421,11 +12804,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       },
       "get": {
         "operationId": "ShiftsController_findAllJobs",
@@ -12455,11 +12842,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/jobs/{jobId}": {
@@ -12501,11 +12892,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       },
       "delete": {
         "operationId": "ShiftsController_deleteJob",
@@ -12581,11 +12976,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       },
       "get": {
         "operationId": "ShiftsController_findAllShifts",
@@ -12615,11 +13014,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/jobs/{jobId}/shifts/bulk": {
@@ -12651,11 +13054,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/shifts/{shiftId}": {
@@ -12697,11 +13104,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       },
       "delete": {
         "operationId": "ShiftsController_deleteShift",
@@ -12767,11 +13178,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/approve": {
@@ -12813,11 +13228,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/reject": {
@@ -12859,11 +13278,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/message": {
@@ -13031,11 +13454,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/one": {
@@ -13149,11 +13576,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/shifts/{shiftId}/registrations": {
@@ -13195,11 +13626,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Shift Plans"
-        ]
+        ],
+        "x-api-token-scope": "staff:write"
       }
     },
     "/api/organizations/{organizationId}/shift-plans/registration-groups/{registrationGroupId}/propose": {
@@ -13527,11 +13962,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Production Stations"
-        ]
+        ],
+        "x-api-token-scope": "events:write"
       },
       "get": {
         "operationId": "ProductionStationsController_findAll",
@@ -13553,11 +13992,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Production Stations"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/events/{eventId}/production-stations/{stationId}": {
@@ -13589,11 +14032,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Production Stations"
-        ]
+        ],
+        "x-api-token-scope": "read"
       },
       "patch": {
         "operationId": "ProductionStationsController_update",
@@ -13633,11 +14080,15 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "tags": [
           "Production Stations"
-        ]
+        ],
+        "x-api-token-scope": "events:write"
       },
       "delete": {
         "operationId": "ProductionStationsController_remove",
@@ -14047,12 +14498,16 @@
         "security": [
           {
             "JWT-auth": []
+          },
+          {
+            "API-token": []
           }
         ],
         "summary": "Icon-Vorschläge aus @openeos/pos-icons für Produktnamen",
         "tags": [
           "Assistant"
-        ]
+        ],
+        "x-api-token-scope": "read"
       }
     },
     "/api/organizations/{organizationId}/events/{eventId}/menu-imports": {
@@ -14300,139 +14755,223 @@
   },
   "info": {
     "title": "OpenEOS API",
-    "description": "\n# OpenEOS API Documentation\n\nOpen Event Ordering System - REST API für Kassensysteme bei Vereinen und Veranstaltungen.\n\n## Authentifizierung\n\nDie API verwendet JWT Bearer Tokens für die Authentifizierung. Nach dem Login erhältst du einen Access Token (30 Min gültig) und einen Refresh Token (7 Tage, als httpOnly Cookie).\n\n### Endpoints ohne Authentifizierung\n- `POST /api/auth/register` - Registrierung\n- `POST /api/auth/login` - Login\n- `POST /api/auth/refresh` - Token erneuern\n- `POST /api/auth/forgot-password` - Passwort vergessen\n- `POST /api/auth/reset-password` - Passwort zurücksetzen\n- `GET /api/health/*` - Health Checks\n- `GET /api/invitations/:token` - Einladung abrufen\n- `/api/public/order/*` - Online-Bestellungen (mit Session-Token)\n\n## Multi-Tenant\n\nDie API ist multi-tenant-fähig. Die meisten Endpoints erfordern eine `organizationId` im Pfad.\n\n## Rollen\n\n- **ADMIN** - Vollzugriff auf Organisation\n- **MANAGER** - Verwaltung von Produkten, Events, Bestellungen\n- **CASHIER** - Kassen-Operationen\n- **KITCHEN** - Küchen-Display\n- **DELIVERY** - Ausgabe-Display\n\n## WebSocket\n\nReal-time Updates über Socket.io unter `/` mit Namespaces:\n- `/pos` - Kassen-Clients\n- `/display` - Küchen/Ausgabe-Displays\n- `/printer` - Drucker-Agenten\n- `/admin` - Admin-Dashboard\n    ",
-    "version": "1.0.0",
+    "description": "OpenEOS ist ein Kassen- und Bestellsystem für Vereinsfeste. Diese Referenz beschreibt die REST-API unter `https://api.openeos.de/api` (selbst gehostet: `https://<deine-api>/api`).\n\n## Zugang mit API-Token\n\nFür Skripte, Automatisierungen (z. B. Zapier) und KI-Agenten (MCP) gibt es **API-Tokens je Organisation**. Ein Token wirkt wie die Person, die ihn ausgestellt hat — beschränkt auf eine Organisation, auf die gewählten Scopes und auf die hier mit *API-token* markierten Endpunkte. Alles andere (Kasse, Zahlungen, Mitglieder, Abrechnung, Löschen, Freischaltung) bleibt der Anmeldung in der App vorbehalten.\n\n**Token anlegen:** In der Web-App unter *Einstellungen → API-Zugänge* (Organisations-Admin) oder per `POST /api/organizations/{organizationId}/api-tokens` mit einer angemeldeten Sitzung. Der Token (`oeos_…`) wird genau einmal angezeigt; gespeichert wird nur ein Hash. Höchstens 20 aktive Tokens je Organisation.\n\n**Verwenden:** `Authorization: Bearer oeos_…` — derselbe Header wie für Sitzungs-JWTs. Welche Organisation gemeint ist, steht im Pfad; ein Token erreicht nur seine eigene (sonst `403 API_TOKEN_WRONG_ORGANIZATION`).\n\n### Scopes\n\n| Scope | Erlaubt |\n|---|---|\n| `read` | Organisation, Veranstaltungen, Kategorien, Produkte, Pfandarten, Tische, Stationen, Bon-Vorlagen, Drucker, Schichtpläne, Geräte, Berichte und Bestellungen lesen |\n| `catalog:write` | Kategorien, Produkte und Pfandarten anlegen und ändern |\n| `events:write` | Veranstaltungen und Produktionsstationen anlegen und ändern (keine Freischaltung) |\n| `tables:write` | Bereiche, Tische und Tischplan bearbeiten |\n| `staff:write` | Schichtpläne, Jobs, Schichten und Helfer-Anmeldungen bearbeiten |\n| `devices:write` | Bon-Vorlagen anlegen und ändern |\n| `settings:write` | Organisationseinstellungen ändern |\n\nSchreib-Scopes schließen `read` nicht ein. Jeder Endpunkt nennt den nötigen Scope als `x-api-token-scope`; fehlt er am Token, antwortet die API mit `403 API_TOKEN_SCOPE_MISSING`, bei nicht freigegebenen Endpunkten mit `403 API_TOKEN_NOT_ALLOWED`.\n\n### Grenzen\n\nJe Token:\n- 120 Aufrufe je Minute\n- 5000 Aufrufe je Tag\n\nDarüber hinaus `429 API_TOKEN_RATE_LIMITED` mit `Retry-After`. Zusätzlich gilt die allgemeine Grenze je IP-Adresse.\n\n### Fehler\n\nJede Fehlerantwort hat die Form `{ \"error\": { \"code\", \"reason\", \"message\", \"params\", \"details\", \"requestId\", \"timestamp\" } }`. `code` ist die allgemeine Klasse (`FORBIDDEN`, `NOT_FOUND`, …), `reason` der konkrete Fall (`API_TOKEN_SCOPE_MISSING`, `EVENT_NOT_FOUND`, …).\n\n## Sitzungen (Web-App)\n\nDie Web-App meldet sich mit E-Mail/Passwort (`POST /api/auth/login`) an und erhält ein kurzlebiges Access-Token (JWT, `Authorization: Bearer`) sowie ein Refresh-Token als httpOnly-Cookie. Diese Endpunkte sind hier der Vollständigkeit halber dokumentiert; für Integrationen nimm ein API-Token.\n\n## Geräte\n\nKassen und Displays sprechen `/api/device-api/*` mit einem Geräte-Token (`X-Device-Token`). Diese Endpunkte sind nicht für Integrationen gedacht.",
+    "version": "1.0",
     "contact": {
       "name": "OpenEOS",
-      "url": "https://github.com/openeos",
+      "url": "https://openeos.de",
       "email": "info@openeos.de"
     },
     "license": {
-      "name": "MIT",
-      "url": "https://opensource.org/licenses/MIT"
+      "name": "AGPL-3.0-or-later",
+      "url": "https://www.gnu.org/licenses/agpl-3.0.html"
     }
   },
   "tags": [
     {
-      "name": "Auth",
-      "description": "Authentication and authorization endpoints"
+      "name": "API Tokens",
+      "description": "API-Tokens einer Organisation ausstellen und widerrufen (nur mit Anmeldung)"
     },
     {
       "name": "Organizations",
-      "description": "Organization management and member handling"
+      "description": "Organisation, Mitglieder, Einladungen"
     },
     {
       "name": "Events",
-      "description": "Event management and lifecycle"
+      "description": "Veranstaltungen anlegen, bearbeiten, freischalten"
     },
     {
       "name": "Categories",
-      "description": "Product category management with hierarchy support"
+      "description": "Kategorien je Veranstaltung"
     },
     {
       "name": "Products",
-      "description": "Product management and stock control"
+      "description": "Produkte je Veranstaltung"
     },
     {
-      "name": "Orders",
-      "description": "Order management and item handling"
+      "name": "Pfand Types",
+      "description": "Pfandarten der Organisation"
     },
     {
-      "name": "Payments",
-      "description": "Payment processing including split payments"
+      "name": "Tables",
+      "description": "Bereiche, Tische und Tischplan"
     },
     {
-      "name": "Devices",
-      "description": "POS device management"
-    },
-    {
-      "name": "Printers",
-      "description": "Printer configuration and management"
+      "name": "Production Stations",
+      "description": "Produktionsstationen (Küche, Ausgabe) je Veranstaltung"
     },
     {
       "name": "Print Templates",
-      "description": "Print template management"
+      "description": "Bon-Vorlagen"
     },
     {
-      "name": "Print Jobs",
-      "description": "Print job queue management"
+      "name": "Printers",
+      "description": "Drucker, Drucker-Agenten und erkannte Drucker"
     },
     {
-      "name": "Workflows",
-      "description": "Workflow engine for automation"
-    },
-    {
-      "name": "QR Codes",
-      "description": "QR code generation and management"
-    },
-    {
-      "name": "Online Orders",
-      "description": "Public online ordering endpoints"
-    },
-    {
-      "name": "Credits",
-      "description": "Credit/token management for SaaS billing"
-    },
-    {
-      "name": "Invoices",
-      "description": "Invoice management"
-    },
-    {
-      "name": "Admin",
-      "description": "Super admin endpoints"
+      "name": "Shift Plans",
+      "description": "Schichtpläne, Jobs, Schichten, Helfer-Anmeldungen"
     },
     {
       "name": "Reports",
-      "description": "Reporting and analytics"
+      "description": "Berichte und Auswertungen"
     },
     {
-      "name": "Uploads",
-      "description": "File upload management"
+      "name": "Orders",
+      "description": "Bestellungen"
     },
     {
-      "name": "Inventory",
-      "description": "Inventory and stock management"
+      "name": "Devices",
+      "description": "Kassen und Displays: verwalten, koppeln, registrieren"
     },
     {
       "name": "Assistant",
       "description": "Assistent: Opt-in je Organisation, Speisekarten-Import, Icon-Vorschläge"
     },
     {
+      "name": "Auth",
+      "description": "Anmeldung, Registrierung, zweiter Faktor"
+    },
+    {
+      "name": "Users",
+      "description": "Eigenes Profil und Sitzungen"
+    },
+    {
+      "name": "Payments",
+      "description": "Zahlungen und Erstattungen"
+    },
+    {
+      "name": "Discount Vouchers",
+      "description": "Rabattgutscheine"
+    },
+    {
+      "name": "Inventory",
+      "description": "Inventur und Bestandsbewegungen"
+    },
+    {
+      "name": "Print Jobs",
+      "description": "Druckaufträge"
+    },
+    {
+      "name": "QR Codes",
+      "description": "QR-Codes"
+    },
+    {
+      "name": "Uploads",
+      "description": "Dateien hochladen"
+    },
+    {
+      "name": "Invoices",
+      "description": "Rechnungen der Organisation"
+    },
+    {
+      "name": "Event Billing",
+      "description": "Freischaltung und Abrechnung von Veranstaltungen (SaaS)"
+    },
+    {
+      "name": "SumUp",
+      "description": "SumUp-Kartenleser"
+    },
+    {
+      "name": "Support",
+      "description": "Support-Nachrichten"
+    },
+    {
+      "name": "Onboarding",
+      "description": "Einrichtungsstatus"
+    },
+    {
+      "name": "Online Orders",
+      "description": "Öffentliche Online-Bestellung (Session-Token)"
+    },
+    {
+      "name": "Shop (Public)",
+      "description": "Öffentlicher Shop (Vorbestellung)"
+    },
+    {
+      "name": "Shop Checkout (Public)",
+      "description": "Bezahlung im öffentlichen Shop"
+    },
+    {
+      "name": "Shifts (Public)",
+      "description": "Öffentliche Helfer-Anmeldung"
+    },
+    {
+      "name": "Device API",
+      "description": "Kassen- und Display-Geräte (Geräte-Token)"
+    },
+    {
+      "name": "Admin",
+      "description": "Super-Admin (Plattform)"
+    },
+    {
+      "name": "Admin Support",
+      "description": "Super-Admin: Support-Nachrichten"
+    },
+    {
+      "name": "Admin — Zuschriften",
+      "description": "Super-Admin: Kontaktanfragen"
+    },
+    {
+      "name": "Monitoring",
+      "description": "Plattform-Kennzahlen (Super-Admin-Token)"
+    },
+    {
+      "name": "Changelog",
+      "description": "Öffentliches Änderungsprotokoll"
+    },
+    {
+      "name": "Contact",
+      "description": "Kontaktformular"
+    },
+    {
+      "name": "Setup",
+      "description": "Ersteinrichtung (Self-Hosting)"
+    },
+    {
+      "name": "Internal",
+      "description": "Interne Endpunkte (Deploy-Schutz)"
+    },
+    {
       "name": "Health",
-      "description": "Health check endpoints"
+      "description": "Health-Checks"
     }
   ],
   "servers": [
     {
-      "url": "http://localhost:3000",
-      "description": "Development"
+      "url": "https://api.openeos.de",
+      "description": "OpenEOS (gehostet)"
     },
     {
-      "url": "https://api.openeos.de",
-      "description": "Production"
+      "url": "http://localhost:3000",
+      "description": "Lokale Entwicklung"
     }
   ],
   "components": {
     "securitySchemes": {
+      "API-token": {
+        "scheme": "bearer",
+        "bearerFormat": "oeos_…",
+        "type": "http",
+        "description": "API-Token der Organisation (Einstellungen → API-Zugänge). Erreicht nur die mit diesem Schema markierten Endpunkte, und nur mit dem jeweils genannten Scope (`x-api-token-scope`)."
+      },
       "JWT-auth": {
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "type": "http",
-        "name": "JWT",
-        "description": "Enter JWT token",
-        "in": "header"
+        "description": "Access-Token einer angemeldeten Sitzung (Web-App)"
       },
       "X-Organization-Id": {
         "type": "apiKey",
         "in": "header",
         "name": "X-Organization-Id",
-        "description": "Organization ID for multi-tenant requests"
+        "description": "Organisation, falls nicht im Pfad"
       },
       "X-Session-Token": {
         "type": "apiKey",
         "in": "header",
         "name": "X-Session-Token",
-        "description": "Session token for online orders"
+        "description": "Session-Token der Online-Bestellung"
       }
     },
     "schemas": {
@@ -14458,7 +14997,48 @@
           },
           "expiresAt": {
             "type": "string",
-            "description": "Ohne Angabe läuft der Token nicht ab"
+            "description": "Ohne Angabe läuft der Token nicht ab",
+            "example": "2027-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "name",
+          "scopes"
+        ]
+      },
+      "CreateOrganizationApiTokenDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Claude Desktop",
+            "description": "Wofür der Token gedacht ist — erscheint in der Übersicht",
+            "maxLength": 100
+          },
+          "scopes": {
+            "type": "array",
+            "example": [
+              "read",
+              "catalog:write"
+            ],
+            "description": "Was der Token darf. Schreib-Scopes schließen `read` nicht ein — wer lesen und schreiben will, gibt beides an.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "catalog:write",
+                "events:write",
+                "tables:write",
+                "staff:write",
+                "devices:write",
+                "settings:write"
+              ]
+            }
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "ISO-8601. Ohne Angabe läuft der Token nicht ab",
+            "example": "2027-01-01T00:00:00.000Z"
           }
         },
         "required": [
