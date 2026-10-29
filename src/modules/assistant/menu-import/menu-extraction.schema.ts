@@ -17,6 +17,7 @@ import {
   validateSync,
 } from 'class-validator';
 import { Type, plainToInstance } from 'class-transformer';
+import { AiProviderError } from '../../ai/ai-provider.error';
 
 /**
  * Was das Modell aus einer Speisekarte liefert — das Schema der
@@ -209,14 +210,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Hinweis im Vorschlag, wenn das Modell kein einziges Produkt gefunden hat. */
+export const NO_PRODUCTS_WARNING =
+  'Auf der Speisekarte wurden keine Produkte erkannt.';
+
 /**
  * Prueft die Modellantwort und behaelt, was gueltig ist. Ungueltige
- * Produkte und Kategorien fallen mit einem Hinweis in `warnings` weg;
- * ohne ein einziges gueltiges Produkt wirft die Funktion.
+ * Produkte und Kategorien fallen mit einem Hinweis in `warnings` weg.
+ * Kein einziges gueltiges Produkt ist kein Fehler: der Aufruf hat
+ * stattgefunden und wird abgerechnet, der Vorschlag ist leer und traegt
+ * `NO_PRODUCTS_WARNING`. Nur eine Antwort, die kein Objekt ist, wirft.
  */
 export function validateExtraction(raw: unknown): RawMenuExtraction {
   if (!isRecord(raw)) {
-    throw new Error('Das Modell hat kein Objekt geliefert');
+    throw new AiProviderError(
+      'Das Modell hat kein Objekt geliefert',
+      undefined,
+      false,
+      'invalid_output',
+    );
   }
   const warnings: string[] = [];
   const rawCategories = Array.isArray(raw.categories) ? raw.categories : [];
@@ -253,7 +265,7 @@ export function validateExtraction(raw: unknown): RawMenuExtraction {
     warnings.push(`Nur die ersten ${MAX_PRODUCTS} Produkte wurden übernommen`);
   }
   if (products.length === 0) {
-    throw new Error('Auf der Speisekarte wurden keine Produkte erkannt');
+    warnings.push(NO_PRODUCTS_WARNING);
   }
 
   for (const entry of rawWarnings.slice(0, MAX_WARNINGS)) {

@@ -470,9 +470,11 @@ export class MenuImportService {
     const invalid = (
       message: string,
       params?: Record<string, string | number>,
+      reason?: string,
     ) =>
       new BadRequestException({
         code: ErrorCodes.MENU_IMPORT_INVALID_FILES,
+        ...(reason ? { reason } : {}),
         message,
         ...(params ? { params } : {}),
       });
@@ -518,8 +520,12 @@ export class MenuImportService {
         throw invalid('Eine PDF-Datei kann nur allein hochgeladen werden');
       }
       if (!this.provider.supportsPdf()) {
+        // Die Web-App blendet PDF anhand von `pdfSupported` im Status vorher
+        // aus; der Reason faengt ab, was trotzdem ankommt.
         throw invalid(
           'PDF wird vom eingerichteten Anbieter nicht unterstützt — bitte lade Fotos der Seiten hoch',
+          undefined,
+          ErrorReasons.MENU_IMPORT_PDF_UNSUPPORTED,
         );
       }
       return { source: 'pdf', files: prepared };

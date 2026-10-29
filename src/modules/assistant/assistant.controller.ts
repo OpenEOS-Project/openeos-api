@@ -37,11 +37,11 @@ export class AssistantController {
   @ApiOperation({
     summary: 'Status der Assistent-Funktionen',
     description:
-      'enabled: Opt-in der Organisation; available: ein Modellanbieter ist auf dem Server konfiguriert; quotas: Tageskontingente (Europe/Berlin) mit limit/used/remaining/resetAt.',
+      'enabled: Opt-in der Organisation; available: ein Modellanbieter ist auf dem Server konfiguriert; pdfSupported: der Anbieter liest PDF-Dateien (sonst nimmt der Speisekarten-Import nur Bilder); quotas: Tageskontingente (Europe/Berlin) mit limit/used/remaining/resetAt.',
   })
   @ApiResponse({
     status: 200,
-    description: '{ data: { enabled, available, quotas } }',
+    description: '{ data: { enabled, available, pdfSupported, quotas } }',
   })
   async getStatus(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -59,7 +59,7 @@ export class AssistantController {
   })
   @ApiResponse({
     status: 200,
-    description: '{ data: { enabled, available, quotas } }',
+    description: '{ data: { enabled, available, pdfSupported, quotas } }',
   })
   async setEnabled(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

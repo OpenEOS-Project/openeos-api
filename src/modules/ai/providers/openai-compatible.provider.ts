@@ -168,7 +168,12 @@ export class OpenAiCompatibleProvider implements AiProvider {
     params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
   ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
     if (!this.client) {
-      throw new AiProviderError('OPENAI_API_KEY fehlt');
+      throw new AiProviderError(
+        'OPENAI_API_KEY fehlt',
+        undefined,
+        false,
+        'auth',
+      );
     }
     const started = Date.now();
     try {
@@ -178,14 +183,27 @@ export class OpenAiCompatibleProvider implements AiProvider {
         `openai ${model}: ${completion.usage?.prompt_tokens ?? '?'} in / ${completion.usage?.completion_tokens ?? '?'} out, ${Date.now() - started} ms, finish=${choice?.finish_reason ?? '-'}`,
       );
       if (!choice) {
-        throw new AiProviderError('Das Modell hat keine Antwort geliefert');
+        throw new AiProviderError(
+          'Das Modell hat keine Antwort geliefert',
+          undefined,
+          false,
+          'invalid_output',
+        );
       }
       if (choice.message.refusal) {
-        throw new AiProviderError('Das Modell hat die Anfrage abgelehnt');
+        throw new AiProviderError(
+          'Das Modell hat die Anfrage abgelehnt',
+          undefined,
+          false,
+          'invalid_output',
+        );
       }
       if (choice.finish_reason === 'length') {
         throw new AiProviderError(
           'Die Antwort des Modells war zu lang und wurde abgeschnitten',
+          undefined,
+          false,
+          'invalid_output',
         );
       }
       return completion;

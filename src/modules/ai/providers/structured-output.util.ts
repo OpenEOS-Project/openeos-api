@@ -14,6 +14,9 @@ export function parseStructuredJson<T>(text: string): T {
   } catch {
     throw new AiProviderError(
       'Das Modell hat keine gültige strukturierte Antwort geliefert',
+      undefined,
+      false,
+      'invalid_output',
     );
   }
 }

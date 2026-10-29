@@ -24,7 +24,7 @@ const EVENT = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
 
 type Stored = MenuImport & { id: string };
 
-function setup(options: { extraction?: unknown; fail?: boolean }) {
+function setup(options: { extraction?: unknown; fail?: Error }) {
   const uploadDir = mkdtempSync(join(tmpdir(), 'menu-worker-'));
   const imports = new Map<string, Stored>();
   const updates: [unknown, Partial<MenuImport>][] = [];
@@ -67,9 +67,7 @@ function setup(options: { extraction?: unknown; fail?: boolean }) {
   } as unknown as Repository<MenuImport>;
   const extractStructured = jest.fn(() =>
     options.fail
-      ? Promise.reject(
-          new AiProviderError('Anbieter: Rate-Limit erreicht', 429, true),
-        )
+      ? Promise.reject(options.fail)
       : Promise.resolve({
           value: options.extraction,
           model: 'claude-sonnet-5-5',
@@ -256,20 +254,104 @@ describe('MenuImportWorkerService', () => {
     expect(ctx.imports.get('import-2')!.status).toBe('done');
   });
 
-  it('marks the import failed and settles the usage as error when the provider fails', async () => {
-    const ctx = setup({ fail: true });
+  it('marks the import failed with a user-facing text, keeps the raw message in error_detail and settles the usage as error', async () => {
+    const ctx = setup({
+      fail: new AiProviderError('Anbieter: Rate-Limit erreicht', 429, true),
+    });
     cleanups.push(ctx.uploadDir);
     ctx.add({ id: 'import-3', source: 'text', inputText: 'Bier 3 €' });
     await ctx.service.process('import-3');
     expect(ctx.imports.get('import-3')).toMatchObject({
       status: 'failed',
-      error: 'Anbieter: Rate-Limit erreicht',
+      error:
+        'Der Anbieter ist gerade überlastet, bitte später erneut versuchen.',
+      errorDetail: 'Anbieter: Rate-Limit erreicht',
     });
     expect(ctx.settle).toHaveBeenCalledWith('usage-1', { status: 'error' });
     expect(ctx.notify).toHaveBeenLastCalledWith(ORG, {
       id: 'import-3',
       eventId: EVENT,
       status: 'failed',
+    });
+  });
+
+  it.each([
+    [
+      'key rejected',
+      new AiProviderError('Anbieter: Schlüssel abgelehnt', 401),
+      'Der Anbieter hat den Zugang abgelehnt – bitte Schlüssel prüfen.',
+    ],
+    [
+      'key missing',
+      new AiProviderError('ANTHROPIC_API_KEY fehlt', undefined, false, 'auth'),
+      'Der Anbieter hat den Zugang abgelehnt – bitte Schlüssel prüfen.',
+    ],
+    [
+      'network',
+      new AiProviderError('Anbieter nicht erreichbar', undefined, true),
+      'Keine Antwort vom Anbieter – bitte später erneut versuchen.',
+    ],
+    [
+      'server error',
+      new AiProviderError('Anbieter: Fehler 503', 503, true),
+      'Keine Antwort vom Anbieter – bitte später erneut versuchen.',
+    ],
+    [
+      'invalid output',
+      new AiProviderError(
+        'Das Modell hat keine gültige strukturierte Antwort geliefert',
+        undefined,
+        false,
+        'invalid_output',
+      ),
+      'Die Speisekarte konnte nicht gelesen werden – versuch ein schärferes Foto oder den Text.',
+    ],
+    [
+      'anything else',
+      new Error('ENOENT: page-01.png'),
+      'Die Speisekarte konnte nicht ausgewertet werden – bitte versuch es noch einmal.',
+    ],
+  ])(
+    'maps a %s failure to a short German text and keeps the raw message out of error',
+    async (_label, failure, expectedText) => {
+      const ctx = setup({ fail: failure });
+      cleanups.push(ctx.uploadDir);
+      ctx.add({ id: 'import-err', source: 'text', inputText: 'Bier 3 €' });
+      await ctx.service.process('import-err');
+      const stored = ctx.imports.get('import-err')!;
+      expect(stored.status).toBe('failed');
+      expect(stored.error).toBe(expectedText);
+      expect(stored.errorDetail).toBe(failure.message);
+      expect(stored.error).not.toContain(failure.message);
+    },
+  );
+
+  it('stores an empty suggestion with a warning as done when the model finds no product', async () => {
+    const ctx = setup({
+      extraction: { categories: [], products: [], warnings: [] },
+    });
+    cleanups.push(ctx.uploadDir);
+    ctx.add({ id: 'import-empty', source: 'text', inputText: 'nur Deko' });
+    await expect(ctx.service.process('import-empty')).resolves.toBe(true);
+    const stored = ctx.imports.get('import-empty')!;
+    expect(stored.status).toBe('done');
+    expect(stored.error).toBeNull();
+    expect(stored.errorDetail).toBeNull();
+    expect(stored.suggestion).toEqual({
+      categories: [],
+      products: [],
+      warnings: ['Auf der Speisekarte wurden keine Produkte erkannt.'],
+    });
+    // Der Aufruf hat stattgefunden und zaehlt im Kontingent.
+    expect(ctx.settle).toHaveBeenCalledTimes(1);
+    expect(ctx.settle).toHaveBeenCalledWith(
+      'usage-1',
+      expect.objectContaining({ status: 'ok' }),
+    );
+    expect(ctx.notify).toHaveBeenLastCalledWith(ORG, {
+      id: 'import-empty',
+      eventId: EVENT,
+      status: 'done',
     });
   });
 
@@ -337,7 +419,11 @@ describe('MenuImportWorkerService', () => {
 
     await ctx.service.recover();
 
-    expect(ctx.imports.get('stuck')!.status).toBe('failed');
+    expect(ctx.imports.get('stuck')).toMatchObject({
+      status: 'failed',
+      error: 'Die Auswertung wurde abgebrochen – bitte versuch es noch einmal.',
+      errorDetail: expect.stringContaining('15 Minuten') as unknown,
+    });
     expect(ctx.settle).toHaveBeenCalledWith('usage-stuck', { status: 'error' });
     expect(ctx.imports.get('forgotten')!.status).toBe('done');
   });

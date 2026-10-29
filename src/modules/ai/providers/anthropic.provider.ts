@@ -148,7 +148,12 @@ export class AnthropicProvider implements AiProvider {
     params: Anthropic.MessageCreateParamsNonStreaming,
   ): Promise<Anthropic.Message> {
     if (!this.client) {
-      throw new AiProviderError('ANTHROPIC_API_KEY fehlt');
+      throw new AiProviderError(
+        'ANTHROPIC_API_KEY fehlt',
+        undefined,
+        false,
+        'auth',
+      );
     }
     const started = Date.now();
     try {
@@ -157,11 +162,19 @@ export class AnthropicProvider implements AiProvider {
         `anthropic ${model}: ${response.usage.input_tokens} in / ${response.usage.output_tokens} out, ${Date.now() - started} ms, stop=${response.stop_reason ?? '-'}`,
       );
       if (response.stop_reason === 'refusal') {
-        throw new AiProviderError('Das Modell hat die Anfrage abgelehnt');
+        throw new AiProviderError(
+          'Das Modell hat die Anfrage abgelehnt',
+          undefined,
+          false,
+          'invalid_output',
+        );
       }
       if (response.stop_reason === 'max_tokens') {
         throw new AiProviderError(
           'Die Antwort des Modells war zu lang und wurde abgeschnitten',
+          undefined,
+          false,
+          'invalid_output',
         );
       }
       return response;

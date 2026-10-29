@@ -95,8 +95,16 @@ export class MenuImport extends BaseEntity {
   @Column({ type: 'jsonb', nullable: true })
   suggestion: MenuSuggestion | null;
 
+  /** Kurzer, verstaendlicher Hinweis fuer die Web-App (bei `failed`). */
   @Column({ type: 'text', nullable: true })
   error: string | null;
+
+  /**
+   * Rohmeldung des Anbieters bzw. der Verarbeitung — nur fuer Log und
+   * Datenbank, wird nie an Clients ausgeliefert.
+   */
+  @Column({ name: 'error_detail', type: 'text', nullable: true })
+  errorDetail: string | null;
 
   @Column({ type: 'jsonb', nullable: true })
   usage: MenuImportUsage | null;

@@ -24,6 +24,8 @@ export interface AssistantStatus {
   enabled: boolean;
   /** Ein Anbieter ist konfiguriert (AI_PROVIDER + Schluessel). */
   available: boolean;
+  /** Der Anbieter liest PDF-Seiten direkt; sonst nimmt der Import nur Bilder. */
+  pdfSupported: boolean;
   quotas: {
     menuImports: QuotaStatus;
     classifications: QuotaStatus;
@@ -195,6 +197,7 @@ export class AssistantService {
     return {
       enabled: this.isEnabled(organization),
       available: this.provider.isAvailable(),
+      pdfSupported: this.provider.supportsPdf(),
       quotas: { menuImports, classifications },
     };
   }
