@@ -4,23 +4,23 @@ import { CHANGELOG, RELEASES } from './changelog.data';
 describe('ChangelogController', () => {
   const controller = new ChangelogController();
 
-  it('returns the 1.6 entries first, with their version', () => {
+  it('returns the 1.7 entries first, with their version', () => {
     const { data } = controller.list();
 
-    expect(data.latest).toBe('2026-10-08');
-    expect(data.latestVersion).toBe('1.6');
+    expect(data.latest).toBe('2026-10-29');
+    expect(data.latestVersion).toBe('1.7');
 
-    const release16 = data.entries.filter((e) => e.version === '1.6');
-    expect(release16.length).toBeGreaterThan(0);
-    expect(data.entries[0].version).toBe('1.6');
-    expect(release16.every((e) => e.datum === '2026-10-08')).toBe(true);
+    const release17 = data.entries.filter((e) => e.version === '1.7');
+    expect(release17.length).toBeGreaterThan(0);
+    expect(data.entries[0].version).toBe('1.7');
+    expect(release17.every((e) => e.datum === '2026-10-29')).toBe(true);
   });
 
   it('only returns newer entries for since', () => {
-    const { data } = controller.list('2026-10-03');
+    const { data } = controller.list('2026-10-08');
 
     expect(data.entries.length).toBeGreaterThan(0);
-    expect(data.entries.every((e) => e.version === '1.6')).toBe(true);
+    expect(data.entries.every((e) => e.version === '1.7')).toBe(true);
   });
 
   it('keeps the data consistent', () => {

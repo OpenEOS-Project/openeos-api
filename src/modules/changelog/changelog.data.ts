@@ -16,6 +16,198 @@ import type { ChangelogEintrag } from './changelog.types';
  */
 export const CHANGELOG: ChangelogEintrag[] = [
   {
+    datum: '2026-10-29',
+    art: 'neu',
+    titel: {
+      de: 'Eigene Drucker statt Miete',
+      en: 'Your own printers instead of rentals',
+    },
+    kurz: {
+      de: 'Ein kleiner Drucker-Agent auf einem PC oder Raspberry Pi findet deine USB- und Netzwerkdrucker von selbst; die Hardware-Vermietung gibt es nicht mehr.',
+      en: 'A small printer agent on a PC or Raspberry Pi finds your USB and network printers by itself; hardware rental is gone.',
+    },
+    text: {
+      de: 'Bons druckst du jetzt auf deinen eigenen Bondruckern. Dafür läuft auf einem Windows- oder Linux-PC in deinem Netz, auch auf einem Raspberry Pi, der Drucker-Agent: ein kleines Programm, das angeschlossene USB-Drucker und Netzwerkdrucker von selbst findet und bei OpenEOS meldet. Unter „Drucker“ verbindest du den Agent mit dem sechsstelligen Code, den er beim Start anzeigt, übernimmst die gefundenen Drucker mit einem Klick und schickst einen Testdruck. Welcher Drucker Kassenbons und welcher Küchenbons bekommt, stellst du wie gewohnt in der Web-App ein, am PC gibt es nichts weiter zu konfigurieren. Die Vermietung von Druckern und Geräten bieten wir nicht mehr an. Eine Schritt-für-Schritt-Anleitung findest du in der Dokumentation auf docs.openeos.de unter „Drucker“.',
+      en: 'You now print receipts on your own receipt printers. The printer agent, a small program, runs on a Windows or Linux PC in your network, a Raspberry Pi works too. It finds connected USB printers and network printers by itself and reports them to OpenEOS. Under "Printers" you connect the agent with the six-digit code it shows on start, adopt the printers it found with one click and send a test print. Which printer gets receipts and which gets kitchen tickets is set up in the web app as before; there is nothing left to configure on the PC. We no longer rent out printers or other hardware. A step-by-step guide is in the documentation on docs.openeos.de under "Printers".',
+    },
+  },
+  {
+    datum: '2026-10-29',
+    art: 'neu',
+    titel: {
+      de: 'Bargeldloser Modus',
+      en: 'Cashless mode',
+    },
+    kurz: {
+      de: 'Ein Schalter in den Zahlungseinstellungen sperrt Bargeld an Kasse, Erstattung und Pfand; Karte und Online bleiben.',
+      en: 'A switch in the payment settings blocks cash at the till, for refunds and for deposits; card and online stay.',
+    },
+    text: {
+      de: 'In den Zahlungseinstellungen deiner Organisation gibt es den neuen Schalter „Bargeldloser Modus“. Ist er an, nimmt keine Kasse mehr Bargeld an, Erstattungen gehen nur auf die ursprüngliche Karten- oder Online-Zahlung zurück, zurückgegebenes Pfand wird nicht bar ausgezahlt, sondern mit neuem Pfand verrechnet, und die Kassenlade bleibt zu. Karten- und Online-Zahlungen laufen weiter wie bisher. Ein Hinweis erklärt, warum das wichtig ist: Wer über eine elektronische Kasse Bargeld annimmt, braucht in Deutschland eine zertifizierte TSE, ohne Bargeld nicht. Willst du Bargeld wieder erlauben, fragt OpenEOS vorher nach, und jede Änderung steht mit Datum im Verlauf. Mehr dazu in den FAQ auf openeos.de.',
+      en: 'The payment settings of your organization now have a "Cashless mode" switch. When it is on, no till accepts cash any more, refunds only go back to the original card or online payment, returned deposits are not paid out in cash but offset against new deposits, and the cash drawer stays closed. Card and online payments keep working as before. A note explains why it matters: in Germany, anyone taking cash through an electronic till needs a certified TSE, without cash you do not. If you want to allow cash again, OpenEOS asks you to confirm first, and every change is listed with its date in the history. Read more in the FAQ on openeos.de.',
+    },
+  },
+  {
+    datum: '2026-10-29',
+    art: 'neu',
+    titel: {
+      de: 'Bestellverlauf mit Storno und Erstattung',
+      en: 'Order history with cancellation and refunds',
+    },
+    kurz: {
+      de: 'Im Verlauf der Kasse stornierst du einzelne Positionen, erstattest teilweise oder ganz und druckst den Gegenbeleg.',
+      en: 'In the till history you cancel single items, refund part or all of an order and print the counter-receipt.',
+    },
+    text: {
+      de: 'Der Verlauf an der Kasse zeigt jede Bestellung mit einem klaren Status und lässt sich nach Zeitraum, Zahlart und Status filtern. Öffnest du eine Bestellung, kannst du einzelne Positionen stornieren oder den Betrag teilweise oder ganz erstatten, auch bei Kartenzahlungen über SumUp geht das Geld direkt zurück auf die Karte. Zu jeder Erstattung druckt OpenEOS einen Gegenbeleg, und die Küche bekommt bei stornierten Speisen einen Stornobon. In der Verwaltung findest du dieselben Möglichkeiten in der Bestellübersicht; dort siehst du jetzt auch die Zahlart jeder Bestellung, und stornierte Positionen sind durchgestrichen.',
+      en: 'The till history shows every order with one clear status and can be filtered by period, payment method and status. Open an order to cancel single items or refund part or all of the amount; for card payments via SumUp the money goes straight back to the card. OpenEOS prints a counter-receipt for every refund, and the kitchen gets a cancellation ticket for cancelled dishes. In the admin area the order list offers the same options; it now also shows the payment method of every order, and cancelled items are struck through.',
+    },
+  },
+  {
+    datum: '2026-10-29',
+    art: 'verbessert',
+    titel: {
+      de: 'Rechnung direkt vom Zahlungsdienst',
+      en: 'Invoices straight from the payment service',
+    },
+    kurz: {
+      de: 'Bei „Auf Rechnung“ kommt die Rechnung per E-Mail mit Zahlseite und PDF, Erinnerungen laufen automatisch, bei Storno gibt es eine Gutschrift.',
+      en: 'With "Pay by invoice" the invoice arrives by e-mail with a payment page and PDF, reminders run automatically, and a cancellation issues a credit note.',
+    },
+    text: {
+      de: 'Schaltest du eine Veranstaltung „auf Rechnung“ frei, kommt die Rechnung jetzt direkt von unserem Zahlungsdienst per E-Mail, mit PDF und einem Link zur Zahlseite, auf der du per Überweisung oder Karte bezahlst. Ist die Rechnung nach der Frist noch offen, erinnert dich der Zahlungsdienst von selbst. Stornierst du die Freischaltung oder erstatten wir einen Betrag, bekommst du automatisch eine Gutschrift. Alle Rechnungen und Gutschriften deiner Organisation findest du unter „Abrechnung“.',
+      en: 'If you activate an event "by invoice", the invoice now comes straight from our payment service by e-mail, with a PDF and a link to a payment page where you pay by bank transfer or card. If the invoice is still open after the due date, the payment service reminds you automatically. If you cancel the activation or we refund an amount, you automatically receive a credit note. All invoices and credit notes of your organization are listed under "Billing".',
+    },
+  },
+  {
+    datum: '2026-10-29',
+    art: 'neu',
+    titel: {
+      de: 'Kostenlos stornieren bis 7 Tage vor Beginn',
+      en: 'Free cancellation up to 7 days before the start',
+    },
+    kurz: {
+      de: 'Eine bezahlte Freischaltung stornierst du bis sieben Tage vor Beginn selbst, das Geld kommt zurück.',
+      en: 'Cancel a paid activation yourself up to seven days before the start and get your money back.',
+    },
+    text: {
+      de: 'Fällt eine Veranstaltung aus, musst du nicht mehr beim Support anfragen: In der Veranstaltung siehst du deine Freischaltung und stornierst sie bis sieben Tage vor Beginn selbst, kostenlos. Der Betrag geht auf dem Zahlungsweg zurück, mit dem du bezahlt hast, bei Rechnungen als Gutschrift. Bis wann das geht, steht direkt neben der Freischaltung. Beginnt die Veranstaltung in weniger als sieben Tagen, sagt dir OpenEOS das schon vor dem Bezahlen.',
+      en: 'If an event is called off, you no longer need to ask support: in the event you see your activation and cancel it yourself up to seven days before the start, free of charge. The amount goes back the way you paid, for invoices as a credit note. The deadline is shown right next to the activation. If the event starts in less than seven days, OpenEOS tells you before you pay.',
+    },
+  },
+  {
+    datum: '2026-10-29',
+    art: 'verbessert',
+    titel: {
+      de: 'Ein Veranstaltungstag geht von 6 bis 6 Uhr',
+      en: 'An event day runs from 6 am to 6 am',
+    },
+    kurz: {
+      de: 'Für die Abrechnung endet ein Tag erst um 6 Uhr morgens, eine Nacht bis 3 Uhr zählt als ein Tag.',
+      en: 'For billing a day only ends at 6 in the morning, so a night until 3 am counts as one day.',
+    },
+    text: {
+      de: 'Bisher zählte eine Veranstaltung, die über Mitternacht ging, als zwei Tage. Jetzt läuft ein Veranstaltungstag für die Abrechnung von 6 Uhr morgens bis 6 Uhr am nächsten Morgen. Ein Fest von 18 bis 3 Uhr ist damit ein Tag, ein Wochenende von Freitagabend bis Sonntagfrüh zwei. Beim Freischalten siehst du, wie viele Tage berechnet werden, und auf der Preisseite ist die Regel erklärt.',
+      en: 'Until now an event that ran past midnight counted as two days. For billing, an event day now runs from 6 in the morning to 6 the next morning. A party from 6 pm to 3 am is therefore one day, a weekend from Friday evening to Sunday morning is two. When activating you see how many days are charged, and the rule is explained on the pricing page.',
+    },
+  },
+  {
+    datum: '2026-10-29',
+    art: 'neu',
+    titel: {
+      de: 'Impressum und Datenschutz deines Vereins',
+      en: 'Your club’s imprint and privacy notice',
+    },
+    kurz: {
+      de: 'Online-Shop und Helferseiten zeigen die rechtlichen Angaben deines Vereins, eingetragen in der Organisation.',
+      en: 'The online shop and helper pages show your club’s legal information, entered in the organization.',
+    },
+    text: {
+      de: 'Dein Online-Shop und die Seiten, auf denen sich Helfer für Schichten eintragen, sind öffentlich, und dafür ist dein Verein verantwortlich. In der Organisation trägst du deshalb jetzt Impressum und Datenschutzerklärung deines Vereins ein. Beide erscheinen im Fuß des Shops und der Helferseiten, getrennt von den Angaben zu OpenEOS selbst. Solange nichts eingetragen ist, weist OpenEOS dich in der Organisation darauf hin.',
+      en: 'Your online shop and the pages where helpers sign up for shifts are public, and your club is responsible for them. That is why you now enter your club’s imprint and privacy notice in the organization. Both appear in the footer of the shop and the helper pages, separate from the details about OpenEOS itself. As long as nothing is entered, OpenEOS reminds you in the organization.',
+    },
+  },
+  {
+    datum: '2026-10-29',
+    art: 'verbessert',
+    titel: {
+      de: 'Keine echte Kartenzahlung im Testmodus',
+      en: 'No real card payments in test mode',
+    },
+    kurz: {
+      de: 'Solange eine Veranstaltung im Testmodus ist, löst die Kasse keine Zahlung auf dem SumUp-Lesegerät aus.',
+      en: 'While an event is in test mode, the till does not trigger a payment on the SumUp card reader.',
+    },
+    text: {
+      de: 'Im Testmodus probierst du die Kasse aus, und dabei soll niemand versehentlich seine Karte belasten. Die Kasse spricht das SumUp-Lesegerät deshalb erst an, wenn die Veranstaltung freigeschaltet ist; vorher ist die Kartenzahlung im Kassieren-Blatt ausgegraut und mit einem Hinweis versehen. Bar und die übrigen Zahlarten kannst du im Testmodus wie gewohnt durchspielen.',
+      en: 'In test mode you try out the till, and nobody should accidentally have their card charged while doing so. The till therefore only talks to the SumUp card reader once the event is activated; before that, card payment is greyed out in the checkout sheet with a note. Cash and the other payment methods can be rehearsed in test mode as usual.',
+    },
+  },
+  {
+    datum: '2026-10-29',
+    art: 'verbessert',
+    titel: {
+      de: 'Produkt- und Kategorieberichte netto',
+      en: 'Net product and category reports',
+    },
+    kurz: {
+      de: 'Die Berichte je Produkt und Kategorie rechnen jetzt netto und passen zum Nettoumsatz der Veranstaltung.',
+      en: 'The reports per product and category are now net and match the net revenue of the event.',
+    },
+    text: {
+      de: 'Die Berichte je Produkt und je Kategorie zeigten bisher Bruttobeträge, der Umsatz der Veranstaltung aber netto, und beides ließ sich nicht zusammenbringen. Jetzt rechnen alle drei netto: Die Summen der Produkt- und Kategorieberichte ergeben zusammen genau den Nettoumsatz, Rabatte und Pfand sind dabei berücksichtigt. Ein Hinweis über der Tabelle erinnert daran, dass die Zahlen ohne Mehrwertsteuer sind.',
+      en: 'The reports per product and per category used to show gross amounts while the event revenue was net, and the two could not be reconciled. Now all three are net: the totals of the product and category reports add up exactly to the net revenue, with discounts and deposits taken into account. A note above the table reminds you that the figures exclude VAT.',
+    },
+  },
+  {
+    datum: '2026-10-29',
+    art: 'verbessert',
+    titel: {
+      de: 'Offener Quellcode unter einer Lizenz',
+      en: 'Open source under one licence',
+    },
+    kurz: {
+      de: 'OpenEOS steht komplett unter der AGPL, und in jeder Oberfläche führt ein Link zum Quellcode.',
+      en: 'OpenEOS is fully licensed under the AGPL, and every interface links to the source code.',
+    },
+    text: {
+      de: 'Alle Teile von OpenEOS, von der Kasse über den Online-Shop bis zur Dokumentation, stehen jetzt unter derselben freien Lizenz, der GNU AGPL. Du darfst OpenEOS also selbst betreiben, anpassen und weitergeben, solange du Änderungen ebenfalls offenlegst. Im Fuß jeder Oberfläche findest du einen Link zum Quellcode und eine Übersicht der verwendeten Bausteine anderer Projekte.',
+      en: 'All parts of OpenEOS, from the till and the online shop to the documentation, are now under the same free licence, the GNU AGPL. You may run OpenEOS yourself, adapt it and pass it on, as long as you publish your changes too. The footer of every interface links to the source code and to an overview of the building blocks from other projects we use.',
+    },
+  },
+  {
+    datum: '2026-10-29',
+    art: 'verbessert',
+    titel: {
+      de: 'Updates ohne Unterbrechung',
+      en: 'Updates without interruption',
+    },
+    kurz: {
+      de: 'Neue Versionen gehen in Betrieb, ohne dass die Kasse zwischendurch aussetzt.',
+      en: 'New versions go live without the till pausing in between.',
+    },
+    text: {
+      de: 'Bisher konnte eine Kasse während eines Updates für ein paar Sekunden keine Verbindung bekommen. Jetzt läuft die neue Version erst an und wird geprüft, bevor die alte abgeschaltet wird. Für dich heißt das: Updates passieren im Hintergrund, auch mitten in einer Veranstaltung, und die Kasse merkt davon nichts.',
+      en: 'Until now a till could lose its connection for a few seconds during an update. Now the new version starts up and is checked before the old one is switched off. For you that means updates happen in the background, even in the middle of an event, and the till does not notice.',
+    },
+  },
+  {
+    datum: '2026-10-29',
+    art: 'behoben',
+    titel: {
+      de: 'Kassenlade und nachgelieferte Küchenbons',
+      en: 'Cash drawer and re-sent kitchen tickets',
+    },
+    kurz: {
+      de: 'Die Kassenlade öffnet nur noch, wenn eine eingerichtet ist; nach einem Verbindungsabbruch nachgedruckte Küchenbons sehen richtig aus.',
+      en: 'The cash drawer only opens if one is set up; kitchen tickets reprinted after a lost connection look right again.',
+    },
+    text: {
+      de: 'Die Kasse versuchte bei jeder Barzahlung, eine Kassenlade zu öffnen, auch wenn an dem Gerät keine eingerichtet war, und meldete dann einen Fehler. Jetzt passiert das nur noch, wenn das Gerät eine Kassenlade hat. Außerdem wurden Küchenbons, die nach einem kurzen Verbindungsabbruch des Druckers nachgeliefert wurden, mit der falschen Vorlage gedruckt und kamen leer oder gar nicht an. Sie werden jetzt genau so gedruckt wie beim ersten Mal.',
+      en: 'The till tried to open a cash drawer on every cash payment, even on devices without one, and then reported an error. Now it only does so if the device has a cash drawer. Kitchen tickets that were re-sent after a short loss of connection to the printer were also printed with the wrong template and arrived blank or not at all. They are now printed exactly as the first time.',
+    },
+  },
+  {
     datum: '2026-10-08',
     art: 'neu',
     titel: {
@@ -705,6 +897,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
  * Eintrag ohne Version da.
  */
 export const RELEASES: Record<string, string> = {
+  '2026-10-29': '1.7',
   '2026-10-08': '1.6',
   '2026-10-03': '1.5',
   '2026-09-24': '1.4',
