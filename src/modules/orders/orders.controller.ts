@@ -16,7 +16,8 @@ import { OrdersService } from './orders.service';
 import { RefundsService } from '../refunds/refunds.service';
 import { OrderHistoryService } from '../refunds/order-history.service';
 import { CancelItemsDto, CreateRefundDto } from '../refunds/dto/refund.dto';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import {
   CreateOrderDto,
@@ -46,6 +47,7 @@ export class OrdersController {
     return this.ordersService.create(organizationId, createDto, user);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get()
   findAll(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -57,6 +59,7 @@ export class OrdersController {
 
   // Must be registered before ':orderId' below, otherwise Nest would match
   // GET /orders/stats as GET /orders/:orderId with orderId="stats".
+  @ApiTokenAccess(TokenScope.READ)
   @Get('stats')
   getStats(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -66,6 +69,7 @@ export class OrdersController {
     return this.ordersService.getStats(organizationId, user, query);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':orderId')
   findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

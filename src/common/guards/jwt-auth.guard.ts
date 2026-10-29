@@ -2,16 +2,21 @@ import {
   Injectable,
   ExecutionContext,
   ForbiddenException,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { ALLOW_PENDING_TWO_FACTOR_KEY } from '../decorators/allow-pending-two-factor.decorator';
-import { REQUIRES_SCOPE_KEY } from '../decorators/requires-scope.decorator';
+import { API_TOKEN_ACCESS_KEY } from '../decorators/api-token-access.decorator';
 import { ErrorCodes, ErrorReasons } from '../constants/error-codes';
-import { ApiTokensService } from '../../modules/api-tokens/api-tokens.service';
+import {
+  ApiTokensService,
+  type TokenPruefung,
+} from '../../modules/api-tokens/api-tokens.service';
 import type { AppRequest } from '../types/request.types';
+import type { RequestUser } from '../decorators/current-user.decorator';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -49,15 +54,24 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   /**
    * Ein API-Token erreicht nur, was ausdruecklich fuer ihn geoeffnet ist.
    *
-   * Fail-closed: ohne @RequiresScope am Endpunkt ist Schluss, selbst wenn
-   * der Besitzer des Tokens dort persoenlich alles duerfte. Sonst waere
-   * ein Token fuers Ablesen von Zahlen zugleich ein Schluessel zu jeder
-   * Organisation — der Besitzer ist ja Super-Admin.
+   * Reihenfolge der Pruefungen, alle fail-closed:
+   * 1. Token gueltig (nicht widerrufen/abgelaufen, Besitzer aktiv und
+   *    noch Mitglied der Organisation) — sonst 401.
+   * 2. Endpunkt traegt @ApiTokenAccess — sonst 403 API_TOKEN_NOT_ALLOWED,
+   *    selbst wenn der Besitzer dort persoenlich alles duerfte.
+   * 3. Token traegt den verlangten Scope — sonst 403 API_TOKEN_SCOPE_MISSING.
+   * 4. Die angesprochene Organisation ist die des Tokens — sonst 403
+   *    API_TOKEN_WRONG_ORGANIZATION. Plattform-Tokens (ohne Organisation)
+   *    duerfen keine Organisation ansprechen.
+   *
+   * Danach wirkt die Anfrage wie der Besitzer, aber nur in dieser einen
+   * Organisation: `user.organizations` enthaelt allein die Token-Organisation,
+   * die Dienste pruefen Rolle und Modul-Berechtigungen wie sonst auch.
    */
   private async pruefeApiToken(
     context: ExecutionContext,
     token: string,
-    request: { user?: unknown; apiTokenScopes?: string[] },
+    request: AppRequest,
   ): Promise<boolean> {
     const pruefung = await this.apiTokensService.pruefe(token);
     if (!pruefung) {
@@ -69,14 +83,14 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     }
 
     const verlangt = this.reflector.getAllAndOverride<string>(
-      REQUIRES_SCOPE_KEY,
+      API_TOKEN_ACCESS_KEY,
       [context.getHandler(), context.getClass()],
     );
 
     if (!verlangt) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
-        reason: ErrorReasons.API_TOKEN_ENDPOINT_NOT_ALLOWED,
+        reason: ErrorReasons.API_TOKEN_NOT_ALLOWED,
         message: 'Dieser Endpunkt ist für API-Tokens nicht freigegeben',
       });
     }
@@ -90,9 +104,98 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       });
     }
 
-    request.user = pruefung.user;
-    request.apiTokenScopes = pruefung.scopes;
+    await this.pruefeOrganisation(request, pruefung);
+
+    request.user = this.alsBenutzer(pruefung);
+    request.apiToken = { ...pruefung.token, scopes: pruefung.scopes };
     return true;
+  }
+
+  /**
+   * Jede Organisation, die die Anfrage nennt (Pfad, Header, Rumpf,
+   * Query), muss die des Tokens sein. Endpunkte unter `events/:eventId`
+   * nennen keine — dort entscheidet die Veranstaltung.
+   */
+  private async pruefeOrganisation(
+    request: AppRequest,
+    pruefung: TokenPruefung,
+  ): Promise<void> {
+    const tokenOrg = pruefung.token.organizationId;
+    const genannt = this.genannteOrganisationen(request);
+
+    /* Plattform-Tokens (Monitoring) haben keine Organisation und duerfen
+       auch keine ansprechen. */
+    if (tokenOrg === null) {
+      if (genannt.size > 0 || request.params?.eventId) {
+        throw this.falscheOrganisation();
+      }
+      return;
+    }
+
+    if (request.params?.eventId && genannt.size === 0) {
+      const eventOrg = await this.apiTokensService.organizationOfEvent(
+        request.params.eventId,
+      );
+      if (!eventOrg) {
+        throw new NotFoundException({
+          code: ErrorCodes.NOT_FOUND,
+          reason: ErrorReasons.EVENT_NOT_FOUND,
+          message: 'Veranstaltung nicht gefunden',
+        });
+      }
+      genannt.add(eventOrg);
+    }
+
+    const passt =
+      genannt.size > 0 && [...genannt].every((id) => id === tokenOrg);
+    if (!passt) {
+      throw this.falscheOrganisation();
+    }
+
+    request.organizationId = tokenOrg;
+  }
+
+  private falscheOrganisation(): ForbiddenException {
+    return new ForbiddenException({
+      code: ErrorCodes.FORBIDDEN,
+      reason: ErrorReasons.API_TOKEN_WRONG_ORGANIZATION,
+      message: 'Der API-Token gilt nicht für diese Organisation',
+    });
+  }
+
+  private genannteOrganisationen(request: AppRequest): Set<string> {
+    const body = request.body as Record<string, unknown> | undefined;
+    const kandidaten: unknown[] = [
+      request.headers?.['x-organization-id'],
+      request.params?.organizationId,
+      body?.organizationId,
+      request.query?.organizationId,
+    ];
+    /* `organizations/:id` — der einzige Controller, der die Organisation
+       `id` nennt. Erkannt am Routenmuster, nicht an einem beliebigen `id`. */
+    const route = (request as { route?: { path?: string } }).route?.path;
+    if (route && /\/organizations\/:id(\/|$)/.test(route)) {
+      kandidaten.push(request.params?.id);
+    }
+    return new Set(
+      kandidaten.filter(
+        (wert): wert is string => typeof wert === 'string' && wert.length > 0,
+      ),
+    );
+  }
+
+  /** Der Besitzer, beschraenkt auf die Organisation des Tokens. */
+  private alsBenutzer(pruefung: TokenPruefung): RequestUser {
+    const { user, membership, token } = pruefung;
+    const organizations =
+      membership && token.organizationId
+        ? [{ id: token.organizationId, role: membership.role }]
+        : [];
+    return Object.assign(user, {
+      organizations,
+      sessionId: null,
+      pending2fa: false,
+    }) as unknown as RequestUser;
   }
 
   handleRequest<TUser>(

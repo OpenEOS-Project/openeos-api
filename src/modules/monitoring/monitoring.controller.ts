@@ -2,8 +2,8 @@ import { Controller, Get, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { MonitoringService } from './monitoring.service';
-import { RequiresScope } from '../../common/decorators';
-import { API_SCOPES } from '../api-tokens/api-scopes';
+import { ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 
@@ -23,7 +23,7 @@ export class MonitoringController {
   constructor(private readonly monitoringService: MonitoringService) {}
 
   @Get('metrics')
-  @RequiresScope(API_SCOPES.MONITORING_READ)
+  @ApiTokenAccess(TokenScope.MONITORING_READ)
   @ApiOperation({
     summary: 'Platform counters for monitoring',
     description:

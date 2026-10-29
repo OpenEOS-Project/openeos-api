@@ -14,7 +14,8 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto, UpdateEventDto, CopyProductsDto } from './dto';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
@@ -24,6 +25,7 @@ import { PaginationDto } from '../../common/dto/pagination.dto';
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 
+  @ApiTokenAccess(TokenScope.EVENTS_WRITE)
   @Post()
   async create(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -38,6 +40,7 @@ export class EventsController {
     return { data: event };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get()
   async findAll(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -47,6 +50,7 @@ export class EventsController {
     return this.eventsService.findAll(organizationId, user, pagination);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('active')
   @ApiOperation({
     summary:
@@ -63,6 +67,7 @@ export class EventsController {
     return { data: event };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':eventId')
   async findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -77,6 +82,7 @@ export class EventsController {
     return { data: event };
   }
 
+  @ApiTokenAccess(TokenScope.EVENTS_WRITE)
   @Patch(':eventId')
   async update(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -156,6 +162,7 @@ export class EventsController {
   }
 
   // Copy products from another event
+  @ApiTokenAccess(TokenScope.EVENTS_WRITE)
   @Post(':eventId/copy-from/:sourceEventId')
   @ApiOperation({
     summary: 'Kopiert Kategorien und Produkte von einem anderen Event',

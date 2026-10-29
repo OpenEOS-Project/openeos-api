@@ -33,7 +33,8 @@ import {
   UpdateCashlessDto,
 } from './dto';
 import { SetPinDto } from '../devices/dto';
-import { CurrentUser, Public } from '../../common/decorators';
+import { CurrentUser, Public, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
@@ -64,6 +65,7 @@ export class OrganizationsController {
     return this.organizationsService.findAll(user, pagination);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':id')
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
@@ -73,6 +75,7 @@ export class OrganizationsController {
     return { data: organization };
   }
 
+  @ApiTokenAccess(TokenScope.SETTINGS_WRITE)
   @Patch(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,

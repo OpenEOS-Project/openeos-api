@@ -15,7 +15,8 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { CreateProductDto, UpdateProductDto, AdjustStockDto } from './dto';
 import { ImportProductsDto } from './dto/import-products.dto';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
@@ -25,6 +26,7 @@ import { PaginationDto } from '../../common/dto/pagination.dto';
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
+  @ApiTokenAccess(TokenScope.CATALOG_WRITE)
   @Post()
   async create(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -35,6 +37,7 @@ export class ProductsController {
     return { data: product };
   }
 
+  @ApiTokenAccess(TokenScope.CATALOG_WRITE)
   @Post('import')
   @HttpCode(HttpStatus.OK)
   async importProducts(
@@ -50,6 +53,7 @@ export class ProductsController {
     return { data: result };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get()
   async findAll(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -59,6 +63,7 @@ export class ProductsController {
     return this.productsService.findAll(eventId, user, pagination);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('low-stock')
   async getLowStock(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -68,6 +73,7 @@ export class ProductsController {
     return { data: products };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':productId')
   async findOne(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -82,6 +88,7 @@ export class ProductsController {
     return { data: product };
   }
 
+  @ApiTokenAccess(TokenScope.CATALOG_WRITE)
   @Patch(':productId')
   async update(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -108,6 +115,7 @@ export class ProductsController {
     await this.productsService.remove(eventId, productId, user);
   }
 
+  @ApiTokenAccess(TokenScope.CATALOG_WRITE)
   @Patch(':productId/availability')
   async updateAvailability(
     @Param('eventId', ParseUUIDPipe) eventId: string,

@@ -13,7 +13,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { PrintTemplatesService } from './print-templates.service';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CreatePrintTemplateDto, UpdatePrintTemplateDto } from './dto';
@@ -24,6 +25,7 @@ import { CreatePrintTemplateDto, UpdatePrintTemplateDto } from './dto';
 export class PrintTemplatesController {
   constructor(private readonly printTemplatesService: PrintTemplatesService) {}
 
+  @ApiTokenAccess(TokenScope.DEVICES_WRITE)
   @Post()
   create(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -33,6 +35,7 @@ export class PrintTemplatesController {
     return this.printTemplatesService.create(organizationId, createDto, user);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get()
   findAll(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -42,6 +45,7 @@ export class PrintTemplatesController {
     return this.printTemplatesService.findAll(organizationId, user, pagination);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':templateId')
   findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -51,6 +55,7 @@ export class PrintTemplatesController {
     return this.printTemplatesService.findOne(organizationId, templateId, user);
   }
 
+  @ApiTokenAccess(TokenScope.DEVICES_WRITE)
   @Patch(':templateId')
   update(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -76,6 +81,7 @@ export class PrintTemplatesController {
     return this.printTemplatesService.remove(organizationId, templateId, user);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Post(':templateId/preview')
   @HttpCode(HttpStatus.OK)
   preview(

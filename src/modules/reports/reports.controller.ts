@@ -1,5 +1,7 @@
 import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import type { Response } from 'express';
 import { ReportsService } from './reports.service';
 import { GatewayService } from '../gateway/gateway.service';
@@ -22,6 +24,7 @@ export class ReportsController {
     private readonly gatewayService: GatewayService,
   ) {}
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('sales')
   @Roles(Role.MEMBER)
   async getSalesReport(
@@ -37,6 +40,7 @@ export class ReportsController {
     return { data: report };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('products')
   @Roles(Role.MEMBER)
   async getProductsReport(
@@ -52,6 +56,7 @@ export class ReportsController {
     return { data: report };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('payments')
   @Roles(Role.MEMBER)
   async getPaymentsReport(
@@ -67,6 +72,7 @@ export class ReportsController {
     return { data: report };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('hourly')
   @Roles(Role.MEMBER)
   async getHourlyReport(
@@ -82,6 +88,7 @@ export class ReportsController {
     return { data: report };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('channels')
   @Roles(Role.MEMBER)
   async getChannelsReport(
@@ -97,6 +104,7 @@ export class ReportsController {
     return { data: report };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('categories')
   @Roles(Role.MEMBER)
   async getCategoriesReport(
@@ -112,6 +120,7 @@ export class ReportsController {
     return { data: report };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('net-summary')
   @Roles(Role.MEMBER)
   @ApiOperation({
@@ -132,6 +141,7 @@ export class ReportsController {
     return { data: summary };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('devices')
   @Roles(Role.MEMBER)
   async getDevicesReport(
@@ -147,6 +157,7 @@ export class ReportsController {
     return { data: report };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('inventory')
   @Roles(Role.MEMBER)
   async getInventoryReport(
@@ -160,6 +171,7 @@ export class ReportsController {
     return { data: report };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('stock-movements')
   @Roles(Role.MEMBER)
   async getStockMovementsReport(
@@ -175,6 +187,7 @@ export class ReportsController {
     return { data: report };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('export')
   @Roles(Role.MEMBER)
   async exportReport(
@@ -201,6 +214,7 @@ export class ReportsController {
     response.send(result.data);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('system-status')
   @Roles(Role.MEMBER)
   async getSystemStatus(
@@ -219,6 +233,7 @@ export class ReportsController {
     return { data: status };
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('activity')
   @Roles(Role.MEMBER)
   async getActivityStream(

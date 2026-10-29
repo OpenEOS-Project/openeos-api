@@ -14,7 +14,8 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DevicesService } from './devices.service';
 import { GatewayService } from '../gateway/gateway.service';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CreateDeviceDto, UpdateDeviceDto, VerifyDeviceDto } from './dto';
@@ -37,6 +38,7 @@ export class DevicesController {
     return this.devicesService.create(organizationId, createDto, user);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get()
   findAll(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -46,6 +48,7 @@ export class DevicesController {
     return this.devicesService.findAll(organizationId, user, pagination);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':deviceId')
   findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -127,6 +130,7 @@ export class DevicesController {
     return this.devicesService.unblockDevice(organizationId, deviceId, user);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':deviceId/stats')
   getDeviceStats(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -136,6 +140,7 @@ export class DevicesController {
     return this.devicesService.getDeviceStats(organizationId, deviceId, user);
   }
 
+  @ApiTokenAccess(TokenScope.READ)
   @Get('online/ids')
   async getOnlineDeviceIds(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
