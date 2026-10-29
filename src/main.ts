@@ -65,6 +65,15 @@ async function bootstrap() {
 
   // Serve uploaded files (avatars, organization logos, product images, ...)
   const uploadDir = configService.get<string>('UPLOAD_DIR') || './uploads';
+  // Hochgeladene Speisekarten (Assistent) liegen im selben Verzeichnis,
+  // sind aber nicht oeffentlich: sie gehoeren der Organisation und leben
+  // nur bis zur Auswertung. Der Pfad wird vor dem statischen Handler gesperrt.
+  app.use(
+    '/uploads/menu-imports',
+    (_req: unknown, res: { status: (code: number) => { end: () => void } }) => {
+      res.status(404).end();
+    },
+  );
   app.useStaticAssets(join(process.cwd(), uploadDir.replace(/^\.\//, '')), {
     prefix: '/uploads/',
   });
@@ -189,6 +198,10 @@ async function bootstrap() {
       .addTag('Reports', 'Reporting and analytics')
       .addTag('Uploads', 'File upload management')
       .addTag('Inventory', 'Inventory and stock management')
+      .addTag(
+        'Assistant',
+        'Assistent: Opt-in je Organisation, Speisekarten-Import, Icon-Vorschläge',
+      )
       .addTag('Health', 'Health check endpoints')
       .build();
 

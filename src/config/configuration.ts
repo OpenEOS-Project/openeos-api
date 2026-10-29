@@ -137,6 +137,30 @@ export default () => ({
     openRegisterApiKey: process.env.OPENREGISTER_API_KEY || '',
   },
 
+  ai: {
+    // 'none' (Standard): alle Assistent-Endpunkte antworten 404 AI_DISABLED.
+    // Self-Hoster bringen ihren eigenen Schluessel mit oder lassen es aus.
+    provider: (process.env.AI_PROVIDER || 'none') as
+      | 'anthropic'
+      | 'openai'
+      | 'none',
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+    openaiApiKey: process.env.OPENAI_API_KEY || '',
+    openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+    // Modell-IDs liegen in der Konfiguration, nicht im Code. Ohne Angabe
+    // gilt je Anbieter ein Standard (siehe ai-provider.factory.ts).
+    modelExtract: process.env.AI_MODEL_EXTRACT || '',
+    modelClassify: process.env.AI_MODEL_CLASSIFY || '',
+    // Kontingente je Organisation und Kalendertag (Europe/Berlin).
+    menuImportsPerDay: parseInt(process.env.AI_MENU_IMPORTS_PER_DAY || '5', 10),
+    menuPagesPerImport: parseInt(
+      process.env.AI_MENU_PAGES_PER_IMPORT || '6',
+      10,
+    ),
+    classifyPerDay: parseInt(process.env.AI_CLASSIFY_PER_DAY || '500', 10),
+    maxUploadMb: parseInt(process.env.AI_MAX_UPLOAD_MB || '10', 10),
+  },
+
   support: {
     // Eigene Adresse fuer Support-Nachrichten und Kontaktanfragen. Leer:
     // es gilt die allgemeine Admin-Adresse (siehe PlatformSettingsService).

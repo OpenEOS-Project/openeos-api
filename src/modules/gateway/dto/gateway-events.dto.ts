@@ -196,6 +196,13 @@ export interface MenuRefreshEvent {
   reason: string;
 }
 
+/** Ein Speisekarten-Import hat den Status gewechselt (Assistent). */
+export interface MenuImportUpdatedEvent {
+  id: string;
+  eventId: string;
+  status: 'queued' | 'processing' | 'done' | 'failed' | 'applied';
+}
+
 // Tables (Bereiche/Tische der Organisation geaendert)
 export interface TablesUpdatedEvent {
   /** Betroffene Bereiche; fehlt, wenn sich die Bereichsliste selbst geaendert hat. */
@@ -326,6 +333,9 @@ export const GatewayEvents = {
 
   // Organization Events
   ORGANIZATION_SETTINGS_UPDATED: 'organizationSettingsUpdated',
+
+  // Assistent: Speisekarten-Import (Org-Raum, Web pollt zusaetzlich)
+  MENU_IMPORT_UPDATED: 'menuImportUpdated',
 
   // Cash Drawer Events
   OPEN_CASH_DRAWER: 'openCashDrawer',

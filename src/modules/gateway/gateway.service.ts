@@ -16,6 +16,7 @@ import {
   CategoryUpdatedEvent,
   CategoryDeletedEvent,
   MenuRefreshEvent,
+  MenuImportUpdatedEvent,
   EventStatusChangedEvent,
   DeviceSettingsUpdatedEvent,
   DeviceConfigUpdatedEvent,
@@ -425,6 +426,22 @@ export class GatewayService {
       organizationId,
       GatewayEvents.ORGANIZATION_SETTINGS_UPDATED,
       { organizationId },
+    );
+  }
+
+  // Assistent: Speisekarten-Import
+
+  notifyMenuImportUpdated(
+    organizationId: string,
+    data: MenuImportUpdatedEvent,
+  ) {
+    this.logger.debug(
+      `Emitting menuImportUpdated for import ${data.id}: ${data.status}`,
+    );
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.MENU_IMPORT_UPDATED,
+      data,
     );
   }
 
