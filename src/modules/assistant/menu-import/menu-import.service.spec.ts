@@ -272,6 +272,14 @@ describe('MenuImportService.create', () => {
       ctx.service.create(ORG, EVENT, user, { files: [{ buffer: pdf }] }),
     ).rejects.toThrow(/PDF wird vom eingerichteten Anbieter nicht unterstützt/);
     await expect(
+      ctx.service.create(ORG, EVENT, user, { files: [{ buffer: pdf }] }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'MENU_IMPORT_INVALID_FILES',
+        reason: 'MENU_IMPORT_PDF_UNSUPPORTED',
+      },
+    });
+    await expect(
       ctx.service.create(ORG, EVENT, user, {
         files: [{ buffer: Buffer.alloc(2 * 1024 * 1024, 1) }],
       }),

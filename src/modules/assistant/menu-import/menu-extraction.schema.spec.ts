@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { AiProviderError } from '../../ai/ai-provider.error';
 import {
   MENU_EXTRACTION_SCHEMA,
   validateExtraction,
@@ -26,18 +27,38 @@ describe('validateExtraction', () => {
     expect(result.categories).toHaveLength(3);
   });
 
-  it('refuses answers without a single valid product', () => {
-    expect(() =>
+  it('returns an empty suggestion with a warning when no product is valid', () => {
+    expect(
       validateExtraction({ categories: [], products: [], warnings: [] }),
-    ).toThrow(/keine Produkte/);
-    expect(() => validateExtraction('nope')).toThrow(/kein Objekt/);
-    expect(() =>
-      validateExtraction({
-        products: [
-          { name: 'x', price: 'teuer', taxRate: 19, confidence: 'high' },
-        ],
-      }),
-    ).toThrow(/keine Produkte/);
+    ).toEqual({
+      categories: [],
+      products: [],
+      warnings: ['Auf der Speisekarte wurden keine Produkte erkannt.'],
+    });
+    const dropped = validateExtraction({
+      products: [
+        { name: 'x', price: 'teuer', taxRate: 19, confidence: 'high' },
+      ],
+    });
+    expect(dropped.products).toEqual([]);
+    expect(dropped.warnings).toEqual([
+      'Ein Eintrag war unvollständig und wurde übersprungen',
+      'Auf der Speisekarte wurden keine Produkte erkannt.',
+    ]);
+  });
+
+  it('refuses answers that are not an object as invalid output', () => {
+    let thrown: unknown;
+    try {
+      validateExtraction('nope');
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(AiProviderError);
+    expect(thrown).toMatchObject({
+      message: expect.stringMatching(/kein Objekt/) as unknown,
+      kind: 'invalid_output',
+    });
   });
 
   it('caps variants and ignores unknown fields', () => {

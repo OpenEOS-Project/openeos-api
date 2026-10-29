@@ -55,7 +55,7 @@ export class MenuImportController {
   @ApiOperation({
     summary: 'Speisekarte zur Auswertung einreichen',
     description:
-      'multipart: `files[]` (1–AI_MENU_PAGES_PER_IMPORT Bilder jpg/png/webp oder genau eine PDF ≤ AI_MAX_UPLOAD_MB) oder Feld `text`. Antwort 202 mit Job-ID; Status per GET pollen (alle 2 s) oder Socket-Event `menuImportUpdated { id, eventId, status }` im Organisations-Raum. Fehler: 404 AI_DISABLED, 403 ASSISTANT_DISABLED, 429 AI_QUOTA_EXCEEDED (params.resetAt), 400 MENU_IMPORT_INVALID_FILES.',
+      'multipart: `files[]` (1–AI_MENU_PAGES_PER_IMPORT Bilder jpg/png/webp oder genau eine PDF ≤ AI_MAX_UPLOAD_MB) oder Feld `text`. Antwort 202 mit Job-ID; Status per GET pollen (alle 2 s) oder Socket-Event `menuImportUpdated { id, eventId, status }` im Organisations-Raum. Fehler: 404 AI_DISABLED, 403 ASSISTANT_DISABLED, 429 AI_QUOTA_EXCEEDED (params.resetAt), 400 MENU_IMPORT_INVALID_FILES (reason MENU_IMPORT_PDF_UNSUPPORTED, wenn der Anbieter keine PDF liest — siehe pdfSupported im Assistent-Status).',
   })
   @ApiBody({
     schema: {
@@ -117,7 +117,7 @@ export class MenuImportController {
   @ApiOperation({
     summary: 'Status und Vorschlag eines Imports',
     description:
-      'status: queued | processing | done | failed | applied. Bei done enthält `suggestion` { categories[{ key, name, existingCategoryId? }], products[{ key, categoryKey, name, description?, price, taxRate, pfand?, variants?, existingProductId?, iconSuggestions?, confidence, note? }], warnings[] }. Bei failed steht die Ursache in `error`.',
+      'status: queued | processing | done | failed | applied. Bei done enthält `suggestion` { categories[{ key, name, existingCategoryId? }], products[{ key, categoryKey, name, description?, price, taxRate, pfand?, variants?, existingProductId?, iconSuggestions?, confidence, note? }], warnings[] }. Erkennt das Modell kein Produkt, ist der Import trotzdem done mit leerem `products` und einem Hinweis in `warnings`. Bei failed steht in `error` ein kurzer Hinweis für Nutzer:innen; die Rohmeldung des Anbieters bleibt im Server-Log.',
   })
   @ApiResponse({
     status: 200,

@@ -14,7 +14,9 @@ import { AssistantService } from './assistant.service';
 const ORG = '7d0c7a52-4f43-4a3e-9f8e-0f2b8f3f1a11';
 const user = { id: 'user-1' } as User;
 
-function setup(options: { enabled?: boolean; available?: boolean } = {}) {
+function setup(
+  options: { enabled?: boolean; available?: boolean; pdf?: boolean } = {},
+) {
   const stored = {
     id: ORG,
     settings:
@@ -44,6 +46,7 @@ function setup(options: { enabled?: boolean; available?: boolean } = {}) {
   } as unknown as OrganizationsService;
   const provider = {
     isAvailable: () => options.available ?? true,
+    supportsPdf: () => options.pdf ?? true,
   } as unknown as AiProvider;
   const quota = {
     getQuota: jest.fn((_org: string, feature: string) =>
@@ -66,15 +69,24 @@ function setup(options: { enabled?: boolean; available?: boolean } = {}) {
 }
 
 describe('AssistantService', () => {
-  it('reports status with availability and both quotas', async () => {
+  it('reports status with availability, PDF support and both quotas', async () => {
     const { service } = setup({ enabled: true });
     await expect(service.getStatus(ORG, user)).resolves.toEqual({
       enabled: true,
       available: true,
+      pdfSupported: true,
       quotas: {
         menuImports: { limit: 5, used: 1, remaining: 4, resetAt: 'r' },
         classifications: { limit: 500, used: 1, remaining: 4, resetAt: 'r' },
       },
+    });
+  });
+
+  it('reports pdfSupported=false when the provider only reads images', async () => {
+    const { service } = setup({ enabled: true, pdf: false });
+    await expect(service.getStatus(ORG, user)).resolves.toMatchObject({
+      available: true,
+      pdfSupported: false,
     });
   });
 

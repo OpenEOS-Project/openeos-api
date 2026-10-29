@@ -14,10 +14,10 @@ import { CronLockService } from '../../../common/redis/cron-lock.service';
 import { GatewayService } from '../../gateway/gateway.service';
 import { AI_PROVIDER } from '../../ai/ai-provider.interface';
 import type { AiInputFile, AiProvider } from '../../ai/ai-provider.interface';
-import { AiProviderError } from '../../ai/ai-provider.error';
 import { AiQuotaService } from '../../ai/ai-quota.service';
 import { wrapUntrusted } from '../../ai/providers/structured-output.util';
 import { IconSuggestionService } from '../icon-suggestion.service';
+import { describeMenuImportFailure } from './menu-import-errors';
 import { deleteFiles, readFiles } from './menu-import-files';
 import {
   MENU_EXTRACTION_SCHEMA,
@@ -109,6 +109,7 @@ export class MenuImportWorkerService {
           status: 'done',
           suggestion,
           error: null,
+          errorDetail: null,
           finishedAt: new Date(),
         },
       );
@@ -117,19 +118,23 @@ export class MenuImportWorkerService {
       );
       this.notify(menuImport, 'done');
     } catch (error) {
-      const message =
-        error instanceof AiProviderError
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : 'Unbekannter Fehler';
-      this.logger.warn(`Import ${menuImport.id} fehlgeschlagen: ${message}`);
+      // Nutzer sehen nur den kurzen Hinweis; die Rohmeldung bleibt hier
+      // im Log und in `error_detail`.
+      const failure = describeMenuImportFailure(error);
+      this.logger.warn(
+        `Import ${menuImport.id} fehlgeschlagen: ${failure.detail}`,
+      );
       if (menuImport.usageId) {
         await this.quota.settle(menuImport.usageId, { status: 'error' });
       }
       await this.importRepository.update(
         { id: menuImport.id },
-        { status: 'failed', error: message, finishedAt: new Date() },
+        {
+          status: 'failed',
+          error: failure.message,
+          errorDetail: failure.detail,
+          finishedAt: new Date(),
+        },
       );
       this.notify(menuImport, 'failed');
     }
@@ -212,6 +217,9 @@ export class MenuImportWorkerService {
       existingProducts,
       vatExempt: organization?.settings?.vatExempt !== false,
     });
+    // Kein Produkt erkannt ist kein Fehler (der Aufruf ist abgerechnet):
+    // der Vorschlag bleibt leer und traegt den Hinweis aus validateExtraction.
+    if (suggestion.products.length === 0) return suggestion;
     return this.attachIcons(menuImport, suggestion);
   }
 
@@ -282,7 +290,9 @@ export class MenuImportWorkerService {
         {
           status: 'failed',
           error:
-            'Die Auswertung wurde abgebrochen — bitte versuch es noch einmal',
+            'Die Auswertung wurde abgebrochen – bitte versuch es noch einmal.',
+          errorDetail:
+            'processing seit mehr als 15 Minuten, von recover() abgebrochen',
           finishedAt: now,
         },
       );
