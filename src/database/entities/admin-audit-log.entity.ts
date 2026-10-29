@@ -42,6 +42,9 @@ export enum AdminAction {
   ASSISTANT_ENABLED = 'assistant_enabled',
   ASSISTANT_DISABLED = 'assistant_disabled',
   MENU_IMPORT_APPLIED = 'menu_import_applied',
+  // API-Tokens je Organisation (ki-plan.md Abschnitt 8)
+  API_TOKEN_CREATED = 'api_token_created',
+  API_TOKEN_REVOKED = 'api_token_revoked',
 }
 
 /**

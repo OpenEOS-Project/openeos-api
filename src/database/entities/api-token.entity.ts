@@ -1,6 +1,7 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
+import { Organization } from './organization.entity';
 
 /**
  * Ein Zugang für Maschinen.
@@ -17,6 +18,7 @@ import { User } from './user.entity';
  */
 @Entity('api_tokens')
 @Index(['tokenHash'], { unique: true })
+@Index(['organizationId'])
 export class ApiToken extends BaseEntity {
   /** Wofür der Token gedacht ist — steht in der Übersicht. */
   @Column({ type: 'varchar', length: 100 })
@@ -35,6 +37,18 @@ export class ApiToken extends BaseEntity {
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
   user: User;
+
+  /**
+   * Die Organisation, auf die der Token beschränkt ist. NULL nur bei
+   * Plattform-Tokens (Super-Admin, Monitoring) — die gibt es seit der
+   * ersten Fassung, deshalb bleibt die Spalte optional.
+   */
+  @Column({ name: 'organization_id', type: 'uuid', nullable: true })
+  organizationId: string | null;
+
+  @ManyToOne(() => Organization, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'organization_id' })
+  organization: Organization;
 
   /** Was der Token darf. Leer heisst: nichts. */
   @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
