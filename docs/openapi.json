@@ -10868,7 +10868,7 @@
         ]
       },
       "patch": {
-        "operationId": "AdminController_updateUser",
+        "operationId": "admin_updateUser",
         "parameters": [
           {
             "name": "id",

@@ -6326,7 +6326,7 @@ paths:
       security: *a62
       tags: *a63
     patch:
-      operationId: AdminController_updateUser
+      operationId: admin_updateUser
       parameters:
         - name: id
           required: true
