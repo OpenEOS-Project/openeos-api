@@ -10,7 +10,12 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { PfandTypesService } from './pfand-types.service';
 import { CreatePfandTypeDto, UpdatePfandTypeDto } from './dto';
 import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
@@ -18,6 +23,11 @@ import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 
 @ApiTags('Pfand Types')
+@ApiParam({
+  name: 'organizationId',
+  description: 'ID der Organisation',
+  format: 'uuid',
+})
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/pfand-types')
 export class PfandTypesController {
@@ -25,6 +35,12 @@ export class PfandTypesController {
 
   @ApiTokenAccess(TokenScope.CATALOG_WRITE)
   @Post()
+  @ApiOperation({
+    operationId: 'createPfandType',
+    summary: 'Pfandart anlegen',
+    description:
+      'Legt eine Pfandart (z. B. Glas 2 €) für die Organisation an. Scope `catalog:write` und Modulrecht Pfand.',
+  })
   async create(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() createDto: CreatePfandTypeDto,
@@ -40,6 +56,12 @@ export class PfandTypesController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get()
+  @ApiOperation({
+    operationId: 'listPfandTypes',
+    summary: 'Pfandarten auflisten',
+    description:
+      'Alle Pfandarten der Organisation, ohne Seitenwechsel. Scope `read`.',
+  })
   async findAll(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @CurrentUser() user: User,
@@ -53,6 +75,16 @@ export class PfandTypesController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get(':pfandTypeId')
+  @ApiOperation({
+    operationId: 'getPfandType',
+    summary: 'Pfandart abrufen',
+    description: 'Eine Pfandart der Organisation. Scope `read`.',
+  })
+  @ApiParam({
+    name: 'pfandTypeId',
+    description: 'ID der Pfandart',
+    format: 'uuid',
+  })
   async findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('pfandTypeId', ParseUUIDPipe) pfandTypeId: string,
@@ -68,6 +100,17 @@ export class PfandTypesController {
 
   @ApiTokenAccess(TokenScope.CATALOG_WRITE)
   @Patch(':pfandTypeId')
+  @ApiOperation({
+    operationId: 'updatePfandType',
+    summary: 'Pfandart ändern',
+    description:
+      'Ändert Name, Betrag oder Sichtbarkeit einer Pfandart. Scope `catalog:write`.',
+  })
+  @ApiParam({
+    name: 'pfandTypeId',
+    description: 'ID der Pfandart',
+    format: 'uuid',
+  })
   async update(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('pfandTypeId', ParseUUIDPipe) pfandTypeId: string,

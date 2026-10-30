@@ -14,10 +14,11 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
   ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
 import { OrganizationsService } from './organizations.service';
 import { GatewayService } from '../gateway/gateway.service';
@@ -67,6 +68,13 @@ export class OrganizationsController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get(':id')
+  @ApiOperation({
+    operationId: 'getOrganization',
+    summary: 'Organisation abrufen',
+    description:
+      'Liefert Stammdaten, Einstellungen und freigeschaltete Module der Organisation. Scope `read`; ein Token sieht nur seine eigene Organisation.',
+  })
+  @ApiParam({ name: 'id', description: 'ID der Organisation', format: 'uuid' })
   async findOne(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: User,
@@ -78,6 +86,13 @@ export class OrganizationsController {
 
   @ApiTokenAccess(TokenScope.SETTINGS_WRITE)
   @Patch(':id')
+  @ApiOperation({
+    operationId: 'updateOrganization',
+    summary: 'Organisation ändern',
+    description:
+      'Ändert Name, Kontaktdaten oder Einstellungen (z. B. bargeldloser Modus). Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen.',
+  })
+  @ApiParam({ name: 'id', description: 'ID der Organisation', format: 'uuid' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateDto: UpdateOrganizationDto,

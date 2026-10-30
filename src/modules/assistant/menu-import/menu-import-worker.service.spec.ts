@@ -208,10 +208,12 @@ describe('MenuImportWorkerService', () => {
     expect(suggestion.products[0].iconSuggestions?.[0]).toEqual({
       icon: 'pos-icon:spezi',
       score: 1,
+      source: 'lexical',
     });
     expect(suggestion.products[1].iconSuggestions?.[0]).toEqual({
       icon: 'pos-icon:pils',
       score: 1,
+      source: 'lexical',
     });
     expect(suggestion.warnings).toContain(
       'Ein Produkt gibt es in dieser Veranstaltung schon',

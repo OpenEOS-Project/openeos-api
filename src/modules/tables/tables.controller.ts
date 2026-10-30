@@ -11,7 +11,12 @@ import {
   Post,
   Put,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
 import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
@@ -32,6 +37,11 @@ import {
  * Jede Aenderung sendet `tablesUpdated` an den Organisationsraum.
  */
 @ApiTags('Tables')
+@ApiParam({
+  name: 'organizationId',
+  description: 'ID der Organisation',
+  format: 'uuid',
+})
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId')
 export class TablesController {
@@ -41,7 +51,12 @@ export class TablesController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get('table-areas')
-  @ApiOperation({ summary: 'Bereiche inkl. Tische (aktiv und inaktiv)' })
+  @ApiOperation({
+    operationId: 'listTableAreas',
+    summary: 'Bereiche und Tische auflisten',
+    description:
+      'Alle Bereiche der Organisation inklusive ihrer Tische (aktive und inaktive) und des Tischplans. Scope `read`.',
+  })
   async listAreas(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @CurrentUser() user: User,
@@ -51,7 +66,12 @@ export class TablesController {
 
   @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Post('table-areas')
-  @ApiOperation({ summary: 'Bereich anlegen' })
+  @ApiOperation({
+    operationId: 'createTableArea',
+    summary: 'Bereich anlegen',
+    description:
+      'Legt einen Bereich (z. B. Festzelt, Biergarten) an. Scope `tables:write` und Modulrecht Veranstaltungen.',
+  })
   async createArea(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() dto: CreateTableAreaDto,
@@ -65,7 +85,12 @@ export class TablesController {
   // Vor `:areaId`, sonst greift die UUID-Pruefung auf „order“.
   @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Patch('table-areas/order')
-  @ApiOperation({ summary: 'Bereiche sortieren' })
+  @ApiOperation({
+    operationId: 'reorderTableAreas',
+    summary: 'Bereiche sortieren',
+    description:
+      'Setzt die Reihenfolge der Bereiche anhand der übergebenen ID-Liste. Scope `tables:write`.',
+  })
   async reorderAreas(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() dto: ReorderTableAreasDto,
@@ -78,7 +103,13 @@ export class TablesController {
 
   @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Patch('table-areas/:areaId')
-  @ApiOperation({ summary: 'Bereich ändern (Name, Größe, Raster, Deko)' })
+  @ApiOperation({
+    operationId: 'updateTableArea',
+    summary: 'Bereich ändern',
+    description:
+      'Ändert Name, Größe, Raster oder Deko eines Bereichs. Scope `tables:write`.',
+  })
+  @ApiParam({ name: 'areaId', description: 'ID des Bereichs', format: 'uuid' })
   async updateArea(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('areaId', ParseUUIDPipe) areaId: string,
@@ -97,7 +128,13 @@ export class TablesController {
 
   @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Put('table-areas/:areaId/layout')
-  @ApiOperation({ summary: 'Karte eines Bereichs speichern (Autosave)' })
+  @ApiOperation({
+    operationId: 'putTableAreaLayout',
+    summary: 'Tischplan eines Bereichs speichern',
+    description:
+      'Ersetzt die Karte eines Bereichs (Positionen der Tische und Deko) vollständig. Scope `tables:write`.',
+  })
+  @ApiParam({ name: 'areaId', description: 'ID des Bereichs', format: 'uuid' })
   async putLayout(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('areaId', ParseUUIDPipe) areaId: string,
@@ -129,7 +166,11 @@ export class TablesController {
 
   @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Post('tables')
-  @ApiOperation({ summary: 'Tisch anlegen' })
+  @ApiOperation({
+    operationId: 'createTable',
+    summary: 'Tisch anlegen',
+    description: 'Legt einen Tisch in einem Bereich an. Scope `tables:write`.',
+  })
   async createTable(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() dto: CreateDiningTableDto,
@@ -142,7 +183,12 @@ export class TablesController {
 
   @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Post('tables/bulk')
-  @ApiOperation({ summary: 'Serie anlegen (z. B. A01–A12)' })
+  @ApiOperation({
+    operationId: 'createTablesBulk',
+    summary: 'Tischserie anlegen',
+    description:
+      'Legt mehrere Tische mit fortlaufender Nummer in einem Aufruf an (z. B. A01–A12). Scope `tables:write`.',
+  })
   async bulkCreate(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() dto: BulkCreateDiningTablesDto,
@@ -155,7 +201,13 @@ export class TablesController {
 
   @ApiTokenAccess(TokenScope.TABLES_WRITE)
   @Patch('tables/:tableId')
-  @ApiOperation({ summary: 'Tisch ändern, umbenennen oder verschieben' })
+  @ApiOperation({
+    operationId: 'updateTable',
+    summary: 'Tisch ändern',
+    description:
+      'Ändert Name, Plätze, Position oder Bereich eines Tischs. Scope `tables:write`.',
+  })
+  @ApiParam({ name: 'tableId', description: 'ID des Tischs', format: 'uuid' })
   async updateTable(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('tableId', ParseUUIDPipe) tableId: string,

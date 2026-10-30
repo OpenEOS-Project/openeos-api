@@ -74,7 +74,10 @@ COPY --from=builder --chown=nestjs:nodejs /app/LICENSE /app/NOTICE ./
 # Static assets (e.g. brand logo embedded into generated PDFs)
 COPY --from=builder --chown=nestjs:nodejs /app/assets ./assets
 
-# Create uploads directory
+# Upload-Verzeichnis (UPLOAD_DIR, Standard /app/uploads) gehoert dem
+# Container-Nutzer. Achtung: ein Bind-Mount vom Host ueberstimmt das —
+# dann muss das Host-Verzeichnis uid 1001 gehoeren (`chown -R 1001 <dir>`),
+# sonst antworten Uploads mit 503 UPLOAD_DIR_NOT_WRITABLE (siehe README).
 RUN mkdir -p /app/uploads && chown nestjs:nodejs /app/uploads
 
 # Set environment

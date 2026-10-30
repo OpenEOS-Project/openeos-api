@@ -13,6 +13,7 @@ import type { Request } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiParam,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -83,14 +84,21 @@ export class AssistantController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Post('icon-suggestions')
-  @ApiOperation({
-    summary: 'Icon-Vorschläge aus @openeos/pos-icons für Produktnamen',
-    description:
-      'Stufe 1 ohne Modell (Namen/Suchbegriffe der Icons), Stufe 2 fragt bei unklaren Namen das Klassifikationsmodell (Kontingent classifications). icon ist die Referenz `pos-icon:<id>`. 404 AI_DISABLED ohne Anbieter, 403 ASSISTANT_DISABLED ohne Opt-in.',
-  })
   @ApiResponse({
     status: 201,
-    description: '{ data: [{ name, suggestions: [{ icon, score }] }] }',
+    description:
+      '{ data: [{ name, suggestions: [{ icon, score, source: lexical|model }] }] } — leeres Array, wenn kein Icon passt',
+  })
+  @ApiOperation({
+    operationId: 'suggestProductIcons',
+    summary: 'Icon-Vorschläge für Produktnamen',
+    description:
+      'Schlägt zu Produktnamen passende Icons aus @openeos/pos-icons vor: Stufe 1 ohne Modell (Namen und Suchbegriffe der Icons), Stufe 2 fragt bei unklaren Namen das Klassifikationsmodell. `icon` ist die Referenz `pos-icon:<id>`. Scope `read`; `404 AI_DISABLED` ohne Anbieter, `403 ASSISTANT_DISABLED` ohne Opt-in der Organisation.',
+  })
+  @ApiParam({
+    name: 'organizationId',
+    description: 'ID der Organisation',
+    format: 'uuid',
   })
   async iconSuggestions(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

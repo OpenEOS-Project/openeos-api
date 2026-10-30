@@ -85,16 +85,19 @@ Im Development-Modus (`NODE_ENV` ≠ `production`) ist die interaktive API-Dokum
 http://localhost:3000/docs
 ```
 
-(Rohe Spezifikation: `/docs-json`, `/docs-yaml`.) In Produktion wird `/docs` nicht ausgeliefert; die öffentliche API-Referenz rendert die Doku-Seite (openeos-docs) aus der eingecheckten Spezifikation `docs/openapi.json` / `docs/openapi.yaml`.
+(Rohe Spezifikation: `/docs-json`, `/docs-yaml`.) In Produktion wird `/docs` nicht ausgeliefert. Eingecheckt sind zwei Fassungen der Spezifikation:
 
-Beide entstehen aus derselben Konfiguration wie Swagger UI (`src/common/openapi/openapi-config.ts`, Einleitung, Sicherheitsschemata, Tag-Reihenfolge):
+- `docs/openapi.json` / `docs/openapi.yaml` — vollständig (alle Controller), für Swagger UI und Self-Hosting
+- `docs/openapi.public.json` / `docs/openapi.public.yaml` — nur, was ein API-Token erreicht (`x-api-token-scope`), plus die Token-Verwaltung; deutsche Tags in fester Reihenfolge, nur die dafür nötigen Schemas. Daraus rendert die Doku-Seite (openeos-docs) die öffentliche API-Referenz unter docs.openeos.de/api. Welche Tags es gibt und wie sie heißen: `src/common/openapi/public-spec.ts`.
+
+Alle entstehen aus derselben Konfiguration wie Swagger UI (`src/common/openapi/openapi-config.ts`, Einleitung, Sicherheitsschemata, Tag-Reihenfolge, lesbare operationIds):
 
 ```bash
-pnpm docs:generate   # schreibt docs/openapi.json und docs/openapi.yaml
-pnpm docs:check      # Exit 1, wenn die eingecheckte Fassung nicht zum Code passt (läuft in CI)
+pnpm docs:generate   # schreibt docs/openapi*.json und docs/openapi*.yaml
+pnpm docs:check      # Exit 1, wenn eine eingecheckte Fassung nicht zum Code passt (läuft in CI)
 ```
 
-Beide brauchen eine erreichbare Datenbank und Redis (`docker compose up -d postgres redis`), weil `AppModule` beim Start verbindet. Nach jeder Änderung an Controllern oder DTOs: `pnpm docs:generate` und das Ergebnis mit committen.
+Beide brauchen eine erreichbare Datenbank und Redis (`docker compose up -d postgres redis`), weil `AppModule` beim Start verbindet. Nach jeder Änderung an Controllern oder DTOs: `pnpm docs:generate` und das Ergebnis mit committen. Jeder Endpunkt mit `@ApiTokenAccess` braucht ein `@ApiOperation` mit `operationId`, deutscher `summary` und `description` — `src/common/openapi/openapi-public.spec.ts` prüft das gegen die eingecheckte öffentliche Fassung.
 
 ### API-Zugänge (API-Tokens)
 
@@ -370,6 +373,8 @@ antwortet mit **410** `PRINTER_SYNC_REMOVED`. Socket: `agentHeartbeat`
 | DELETE | `/:filename` | Bild löschen |
 | GET | `/:category/:filename` | Bild abrufen |
 
+Alle Dateien (auch die des Speisekarten-Imports) liegen unter `UPLOAD_DIR` (im Container `/app/uploads`). Das Image legt das Verzeichnis für den Nutzer `nestjs` (uid 1001) an; ein **Bind-Mount vom Host überstimmt das**: gehört das Host-Verzeichnis root, antworten Uploads mit `503 UPLOAD_DIR_NOT_WRITABLE` („Der Upload-Ordner auf dem Server ist nicht beschreibbar – bitte den Betreiber informieren.“) und der Start warnt im Log. Abhilfe auf dem Host: `chown -R 1001 <verzeichnis>`. Ein benanntes Volume (wie in `docker-compose.prod.yml`) übernimmt die Rechte aus dem Image und braucht nichts weiter.
+
 ### Inventory (`/api/organizations/:orgId/inventory`)
 | Methode | Endpunkt | Beschreibung |
 |---------|----------|--------------|
@@ -464,7 +469,7 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `REFRESH_TOKEN_EXPIRES_IN` | Refresh Token Ablauf | 7d |
 | `CORS_ORIGINS` | Erlaubte Origins | http://localhost:3001 |
 | `TRUST_PROXY` | Vertrauenswürdige Reverse-Proxys für X-Forwarded-For (Hop-Anzahl, IPs/CIDRs oder `false`) | loopback, linklocal, uniquelocal |
-| `UPLOAD_DIR` | Upload-Verzeichnis | ./uploads |
+| `UPLOAD_DIR` | Upload-Verzeichnis — muss dem Container-Nutzer (uid 1001) gehören, siehe „Uploads“ | ./uploads |
 | `EVENT_PRICE_EUR` | Preis pro abgerechnetem Veranstaltungstag | 25 |
 | `BUSINESS_DAY_START_HOUR` | Tageswechsel der Abrechnung (Stunde 1–23, Ortszeit der Organisation). Ein Veranstaltungstag läuft von 6 bis 6 Uhr; ein Ende bis einschließlich 6:00 zählt zum Vortag (Sa 20 Uhr – So 2 Uhr = 1 Tag). Bereits bezahlte Veranstaltungen behalten ihre Tage. | 6 |
 | `STRIPE_INVOICE_DAYS_UNTIL_DUE` | Zahlungsziel der Stripe-Rechnung beim Kauf auf Rechnung in Tagen (je Organisation überschreibbar) | 14 |
@@ -549,7 +554,83 @@ Modell-IDs stehen in der Konfiguration (`AI_MODEL_EXTRACT`, `AI_MODEL_CLASSIFY`)
 
 **Sicherheit.** Speisekarten sind fremder Inhalt: Das Modell liefert ausschließlich strukturierte Ausgabe gegen ein festes Schema, Text wird als `<untrusted>`-Daten übergeben, die Antwort wird vor dem Speichern Zeile für Zeile mit class-validator geprüft und nur als Vorschlag gespeichert — angelegt wird erst, was ein Mensch in der Vorschau bestätigt. Dateiinhalte und Schlüssel erscheinen nie im Log.
 
-**Icon-Vorschläge.** `POST /api/organizations/:orgId/assistant/icon-suggestions { names[] }`. Stufe 1 ohne Modell: Namen und Suchbegriffe der Icons aus `@openeos/pos-icons` (schlanker Index im Repo, `pnpm icons:sync` nach einem Paket-Update). Stufe 2 nur für unklare Namen und nur mit freiem Kontingent: das Klassifikationsmodell wählt aus den zehn besten Kandidaten.
+**Icon-Vorschläge.** `POST /api/organizations/:orgId/assistant/icon-suggestions { names[] }`. Stufe 1 ohne Modell: Namen und Suchbegriffe der Icons aus `@openeos/pos-icons` (schlanker Index im Repo, `pnpm icons:sync` nach einem Paket-Update). Stufe 2 nur für unklare Namen und nur mit freiem Kontingent: das Klassifikationsmodell wählt aus den zehn besten Kandidaten — oder ausdrücklich keines. Jeder Vorschlag trägt `source` (`lexical`: Treffer im Index, Score bis 1; `model`: Modellwahl, Score 0,6/0,5 je Sicherheit); ein leeres `suggestions`-Array heißt „kein passendes Icon“. Die Web-App sollte nur `lexical`-Treffer automatisch vorauswählen.
+
+## MCP (KI-Agenten)
+
+Die API ist ein [MCP](https://modelcontextprotocol.io)-Server: Claude Desktop, Claude Code, Cursor und eigene Agenten bedienen OpenEOS über dieselben Werkzeuge. Nur Administration — keine Kasse, keine Erstattungen, keine Mitglieder, kein Löschen, keine Freischaltung.
+
+- **Endpunkt:** `https://api.openeos.de/mcp` (Streamable HTTP, zustandslos, JSON-Antworten; außerhalb von `/api`). Selbst gehostet: `https://<dein-host>/mcp`.
+- **Anmeldung:** `Authorization: Bearer oeos_…` mit einem API-Token der Organisation (Einstellungen → Organisation → Zugänge). Sitzungen (JWT) werden abgewiesen. Ohne gültigen Token antwortet der Server mit `401` und `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource"`; die Metadaten (RFC 9728) nennen `bearer_methods_supported: ["header"]` und noch keinen Autorisierungsserver — OAuth 2.1 für claude.ai-Connectors folgt in Phase 3.
+- **Scopes:** `tools/list` zeigt nur Werkzeuge, die der Token darf (`read` für alles Lesende, `catalog:write`, `events:write`, `tables:write`, `staff:write`, `devices:write`, `settings:write` für das jeweilige Schreiben); `tools/call` prüft den Scope serverseitig noch einmal. Rolle und Modul-Berechtigungen des Token-Besitzers gelten wie in der Web-App.
+- **Schreiben nur mit Bestätigung:** Jedes schreibende Werkzeug hat `confirm`. Ohne `confirm: true` kommt eine Vorschau (`preview: true`, `summary`, `wouldCreate`/`changes`) und nichts ändert sich. Jede ausgeführte Änderung landet in `admin_audit_logs` (`agent_tool_call`, `via: agent`, Werkzeug, Token, Hash der Eingabe).
+- **Grenzen:** dieselben wie für den Token per REST (120 Aufrufe/min, 5.000/Tag, gemeinsamer Zähler).
+- **Ressourcen:** `openeos://docs/produkte`, `…/veranstaltungen`, `…/tische`, `…/drucker`, `…/schichten` (Doku-Auszüge). **Prompts:** `setup_event` (Veranstaltung einrichten), `daily_summary` (Tagesabschluss).
+- **Werkzeuge:** `src/modules/agent-tools/README.md` (Aufbau, neues Werkzeug) und `ki-plan.md` Abschnitt 9 (Liste mit Schemas).
+
+### Claude Code
+
+```bash
+claude mcp add --transport http openeos https://api.openeos.de/mcp --header "Authorization: Bearer oeos_…"
+```
+
+oder in `.mcp.json` des Projekts:
+
+```json
+{
+  "mcpServers": {
+    "openeos": {
+      "type": "http",
+      "url": "https://api.openeos.de/mcp",
+      "headers": { "Authorization": "Bearer oeos_…" }
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Claude Desktop verbindet entfernte Server nur per OAuth; bis Phase 3 geht der Weg über `mcp-remote` in `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "openeos": {
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote", "https://api.openeos.de/mcp",
+        "--header", "Authorization:${OPENEOS_AUTH}"
+      ],
+      "env": { "OPENEOS_AUTH": "Bearer oeos_…" }
+    }
+  }
+}
+```
+
+### Cursor
+
+`.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "openeos": {
+      "url": "https://api.openeos.de/mcp",
+      "headers": { "Authorization": "Bearer oeos_…" }
+    }
+  }
+}
+```
+
+### Eigener Client
+
+```bash
+curl -s https://api.openeos.de/mcp \
+  -H "Authorization: Bearer oeos_…" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
 
 ## Docker
 

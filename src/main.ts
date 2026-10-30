@@ -20,7 +20,11 @@ import {
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 import { RedactSecretsInterceptor } from './common/interceptors/redact-secrets.interceptor';
 import { parseTrustProxy } from './common/utils/trust-proxy.util';
-import { buildOpenApiConfig } from './common/openapi/openapi-config';
+import {
+  OPENAPI_DOCUMENT_OPTIONS,
+  buildOpenApiConfig,
+} from './common/openapi/openapi-config';
+import { MCP_PATH, PROTECTED_RESOURCE_PATH } from './modules/mcp';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -140,16 +144,23 @@ async function bootstrap() {
     }),
   );
 
-  // API Prefix
+  // API Prefix. Der MCP-Server und die Metadaten der geschuetzten
+  // Ressource (RFC 9728) liegen bewusst ausserhalb: /mcp und /.well-known.
   const apiPrefix = configService.get<string>('apiPrefix') || 'api';
-  app.setGlobalPrefix(apiPrefix);
+  app.setGlobalPrefix(apiPrefix, {
+    exclude: [MCP_PATH, PROTECTED_RESOURCE_PATH],
+  });
 
   // Swagger UI — nur ausserhalb der Produktion. Die oeffentliche
   // API-Referenz rendert die Doku-Seite (openeos-docs) aus docs/openapi.json,
   // das `pnpm docs:generate` aus derselben Konfiguration erzeugt.
   const nodeEnv = configService.get<string>('nodeEnv');
   if (nodeEnv !== 'production') {
-    const document = SwaggerModule.createDocument(app, buildOpenApiConfig());
+    const document = SwaggerModule.createDocument(
+      app,
+      buildOpenApiConfig(),
+      OPENAPI_DOCUMENT_OPTIONS,
+    );
     SwaggerModule.setup('docs', app, document, {
       jsonDocumentUrl: 'docs-json',
       yamlDocumentUrl: 'docs-yaml',
