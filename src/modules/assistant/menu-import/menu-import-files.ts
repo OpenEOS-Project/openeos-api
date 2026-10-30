@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { AiImageMediaType } from '../../ai/ai-provider.interface';
+import { resolveUploadDir } from '../../uploads/upload-dir';
 
 /**
  * Ablage der hochgeladenen Speisekarten: `<UPLOAD_DIR>/menu-imports/<id>/`.
@@ -46,9 +47,7 @@ const EXTENSIONS: Record<MenuFileMediaType, string> = {
   'application/pdf': 'pdf',
 };
 
-export function resolveUploadDir(uploadDir: string): string {
-  return path.resolve(process.cwd(), uploadDir.replace(/^\.\//, ''));
-}
+export { resolveUploadDir };
 
 export function importDir(uploadDir: string, importId: string): string {
   return path.join(resolveUploadDir(uploadDir), MENU_IMPORT_DIR, importId);

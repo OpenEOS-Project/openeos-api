@@ -368,6 +368,8 @@ antwortet mit **410** `PRINTER_SYNC_REMOVED`. Socket: `agentHeartbeat`
 | DELETE | `/:filename` | Bild löschen |
 | GET | `/:category/:filename` | Bild abrufen |
 
+Alle Dateien (auch die des Speisekarten-Imports) liegen unter `UPLOAD_DIR` (im Container `/app/uploads`). Das Image legt das Verzeichnis für den Nutzer `nestjs` (uid 1001) an; ein **Bind-Mount vom Host überstimmt das**: gehört das Host-Verzeichnis root, antworten Uploads mit `503 UPLOAD_DIR_NOT_WRITABLE` („Der Upload-Ordner auf dem Server ist nicht beschreibbar – bitte den Betreiber informieren.“) und der Start warnt im Log. Abhilfe auf dem Host: `chown -R 1001 <verzeichnis>`. Ein benanntes Volume (wie in `docker-compose.prod.yml`) übernimmt die Rechte aus dem Image und braucht nichts weiter.
+
 ### Inventory (`/api/organizations/:orgId/inventory`)
 | Methode | Endpunkt | Beschreibung |
 |---------|----------|--------------|
@@ -462,7 +464,7 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `REFRESH_TOKEN_EXPIRES_IN` | Refresh Token Ablauf | 7d |
 | `CORS_ORIGINS` | Erlaubte Origins | http://localhost:3001 |
 | `TRUST_PROXY` | Vertrauenswürdige Reverse-Proxys für X-Forwarded-For (Hop-Anzahl, IPs/CIDRs oder `false`) | loopback, linklocal, uniquelocal |
-| `UPLOAD_DIR` | Upload-Verzeichnis | ./uploads |
+| `UPLOAD_DIR` | Upload-Verzeichnis — muss dem Container-Nutzer (uid 1001) gehören, siehe „Uploads“ | ./uploads |
 | `EVENT_PRICE_EUR` | Preis pro abgerechnetem Veranstaltungstag | 25 |
 | `BUSINESS_DAY_START_HOUR` | Tageswechsel der Abrechnung (Stunde 1–23, Ortszeit der Organisation). Ein Veranstaltungstag läuft von 6 bis 6 Uhr; ein Ende bis einschließlich 6:00 zählt zum Vortag (Sa 20 Uhr – So 2 Uhr = 1 Tag). Bereits bezahlte Veranstaltungen behalten ihre Tage. | 6 |
 | `STRIPE_INVOICE_DAYS_UNTIL_DUE` | Zahlungsziel der Stripe-Rechnung beim Kauf auf Rechnung in Tagen (je Organisation überschreibbar) | 14 |
@@ -545,7 +547,7 @@ Modell-IDs stehen in der Konfiguration (`AI_MODEL_EXTRACT`, `AI_MODEL_CLASSIFY`)
 
 **Sicherheit.** Speisekarten sind fremder Inhalt: Das Modell liefert ausschließlich strukturierte Ausgabe gegen ein festes Schema, Text wird als `<untrusted>`-Daten übergeben, die Antwort wird vor dem Speichern Zeile für Zeile mit class-validator geprüft und nur als Vorschlag gespeichert — angelegt wird erst, was ein Mensch in der Vorschau bestätigt. Dateiinhalte und Schlüssel erscheinen nie im Log.
 
-**Icon-Vorschläge.** `POST /api/organizations/:orgId/assistant/icon-suggestions { names[] }`. Stufe 1 ohne Modell: Namen und Suchbegriffe der Icons aus `@openeos/pos-icons` (schlanker Index im Repo, `pnpm icons:sync` nach einem Paket-Update). Stufe 2 nur für unklare Namen und nur mit freiem Kontingent: das Klassifikationsmodell wählt aus den zehn besten Kandidaten.
+**Icon-Vorschläge.** `POST /api/organizations/:orgId/assistant/icon-suggestions { names[] }`. Stufe 1 ohne Modell: Namen und Suchbegriffe der Icons aus `@openeos/pos-icons` (schlanker Index im Repo, `pnpm icons:sync` nach einem Paket-Update). Stufe 2 nur für unklare Namen und nur mit freiem Kontingent: das Klassifikationsmodell wählt aus den zehn besten Kandidaten — oder ausdrücklich keines. Jeder Vorschlag trägt `source` (`lexical`: Treffer im Index, Score bis 1; `model`: Modellwahl, Score 0,6/0,5 je Sicherheit); ein leeres `suggestions`-Array heißt „kein passendes Icon“. Die Web-App sollte nur `lexical`-Treffer automatisch vorauswählen.
 
 ## Docker
 

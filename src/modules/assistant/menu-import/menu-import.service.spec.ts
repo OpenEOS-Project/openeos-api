@@ -1,6 +1,10 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { DataSource, Repository } from 'typeorm';
@@ -40,6 +44,7 @@ function setup(
   const uploadDir = mkdtempSync(join(tmpdir(), 'menu-service-'));
   const saved: Partial<MenuImport>[] = [];
   const importUpdates: [unknown, Partial<MenuImport>][] = [];
+  const deleteImport = jest.fn(() => Promise.resolve());
   const importRepository = {
     create: jest.fn((entry: Partial<MenuImport>) => entry),
     save: jest.fn((entry: Partial<MenuImport>) => {
@@ -51,7 +56,7 @@ function setup(
       importUpdates.push([where, values]);
       return Promise.resolve();
     }),
-    delete: jest.fn(() => Promise.resolve()),
+    delete: deleteImport,
     findOne: jest.fn(() =>
       Promise.resolve({
         id: IMPORT,
@@ -186,6 +191,7 @@ function setup(
     notifyMenuImportUpdated,
     notifyMenuRefresh,
     importRepository,
+    deleteImport,
   };
 }
 
@@ -240,6 +246,34 @@ describe('MenuImportService.create', () => {
       existsSync(join(importDir(ctx.uploadDir, IMPORT), 'page-02.png')),
     ).toBe(true);
   });
+
+  (process.getuid?.() === 0 ? it.skip : it)(
+    'answers 503 UPLOAD_DIR_NOT_WRITABLE and releases the quota when the upload dir is read-only (issue #86)',
+    async () => {
+      const ctx = setup();
+      dirs.push(ctx.uploadDir);
+      chmodSync(ctx.uploadDir, 0o500);
+      try {
+        const png = readFileSync(join(FIXTURES, 'getraenke.png'));
+        const promise = ctx.service.create(ORG, EVENT, user, {
+          files: [{ buffer: png }],
+        });
+        await expect(promise).rejects.toBeInstanceOf(
+          ServiceUnavailableException,
+        );
+        await expect(promise).rejects.toMatchObject({
+          response: { code: 'UPLOAD_DIR_NOT_WRITABLE' },
+        });
+        expect(ctx.settle).toHaveBeenCalledWith('usage-1', {
+          status: 'error',
+        });
+        expect(ctx.deleteImport).toHaveBeenCalledWith({ id: IMPORT });
+        expect(ctx.kick).not.toHaveBeenCalled();
+      } finally {
+        chmodSync(ctx.uploadDir, 0o700);
+      }
+    },
+  );
 
   it('rejects bad input before touching the quota', async () => {
     const ctx = setup({ supportsPdf: false });

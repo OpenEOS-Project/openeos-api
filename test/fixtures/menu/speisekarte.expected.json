@@ -85,15 +85,9 @@
     {
       "key": "p8",
       "categoryKey": "c3",
-      "name": "Radler",
+      "name": "Radler 0,5 l",
       "price": 3.5,
       "taxRate": 19,
-      "variants": [
-        {
-          "name": "0,5 l",
-          "priceModifier": 0
-        }
-      ],
       "existingProductId": "22222222-2222-4222-8222-222222222222",
       "confidence": "high"
     },

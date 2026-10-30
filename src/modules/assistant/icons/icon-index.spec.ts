@@ -32,6 +32,7 @@ describe('IconIndex (lexical icon matching)', () => {
     expect(matches[0]).toEqual({
       icon: 'pos-icon:currywurst-pommes',
       score: 1,
+      source: 'lexical',
     });
     expect(matches[1].score).toBeLessThan(1);
   });

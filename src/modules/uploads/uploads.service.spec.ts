@@ -1,4 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs/promises';
 import * as os from 'os';
@@ -121,4 +124,49 @@ describe('UploadsService: Pfade', () => {
       path.join(root, ORG, 'event', filename),
     );
   });
+});
+
+/**
+ * Ein Bind-Mount, der root gehoert, ist ein Betreiber-Problem: der Client
+ * bekommt 503 mit festem Code, nicht 500 (Issue #86). Als root gibt es
+ * kein EACCES, dann laeuft der Test leer.
+ */
+describe('UploadsService: Upload-Verzeichnis nicht beschreibbar', () => {
+  const ORG = '11111111-1111-4111-8111-111111111111';
+  const asRoot = process.getuid?.() === 0;
+
+  (asRoot ? it.skip : it)(
+    'antwortet mit 503 UPLOAD_DIR_NOT_WRITABLE statt 500',
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'uploads-ro-'));
+      await fs.chmod(root, 0o500);
+      const service = new UploadsService({
+        get: () => root,
+      } as unknown as ConfigService);
+      try {
+        const png = {
+          fieldname: 'file',
+          originalname: 'a.png',
+          encoding: '7bit',
+          mimetype: 'image/png',
+          size: 4,
+          buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+        } as MulterFile;
+        const promise = service.uploadImage(png, ORG, UploadCategory.PRODUCT);
+        await expect(promise).rejects.toBeInstanceOf(
+          ServiceUnavailableException,
+        );
+        await expect(promise).rejects.toMatchObject({
+          response: {
+            code: 'UPLOAD_DIR_NOT_WRITABLE',
+            message:
+              'Der Upload-Ordner auf dem Server ist nicht beschreibbar – bitte den Betreiber informieren.',
+          },
+        });
+      } finally {
+        await fs.chmod(root, 0o700);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 });

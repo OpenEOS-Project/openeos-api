@@ -90,7 +90,8 @@ export class AssistantController {
   })
   @ApiResponse({
     status: 201,
-    description: '{ data: [{ name, suggestions: [{ icon, score }] }] }',
+    description:
+      '{ data: [{ name, suggestions: [{ icon, score, source: lexical|model }] }] } — leeres Array, wenn kein Icon passt',
   })
   async iconSuggestions(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

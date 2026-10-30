@@ -1,10 +1,20 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  Logger,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { UploadCategory } from './dto';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import {
+  checkUploadDirWritable,
+  isUploadDirError,
+  uploadDirNotWritable,
+} from './upload-dir';
 
 const OWNER_ID = /^[A-Za-z0-9-]{1,64}$/;
 
@@ -50,7 +60,7 @@ export interface MulterFile {
 }
 
 @Injectable()
-export class UploadsService {
+export class UploadsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(UploadsService.name);
   private readonly uploadDir: string;
   private readonly maxFileSize = 5 * 1024 * 1024; // 5MB
@@ -64,6 +74,15 @@ export class UploadsService {
   constructor(private readonly configService: ConfigService) {
     this.uploadDir =
       this.configService.get<string>('UPLOAD_DIR') || './uploads';
+  }
+
+  /**
+   * Ein Bind-Mount von root ueberstimmt das `chown` im Dockerfile — dann
+   * wuerde jeder Upload mit 503 enden. Das soll beim Start im Log stehen,
+   * nicht erst beim ersten Nutzer.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    await checkUploadDirWritable(this.uploadDir, this.logger);
   }
 
   async uploadImage(
@@ -93,10 +112,16 @@ export class UploadsService {
         message: 'Ungültiger Speicherort',
       });
     }
-    await this.ensureDirectory(uploadPath);
-
     const filePath = path.join(uploadPath, filename);
-    await fs.writeFile(filePath, file.buffer);
+    try {
+      await this.ensureDirectory(uploadPath);
+      await fs.writeFile(filePath, file.buffer);
+    } catch (error) {
+      if (isUploadDirError(error)) {
+        throw uploadDirNotWritable(this.logger, error, this.uploadDir);
+      }
+      throw error;
+    }
 
     // Generate URL — keep this relative so the frontend can prepend the API base
     // (NEXT_PUBLIC_API_URL) at render time. APP_URL is the frontend URL in our setup.

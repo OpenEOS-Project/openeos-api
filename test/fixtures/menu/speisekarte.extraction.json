@@ -12,7 +12,7 @@
     { "name": "Crêpe mit Nutella", "category": "Süßes", "description": null, "price": 3.5, "taxRate": 19, "deposit": null, "variants": null, "confidence": "high", "note": null },
     { "name": "Crêpe mit Puderzucker", "category": "Süßes", "description": null, "price": 2.5, "taxRate": 19, "deposit": null, "variants": null, "confidence": "high", "note": null },
     { "name": "Pils", "category": "Getränke", "description": null, "price": 2.5, "taxRate": 19, "deposit": null, "variants": [ { "name": "0,3 l", "priceModifier": 0 }, { "name": "0,5 l", "priceModifier": 1 } ], "confidence": "high", "note": null },
-    { "name": "Radler", "category": "Getränke", "description": null, "price": 3.5, "taxRate": 19, "deposit": null, "variants": [ { "name": "0,5 l", "priceModifier": 0 } ], "confidence": "high", "note": null },
+    { "name": "Radler 0,5 l", "category": "Getränke", "description": null, "price": 3.5, "taxRate": 19, "deposit": null, "variants": null, "confidence": "high", "note": null },
     { "name": "Apfelschorle 0,5 l", "category": "Getränke", "description": null, "price": 2.5, "taxRate": 19, "deposit": null, "variants": null, "confidence": "high", "note": null },
     { "name": "Cola 0,33 l (Flasche)", "category": "Getränke", "description": null, "price": 2.5, "taxRate": 19, "deposit": { "suggested": true, "amount": 2 }, "variants": null, "confidence": "high", "note": null },
     { "name": "Weinschorle rot 0,25 l", "category": "Getränke", "description": null, "price": 3, "taxRate": 19, "deposit": null, "variants": null, "confidence": "medium", "note": "Preis schwer lesbar" },

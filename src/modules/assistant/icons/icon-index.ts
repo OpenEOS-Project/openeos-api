@@ -13,11 +13,35 @@ export interface IconIndexEntry {
   terms: string[];
 }
 
+/**
+ * Woher ein Vorschlag stammt: `lexical` ist ein Treffer im Index (Score
+ * nach Wortabdeckung, 1 = exakt), `model` eine Wahl des
+ * Klassifikationsmodells (fester Score, siehe IconSuggestionService).
+ * Die Web-App entscheidet damit, ob sie ein Icon vorauswaehlt.
+ */
+export type IconMatchSource = 'lexical' | 'model';
+
 export interface IconMatch {
   /** Vollstaendige Referenz, wie sie am Produkt gespeichert wird. */
   icon: string;
   score: number;
+  source: IconMatchSource;
 }
+
+/**
+ * Markennamen und Synonyme, die das Icon-Paket (noch) nicht fuehrt. Sie
+ * ergaenzen die Begriffe aus `pos-icon-index.ts`, damit „Fanta“ lexikalisch
+ * bei der Orangenlimo landet statt beim Modell (Issue #87).
+ */
+export const EXTRA_TERMS: Record<string, string[]> = {
+  'limo-orange': ['fanta', 'orangenlimo', 'orange limo'],
+  'limo-orange-flasche': ['fanta flasche'],
+  'limo-zitrone': ['sprite', '7up', 'seven up', 'zitronenlimo'],
+  'limo-zitrone-flasche': ['sprite flasche'],
+  spezi: ['mezzo mix', 'cola mix', 'cola orange'],
+  'spezi-flasche': ['mezzo mix flasche'],
+  'cola-zero': ['cola light', 'coke zero', 'cola ohne zucker'],
+};
 
 /** Begriffe, die nur die Art beschreiben und zu allem passen wuerden. */
 const STOPWORDS = new Set([
@@ -90,7 +114,7 @@ interface PreparedEntry {
 function prepare(entries: IconIndexEntry[]): PreparedEntry[] {
   return entries.map((entry) => ({
     id: entry.id,
-    terms: [entry.id, ...entry.terms]
+    terms: [entry.id, ...entry.terms, ...(EXTRA_TERMS[entry.id] ?? [])]
       .map((term) => {
         const text = normalize(term);
         return { text, tokens: tokens(term), grams: trigrams(text) };
@@ -168,6 +192,7 @@ export class IconIndex {
       .map((entry) => ({
         icon: `${ICON_PREFIX}${entry.id}`,
         score: Math.round(entry.score * 100) / 100,
+        source: 'lexical' as const,
       }));
   }
 }
