@@ -11,7 +11,12 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { DevicesService } from './devices.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
@@ -21,6 +26,11 @@ import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CreateDeviceDto, UpdateDeviceDto, VerifyDeviceDto } from './dto';
 
 @ApiTags('Devices')
+@ApiParam({
+  name: 'organizationId',
+  description: 'ID der Organisation',
+  format: 'uuid',
+})
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/devices')
 export class DevicesController {
@@ -40,6 +50,12 @@ export class DevicesController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get()
+  @ApiOperation({
+    operationId: 'listDevices',
+    summary: 'Geräte auflisten',
+    description:
+      'Kassen und Displays der Organisation mit Status, seitenweise (`page`, `limit`). Scope `read`; koppeln, sperren und löschen geht nur in der App.',
+  })
   findAll(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Query() pagination: PaginationDto,
@@ -50,6 +66,13 @@ export class DevicesController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get(':deviceId')
+  @ApiOperation({
+    operationId: 'getDevice',
+    summary: 'Gerät abrufen',
+    description:
+      'Ein Gerät der Organisation mit Einstellungen und letztem Kontakt. Scope `read`.',
+  })
+  @ApiParam({ name: 'deviceId', description: 'ID des Geräts', format: 'uuid' })
   findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('deviceId', ParseUUIDPipe) deviceId: string,
@@ -132,6 +155,13 @@ export class DevicesController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get(':deviceId/stats')
+  @ApiOperation({
+    operationId: 'getDeviceStats',
+    summary: 'Gerätestatistik',
+    description:
+      'Bestellungen, Zahlungen und Umsatz, die über dieses Gerät liefen, dazu Online-Status und letzter Kontakt. Scope `read`.',
+  })
+  @ApiParam({ name: 'deviceId', description: 'ID des Geräts', format: 'uuid' })
   getDeviceStats(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('deviceId', ParseUUIDPipe) deviceId: string,
@@ -142,6 +172,12 @@ export class DevicesController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get('online/ids')
+  @ApiOperation({
+    operationId: 'listOnlineDeviceIds',
+    summary: 'IDs der verbundenen Geräte',
+    description:
+      'Liefert die IDs der Geräte, die gerade per WebSocket mit der API verbunden sind. Scope `read`.',
+  })
   async getOnlineDeviceIds(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @CurrentUser() _user: User,

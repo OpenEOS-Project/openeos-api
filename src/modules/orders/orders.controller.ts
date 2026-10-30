@@ -11,7 +11,13 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { RefundsService } from '../refunds/refunds.service';
 import { OrderHistoryService } from '../refunds/order-history.service';
@@ -27,8 +33,14 @@ import {
   QueryOrdersDto,
   CancelOrderDto,
 } from './dto';
+import { ORDERS_LIST_RESPONSE } from './orders.openapi';
 
 @ApiTags('Orders')
+@ApiParam({
+  name: 'organizationId',
+  description: 'ID der Organisation',
+  format: 'uuid',
+})
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/orders')
 export class OrdersController {
@@ -49,6 +61,13 @@ export class OrdersController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get()
+  @ApiOperation({
+    operationId: 'listOrders',
+    summary: 'Bestellungen auflisten',
+    description:
+      'Bestellungen der Organisation, neueste zuerst, seitenweise (höchstens 100 je Seite) und filterbar nach Veranstaltung, Status, Zahlart, Gerät und Zeitraum; `includeItems=true` liefert die Positionen mit. Scope `read`. Anlegen, Stornieren und Erstatten sind der Kasse und der App vorbehalten.',
+  })
+  @ApiResponse(ORDERS_LIST_RESPONSE)
   findAll(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Query() query: QueryOrdersDto,
@@ -61,6 +80,12 @@ export class OrdersController {
   // GET /orders/stats as GET /orders/:orderId with orderId="stats".
   @ApiTokenAccess(TokenScope.READ)
   @Get('stats')
+  @ApiOperation({
+    operationId: 'getOrderStats',
+    summary: 'Bestellstatistik',
+    description:
+      'Anzahl, Umsatz, Durchschnittsbon und Pfand über alle Bestellungen, die zu den Filtern passen — ohne Seitenwechsel; stornierte zählen in `count`, aber nicht in die Beträge. Scope `read`.',
+  })
   getStats(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Query() query: QueryOrdersDto,
@@ -71,6 +96,16 @@ export class OrdersController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get(':orderId')
+  @ApiOperation({
+    operationId: 'getOrder',
+    summary: 'Bestellung abrufen',
+    description: 'Eine Bestellung mit Positionen und Zahlungen. Scope `read`.',
+  })
+  @ApiParam({
+    name: 'orderId',
+    description: 'ID der Bestellung',
+    format: 'uuid',
+  })
   findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('orderId', ParseUUIDPipe) orderId: string,

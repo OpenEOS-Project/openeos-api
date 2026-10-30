@@ -11,7 +11,12 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { PrintersService } from './printers.service';
 import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
 import { TokenScope } from '../api-tokens/api-scopes';
@@ -20,6 +25,11 @@ import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CreatePrinterDto, UpdatePrinterDto } from './dto';
 
 @ApiTags('Printers')
+@ApiParam({
+  name: 'organizationId',
+  description: 'ID der Organisation',
+  format: 'uuid',
+})
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/printers')
 export class PrintersController {
@@ -36,6 +46,12 @@ export class PrintersController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get()
+  @ApiOperation({
+    operationId: 'listPrinters',
+    summary: 'Drucker auflisten',
+    description:
+      'Alle Drucker der Organisation mit Verbindungsstatus, seitenweise (`page`, `limit`). Scope `read`; anlegen, ändern und Testdruck gehen nur in der App.',
+  })
   findAll(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Query() pagination: PaginationDto,
@@ -46,6 +62,17 @@ export class PrintersController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get(':printerId')
+  @ApiOperation({
+    operationId: 'getPrinter',
+    summary: 'Drucker abrufen',
+    description:
+      'Ein Drucker der Organisation mit Einstellungen und Status. Scope `read`.',
+  })
+  @ApiParam({
+    name: 'printerId',
+    description: 'ID des Druckers',
+    format: 'uuid',
+  })
   findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('printerId', ParseUUIDPipe) printerId: string,

@@ -32,6 +32,11 @@ import { User } from '../../database/entities';
  * Einschränkung durch einen neuen Token aufheben.
  */
 @ApiTags('API Tokens')
+@ApiParam({
+  name: 'organizationId',
+  description: 'ID der Organisation',
+  format: 'uuid',
+})
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/api-tokens')
 @UseGuards(OrganizationGuard, RolesGuard)
@@ -41,33 +46,28 @@ export class OrganizationApiTokensController {
 
   @Get()
   @ApiOperation({
-    summary: 'List the organization’s API tokens (never the secrets)',
+    operationId: 'listApiTokens',
+    summary: 'API-Zugänge auflisten',
     description:
-      'All tokens of the organization, including revoked and expired ' +
-      'ones, newest first. `tokenPrefix` is the only part of the secret ' +
-      'that is ever shown again.',
+      'Alle Tokens der Organisation, auch widerrufene und abgelaufene, neueste zuerst. Vom Geheimnis bleibt nur `tokenPrefix` sichtbar. Nur mit Anmeldung (JWT) als Administrator — nicht per Token.',
   })
-  @ApiParam({ name: 'organizationId', format: 'uuid' })
   async list(@Param('organizationId', ParseUUIDPipe) organizationId: string) {
     const data = await this.apiTokensService.listeOrganisation(organizationId);
     return { data };
   }
 
   @Post()
-  @ApiOperation({
-    summary: 'Issue an API token',
-    description:
-      'The secret (`token`, `oeos_…`) is returned exactly once, here. It is ' +
-      'stored only as a SHA-256 hash, so a lost token cannot be recovered — ' +
-      'revoke it and issue a new one. At most 20 active tokens per ' +
-      'organization (409 `API_TOKEN_LIMIT_REACHED`).',
-  })
-  @ApiParam({ name: 'organizationId', format: 'uuid' })
   @ApiResponse({
     status: 201,
     description: 'Token issued; `data.token` holds the secret',
   })
   @ApiResponse({ status: 409, description: 'API_TOKEN_LIMIT_REACHED' })
+  @ApiOperation({
+    operationId: 'createApiToken',
+    summary: 'API-Zugang anlegen',
+    description:
+      'Stellt einen Token mit Name, Scopes und optionalem Ablauf aus. Das Geheimnis (`data.token`, `oeos_…`) kommt genau einmal in dieser Antwort; gespeichert wird nur ein Hash. Höchstens 20 aktive Tokens je Organisation (`409 API_TOKEN_LIMIT_REACHED`). Nur mit Anmeldung als Administrator.',
+  })
   async create(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @CurrentUser() user: User,
@@ -90,14 +90,14 @@ export class OrganizationApiTokensController {
   }
 
   @Delete(':id')
-  @ApiOperation({
-    summary: 'Revoke a token',
-    description:
-      'Revoked, not deleted: the entry stays in the list with `revokedAt` ' +
-      'set. Any admin of the organization may revoke any of its tokens.',
-  })
-  @ApiParam({ name: 'organizationId', format: 'uuid' })
   @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiOperation({
+    operationId: 'revokeApiToken',
+    summary: 'API-Zugang widerrufen',
+    description:
+      'Widerruft einen Token sofort; der Eintrag bleibt mit `revokedAt` in der Liste. Jeder Administrator der Organisation darf jeden Token der Organisation widerrufen. Nur mit Anmeldung.',
+  })
+  @ApiParam({ name: 'id', description: 'ID des Tokens', format: 'uuid' })
   async revoke(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('id', ParseUUIDPipe) id: string,

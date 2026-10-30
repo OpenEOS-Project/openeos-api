@@ -1,4 +1,8 @@
-import { DocumentBuilder, type OpenAPIObject } from '@nestjs/swagger';
+import {
+  DocumentBuilder,
+  type OpenAPIObject,
+  type SwaggerDocumentOptions,
+} from '@nestjs/swagger';
 
 import { API_TOKEN_SECURITY_SCHEME } from '../decorators/api-token-access.decorator';
 import {
@@ -92,8 +96,60 @@ function limitList(): string {
   ).join('\n');
 }
 
-/** Einleitung der API-Beschreibung (Markdown). */
-export function openApiDescription(): string {
+/**
+ * Lesbare operationIds statt `EventsController_findAll`: Controller-Name
+ * ohne Suffix, dann die Methode (`events_findAll`). Die oeffentlichen
+ * Endpunkte setzen in @ApiOperation ohnehin eine sprechende operationId
+ * (`listEvents`); das hier ist der Rueckfall fuer alle anderen, damit die
+ * Doku-Seite nie einen Klassennamen zeigt.
+ */
+export function operationIdFactory(
+  controllerKey: string,
+  methodKey: string,
+  version?: string,
+): string {
+  const controller = controllerKey.replace(/Controller$/, '');
+  const resource = controller.charAt(0).toLowerCase() + controller.slice(1);
+  const id = resource ? `${resource}_${methodKey}` : methodKey;
+  return version ? `${id}_${version}` : id;
+}
+
+/** Optionen fuer SwaggerModule.createDocument — Swagger UI und Generator. */
+export const OPENAPI_DOCUMENT_OPTIONS: SwaggerDocumentOptions = {
+  operationIdFactory,
+};
+
+/**
+ * Schluss der Einleitung: Die vollstaendige Beschreibung erklaert auch
+ * Sitzungen und Geraete; die oeffentliche Referenz sagt, was sie bewusst
+ * weglaesst.
+ */
+function descriptionFooter(variant: 'full' | 'public'): string {
+  if (variant === 'public') {
+    return `
+## Was diese Referenz zeigt
+
+Nur die Endpunkte, die ein API-Token erreichen kann, plus die Verwaltung der Tokens selbst (nur mit Anmeldung). Alle anderen Teile der API — Anmeldung und Sitzungen der Web-App, Kasse und Geräte-API (\`/api/device-api/*\`), Zahlungen, Mitglieder, Abrechnung, Admin — sind absichtlich nicht dokumentiert: Sie sind für die Apps von OpenEOS gedacht und keine stabile Schnittstelle für Integrationen. Wer OpenEOS selbst betreibt, findet die vollständige Beschreibung im Repository (\`docs/openapi.json\`) und außerhalb der Produktion unter \`/docs\`.
+
+Zu jedem Endpunkt steht der nötige Scope (\`x-api-token-scope\`). Die Texte sind auf Deutsch; die Referenz ist für beide Sprachen der Doku-Seite dieselbe.
+`;
+  }
+  return `
+## Sitzungen (Web-App)
+
+Die Web-App meldet sich mit E-Mail/Passwort (\`POST /api/auth/login\`) an und erhält ein kurzlebiges Access-Token (JWT, \`Authorization: Bearer\`) sowie ein Refresh-Token als httpOnly-Cookie. Diese Endpunkte sind hier der Vollständigkeit halber dokumentiert; für Integrationen nimm ein API-Token.
+
+## Geräte
+
+Kassen und Displays sprechen \`/api/device-api/*\` mit einem Geräte-Token (\`X-Device-Token\`). Diese Endpunkte sind nicht für Integrationen gedacht.
+`;
+}
+
+/**
+ * Einleitung der API-Beschreibung (Markdown). `full` fuer Swagger UI und
+ * docs/openapi.json, `public` fuer docs/openapi.public.json (Doku-Seite).
+ */
+export function openApiDescription(variant: 'full' | 'public' = 'full'): string {
   return `
 OpenEOS ist ein Kassen- und Bestellsystem für Vereinsfeste. Diese Referenz beschreibt die REST-API unter \`${PUBLIC_API_URL}/api\` (selbst gehostet: \`https://<deine-api>/api\`).
 
@@ -123,15 +179,7 @@ Darüber hinaus \`429 API_TOKEN_RATE_LIMITED\` mit \`Retry-After\`. Zusätzlich 
 ### Fehler
 
 Jede Fehlerantwort hat die Form \`{ "error": { "code", "reason", "message", "params", "details", "requestId", "timestamp" } }\`. \`code\` ist die allgemeine Klasse (\`FORBIDDEN\`, \`NOT_FOUND\`, …), \`reason\` der konkrete Fall (\`API_TOKEN_SCOPE_MISSING\`, \`EVENT_NOT_FOUND\`, …).
-
-## Sitzungen (Web-App)
-
-Die Web-App meldet sich mit E-Mail/Passwort (\`POST /api/auth/login\`) an und erhält ein kurzlebiges Access-Token (JWT, \`Authorization: Bearer\`) sowie ein Refresh-Token als httpOnly-Cookie. Diese Endpunkte sind hier der Vollständigkeit halber dokumentiert; für Integrationen nimm ein API-Token.
-
-## Geräte
-
-Kassen und Displays sprechen \`/api/device-api/*\` mit einem Geräte-Token (\`X-Device-Token\`). Diese Endpunkte sind nicht für Integrationen gedacht.
-`.trim();
+${descriptionFooter(variant)}`.trim();
 }
 
 /**

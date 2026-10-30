@@ -11,15 +11,27 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto, UpdateEventDto, CopyProductsDto } from './dto';
 import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
 import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { EVENTS_LIST_RESPONSE } from './events.openapi';
 
 @ApiTags('Events')
+@ApiParam({
+  name: 'organizationId',
+  description: 'ID der Organisation',
+  format: 'uuid',
+})
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/events')
 export class EventsController {
@@ -27,6 +39,12 @@ export class EventsController {
 
   @ApiTokenAccess(TokenScope.EVENTS_WRITE)
   @Post()
+  @ApiOperation({
+    operationId: 'createEvent',
+    summary: 'Veranstaltung anlegen',
+    description:
+      'Legt eine neue Veranstaltung mit Status `inactive` an. Scope `events:write` und Modulrecht Veranstaltungen; freischalten und aktivieren geht nur in der App.',
+  })
   async create(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() createDto: CreateEventDto,
@@ -42,6 +60,13 @@ export class EventsController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get()
+  @ApiOperation({
+    operationId: 'listEvents',
+    summary: 'Veranstaltungen auflisten',
+    description:
+      'Alle Veranstaltungen der Organisation, neueste zuerst, seitenweise (`page`, `limit`). Scope `read`.',
+  })
+  @ApiResponse(EVENTS_LIST_RESPONSE)
   async findAll(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @CurrentUser() user: User,
@@ -53,8 +78,10 @@ export class EventsController {
   @ApiTokenAccess(TokenScope.READ)
   @Get('active')
   @ApiOperation({
-    summary:
-      'Liefert das aktuell aktive oder im Test-Modus befindliche Event der Organisation (oder null)',
+    operationId: 'getActiveEvent',
+    summary: 'Aktive Veranstaltung abrufen',
+    description:
+      'Liefert die Veranstaltung mit Status `active` oder `test` — oder `data: null`, wenn gerade keine läuft. Scope `read`.',
   })
   async findActive(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -69,6 +96,17 @@ export class EventsController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get(':eventId')
+  @ApiOperation({
+    operationId: 'getEvent',
+    summary: 'Veranstaltung abrufen',
+    description:
+      'Eine Veranstaltung mit Einstellungen und Abrechnungsstand. Scope `read`.',
+  })
+  @ApiParam({
+    name: 'eventId',
+    description: 'ID der Veranstaltung',
+    format: 'uuid',
+  })
   async findOne(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -84,6 +122,17 @@ export class EventsController {
 
   @ApiTokenAccess(TokenScope.EVENTS_WRITE)
   @Patch(':eventId')
+  @ApiOperation({
+    operationId: 'updateEvent',
+    summary: 'Veranstaltung ändern',
+    description:
+      'Ändert Name, Beschreibung, Zeitraum oder Einstellungen. Scope `events:write`; der Status (aktiv, Test) lässt sich hier nicht setzen.',
+  })
+  @ApiParam({
+    name: 'eventId',
+    description: 'ID der Veranstaltung',
+    format: 'uuid',
+  })
   async update(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -165,7 +214,20 @@ export class EventsController {
   @ApiTokenAccess(TokenScope.EVENTS_WRITE)
   @Post(':eventId/copy-from/:sourceEventId')
   @ApiOperation({
-    summary: 'Kopiert Kategorien und Produkte von einem anderen Event',
+    operationId: 'copyEventCatalog',
+    summary: 'Katalog aus anderer Veranstaltung kopieren',
+    description:
+      'Kopiert Kategorien und Produkte aus `sourceEventId` in diese Veranstaltung; was übernommen wird, steuert der Body. Scope `events:write`.',
+  })
+  @ApiParam({
+    name: 'eventId',
+    description: 'ID der Ziel-Veranstaltung',
+    format: 'uuid',
+  })
+  @ApiParam({
+    name: 'sourceEventId',
+    description: 'ID der Veranstaltung, aus der kopiert wird',
+    format: 'uuid',
   })
   async copyFromEvent(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,

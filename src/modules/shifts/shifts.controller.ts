@@ -15,7 +15,15 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiExtraModels,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { ShiftsService } from './shifts.service';
 import { ShiftPdfService } from './shift-pdf.service';
 import {
@@ -39,6 +47,12 @@ import { User } from '../../database/entities';
 import { OrganizationGuard } from '../../common/guards/organization.guard';
 
 @ApiTags('Shift Plans')
+@ApiParam({
+  name: 'organizationId',
+  description: 'ID der Organisation',
+  format: 'uuid',
+})
+@ApiExtraModels(CreateShiftDto)
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/shift-plans')
 @UseGuards(OrganizationGuard)
@@ -52,6 +66,12 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post()
+  @ApiOperation({
+    operationId: 'createShiftPlan',
+    summary: 'Schichtplan anlegen',
+    description:
+      'Legt einen Schichtplan als Entwurf an. Scope `staff:write` und Modulrecht Schichtpläne.',
+  })
   async createPlan(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() dto: CreateShiftPlanDto,
@@ -62,6 +82,12 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get()
+  @ApiOperation({
+    operationId: 'listShiftPlans',
+    summary: 'Schichtpläne auflisten',
+    description:
+      'Alle Schichtpläne der Organisation mit Status (Entwurf, veröffentlicht, geschlossen). Scope `read`.',
+  })
   async findAllPlans(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
   ) {
@@ -71,6 +97,16 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get(':planId')
+  @ApiOperation({
+    operationId: 'getShiftPlan',
+    summary: 'Schichtplan abrufen',
+    description: 'Ein Schichtplan mit seinen Jobs und Schichten. Scope `read`.',
+  })
+  @ApiParam({
+    name: 'planId',
+    description: 'ID des Schichtplans',
+    format: 'uuid',
+  })
   async findOnePlan(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('planId', ParseUUIDPipe) planId: string,
@@ -81,6 +117,17 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Patch(':planId')
+  @ApiOperation({
+    operationId: 'updateShiftPlan',
+    summary: 'Schichtplan ändern',
+    description:
+      'Ändert Name, Zeitraum, Beschreibung oder Einstellungen eines Schichtplans. Scope `staff:write`.',
+  })
+  @ApiParam({
+    name: 'planId',
+    description: 'ID des Schichtplans',
+    format: 'uuid',
+  })
   async updatePlan(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('planId', ParseUUIDPipe) planId: string,
@@ -105,6 +152,17 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post(':planId/publish')
+  @ApiOperation({
+    operationId: 'publishShiftPlan',
+    summary: 'Schichtplan veröffentlichen',
+    description:
+      'Schaltet den Plan für die öffentliche Helfer-Anmeldung frei (`400 SHIFT_PLAN_ALREADY_PUBLISHED`, wenn er schon offen ist). Scope `staff:write`.',
+  })
+  @ApiParam({
+    name: 'planId',
+    description: 'ID des Schichtplans',
+    format: 'uuid',
+  })
   async publishPlan(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('planId', ParseUUIDPipe) planId: string,
@@ -115,6 +173,17 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post(':planId/close')
+  @ApiOperation({
+    operationId: 'closeShiftPlan',
+    summary: 'Schichtplan schließen',
+    description:
+      'Beendet die Anmeldung; bestehende Anmeldungen bleiben erhalten. Scope `staff:write`.',
+  })
+  @ApiParam({
+    name: 'planId',
+    description: 'ID des Schichtplans',
+    format: 'uuid',
+  })
   async closePlan(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('planId', ParseUUIDPipe) planId: string,
@@ -125,6 +194,17 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get(':planId/export/pdf')
+  @ApiOperation({
+    operationId: 'exportShiftPlanPdf',
+    summary: 'Schichtplan als PDF exportieren',
+    description:
+      'Liefert den Plan mit allen Jobs, Schichten und eingetragenen Helfern als Datei (`application/pdf`). Scope `read`.',
+  })
+  @ApiParam({
+    name: 'planId',
+    description: 'ID des Schichtplans',
+    format: 'uuid',
+  })
   async exportPdf(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('planId', ParseUUIDPipe) planId: string,
@@ -148,6 +228,17 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post(':planId/jobs')
+  @ApiOperation({
+    operationId: 'createShiftJob',
+    summary: 'Job anlegen',
+    description:
+      'Legt eine Aufgabe (z. B. Ausschank, Kasse) im Schichtplan an. Scope `staff:write`.',
+  })
+  @ApiParam({
+    name: 'planId',
+    description: 'ID des Schichtplans',
+    format: 'uuid',
+  })
   async createJob(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('planId', ParseUUIDPipe) planId: string,
@@ -159,6 +250,17 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get(':planId/jobs')
+  @ApiOperation({
+    operationId: 'listShiftJobs',
+    summary: 'Jobs auflisten (je Schichtplan)',
+    description:
+      'Alle Jobs eines Schichtplans mit ihren Schichten. Scope `read`.',
+  })
+  @ApiParam({
+    name: 'planId',
+    description: 'ID des Schichtplans',
+    format: 'uuid',
+  })
   async findAllJobs(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('planId', ParseUUIDPipe) planId: string,
@@ -169,6 +271,13 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Patch('jobs/:jobId')
+  @ApiOperation({
+    operationId: 'updateShiftJob',
+    summary: 'Job ändern',
+    description:
+      'Ändert Name, Beschreibung oder Reihenfolge eines Jobs. Scope `staff:write`.',
+  })
+  @ApiParam({ name: 'jobId', description: 'ID des Jobs', format: 'uuid' })
   async updateJob(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('jobId', ParseUUIDPipe) jobId: string,
@@ -191,6 +300,13 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post('jobs/:jobId/shifts')
+  @ApiOperation({
+    operationId: 'createShift',
+    summary: 'Schicht anlegen',
+    description:
+      'Legt eine Schicht (Zeitraum, benötigte Helfer) für einen Job an. Scope `staff:write`.',
+  })
+  @ApiParam({ name: 'jobId', description: 'ID des Jobs', format: 'uuid' })
   async createShift(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('jobId', ParseUUIDPipe) jobId: string,
@@ -206,6 +322,26 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post('jobs/:jobId/shifts/bulk')
+  @ApiOperation({
+    operationId: 'createShiftsBulk',
+    summary: 'Mehrere Schichten anlegen',
+    description:
+      'Legt mehrere Schichten für einen Job in einem Aufruf an. Scope `staff:write`.',
+  })
+  @ApiParam({ name: 'jobId', description: 'ID des Jobs', format: 'uuid' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['shifts'],
+      properties: {
+        shifts: {
+          type: 'array',
+          description: 'Schichten, die angelegt werden',
+          items: { $ref: getSchemaPath(CreateShiftDto) },
+        },
+      },
+    },
+  })
   async createShiftsBulk(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('jobId', ParseUUIDPipe) jobId: string,
@@ -221,6 +357,12 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get('jobs/:jobId/shifts')
+  @ApiOperation({
+    operationId: 'listShifts',
+    summary: 'Schichten auflisten (je Job)',
+    description: 'Alle Schichten eines Jobs mit Belegung. Scope `read`.',
+  })
+  @ApiParam({ name: 'jobId', description: 'ID des Jobs', format: 'uuid' })
   async findAllShifts(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('jobId', ParseUUIDPipe) jobId: string,
@@ -234,6 +376,13 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Patch('shifts/:shiftId')
+  @ApiOperation({
+    operationId: 'updateShift',
+    summary: 'Schicht ändern',
+    description:
+      'Ändert Zeitraum, benötigte Helfer oder Notiz einer Schicht. Scope `staff:write`.',
+  })
+  @ApiParam({ name: 'shiftId', description: 'ID der Schicht', format: 'uuid' })
   async updateShift(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('shiftId', ParseUUIDPipe) shiftId: string,
@@ -260,6 +409,17 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.READ)
   @Get(':planId/registrations')
+  @ApiOperation({
+    operationId: 'listShiftRegistrations',
+    summary: 'Helfer-Anmeldungen auflisten (je Schichtplan)',
+    description:
+      'Alle Anmeldungen eines Schichtplans mit Status und Schicht. Scope `read`.',
+  })
+  @ApiParam({
+    name: 'planId',
+    description: 'ID des Schichtplans',
+    format: 'uuid',
+  })
   async findAllRegistrations(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('planId', ParseUUIDPipe) planId: string,
@@ -273,6 +433,17 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post('registrations/:registrationId/approve')
+  @ApiOperation({
+    operationId: 'approveShiftRegistration',
+    summary: 'Anmeldung annehmen',
+    description:
+      'Bestätigt eine Helfer-Anmeldung; der Helfer bekommt eine E-Mail, optional mit Nachricht. Scope `staff:write`.',
+  })
+  @ApiParam({
+    name: 'registrationId',
+    description: 'ID der Anmeldung',
+    format: 'uuid',
+  })
   async approveRegistration(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('registrationId', ParseUUIDPipe) registrationId: string,
@@ -290,6 +461,17 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post('registrations/:registrationId/reject')
+  @ApiOperation({
+    operationId: 'rejectShiftRegistration',
+    summary: 'Anmeldung ablehnen',
+    description:
+      'Lehnt eine Helfer-Anmeldung ab; der Grund geht per E-Mail an den Helfer. Scope `staff:write`.',
+  })
+  @ApiParam({
+    name: 'registrationId',
+    description: 'ID der Anmeldung',
+    format: 'uuid',
+  })
   async rejectRegistration(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('registrationId', ParseUUIDPipe) registrationId: string,
@@ -375,6 +557,17 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Patch('registrations/:registrationId/notes')
+  @ApiOperation({
+    operationId: 'updateShiftRegistrationNotes',
+    summary: 'Interne Notiz zur Anmeldung setzen',
+    description:
+      'Speichert eine Notiz, die nur Organisatoren sehen. Scope `staff:write`.',
+  })
+  @ApiParam({
+    name: 'registrationId',
+    description: 'ID der Anmeldung',
+    format: 'uuid',
+  })
   async updateRegistrationNotes(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('registrationId', ParseUUIDPipe) registrationId: string,
@@ -390,6 +583,13 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Post('shifts/:shiftId/registrations')
+  @ApiOperation({
+    operationId: 'createShiftRegistration',
+    summary: 'Helfer in Schicht eintragen',
+    description:
+      'Trägt einen Helfer direkt in eine Schicht ein, ohne öffentliche Anmeldung. Scope `staff:write`.',
+  })
+  @ApiParam({ name: 'shiftId', description: 'ID der Schicht', format: 'uuid' })
   async adminCreateRegistration(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('shiftId', ParseUUIDPipe) shiftId: string,
@@ -405,6 +605,17 @@ export class ShiftsController {
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
   @Patch('registrations/:registrationId')
+  @ApiOperation({
+    operationId: 'updateShiftRegistration',
+    summary: 'Anmeldung ändern',
+    description:
+      'Ändert Name, Kontakt, Notizen oder Schicht einer Anmeldung; auf Wunsch wird der Helfer per E-Mail informiert. Scope `staff:write`.',
+  })
+  @ApiParam({
+    name: 'registrationId',
+    description: 'ID der Anmeldung',
+    format: 'uuid',
+  })
   async adminUpdateRegistration(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('registrationId', ParseUUIDPipe) registrationId: string,

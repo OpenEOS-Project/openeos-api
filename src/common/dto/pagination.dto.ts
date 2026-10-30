@@ -1,13 +1,27 @@
 import { IsOptional, IsInt, Min, Max, IsString, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PaginationDto {
+  @ApiPropertyOptional({
+    description: 'Seite, beginnend bei 1',
+    minimum: 1,
+    default: 1,
+    example: 1,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   page?: number = 1;
 
+  @ApiPropertyOptional({
+    description: 'Einträge je Seite (höchstens 500)',
+    minimum: 1,
+    maximum: 500,
+    default: 20,
+    example: 20,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -15,6 +29,8 @@ export class PaginationDto {
   @Max(500)
   limit?: number = 20;
 
+  // sort, order und search wertet derzeit kein Dienst aus — deshalb ohne
+  // @ApiProperty, damit die Referenz nichts verspricht, was nicht gilt.
   @IsOptional()
   @IsString()
   sort?: string;
