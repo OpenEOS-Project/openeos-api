@@ -107,11 +107,9 @@ export function mapExtraction(input: MapperInput): MenuSuggestion {
   const seenNames = new Set<string>();
   let taxAdjusted = 0;
   for (const raw of input.extraction.products) {
-    const name = clean(raw.name, 255);
-    if (!name) continue;
+    if (!clean(raw.name, 255)) continue;
     const key = `p${products.length + 1}`;
     const categoryKey = addCategory(raw.category);
-    const normalized = normalize(name);
     const notes: string[] = [];
     const note = clean(raw.note, 500);
     if (note) notes.push(note);
@@ -124,6 +122,17 @@ export function mapExtraction(input: MapperInput): MenuSuggestion {
 
     let price = round2(raw.price);
     let variants = mapVariants(raw.variants);
+    let name = clean(raw.name, 255) as string;
+    if (variants && variants.length === 1) {
+      // Eine einzelne Groesse ist keine Variante (Prompt-Regel): sie
+      // wandert in den Namen, der Aufpreis in den Preis.
+      const [only] = variants;
+      if (!normalize(name).includes(normalize(only.name))) {
+        name = clean(`${name} ${only.name}`, 255) as string;
+      }
+      price = round2(price + only.priceModifier);
+      variants = undefined;
+    }
     if (variants) {
       const base = Math.min(
         ...variants.map((variant) => variant.priceModifier),
@@ -137,6 +146,7 @@ export function mapExtraction(input: MapperInput): MenuSuggestion {
       }
     }
 
+    const normalized = normalize(name);
     const existing = existingProductByName.get(normalized);
     let confidence = raw.confidence;
     if (seenNames.has(normalized)) {

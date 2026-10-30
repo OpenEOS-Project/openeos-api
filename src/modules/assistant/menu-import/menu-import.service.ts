@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnApplicationBootstrap,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -33,8 +34,14 @@ import type { AiProvider } from '../../ai/ai-provider.interface';
 import { AiQuotaService } from '../../ai/ai-quota.service';
 import { readAiConfig } from '../../ai/ai-provider.factory';
 import { AssistantService, AuditClient } from '../assistant.service';
+import {
+  checkUploadDirWritable,
+  isUploadDirError,
+  uploadDirNotWritable,
+} from '../../uploads/upload-dir';
 import { loadEventForProducts } from './event-access';
 import {
+  MENU_IMPORT_DIR,
   MenuFileMediaType,
   deleteFiles,
   sniffMediaType,
@@ -76,7 +83,7 @@ const LIST_LIMIT = 20;
  * Hintergrund.
  */
 @Injectable()
-export class MenuImportService {
+export class MenuImportService implements OnApplicationBootstrap {
   private readonly logger = new Logger(MenuImportService.name);
   private readonly uploadDir: string;
   private readonly maxUploadBytes: number;
@@ -105,6 +112,14 @@ export class MenuImportService {
     this.uploadDir = configService.get<string>('UPLOAD_DIR') || './uploads';
     this.maxUploadBytes = ai.maxUploadMb * 1024 * 1024;
     this.maxPages = ai.menuPagesPerImport;
+  }
+
+  /** Siehe UploadsService: ein root-eigener Bind-Mount faellt sonst erst beim ersten Foto auf. */
+  async onApplicationBootstrap(): Promise<void> {
+    await checkUploadDirWritable(
+      `${this.uploadDir.replace(/\/$/, '')}/${MENU_IMPORT_DIR}`,
+      this.logger,
+    );
   }
 
   async create(
@@ -160,7 +175,12 @@ export class MenuImportService {
       } catch (error) {
         await this.quota.settle(usage.id, { status: 'error' });
         await this.importRepository.delete({ id: menuImport.id });
-        await deleteFiles(this.uploadDir, menuImport.id);
+        await deleteFiles(this.uploadDir, menuImport.id).catch(() => undefined);
+        if (isUploadDirError(error)) {
+          // Betreiber-Problem (Issue #86): 503 mit klarem Code statt 500,
+          // damit die Web-App nicht nur „Interner Serverfehler“ zeigt.
+          throw uploadDirNotWritable(this.logger, error, this.uploadDir);
+        }
         throw error;
       }
     }

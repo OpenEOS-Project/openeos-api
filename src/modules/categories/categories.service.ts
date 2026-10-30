@@ -2,14 +2,16 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
   Logger,
   Inject,
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, IsNull, Not, QueryFailedError, Repository } from 'typeorm';
 import {
   Category,
+  Product,
   User,
   UserOrganization,
   Event,
@@ -34,8 +36,11 @@ export class CategoriesService {
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(
@@ -130,11 +135,55 @@ export class CategoriesService {
     return category;
   }
 
+  /**
+   * Loescht eine Kategorie endgueltig. Produkte, die noch sichtbar sind,
+   * blockieren das (409 CATEGORY_HAS_PRODUCTS) — sie muessen erst
+   * verschoben oder geloescht werden. Produkte, die nur noch soft-geloescht
+   * sind (`deleted_at`), sind fuer Nutzer laengst weg; sie wuerden sonst
+   * die Fremdschluessel-Pruefung ausloesen (`category_id` ist NOT NULL,
+   * Issue #88) und werden deshalb mit der Kategorie endgueltig entfernt.
+   * Haengen daran noch Bestellungen, bleibt die Kategorie mit 409
+   * CATEGORY_IN_USE bestehen statt mit 500 zu scheitern.
+   */
   async remove(eventId: string, categoryId: string, user: User): Promise<void> {
     const event = await this.getEventAndCheckAdmin(eventId, user.id);
 
     const category = await this.findOne(eventId, categoryId, user);
-    await this.categoryRepository.remove(category);
+
+    const activeProducts = await this.productRepository.count({
+      where: { categoryId: category.id, deletedAt: IsNull() },
+    });
+    if (activeProducts > 0) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.CATEGORY_HAS_PRODUCTS,
+        message:
+          activeProducts === 1
+            ? 'In dieser Kategorie ist noch ein Produkt – verschieb oder lösch es zuerst'
+            : `In dieser Kategorie sind noch ${activeProducts} Produkte – verschieb oder lösch sie zuerst`,
+        params: { count: activeProducts },
+      });
+    }
+
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        await manager.delete(Product, {
+          categoryId: category.id,
+          deletedAt: Not(IsNull()),
+        });
+        await manager.delete(Category, { id: category.id, eventId });
+      });
+    } catch (error) {
+      if (isReferenceViolation(error)) {
+        throw new ConflictException({
+          code: ErrorCodes.CONFLICT,
+          reason: ErrorReasons.CATEGORY_IN_USE,
+          message:
+            'Diese Kategorie wird noch von Bestellungen verwendet und kann nicht gelöscht werden',
+        });
+      }
+      throw error;
+    }
 
     this.logger.log(`Category deleted: ${category.name} (${category.id})`);
 
@@ -272,4 +321,16 @@ export class CategoriesService {
 
     return event;
   }
+}
+
+/**
+ * Postgres meldet Verweise auf die Kategorie als Fremdschluessel-Verstoss
+ * (23503) oder — bei `ON DELETE SET NULL` auf einer NOT-NULL-Spalte wie
+ * `order_items.category_id` — als NOT-NULL-Verstoss (23502).
+ */
+function isReferenceViolation(error: unknown): boolean {
+  if (!(error instanceof QueryFailedError)) return false;
+  const code = (error as QueryFailedError & { driverError?: { code?: string } })
+    .driverError?.code;
+  return code === '23502' || code === '23503';
 }

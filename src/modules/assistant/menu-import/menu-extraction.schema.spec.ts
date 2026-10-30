@@ -3,8 +3,28 @@ import { join } from 'path';
 import { AiProviderError } from '../../ai/ai-provider.error';
 import {
   MENU_EXTRACTION_SCHEMA,
+  MENU_EXTRACTION_SYSTEM_PROMPT,
   validateExtraction,
 } from './menu-extraction.schema';
+
+describe('MENU_EXTRACTION_SYSTEM_PROMPT', () => {
+  it('keeps a single size in the name and only turns several sizes into variants', () => {
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).toContain('Mehrere Größen');
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).toContain(
+      'Gibt es nur EINE Größe, bleibt sie im Namen',
+    );
+  });
+
+  it('splits shared lines, keeps notes neutral and lowers confidence on doubtful prices', () => {
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).toContain(
+      'mehrere Produkte in EINER Zeile',
+    );
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).toContain('nie in der Ich-Form');
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).toContain(
+      'dann darf nicht jede Zeile high sein',
+    );
+  });
+});
 
 const FIXTURES = join(__dirname, '../../../../test/fixtures/menu');
 

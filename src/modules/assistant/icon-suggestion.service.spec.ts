@@ -6,7 +6,11 @@ import { IconSuggestionService } from './icon-suggestion.service';
 function setup(options: {
   available?: boolean;
   remaining?: number;
-  assignments?: { name: string; icon: string | null }[];
+  assignments?: {
+    name: string;
+    icon: string | null;
+    confidence?: 'high' | 'medium' | 'low';
+  }[];
   fail?: boolean;
 }) {
   const extractStructured = jest.fn(() =>
@@ -59,8 +63,8 @@ describe('IconSuggestionService', () => {
   it('asks the model only for unclear names and reserves one unit per name', async () => {
     const { service, extractStructured, reserve, settle } = setup({
       assignments: [
-        { name: 'Hauswein', icon: 'wein' },
-        { name: 'Kaffee', icon: null },
+        { name: 'Hauswein', icon: 'wein', confidence: 'high' },
+        { name: 'Kaffee', icon: null, confidence: 'high' },
       ],
     });
     const result = await service.suggest('org', 'user', [
@@ -79,13 +83,25 @@ describe('IconSuggestionService', () => {
     expect(request.text).toContain('<untrusted source="product-names">');
     expect(result[1].suggestions[0]).toEqual({
       icon: 'pos-icon:wein',
-      score: 0.75,
+      score: 0.6,
+      source: 'model',
     });
     expect(result[3].suggestions[0]).toEqual({
       icon: 'pos-icon:wein',
-      score: 0.75,
+      score: 0.6,
+      source: 'model',
     });
     expect(result[2].suggestions).toEqual([]);
+    const request0 = extractStructured.mock.calls[0][0] as unknown as {
+      system: string;
+      schema: {
+        properties: { assignments: { items: { required: string[] } } };
+      };
+    };
+    expect(request0.system).toContain('antworte mit icon null');
+    expect(request0.schema.properties.assignments.items.required).toContain(
+      'confidence',
+    );
     expect(settle).toHaveBeenCalledWith(
       'usage-1',
       expect.objectContaining({ status: 'ok', inputTokens: 10 }),
@@ -94,10 +110,52 @@ describe('IconSuggestionService', () => {
 
   it('ignores model answers outside the candidate list', async () => {
     const { service } = setup({
-      assignments: [{ name: 'Hauswein', icon: 'pommes' }],
+      assignments: [{ name: 'Hauswein', icon: 'pommes', confidence: 'high' }],
     });
     const result = await service.suggest('org', 'user', ['Hauswein']);
     expect(result[0].suggestions[0]?.icon).not.toBe('pos-icon:pommes');
+  });
+
+  it('keeps "no icon" when the model answers null or is unsure (issue #87)', async () => {
+    const { service } = setup({
+      assignments: [
+        { name: 'Kaffee', icon: null, confidence: 'high' },
+        { name: 'Flammkuchen', icon: 'steak-brot', confidence: 'low' },
+        { name: 'Kuchen', icon: 'striebele', confidence: 'medium' },
+      ],
+    });
+    const result = await service.suggest('org', 'user', [
+      'Kaffee',
+      'Flammkuchen',
+      'Kuchen',
+    ]);
+    expect(result[0].suggestions).toEqual([]);
+    // low confidence counts as "none": only the weak lexical rest remains
+    expect(
+      result[1].suggestions.find((match) => match.source === 'model'),
+    ).toBeUndefined();
+    expect(result[1].suggestions.every((m) => m.score < 0.6)).toBe(true);
+    expect(result[2].suggestions[0]).toEqual({
+      icon: 'pos-icon:striebele',
+      score: 0.5,
+      source: 'model',
+    });
+  });
+
+  it('marks lexical matches with their source and knows brand synonyms', () => {
+    const { service } = setup({});
+    const [fanta, sprite, pils] = service.suggestLexical([
+      'Fanta',
+      'Sprite 0,33 l',
+      'Pils',
+    ]);
+    expect(fanta.suggestions[0]).toEqual({
+      icon: 'pos-icon:limo-orange',
+      score: 1,
+      source: 'lexical',
+    });
+    expect(sprite.suggestions[0].icon).toBe('pos-icon:limo-zitrone');
+    expect(pils.suggestions[0].source).toBe('lexical');
   });
 
   it('stays lexical when the provider is off, the quota is short, or the model fails', async () => {

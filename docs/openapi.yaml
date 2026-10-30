@@ -8166,7 +8166,7 @@ paths:
               $ref: "#/components/schemas/IconSuggestionsDto"
       responses:
         "201":
-          description: "{ data: [{ name, suggestions: [{ icon, score }] }] }"
+          description: "{ data: [{ name, suggestions: [{ icon, score, source: lexical|model }] }] } — leeres Array, wenn kein Icon passt"
       security:
         - *a86
         - API-token: []

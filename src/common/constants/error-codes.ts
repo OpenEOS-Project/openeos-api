@@ -86,6 +86,9 @@ export const ErrorCodes = {
   MENU_IMPORT_FAILED: 'MENU_IMPORT_FAILED',
   // Der Modellanbieter hat nicht geantwortet oder abgelehnt — 502
   AI_PROVIDER_ERROR: 'AI_PROVIDER_ERROR',
+  // Das Upload-Verzeichnis gehoert nicht dem Container-Nutzer (EACCES),
+  // ist schreibgeschuetzt oder voll — 503, Betreiber muss eingreifen
+  UPLOAD_DIR_NOT_WRITABLE: 'UPLOAD_DIR_NOT_WRITABLE',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -173,6 +176,8 @@ export const ErrorMessages: Record<ErrorCode, string> = {
     'Die Speisekarte konnte nicht ausgewertet werden',
   [ErrorCodes.AI_PROVIDER_ERROR]:
     'Der Assistent ist gerade nicht erreichbar — bitte versuch es später noch einmal',
+  [ErrorCodes.UPLOAD_DIR_NOT_WRITABLE]:
+    'Der Upload-Ordner auf dem Server ist nicht beschreibbar – bitte den Betreiber informieren.',
 };
 
 /**
@@ -204,6 +209,8 @@ export const ErrorReasons = {
   CARD_READER_NOT_LINKED: 'CARD_READER_NOT_LINKED',
   CART_ITEM_NOT_FOUND: 'CART_ITEM_NOT_FOUND',
   CASH_DRAWER_NOT_CONFIGURED: 'CASH_DRAWER_NOT_CONFIGURED',
+  CATEGORY_HAS_PRODUCTS: 'CATEGORY_HAS_PRODUCTS',
+  CATEGORY_IN_USE: 'CATEGORY_IN_USE',
   CATEGORY_NOT_FOUND: 'CATEGORY_NOT_FOUND',
   CONTACT_MESSAGE_NOT_FOUND: 'CONTACT_MESSAGE_NOT_FOUND',
   DEPOSIT_RETURN_AMOUNT_INVALID: 'DEPOSIT_RETURN_AMOUNT_INVALID',
