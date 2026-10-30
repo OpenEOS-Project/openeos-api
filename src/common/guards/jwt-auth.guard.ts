@@ -15,8 +15,12 @@ import {
   ApiTokensService,
   type TokenPruefung,
 } from '../../modules/api-tokens/api-tokens.service';
+import {
+  alsBenutzer,
+  alsRequestToken,
+  ungueltigerApiToken,
+} from '../../modules/api-tokens/api-token-auth';
 import type { AppRequest } from '../types/request.types';
-import type { RequestUser } from '../decorators/current-user.decorator';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -75,11 +79,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   ): Promise<boolean> {
     const pruefung = await this.apiTokensService.pruefe(token);
     if (!pruefung) {
-      throw new UnauthorizedException({
-        code: ErrorCodes.UNAUTHORIZED,
-        reason: ErrorReasons.API_TOKEN_INVALID,
-        message: 'Ungültiger oder abgelaufener API-Token',
-      });
+      throw ungueltigerApiToken();
     }
 
     const verlangt = this.reflector.getAllAndOverride<string>(
@@ -106,8 +106,8 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
     await this.pruefeOrganisation(request, pruefung);
 
-    request.user = this.alsBenutzer(pruefung);
-    request.apiToken = { ...pruefung.token, scopes: pruefung.scopes };
+    request.user = alsBenutzer(pruefung);
+    request.apiToken = alsRequestToken(pruefung);
     return true;
   }
 
@@ -182,20 +182,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
         (wert): wert is string => typeof wert === 'string' && wert.length > 0,
       ),
     );
-  }
-
-  /** Der Besitzer, beschraenkt auf die Organisation des Tokens. */
-  private alsBenutzer(pruefung: TokenPruefung): RequestUser {
-    const { user, membership, token } = pruefung;
-    const organizations =
-      membership && token.organizationId
-        ? [{ id: token.organizationId, role: membership.role }]
-        : [];
-    return Object.assign(user, {
-      organizations,
-      sessionId: null,
-      pending2fa: false,
-    }) as unknown as RequestUser;
   }
 
   handleRequest<TUser>(

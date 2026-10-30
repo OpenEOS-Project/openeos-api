@@ -10253,7 +10253,8 @@
                 "assistant_disabled",
                 "menu_import_applied",
                 "api_token_created",
-                "api_token_revoked"
+                "api_token_revoked",
+                "agent_tool_call"
               ]
             }
           },
@@ -14390,7 +14391,7 @@
         },
         "security": [
           {
-            "bearer": []
+            "Deploy-guard-token": []
           }
         ],
         "summary": "Is an event selling right now?",
@@ -14755,7 +14756,7 @@
   },
   "info": {
     "title": "OpenEOS API",
-    "description": "OpenEOS ist ein Kassen- und Bestellsystem für Vereinsfeste. Diese Referenz beschreibt die REST-API unter `https://api.openeos.de/api` (selbst gehostet: `https://<deine-api>/api`).\n\n## Zugang mit API-Token\n\nFür Skripte, Automatisierungen (z. B. Zapier) und KI-Agenten (MCP) gibt es **API-Tokens je Organisation**. Ein Token wirkt wie die Person, die ihn ausgestellt hat — beschränkt auf eine Organisation, auf die gewählten Scopes und auf die hier mit *API-token* markierten Endpunkte. Alles andere (Kasse, Zahlungen, Mitglieder, Abrechnung, Löschen, Freischaltung) bleibt der Anmeldung in der App vorbehalten.\n\n**Token anlegen:** In der Web-App unter *Einstellungen → API-Zugänge* (Organisations-Admin) oder per `POST /api/organizations/{organizationId}/api-tokens` mit einer angemeldeten Sitzung. Der Token (`oeos_…`) wird genau einmal angezeigt; gespeichert wird nur ein Hash. Höchstens 20 aktive Tokens je Organisation.\n\n**Verwenden:** `Authorization: Bearer oeos_…` — derselbe Header wie für Sitzungs-JWTs. Welche Organisation gemeint ist, steht im Pfad; ein Token erreicht nur seine eigene (sonst `403 API_TOKEN_WRONG_ORGANIZATION`).\n\n### Scopes\n\n| Scope | Erlaubt |\n|---|---|\n| `read` | Organisation, Veranstaltungen, Kategorien, Produkte, Pfandarten, Tische, Stationen, Bon-Vorlagen, Drucker, Schichtpläne, Geräte, Berichte und Bestellungen lesen |\n| `catalog:write` | Kategorien, Produkte und Pfandarten anlegen und ändern |\n| `events:write` | Veranstaltungen und Produktionsstationen anlegen und ändern (keine Freischaltung) |\n| `tables:write` | Bereiche, Tische und Tischplan bearbeiten |\n| `staff:write` | Schichtpläne, Jobs, Schichten und Helfer-Anmeldungen bearbeiten |\n| `devices:write` | Bon-Vorlagen anlegen und ändern |\n| `settings:write` | Organisationseinstellungen ändern |\n\nSchreib-Scopes schließen `read` nicht ein. Jeder Endpunkt nennt den nötigen Scope als `x-api-token-scope`; fehlt er am Token, antwortet die API mit `403 API_TOKEN_SCOPE_MISSING`, bei nicht freigegebenen Endpunkten mit `403 API_TOKEN_NOT_ALLOWED`.\n\n### Grenzen\n\nJe Token:\n- 120 Aufrufe je Minute\n- 5000 Aufrufe je Tag\n\nDarüber hinaus `429 API_TOKEN_RATE_LIMITED` mit `Retry-After`. Zusätzlich gilt die allgemeine Grenze je IP-Adresse.\n\n### Fehler\n\nJede Fehlerantwort hat die Form `{ \"error\": { \"code\", \"reason\", \"message\", \"params\", \"details\", \"requestId\", \"timestamp\" } }`. `code` ist die allgemeine Klasse (`FORBIDDEN`, `NOT_FOUND`, …), `reason` der konkrete Fall (`API_TOKEN_SCOPE_MISSING`, `EVENT_NOT_FOUND`, …).\n\n## Sitzungen (Web-App)\n\nDie Web-App meldet sich mit E-Mail/Passwort (`POST /api/auth/login`) an und erhält ein kurzlebiges Access-Token (JWT, `Authorization: Bearer`) sowie ein Refresh-Token als httpOnly-Cookie. Diese Endpunkte sind hier der Vollständigkeit halber dokumentiert; für Integrationen nimm ein API-Token.\n\n## Geräte\n\nKassen und Displays sprechen `/api/device-api/*` mit einem Geräte-Token (`X-Device-Token`). Diese Endpunkte sind nicht für Integrationen gedacht.",
+    "description": "OpenEOS ist ein Kassen- und Bestellsystem für Vereinsfeste. Diese Referenz beschreibt die REST-API unter `https://api.openeos.de/api` (selbst gehostet: `https://<deine-api>/api`).\n\n## Zugang mit API-Token\n\nFür Skripte, Automatisierungen (z. B. Zapier) und KI-Agenten gibt es **API-Tokens je Organisation**. Dieselben Tokens öffnen den **MCP-Server** unter `https://api.openeos.de/mcp` (Streamable HTTP, außerhalb von `/api`) für Claude, Cursor und eigene Agenten — die Werkzeuge dort folgen denselben Scopes. Ein Token wirkt wie die Person, die ihn ausgestellt hat — beschränkt auf eine Organisation, auf die gewählten Scopes und auf die hier mit *API-token* markierten Endpunkte. Alles andere (Kasse, Zahlungen, Mitglieder, Abrechnung, Löschen, Freischaltung) bleibt der Anmeldung in der App vorbehalten.\n\n**Token anlegen:** In der Web-App unter *Einstellungen → Organisation → Zugänge* (Organisations-Admin) oder per `POST /api/organizations/{organizationId}/api-tokens` mit einer angemeldeten Sitzung. Der Token (`oeos_…`) wird genau einmal angezeigt; gespeichert wird nur ein Hash. Höchstens 20 aktive Tokens je Organisation.\n\n**Verwenden:** `Authorization: Bearer oeos_…` — derselbe Header wie für Sitzungs-JWTs. Welche Organisation gemeint ist, steht im Pfad; ein Token erreicht nur seine eigene (sonst `403 API_TOKEN_WRONG_ORGANIZATION`).\n\n### Scopes\n\n| Scope | Erlaubt |\n|---|---|\n| `read` | Organisation, Veranstaltungen, Kategorien, Produkte, Pfandarten, Tische, Stationen, Bon-Vorlagen, Drucker, Schichtpläne, Geräte, Berichte und Bestellungen lesen |\n| `catalog:write` | Kategorien, Produkte und Pfandarten anlegen und ändern |\n| `events:write` | Veranstaltungen und Produktionsstationen anlegen und ändern (keine Freischaltung) |\n| `tables:write` | Bereiche, Tische und Tischplan bearbeiten |\n| `staff:write` | Schichtpläne, Jobs, Schichten und Helfer-Anmeldungen bearbeiten |\n| `devices:write` | Bon-Vorlagen anlegen und ändern |\n| `settings:write` | Organisationseinstellungen ändern |\n\nSchreib-Scopes schließen `read` nicht ein. Jeder Endpunkt nennt den nötigen Scope als `x-api-token-scope`; fehlt er am Token, antwortet die API mit `403 API_TOKEN_SCOPE_MISSING`, bei nicht freigegebenen Endpunkten mit `403 API_TOKEN_NOT_ALLOWED`.\n\n### Grenzen\n\nJe Token:\n- 120 Aufrufe je Minute\n- 5000 Aufrufe je Tag\n\nDarüber hinaus `429 API_TOKEN_RATE_LIMITED` mit `Retry-After`. Zusätzlich gilt die allgemeine Grenze je IP-Adresse.\n\n### Fehler\n\nJede Fehlerantwort hat die Form `{ \"error\": { \"code\", \"reason\", \"message\", \"params\", \"details\", \"requestId\", \"timestamp\" } }`. `code` ist die allgemeine Klasse (`FORBIDDEN`, `NOT_FOUND`, …), `reason` der konkrete Fall (`API_TOKEN_SCOPE_MISSING`, `EVENT_NOT_FOUND`, …).\n\n## Sitzungen (Web-App)\n\nDie Web-App meldet sich mit E-Mail/Passwort (`POST /api/auth/login`) an und erhält ein kurzlebiges Access-Token (JWT, `Authorization: Bearer`) sowie ein Refresh-Token als httpOnly-Cookie. Diese Endpunkte sind hier der Vollständigkeit halber dokumentiert; für Integrationen nimm ein API-Token.\n\n## Geräte\n\nKassen und Displays sprechen `/api/device-api/*` mit einem Geräte-Token (`X-Device-Token`). Diese Endpunkte sind nicht für Integrationen gedacht.",
     "version": "1.0",
     "contact": {
       "name": "OpenEOS",
@@ -14953,13 +14954,19 @@
         "scheme": "bearer",
         "bearerFormat": "oeos_…",
         "type": "http",
-        "description": "API-Token der Organisation (Einstellungen → API-Zugänge). Erreicht nur die mit diesem Schema markierten Endpunkte, und nur mit dem jeweils genannten Scope (`x-api-token-scope`)."
+        "description": "API-Token der Organisation (Einstellungen → Organisation → Zugänge). Erreicht nur die mit diesem Schema markierten Endpunkte, und nur mit dem jeweils genannten Scope (`x-api-token-scope`)."
       },
       "JWT-auth": {
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "type": "http",
         "description": "Access-Token einer angemeldeten Sitzung (Web-App)"
+      },
+      "Deploy-guard-token": {
+        "scheme": "bearer",
+        "bearerFormat": "opaque",
+        "type": "http",
+        "description": "Gemeinsames Geheimnis der Deploy-Workflows (DEPLOY_GUARD_TOKEN), nur für /internal/deploy-guard"
       },
       "X-Organization-Id": {
         "type": "apiKey",

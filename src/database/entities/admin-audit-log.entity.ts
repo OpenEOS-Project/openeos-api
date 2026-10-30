@@ -45,6 +45,8 @@ export enum AdminAction {
   // API-Tokens je Organisation (ki-plan.md Abschnitt 8)
   API_TOKEN_CREATED = 'api_token_created',
   API_TOKEN_REVOKED = 'api_token_revoked',
+  /** Schreibender Aufruf eines Agenten-Tools (MCP), ki-plan.md Abschnitt 9. */
+  AGENT_TOOL_CALL = 'agent_tool_call',
 }
 
 /**

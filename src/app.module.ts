@@ -63,6 +63,7 @@ import { ChangelogModule } from './modules/changelog';
 import { DeployGuardModule } from './modules/deploy-guard/deploy-guard.module';
 import { AiModule } from './modules/ai';
 import { AssistantModule } from './modules/assistant';
+import { McpModule } from './modules/mcp';
 
 @Module({
   imports: [
@@ -198,6 +199,8 @@ import { AssistantModule } from './modules/assistant';
     // Assistent: Modellanbieter + Kontingente (global) und die Funktionen
     AiModule,
     AssistantModule,
+    // MCP-Server fuer KI-Agenten (/mcp, Auth per API-Token)
+    McpModule,
   ],
   controllers: [],
   providers: [

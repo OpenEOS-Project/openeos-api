@@ -8,6 +8,9 @@ import {
 import { API_TOKEN_LIMITS } from '../guards/api-token-throttler.guard';
 import { MAX_ACTIVE_TOKENS_PER_ORGANIZATION } from '../../modules/api-tokens/api-tokens.service';
 
+/** Name des Sicherheitsschemas fuer den Deploy-Guard (shared secret). */
+export const DEPLOY_GUARD_SECURITY_SCHEME = 'Deploy-guard-token';
+
 /** Oeffentliche Adresse des gehosteten Angebots. */
 export const PUBLIC_API_URL = 'https://api.openeos.de';
 
@@ -96,9 +99,9 @@ OpenEOS ist ein Kassen- und Bestellsystem für Vereinsfeste. Diese Referenz besc
 
 ## Zugang mit API-Token
 
-Für Skripte, Automatisierungen (z. B. Zapier) und KI-Agenten (MCP) gibt es **API-Tokens je Organisation**. Ein Token wirkt wie die Person, die ihn ausgestellt hat — beschränkt auf eine Organisation, auf die gewählten Scopes und auf die hier mit *API-token* markierten Endpunkte. Alles andere (Kasse, Zahlungen, Mitglieder, Abrechnung, Löschen, Freischaltung) bleibt der Anmeldung in der App vorbehalten.
+Für Skripte, Automatisierungen (z. B. Zapier) und KI-Agenten gibt es **API-Tokens je Organisation**. Dieselben Tokens öffnen den **MCP-Server** unter \`${PUBLIC_API_URL}/mcp\` (Streamable HTTP, außerhalb von \`/api\`) für Claude, Cursor und eigene Agenten — die Werkzeuge dort folgen denselben Scopes. Ein Token wirkt wie die Person, die ihn ausgestellt hat — beschränkt auf eine Organisation, auf die gewählten Scopes und auf die hier mit *API-token* markierten Endpunkte. Alles andere (Kasse, Zahlungen, Mitglieder, Abrechnung, Löschen, Freischaltung) bleibt der Anmeldung in der App vorbehalten.
 
-**Token anlegen:** In der Web-App unter *Einstellungen → API-Zugänge* (Organisations-Admin) oder per \`POST /api/organizations/{organizationId}/api-tokens\` mit einer angemeldeten Sitzung. Der Token (\`oeos_…\`) wird genau einmal angezeigt; gespeichert wird nur ein Hash. Höchstens ${MAX_ACTIVE_TOKENS_PER_ORGANIZATION} aktive Tokens je Organisation.
+**Token anlegen:** In der Web-App unter *Einstellungen → Organisation → Zugänge* (Organisations-Admin) oder per \`POST /api/organizations/{organizationId}/api-tokens\` mit einer angemeldeten Sitzung. Der Token (\`oeos_…\`) wird genau einmal angezeigt; gespeichert wird nur ein Hash. Höchstens ${MAX_ACTIVE_TOKENS_PER_ORGANIZATION} aktive Tokens je Organisation.
 
 **Verwenden:** \`Authorization: Bearer oeos_…\` — derselbe Header wie für Sitzungs-JWTs. Welche Organisation gemeint ist, steht im Pfad; ein Token erreicht nur seine eigene (sonst \`403 API_TOKEN_WRONG_ORGANIZATION\`).
 
@@ -154,7 +157,7 @@ export function buildOpenApiConfig(): Omit<OpenAPIObject, 'paths'> {
         scheme: 'bearer',
         bearerFormat: 'oeos_…',
         description:
-          'API-Token der Organisation (Einstellungen → API-Zugänge). ' +
+          'API-Token der Organisation (Einstellungen → Organisation → Zugänge). ' +
           'Erreicht nur die mit diesem Schema markierten Endpunkte, und ' +
           'nur mit dem jeweils genannten Scope (`x-api-token-scope`).',
       },
@@ -168,6 +171,16 @@ export function buildOpenApiConfig(): Omit<OpenAPIObject, 'paths'> {
         description: 'Access-Token einer angemeldeten Sitzung (Web-App)',
       },
       'JWT-auth',
+    )
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'opaque',
+        description:
+          'Gemeinsames Geheimnis der Deploy-Workflows (DEPLOY_GUARD_TOKEN), nur für /internal/deploy-guard',
+      },
+      DEPLOY_GUARD_SECURITY_SCHEME,
     )
     .addApiKey(
       {
