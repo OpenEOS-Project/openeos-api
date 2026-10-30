@@ -85,16 +85,19 @@ Im Development-Modus (`NODE_ENV` ≠ `production`) ist die interaktive API-Dokum
 http://localhost:3000/docs
 ```
 
-(Rohe Spezifikation: `/docs-json`, `/docs-yaml`.) In Produktion wird `/docs` nicht ausgeliefert; die öffentliche API-Referenz rendert die Doku-Seite (openeos-docs) aus der eingecheckten Spezifikation `docs/openapi.json` / `docs/openapi.yaml`.
+(Rohe Spezifikation: `/docs-json`, `/docs-yaml`.) In Produktion wird `/docs` nicht ausgeliefert. Eingecheckt sind zwei Fassungen der Spezifikation:
 
-Beide entstehen aus derselben Konfiguration wie Swagger UI (`src/common/openapi/openapi-config.ts`, Einleitung, Sicherheitsschemata, Tag-Reihenfolge):
+- `docs/openapi.json` / `docs/openapi.yaml` — vollständig (alle Controller), für Swagger UI und Self-Hosting
+- `docs/openapi.public.json` / `docs/openapi.public.yaml` — nur, was ein API-Token erreicht (`x-api-token-scope`), plus die Token-Verwaltung; deutsche Tags in fester Reihenfolge, nur die dafür nötigen Schemas. Daraus rendert die Doku-Seite (openeos-docs) die öffentliche API-Referenz unter docs.openeos.de/api. Welche Tags es gibt und wie sie heißen: `src/common/openapi/public-spec.ts`.
+
+Alle entstehen aus derselben Konfiguration wie Swagger UI (`src/common/openapi/openapi-config.ts`, Einleitung, Sicherheitsschemata, Tag-Reihenfolge, lesbare operationIds):
 
 ```bash
-pnpm docs:generate   # schreibt docs/openapi.json und docs/openapi.yaml
-pnpm docs:check      # Exit 1, wenn die eingecheckte Fassung nicht zum Code passt (läuft in CI)
+pnpm docs:generate   # schreibt docs/openapi*.json und docs/openapi*.yaml
+pnpm docs:check      # Exit 1, wenn eine eingecheckte Fassung nicht zum Code passt (läuft in CI)
 ```
 
-Beide brauchen eine erreichbare Datenbank und Redis (`docker compose up -d postgres redis`), weil `AppModule` beim Start verbindet. Nach jeder Änderung an Controllern oder DTOs: `pnpm docs:generate` und das Ergebnis mit committen.
+Beide brauchen eine erreichbare Datenbank und Redis (`docker compose up -d postgres redis`), weil `AppModule` beim Start verbindet. Nach jeder Änderung an Controllern oder DTOs: `pnpm docs:generate` und das Ergebnis mit committen. Jeder Endpunkt mit `@ApiTokenAccess` braucht ein `@ApiOperation` mit `operationId`, deutscher `summary` und `description` — `src/common/openapi/openapi-public.spec.ts` prüft das gegen die eingecheckte öffentliche Fassung.
 
 ### API-Zugänge (API-Tokens)
 

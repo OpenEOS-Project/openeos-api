@@ -20,7 +20,10 @@ import {
 import { RedisIoAdapter } from './common/adapters/redis-io.adapter';
 import { RedactSecretsInterceptor } from './common/interceptors/redact-secrets.interceptor';
 import { parseTrustProxy } from './common/utils/trust-proxy.util';
-import { buildOpenApiConfig } from './common/openapi/openapi-config';
+import {
+  OPENAPI_DOCUMENT_OPTIONS,
+  buildOpenApiConfig,
+} from './common/openapi/openapi-config';
 import { MCP_PATH, PROTECTED_RESOURCE_PATH } from './modules/mcp';
 
 async function bootstrap() {
@@ -153,7 +156,11 @@ async function bootstrap() {
   // das `pnpm docs:generate` aus derselben Konfiguration erzeugt.
   const nodeEnv = configService.get<string>('nodeEnv');
   if (nodeEnv !== 'production') {
-    const document = SwaggerModule.createDocument(app, buildOpenApiConfig());
+    const document = SwaggerModule.createDocument(
+      app,
+      buildOpenApiConfig(),
+      OPENAPI_DOCUMENT_OPTIONS,
+    );
     SwaggerModule.setup('docs', app, document, {
       jsonDocumentUrl: 'docs-json',
       yamlDocumentUrl: 'docs-yaml',
