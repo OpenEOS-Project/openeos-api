@@ -24,7 +24,10 @@ export class QueryOrdersDto extends PaginationDto {
   // views are not meant to page through hundreds of rows at once.
   @ApiPropertyOptional({
     example: 50,
-    description: 'Anzahl pro Seite (max. 100)',
+    description: 'Einträge je Seite (höchstens 100)',
+    minimum: 1,
+    maximum: 100,
+    default: 50,
   })
   @IsOptional()
   @Type(() => Number)
