@@ -166,4 +166,20 @@ export default () => ({
     // es gilt die allgemeine Admin-Adresse (siehe PlatformSettingsService).
     notifyEmail: process.env.SUPPORT_NOTIFY_EMAIL || '',
   },
+
+  limits: {
+    // Missbrauchsschranken (Entscheidung 2026-10-30, gehosteter Betrieb).
+    // 0 = unbegrenzt. Je Benutzer bzw. Organisation kann ein Super-Admin
+    // einen eigenen Wert hinterlegen (users.organization_limit,
+    // organizations.member_limit); Self-Hoster setzen hier ihre Vorgabe.
+    organizationsPerUser: parseInt(
+      process.env.ORGANIZATIONS_PER_USER_LIMIT || '5',
+      10,
+    ),
+    // Zaehlt aktive Mitglieder plus offene Einladungen.
+    membersPerOrganization: parseInt(
+      process.env.MEMBERS_PER_ORGANIZATION_LIMIT || '10',
+      10,
+    ),
+  },
 });

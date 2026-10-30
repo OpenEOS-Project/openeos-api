@@ -177,6 +177,8 @@ src/
 | GET | `/invitations/:token` | Einladung abrufen (public) |
 | POST | `/invitations/:token/accept` | Einladung annehmen (public) |
 
+**Schranken.** Ein Benutzer darf in höchstens `ORGANIZATIONS_PER_USER_LIMIT` Organisationen Mitglied sein (zählt alle Mitgliedschaften, egal welche Rolle); Anlegen und Einladung annehmen antworten darüber hinaus mit `403 ORGANIZATION_LIMIT_REACHED` (`params.limit`). Eine Organisation darf höchstens `MEMBERS_PER_ORGANIZATION_LIMIT` Plätze belegen — aktive Mitglieder plus offene, nicht abgelaufene Einladungen; Einladen und Hinzufügen antworten sonst mit `403 MEMBER_LIMIT_REACHED` (`params.limit`, `params.used`). Helfer (Schichtanmeldungen, Anmeldelinks) sind keine Mitglieder und zählen nicht. Super-Admins sind von beiden Schranken ausgenommen und können im Adminbereich je Benutzer (`organizationLimit`) bzw. je Organisation (`memberLimit`) einen eigenen Wert setzen (leer = Standard, 0 = unbegrenzt). `GET /organizations/:id` liefert `memberLimit`/`memberCount`, `GET /auth/me` liefert `organizationLimit`/`organizationCount`.
+
 ### Events (`/api/organizations/:orgId/events`)
 | Methode | Endpunkt | Beschreibung |
 |---------|----------|--------------|
@@ -483,6 +485,8 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `AI_MENU_PAGES_PER_IMPORT` | Bilder je Import | 6 |
 | `AI_CLASSIFY_PER_DAY` | Klassifikationen (Icon-Vorschläge per Modell) je Organisation und Tag | 500 |
 | `AI_MAX_UPLOAD_MB` | Maximale Dateigröße je hochgeladener Speisekarte | 10 |
+| `ORGANIZATIONS_PER_USER_LIMIT` | Höchstzahl Organisationen, in denen ein Benutzer Mitglied sein darf (Anlegen und Einladung annehmen); 0 = unbegrenzt | 5 |
+| `MEMBERS_PER_ORGANIZATION_LIMIT` | Höchstzahl Mitglieder je Organisation, aktive Mitglieder plus offene Einladungen; 0 = unbegrenzt | 10 |
 
 Siehe `.env.example` für alle verfügbaren Variablen.
 

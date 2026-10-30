@@ -23,6 +23,7 @@ import {
   SetDiscountDto,
   AccessOrganizationDto,
   UpdateOrganizationAdminDto,
+  UpdateUserAdminDto,
   CreateSubscriptionConfigDto,
   UpdateSubscriptionConfigDto,
   UpdateNotificationSettingsDto,
@@ -185,6 +186,24 @@ export class AdminController {
   async getUser(@Param('id') id: string) {
     const user = await this.adminService.getUser(id);
     return { data: user };
+  }
+
+  @Patch('users/:id')
+  async updateUser(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateUserAdminDto,
+    @CurrentUser() user: User,
+    @Req() req: unknown,
+  ) {
+    const { ip, userAgent } = this.getClientInfo(req as Request);
+    const updated = await this.adminService.updateUser(
+      id,
+      updateDto,
+      user.id,
+      ip,
+      userAgent,
+    );
+    return { data: updated };
   }
 
   @Post('users/:id/unlock')

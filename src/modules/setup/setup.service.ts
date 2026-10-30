@@ -12,6 +12,7 @@ import { User, Organization, UserOrganization } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { SetupDto, SetupMode } from './dto';
 import { DeploymentService } from '../../common/services/deployment.service';
+import { OrganizationLimitsService } from '../../common/services/organization-limits.service';
 import type { DeploymentMode } from '../../config/configuration';
 import { ErrorReasons } from '../../common/constants/error-codes';
 
@@ -25,6 +26,11 @@ export interface SetupStatus {
     mode: DeploymentMode;
     billingEnabled: boolean;
     multiTenant: boolean;
+    /** Standard-Schranken dieser Installation (0 = unbegrenzt). */
+    limits: {
+      organizationsPerUser: number;
+      membersPerOrganization: number;
+    };
   };
 }
 
@@ -57,6 +63,7 @@ export class SetupService {
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     private readonly dataSource: DataSource,
     private readonly deployment: DeploymentService,
+    private readonly limits: OrganizationLimitsService,
   ) {}
 
   async isSetupRequired(): Promise<SetupStatus> {
@@ -67,6 +74,12 @@ export class SetupService {
       mode: this.deployment.mode,
       billingEnabled: this.deployment.billingEnabled,
       multiTenant: this.deployment.multiTenant,
+      // Damit die Oberflaeche "leer = Standard (5/10)" mit den echten
+      // Werten dieser Installation beschriften kann.
+      limits: {
+        organizationsPerUser: this.limits.defaultOrganizationLimit,
+        membersPerOrganization: this.limits.defaultMemberLimit,
+      },
     };
 
     const userCount = await this.userRepository.count();

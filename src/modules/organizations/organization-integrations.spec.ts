@@ -75,6 +75,7 @@ function setup(options: {
     none,
     none,
     none,
+    none,
   );
 
   return { service, stored, query, save };

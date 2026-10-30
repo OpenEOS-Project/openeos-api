@@ -116,17 +116,32 @@ function setup(options: Options) {
     isSelfHosted: options.selfHosted ?? true,
   } as DeploymentService;
 
+  /* Hinzufuegen laeuft in einer Transaktion (Platzpruefung plus Schreiben);
+     der Manager reicht das Speichern an das Repository-Mock durch. */
+  const manager = {
+    save: (entity: Partial<UserOrganization>) =>
+      userOrganizationRepository.save(entity as UserOrganization),
+  };
+  const dataSource = {
+    transaction: (fn: (m: typeof manager) => Promise<unknown>) => fn(manager),
+  };
+  const limits = {
+    assertMemberSeatAvailable: jest.fn(() => Promise.resolve()),
+    assertCanJoinOrganization: jest.fn(() => Promise.resolve()),
+  };
+
   const none = undefined as never;
   const service = new OrganizationsService(
     none,
     userRepository,
     userOrganizationRepository,
     invitationRepository,
-    none,
+    dataSource as never,
     emailService as never,
     none,
     configService as never,
     deployment,
+    limits as never,
   );
 
   return { service, createdUsers, savedMemberships, removed, sentMails };

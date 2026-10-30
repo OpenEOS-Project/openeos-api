@@ -80,7 +80,8 @@ export class OrganizationsController {
     @CurrentUser() user: User,
   ) {
     const organization = await this.organizationsService.findOne(id, user);
-    return { data: organization };
+    const usage = await this.organizationsService.memberUsage(organization);
+    return { data: { ...organization, ...usage } };
   }
 
   @ApiTokenAccess(TokenScope.SETTINGS_WRITE)

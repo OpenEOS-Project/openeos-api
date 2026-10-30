@@ -115,6 +115,34 @@ export class UpdateOrganizationAdminDto {
   @IsOptional()
   @IsBoolean()
   prioritySupport?: boolean;
+
+  @ApiPropertyOptional({
+    example: 25,
+    nullable: true,
+    description:
+      'Eigene Höchstzahl an Mitgliedern (aktive plus offene Einladungen); leer = Standard (MEMBERS_PER_ORGANIZATION_LIMIT), 0 = unbegrenzt',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  memberLimit?: number | null;
+}
+
+export class UpdateUserAdminDto {
+  @ApiPropertyOptional({
+    example: 10,
+    nullable: true,
+    description:
+      'Eigene Höchstzahl an Organisationen (Mitgliedschaften); leer = Standard (ORGANIZATIONS_PER_USER_LIMIT), 0 = unbegrenzt',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  organizationLimit?: number | null;
 }
 
 // === Subscription Config DTOs ===
