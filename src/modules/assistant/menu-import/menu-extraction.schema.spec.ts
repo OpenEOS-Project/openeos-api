@@ -14,6 +14,16 @@ describe('MENU_EXTRACTION_SYSTEM_PROMPT', () => {
       'Gibt es nur EINE Größe, bleibt sie im Namen',
     );
   });
+
+  it('splits shared lines, keeps notes neutral and lowers confidence on doubtful prices', () => {
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).toContain(
+      'mehrere Produkte in EINER Zeile',
+    );
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).toContain('nie in der Ich-Form');
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).toContain(
+      'dann darf nicht jede Zeile high sein',
+    );
+  });
 });
 
 const FIXTURES = join(__dirname, '../../../../test/fixtures/menu');
