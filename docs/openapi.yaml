@@ -5478,6 +5478,25 @@ paths:
           description: ""
       security: *a62
       tags: *a63
+    patch:
+      operationId: AdminController_updateUser
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserAdminDto"
+      responses:
+        "200":
+          description: ""
+      security: *a62
+      tags: *a63
   /api/admin/users/{id}/unlock:
     post:
       operationId: AdminController_unlockUser
@@ -8760,11 +8779,64 @@ components:
       required:
         - currentPassword
         - newPassword
+    CurrentUserWithLimitsDto:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        email:
+          type: string
+          example: max@example.com
+        firstName:
+          type: string
+          example: Max
+        lastName:
+          type: string
+          example: Mustermann
+        isActive:
+          type: boolean
+          example: true
+        isSuperAdmin:
+          type: boolean
+          example: false
+        lastLoginAt:
+          type: object
+          example: 2024-01-15T10:30:00.000Z
+          nullable: true
+        createdAt:
+          format: date-time
+          type: string
+          example: 2024-01-01T00:00:00.000Z
+        updatedAt:
+          format: date-time
+          type: string
+          example: 2024-01-15T10:30:00.000Z
+        organizationLimit:
+          type: number
+          example: 5
+          description: Wirksame Höchstzahl an Organisationen (Mitgliedschaften); 0 = unbegrenzt
+        organizationCount:
+          type: number
+          example: 2
+          description: Aktuelle Mitgliedschaften des Benutzers, egal welche Rolle
+      required:
+        - id
+        - email
+        - firstName
+        - lastName
+        - isActive
+        - isSuperAdmin
+        - lastLoginAt
+        - createdAt
+        - updatedAt
+        - organizationLimit
+        - organizationCount
     CurrentUserResponseDto:
       type: object
       properties:
         user:
-          $ref: "#/components/schemas/UserResponseDto"
+          $ref: "#/components/schemas/CurrentUserWithLimitsDto"
       required:
         - user
     TwoFactorStatusResponseDto:
@@ -11341,6 +11413,11 @@ components:
           type: boolean
           example: false
           description: Priorisierter Support-Chat (unabhängig von der automatischen Regel für zahlende Organisationen)
+        memberLimit:
+          type: object
+          example: 25
+          nullable: true
+          description: Eigene Höchstzahl an Mitgliedern (aktive plus offene Einladungen); leer = Standard (MEMBERS_PER_ORGANIZATION_LIMIT), 0 = unbegrenzt
     SetDiscountDto:
       type: object
       properties:
@@ -11367,6 +11444,14 @@ components:
           description: Support-PIN für den Zugriff auf die Organisation
       required:
         - supportPin
+    UpdateUserAdminDto:
+      type: object
+      properties:
+        organizationLimit:
+          type: object
+          example: 10
+          nullable: true
+          description: Eigene Höchstzahl an Organisationen (Mitgliedschaften); leer = Standard (ORGANIZATIONS_PER_USER_LIMIT), 0 = unbegrenzt
     CreateSubscriptionConfigDto:
       type: object
       properties:
