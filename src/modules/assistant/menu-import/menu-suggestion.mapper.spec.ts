@@ -18,7 +18,7 @@ describe('mapExtraction (golden)', () => {
         { id: '11111111-1111-4111-8111-111111111111', name: 'Getränke' },
       ],
       existingProducts: [
-        { id: '22222222-2222-4222-8222-222222222222', name: 'Radler' },
+        { id: '22222222-2222-4222-8222-222222222222', name: 'Radler 0,5 l' },
       ],
       vatExempt: false,
     });
@@ -43,6 +43,43 @@ describe('mapExtraction (golden)', () => {
       ],
     });
     expect(suggestion.categories[1]).toEqual({ key: 'c2', name: 'Sonstiges' });
+  });
+
+  it('folds a single size into the name instead of a one-entry variant', () => {
+    const suggestion = mapExtraction({
+      extraction: validateExtraction({
+        categories: [{ name: 'Getränke', position: 1 }],
+        products: [
+          {
+            name: 'Hefeweizen',
+            category: 'Getränke',
+            price: 3,
+            taxRate: 19,
+            variants: [{ name: '0,5 l', priceModifier: 0.5 }],
+            confidence: 'high',
+          },
+          {
+            name: 'Radler 0,5 l',
+            category: 'Getränke',
+            price: 3.5,
+            taxRate: 19,
+            variants: [{ name: '0,5 l', priceModifier: 0 }],
+            confidence: 'high',
+          },
+        ],
+        warnings: [],
+      }),
+      existingCategories: [],
+      existingProducts: [],
+      vatExempt: false,
+    });
+    expect(suggestion.products[0]).toMatchObject({
+      name: 'Hefeweizen 0,5 l',
+      price: 3.5,
+    });
+    expect(suggestion.products[0].variants).toBeUndefined();
+    expect(suggestion.products[1]).toMatchObject({ name: 'Radler 0,5 l' });
+    expect(suggestion.products[1].variants).toBeUndefined();
   });
 
   it('marks duplicates and dedupes categories by normalized name', () => {
