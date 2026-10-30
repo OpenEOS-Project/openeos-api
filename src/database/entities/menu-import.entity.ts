@@ -45,7 +45,12 @@ export interface MenuSuggestionProduct {
   variants?: MenuSuggestionVariant[];
   /** Produkt mit gleichem Namen gibt es in der Veranstaltung schon. */
   existingProductId?: string;
-  iconSuggestions?: { icon: string; score: number }[];
+  /** Siehe IconMatch: `source: 'model'` ist nur ein Hinweis, kein Treffer. */
+  iconSuggestions?: {
+    icon: string;
+    score: number;
+    source: 'lexical' | 'model';
+  }[];
   confidence: 'high' | 'medium' | 'low';
   note?: string;
 }
