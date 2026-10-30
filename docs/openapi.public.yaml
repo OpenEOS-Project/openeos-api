@@ -1,0 +1,4684 @@
+openapi: 3.0.0
+paths:
+  /api/organizations/{organizationId}/api-tokens:
+    get:
+      description: Alle Tokens der Organisation, auch widerrufene und abgelaufene, neueste zuerst. Vom Geheimnis bleibt nur `tokenPrefix` sichtbar. Nur mit Anmeldung (JWT) als Administrator — nicht per Token.
+      operationId: listApiTokens
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: &a1
+        - JWT-auth: []
+      summary: API-Zugänge auflisten
+      tags:
+        - API-Zugänge
+    post:
+      description: Stellt einen Token mit Name, Scopes und optionalem Ablauf aus. Das Geheimnis (`data.token`, `oeos_…`) kommt genau einmal in dieser Antwort; gespeichert wird nur ein Hash. Höchstens 20 aktive Tokens je Organisation (`409 API_TOKEN_LIMIT_REACHED`). Nur mit Anmeldung als Administrator.
+      operationId: createApiToken
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrganizationApiTokenDto"
+      responses:
+        "201":
+          description: Token issued; `data.token` holds the secret
+        "409":
+          description: API_TOKEN_LIMIT_REACHED
+      security: *a1
+      summary: API-Zugang anlegen
+      tags:
+        - API-Zugänge
+  /api/organizations/{organizationId}/api-tokens/{id}:
+    delete:
+      description: Widerruft einen Token sofort; der Eintrag bleibt mit `revokedAt` in der Liste. Jeder Administrator der Organisation darf jeden Token der Organisation widerrufen. Nur mit Anmeldung.
+      operationId: revokeApiToken
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: id
+          required: true
+          in: path
+          description: ID des Tokens
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a1
+      summary: API-Zugang widerrufen
+      tags:
+        - API-Zugänge
+  /api/organizations/{id}:
+    get:
+      description: Liefert Stammdaten, Einstellungen und freigeschaltete Module der Organisation. Scope `read`; ein Token sieht nur seine eigene Organisation.
+      operationId: getOrganization
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - &a2
+          JWT-auth: []
+        - API-token: []
+      summary: Organisation abrufen
+      tags:
+        - Organisation
+      x-api-token-scope: read
+    patch:
+      description: Ändert Name, Kontaktdaten oder Einstellungen (z. B. bargeldloser Modus). Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen.
+      operationId: updateOrganization
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOrganizationDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a2
+        - API-token: []
+      summary: Organisation ändern
+      tags:
+        - Organisation
+      x-api-token-scope: settings:write
+  /api/organizations/{organizationId}/devices:
+    get:
+      description: Kassen und Displays der Organisation mit Status, seitenweise (`page`, `limit`). Scope `read`; koppeln, sperren und löschen geht nur in der App.
+      operationId: listDevices
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: page
+          required: false
+          in: query
+          description: Seite, beginnend bei 1
+          schema:
+            minimum: 1
+            default: 1
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Einträge je Seite (höchstens 500)
+          schema:
+            minimum: 1
+            maximum: 500
+            default: 20
+            example: 20
+            type: number
+      responses:
+        "200":
+          description: ""
+      security:
+        - &a3
+          JWT-auth: []
+        - API-token: []
+      summary: Geräte auflisten
+      tags:
+        - Geräte (nur lesen)
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/devices/{deviceId}:
+    get:
+      description: Ein Gerät der Organisation mit Einstellungen und letztem Kontakt. Scope `read`.
+      operationId: getDevice
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: deviceId
+          required: true
+          in: path
+          description: ID des Geräts
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a3
+        - API-token: []
+      summary: Gerät abrufen
+      tags:
+        - Geräte (nur lesen)
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/devices/{deviceId}/stats:
+    get:
+      description: Bestellungen, Zahlungen und Umsatz, die über dieses Gerät liefen, dazu Online-Status und letzter Kontakt. Scope `read`.
+      operationId: getDeviceStats
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: deviceId
+          required: true
+          in: path
+          description: ID des Geräts
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a3
+        - API-token: []
+      summary: Gerätestatistik
+      tags:
+        - Geräte (nur lesen)
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/devices/online/ids:
+    get:
+      description: Liefert die IDs der Geräte, die gerade per WebSocket mit der API verbunden sind. Scope `read`.
+      operationId: listOnlineDeviceIds
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a3
+        - API-token: []
+      summary: IDs der verbundenen Geräte
+      tags:
+        - Geräte (nur lesen)
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/printers:
+    get:
+      description: Alle Drucker der Organisation mit Verbindungsstatus, seitenweise (`page`, `limit`). Scope `read`; anlegen, ändern und Testdruck gehen nur in der App.
+      operationId: listPrinters
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: page
+          required: false
+          in: query
+          description: Seite, beginnend bei 1
+          schema:
+            minimum: 1
+            default: 1
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Einträge je Seite (höchstens 500)
+          schema:
+            minimum: 1
+            maximum: 500
+            default: 20
+            example: 20
+            type: number
+      responses:
+        "200":
+          description: ""
+      security:
+        - &a4
+          JWT-auth: []
+        - API-token: []
+      summary: Drucker auflisten
+      tags:
+        - Drucker
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/printers/{printerId}:
+    get:
+      description: Ein Drucker der Organisation mit Einstellungen und Status. Scope `read`.
+      operationId: getPrinter
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: printerId
+          required: true
+          in: path
+          description: ID des Druckers
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a4
+        - API-token: []
+      summary: Drucker abrufen
+      tags:
+        - Drucker
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/orders:
+    get:
+      description: Bestellungen der Organisation, neueste zuerst, seitenweise (höchstens 100 je Seite) und filterbar nach Veranstaltung, Status, Zahlart, Gerät und Zeitraum; `includeItems=true` liefert die Positionen mit. Scope `read`. Anlegen, Stornieren und Erstatten sind der Kasse und der App vorbehalten.
+      operationId: listOrders
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: page
+          required: false
+          in: query
+          description: Seite, beginnend bei 1
+          schema:
+            minimum: 1
+            default: 1
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Anzahl pro Seite (max. 100)
+          schema:
+            minimum: 1
+            maximum: 500
+            default: 20
+            example: 50
+            type: number
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: status
+          required: false
+          in: query
+          description: Filter nach Bestellstatus
+          schema:
+            example: open
+            type: string
+            enum:
+              - open
+              - in_progress
+              - ready
+              - completed
+              - cancelled
+        - name: paymentStatus
+          required: false
+          in: query
+          description: Filter nach Zahlungsstatus
+          schema:
+            example: pending
+            type: string
+            enum:
+              - unpaid
+              - partly_paid
+              - paid
+              - refunded
+        - name: source
+          required: false
+          in: query
+          description: Filter nach Bestellquelle
+          schema:
+            example: pos
+            type: string
+            enum:
+              - pos
+              - online
+              - qr_order
+        - name: fulfillmentType
+          required: false
+          in: query
+          description: Filter nach Erfüllungstyp
+          schema:
+            example: counter_pickup
+            type: string
+            enum:
+              - table_service
+              - counter_pickup
+        - name: dateFrom
+          required: false
+          in: query
+          description: Startdatum für Filterung
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: Enddatum für Filterung
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: includeItems
+          required: false
+          in: query
+          description: Bestellpositionen einschließen
+          schema:
+            example: true
+            type: boolean
+        - name: q
+          required: false
+          in: query
+          description: "Suche: Bestell-/Tagesnummer, Tisch, Name oder Produkt"
+          schema:
+            example: Burger
+            type: string
+        - name: displayStatus
+          required: false
+          in: query
+          description: "Status wie in der Kasse (kommagetrennt): in_kitchen, ready, completed, unpaid, cancelled, partly_refunded, refunded"
+          schema:
+            example: unpaid,refunded
+            type: string
+        - name: paymentMethod
+          required: false
+          in: query
+          description: "Zahlart (kommagetrennt): cash, card, sumup, discount"
+          schema:
+            example: cash,sumup
+            type: string
+        - name: deviceId
+          required: false
+          in: query
+          description: Nur Bestellungen dieses Geräts
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bestellungen der Organisation, neueste zuerst
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  meta:
+                    type: object
+                    description: Seitenangaben
+                    properties:
+                      page:
+                        type: integer
+                        example: 1
+                      limit:
+                        type: integer
+                        example: 20
+                      total:
+                        type: integer
+                        description: Treffer insgesamt
+                        example: 2
+                      totalPages:
+                        type: integer
+                        example: 1
+                      hasNext:
+                        type: boolean
+                        example: false
+                      hasPrev:
+                        type: boolean
+                        example: false
+              example:
+                data:
+                  - id: 0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+                    organizationId: 8c1e2d3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+                    eventId: 2f6c1a9e-5b1d-4c7e-9a3f-0d8e7b6a5c41
+                    orderNumber: SF-0042
+                    dailyNumber: 42
+                    tableNumber: A03
+                    tableId: 1234abcd-5678-4ef0-9abc-def012345678
+                    acknowledgedAt: 2026-07-11T18:05:30.000Z
+                    clientRequestId: null
+                    isTest: false
+                    customerName: null
+                    customerPhone: null
+                    status: completed
+                    paymentStatus: paid
+                    source: pos
+                    subtotal: 12.5
+                    taxTotal: 1.49
+                    total: 14.5
+                    paidAmount: 14.5
+                    tipAmount: 0
+                    discountAmount: 0
+                    discountReason: null
+                    refundedAmount: 0
+                    pfandTotal: 2
+                    notes: null
+                    priority: normal
+                    fulfillmentType: table_service
+                    estimatedReadyAt: null
+                    readyAt: 2026-07-11T18:12:03.000Z
+                    completedAt: 2026-07-11T18:15:47.000Z
+                    cancelledAt: null
+                    cancellationReason: null
+                    createdByUserId: null
+                    createdByDeviceId: 7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2910
+                    onlineSessionId: null
+                    createdByUser: null
+                    createdByDevice:
+                      id: 7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2910
+                      name: Kasse Festzelt 1
+                    displayStatus: completed
+                    paymentMethods:
+                      - cash
+                    createdAt: 2026-07-11T18:04:58.000Z
+                    updatedAt: 2026-07-11T18:15:47.000Z
+                  - id: 1b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e
+                    organizationId: 8c1e2d3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+                    eventId: 2f6c1a9e-5b1d-4c7e-9a3f-0d8e7b6a5c41
+                    orderNumber: SF-0041
+                    dailyNumber: 41
+                    tableNumber: null
+                    tableId: null
+                    acknowledgedAt: 2026-07-11T18:05:30.000Z
+                    clientRequestId: null
+                    isTest: false
+                    customerName: null
+                    customerPhone: null
+                    status: open
+                    paymentStatus: unpaid
+                    source: qr_order
+                    subtotal: 8
+                    taxTotal: 1.28
+                    total: 8
+                    paidAmount: 0
+                    tipAmount: 0
+                    discountAmount: 0
+                    discountReason: null
+                    refundedAmount: 0
+                    pfandTotal: 0
+                    notes: null
+                    priority: normal
+                    fulfillmentType: counter_pickup
+                    estimatedReadyAt: null
+                    readyAt: null
+                    completedAt: null
+                    cancelledAt: null
+                    cancellationReason: null
+                    createdByUserId: null
+                    createdByDeviceId: null
+                    onlineSessionId: null
+                    createdByUser: null
+                    createdByDevice: null
+                    displayStatus: unpaid
+                    paymentMethods: []
+                    createdAt: 2026-07-11T18:03:10.000Z
+                    updatedAt: 2026-07-11T18:03:10.000Z
+                meta:
+                  page: 1
+                  limit: 50
+                  total: 2
+                  totalPages: 1
+                  hasNext: false
+                  hasPrev: false
+      security:
+        - &a5
+          JWT-auth: []
+        - API-token: []
+      summary: Bestellungen auflisten
+      tags:
+        - Bestellungen (nur lesen)
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/orders/stats:
+    get:
+      description: Anzahl, Umsatz, Durchschnittsbon und Pfand über alle Bestellungen, die zu den Filtern passen — ohne Seitenwechsel; stornierte zählen in `count`, aber nicht in die Beträge. Scope `read`.
+      operationId: getOrderStats
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: page
+          required: false
+          in: query
+          description: Seite, beginnend bei 1
+          schema:
+            minimum: 1
+            default: 1
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Anzahl pro Seite (max. 100)
+          schema:
+            minimum: 1
+            maximum: 500
+            default: 20
+            example: 50
+            type: number
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: status
+          required: false
+          in: query
+          description: Filter nach Bestellstatus
+          schema:
+            example: open
+            type: string
+            enum:
+              - open
+              - in_progress
+              - ready
+              - completed
+              - cancelled
+        - name: paymentStatus
+          required: false
+          in: query
+          description: Filter nach Zahlungsstatus
+          schema:
+            example: pending
+            type: string
+            enum:
+              - unpaid
+              - partly_paid
+              - paid
+              - refunded
+        - name: source
+          required: false
+          in: query
+          description: Filter nach Bestellquelle
+          schema:
+            example: pos
+            type: string
+            enum:
+              - pos
+              - online
+              - qr_order
+        - name: fulfillmentType
+          required: false
+          in: query
+          description: Filter nach Erfüllungstyp
+          schema:
+            example: counter_pickup
+            type: string
+            enum:
+              - table_service
+              - counter_pickup
+        - name: dateFrom
+          required: false
+          in: query
+          description: Startdatum für Filterung
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: dateTo
+          required: false
+          in: query
+          description: Enddatum für Filterung
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: includeItems
+          required: false
+          in: query
+          description: Bestellpositionen einschließen
+          schema:
+            example: true
+            type: boolean
+        - name: q
+          required: false
+          in: query
+          description: "Suche: Bestell-/Tagesnummer, Tisch, Name oder Produkt"
+          schema:
+            example: Burger
+            type: string
+        - name: displayStatus
+          required: false
+          in: query
+          description: "Status wie in der Kasse (kommagetrennt): in_kitchen, ready, completed, unpaid, cancelled, partly_refunded, refunded"
+          schema:
+            example: unpaid,refunded
+            type: string
+        - name: paymentMethod
+          required: false
+          in: query
+          description: "Zahlart (kommagetrennt): cash, card, sumup, discount"
+          schema:
+            example: cash,sumup
+            type: string
+        - name: deviceId
+          required: false
+          in: query
+          description: Nur Bestellungen dieses Geräts
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a5
+        - API-token: []
+      summary: Bestellstatistik
+      tags:
+        - Bestellungen (nur lesen)
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/orders/{orderId}:
+    get:
+      description: Eine Bestellung mit Positionen und Zahlungen. Scope `read`.
+      operationId: getOrder
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: orderId
+          required: true
+          in: path
+          description: ID der Bestellung
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a5
+        - API-token: []
+      summary: Bestellung abrufen
+      tags:
+        - Bestellungen (nur lesen)
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/pfand-types:
+    get:
+      description: Alle Pfandarten der Organisation, ohne Seitenwechsel. Scope `read`.
+      operationId: listPfandTypes
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - &a6
+          JWT-auth: []
+        - API-token: []
+      summary: Pfandarten auflisten
+      tags:
+        - Pfand
+      x-api-token-scope: read
+    post:
+      description: Legt eine Pfandart (z. B. Glas 2 €) für die Organisation an. Scope `catalog:write` und Modulrecht Pfand.
+      operationId: createPfandType
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePfandTypeDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a6
+        - API-token: []
+      summary: Pfandart anlegen
+      tags:
+        - Pfand
+      x-api-token-scope: catalog:write
+  /api/organizations/{organizationId}/pfand-types/{pfandTypeId}:
+    get:
+      description: Eine Pfandart der Organisation. Scope `read`.
+      operationId: getPfandType
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: pfandTypeId
+          required: true
+          in: path
+          description: ID der Pfandart
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a6
+        - API-token: []
+      summary: Pfandart abrufen
+      tags:
+        - Pfand
+      x-api-token-scope: read
+    patch:
+      description: Ändert Name, Betrag oder Sichtbarkeit einer Pfandart. Scope `catalog:write`.
+      operationId: updatePfandType
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: pfandTypeId
+          required: true
+          in: path
+          description: ID der Pfandart
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePfandTypeDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a6
+        - API-token: []
+      summary: Pfandart ändern
+      tags:
+        - Pfand
+      x-api-token-scope: catalog:write
+  /api/organizations/{organizationId}/table-areas:
+    get:
+      description: Alle Bereiche der Organisation inklusive ihrer Tische (aktive und inaktive) und des Tischplans. Scope `read`.
+      operationId: listTableAreas
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - &a7
+          JWT-auth: []
+        - API-token: []
+      summary: Bereiche und Tische auflisten
+      tags:
+        - Tische & Bereiche
+      x-api-token-scope: read
+    post:
+      description: Legt einen Bereich (z. B. Festzelt, Biergarten) an. Scope `tables:write` und Modulrecht Veranstaltungen.
+      operationId: createTableArea
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTableAreaDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a7
+        - API-token: []
+      summary: Bereich anlegen
+      tags:
+        - Tische & Bereiche
+      x-api-token-scope: tables:write
+  /api/organizations/{organizationId}/table-areas/order:
+    patch:
+      description: Setzt die Reihenfolge der Bereiche anhand der übergebenen ID-Liste. Scope `tables:write`.
+      operationId: reorderTableAreas
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderTableAreasDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a7
+        - API-token: []
+      summary: Bereiche sortieren
+      tags:
+        - Tische & Bereiche
+      x-api-token-scope: tables:write
+  /api/organizations/{organizationId}/table-areas/{areaId}:
+    patch:
+      description: Ändert Name, Größe, Raster oder Deko eines Bereichs. Scope `tables:write`.
+      operationId: updateTableArea
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: areaId
+          required: true
+          in: path
+          description: ID des Bereichs
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTableAreaDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a7
+        - API-token: []
+      summary: Bereich ändern
+      tags:
+        - Tische & Bereiche
+      x-api-token-scope: tables:write
+  /api/organizations/{organizationId}/table-areas/{areaId}/layout:
+    put:
+      description: Ersetzt die Karte eines Bereichs (Positionen der Tische und Deko) vollständig. Scope `tables:write`.
+      operationId: putTableAreaLayout
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: areaId
+          required: true
+          in: path
+          description: ID des Bereichs
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutTableAreaLayoutDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a7
+        - API-token: []
+      summary: Tischplan eines Bereichs speichern
+      tags:
+        - Tische & Bereiche
+      x-api-token-scope: tables:write
+  /api/organizations/{organizationId}/tables:
+    post:
+      description: Legt einen Tisch in einem Bereich an. Scope `tables:write`.
+      operationId: createTable
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDiningTableDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a7
+        - API-token: []
+      summary: Tisch anlegen
+      tags:
+        - Tische & Bereiche
+      x-api-token-scope: tables:write
+  /api/organizations/{organizationId}/tables/bulk:
+    post:
+      description: Legt mehrere Tische mit fortlaufender Nummer in einem Aufruf an (z. B. A01–A12). Scope `tables:write`.
+      operationId: createTablesBulk
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkCreateDiningTablesDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a7
+        - API-token: []
+      summary: Tischserie anlegen
+      tags:
+        - Tische & Bereiche
+      x-api-token-scope: tables:write
+  /api/organizations/{organizationId}/tables/{tableId}:
+    patch:
+      description: Ändert Name, Plätze, Position oder Bereich eines Tischs. Scope `tables:write`.
+      operationId: updateTable
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: tableId
+          required: true
+          in: path
+          description: ID des Tischs
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDiningTableDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a7
+        - API-token: []
+      summary: Tisch ändern
+      tags:
+        - Tische & Bereiche
+      x-api-token-scope: tables:write
+  /api/organizations/{organizationId}/events:
+    get:
+      description: Alle Veranstaltungen der Organisation, neueste zuerst, seitenweise (`page`, `limit`). Scope `read`.
+      operationId: listEvents
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: page
+          required: false
+          in: query
+          description: Seite, beginnend bei 1
+          schema:
+            minimum: 1
+            default: 1
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Einträge je Seite (höchstens 500)
+          schema:
+            minimum: 1
+            maximum: 500
+            default: 20
+            example: 20
+            type: number
+      responses:
+        "200":
+          description: Veranstaltungen der Organisation, neueste zuerst
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  meta:
+                    type: object
+                    description: Seitenangaben
+                    properties:
+                      page:
+                        type: integer
+                        example: 1
+                      limit:
+                        type: integer
+                        example: 20
+                      total:
+                        type: integer
+                        description: Treffer insgesamt
+                        example: 2
+                      totalPages:
+                        type: integer
+                        example: 1
+                      hasNext:
+                        type: boolean
+                        example: false
+                      hasPrev:
+                        type: boolean
+                        example: false
+              example:
+                data:
+                  - id: 2f6c1a9e-5b1d-4c7e-9a3f-0d8e7b6a5c41
+                    organizationId: 8c1e2d3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+                    copiedFromEventId: null
+                    name: Sommerfest 2026
+                    description: Festwochenende am Sportplatz
+                    startDate: 2026-07-10T16:00:00.000Z
+                    endDate: 2026-07-12T22:00:00.000Z
+                    status: active
+                    settings:
+                      orderNumberPrefix: SF
+                      orderingMode: immediate
+                      enableOnlineOrdering: false
+                      enableTableService: true
+                      enableTakeaway: true
+                    billingStatus: paid
+                    paidAt: 2026-06-01T09:12:44.000Z
+                    priceCharged: 29
+                    billedDays: 3
+                    invoiceStatus: null
+                    invoiceDueAt: null
+                    invoicePaidAt: null
+                    invoiceHostedUrl: null
+                    invoicePdfUrl: null
+                    unlockedStartDate: 2026-07-10T00:00:00.000Z
+                    createdAt: 2026-05-20T18:30:12.000Z
+                    updatedAt: 2026-07-10T15:58:03.000Z
+                  - id: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
+                    organizationId: 8c1e2d3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
+                    copiedFromEventId: null
+                    name: Weihnachtsmarkt 2025
+                    description: null
+                    startDate: 2025-12-06T14:00:00.000Z
+                    endDate: 2025-12-07T20:00:00.000Z
+                    status: inactive
+                    settings:
+                      orderNumberPrefix: WM
+                      orderingMode: immediate
+                    billingStatus: paid
+                    paidAt: 2025-11-02T10:05:00.000Z
+                    priceCharged: 29
+                    billedDays: 2
+                    invoiceStatus: null
+                    invoiceDueAt: null
+                    invoicePaidAt: null
+                    invoiceHostedUrl: null
+                    invoicePdfUrl: null
+                    unlockedStartDate: 2025-12-06T00:00:00.000Z
+                    createdAt: 2025-10-28T19:02:40.000Z
+                    updatedAt: 2025-12-07T21:10:00.000Z
+                meta:
+                  page: 1
+                  limit: 20
+                  total: 2
+                  totalPages: 1
+                  hasNext: false
+                  hasPrev: false
+      security:
+        - &a8
+          JWT-auth: []
+        - API-token: []
+      summary: Veranstaltungen auflisten
+      tags:
+        - Veranstaltungen
+      x-api-token-scope: read
+    post:
+      description: Legt eine neue Veranstaltung mit Status `inactive` an. Scope `events:write` und Modulrecht Veranstaltungen; freischalten und aktivieren geht nur in der App.
+      operationId: createEvent
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEventDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a8
+        - API-token: []
+      summary: Veranstaltung anlegen
+      tags:
+        - Veranstaltungen
+      x-api-token-scope: events:write
+  /api/organizations/{organizationId}/events/active:
+    get:
+      description: "Liefert die Veranstaltung mit Status `active` oder `test` — oder `data: null`, wenn gerade keine läuft. Scope `read`."
+      operationId: getActiveEvent
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a8
+        - API-token: []
+      summary: Aktive Veranstaltung abrufen
+      tags:
+        - Veranstaltungen
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/events/{eventId}:
+    get:
+      description: Eine Veranstaltung mit Einstellungen und Abrechnungsstand. Scope `read`.
+      operationId: getEvent
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a8
+        - API-token: []
+      summary: Veranstaltung abrufen
+      tags:
+        - Veranstaltungen
+      x-api-token-scope: read
+    patch:
+      description: Ändert Name, Beschreibung, Zeitraum oder Einstellungen. Scope `events:write`; der Status (aktiv, Test) lässt sich hier nicht setzen.
+      operationId: updateEvent
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEventDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a8
+        - API-token: []
+      summary: Veranstaltung ändern
+      tags:
+        - Veranstaltungen
+      x-api-token-scope: events:write
+  /api/organizations/{organizationId}/events/{eventId}/copy-from/{sourceEventId}:
+    post:
+      description: Kopiert Kategorien und Produkte aus `sourceEventId` in diese Veranstaltung; was übernommen wird, steuert der Body. Scope `events:write`.
+      operationId: copyEventCatalog
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Ziel-Veranstaltung
+          schema:
+            format: uuid
+            type: string
+        - name: sourceEventId
+          required: true
+          in: path
+          description: ID der Veranstaltung, aus der kopiert wird
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopyProductsDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a8
+        - API-token: []
+      summary: Katalog aus anderer Veranstaltung kopieren
+      tags:
+        - Veranstaltungen
+      x-api-token-scope: events:write
+  /api/events/{eventId}/categories:
+    get:
+      description: Alle Kategorien der Veranstaltung in ihrer Sortierreihenfolge, ohne Seitenwechsel. Scope `read`.
+      operationId: listCategories
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - &a9
+          JWT-auth: []
+        - API-token: []
+      summary: Kategorien auflisten (je Veranstaltung)
+      tags:
+        - Kategorien
+      x-api-token-scope: read
+    post:
+      description: Legt eine Kategorie in der Veranstaltung an. Scope `catalog:write` und Modulrecht Produkte.
+      operationId: createCategory
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCategoryDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a9
+        - API-token: []
+      summary: Kategorie anlegen
+      tags:
+        - Kategorien
+      x-api-token-scope: catalog:write
+  /api/events/{eventId}/categories/{categoryId}:
+    get:
+      description: Eine Kategorie der Veranstaltung. Scope `read`.
+      operationId: getCategory
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+        - name: categoryId
+          required: true
+          in: path
+          description: ID der Kategorie
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a9
+        - API-token: []
+      summary: Kategorie abrufen
+      tags:
+        - Kategorien
+      x-api-token-scope: read
+    patch:
+      description: Ändert Name, Farbe, Icon oder Sichtbarkeit einer Kategorie. Scope `catalog:write`.
+      operationId: updateCategory
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+        - name: categoryId
+          required: true
+          in: path
+          description: ID der Kategorie
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCategoryDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a9
+        - API-token: []
+      summary: Kategorie ändern
+      tags:
+        - Kategorien
+      x-api-token-scope: catalog:write
+  /api/events/{eventId}/categories/reorder:
+    patch:
+      description: Setzt die Reihenfolge aller Kategorien anhand der übergebenen ID-Liste. Scope `catalog:write`.
+      operationId: reorderCategories
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderCategoriesDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a9
+        - API-token: []
+      summary: Kategorien sortieren
+      tags:
+        - Kategorien
+      x-api-token-scope: catalog:write
+  /api/events/{eventId}/products:
+    get:
+      description: Alle Produkte der Veranstaltung mit Kategorie, sortiert nach Reihenfolge und Name, seitenweise (`page`, `limit`; Standard 50). Scope `read`.
+      operationId: listProducts
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+        - name: page
+          required: false
+          in: query
+          description: Seite, beginnend bei 1
+          schema:
+            minimum: 1
+            default: 1
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Einträge je Seite (höchstens 500)
+          schema:
+            minimum: 1
+            maximum: 500
+            default: 20
+            example: 20
+            type: number
+      responses:
+        "200":
+          description: Produkte der Veranstaltung mit Kategorie, nach Reihenfolge und Name sortiert
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  meta:
+                    type: object
+                    description: Seitenangaben
+                    properties:
+                      page:
+                        type: integer
+                        example: 1
+                      limit:
+                        type: integer
+                        example: 20
+                      total:
+                        type: integer
+                        description: Treffer insgesamt
+                        example: 2
+                      totalPages:
+                        type: integer
+                        example: 1
+                      hasNext:
+                        type: boolean
+                        example: false
+                      hasPrev:
+                        type: boolean
+                        example: false
+              example:
+                data:
+                  - id: 5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a
+                    eventId: 2f6c1a9e-5b1d-4c7e-9a3f-0d8e7b6a5c41
+                    categoryId: 9e8d7c6b-5a4f-4e3d-9c2b-1a0f9e8d7c6b
+                    name: Bratwurst im Brötchen
+                    description: Vom Grill, mit Senf oder Ketchup
+                    price: 4.5
+                    taxRate: 7
+                    imageUrl: null
+                    icon: pos-icon:sausage-bun
+                    isFavorite: true
+                    isActive: true
+                    isAvailable: true
+                    trackInventory: true
+                    stockQuantity: 120
+                    stockUnit: Stück
+                    lowStockThreshold: 20
+                    options:
+                      groups:
+                        - name: Soße
+                          type: single
+                          required: false
+                          options:
+                            - name: Senf
+                              priceModifier: 0
+                              default: true
+                            - name: Ketchup
+                              priceModifier: 0
+                    printSettings: null
+                    sortOrder: 1
+                    productionStationId: c0ffee00-1111-4222-8333-444455556666
+                    pfandTypeId: null
+                    category:
+                      id: 9e8d7c6b-5a4f-4e3d-9c2b-1a0f9e8d7c6b
+                      eventId: 2f6c1a9e-5b1d-4c7e-9a3f-0d8e7b6a5c41
+                      name: Grill
+                      sortOrder: 1
+                      isActive: true
+                    createdAt: 2026-05-21T08:14:02.000Z
+                    updatedAt: 2026-07-10T17:40:11.000Z
+                  - id: 6e5d4c3b-2a1f-4e0d-9c8b-7a6f5e4d3c2b
+                    eventId: 2f6c1a9e-5b1d-4c7e-9a3f-0d8e7b6a5c41
+                    categoryId: f1e2d3c4-b5a6-4978-8a9b-0c1d2e3f4a5b
+                    name: Pils 0,5 l
+                    description: null
+                    price: 4
+                    taxRate: 19
+                    imageUrl: null
+                    icon: pos-icon:beer-glass
+                    isFavorite: false
+                    isActive: true
+                    isAvailable: true
+                    trackInventory: false
+                    stockQuantity: 0
+                    stockUnit: Stück
+                    lowStockThreshold: null
+                    options:
+                      groups: []
+                    printSettings: null
+                    sortOrder: 2
+                    productionStationId: null
+                    pfandTypeId: d1e2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a
+                    category:
+                      id: f1e2d3c4-b5a6-4978-8a9b-0c1d2e3f4a5b
+                      eventId: 2f6c1a9e-5b1d-4c7e-9a3f-0d8e7b6a5c41
+                      name: Getränke
+                      sortOrder: 2
+                      isActive: true
+                    createdAt: 2026-05-21T08:14:02.000Z
+                    updatedAt: 2026-07-10T17:40:11.000Z
+                meta:
+                  page: 1
+                  limit: 50
+                  total: 2
+                  totalPages: 1
+                  hasNext: false
+                  hasPrev: false
+      security:
+        - &a10
+          JWT-auth: []
+        - API-token: []
+      summary: Produkte auflisten (je Veranstaltung)
+      tags:
+        - Produkte
+      x-api-token-scope: read
+    post:
+      description: "Legt ein Produkt in einer Kategorie der Veranstaltung an: Preis, Steuersatz, Optionen, Pfandart, Station, Bestand. Scope `catalog:write` und Modulrecht Produkte."
+      operationId: createProduct
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a10
+        - API-token: []
+      summary: Produkt anlegen
+      tags:
+        - Produkte
+      x-api-token-scope: catalog:write
+  /api/events/{eventId}/products/import:
+    post:
+      description: Legt mehrere Produkte aus einer CSV-Liste in einem Aufruf an, fehlende Kategorien werden ergänzt; mit `dryRun` nur Vorschau. Scope `catalog:write`.
+      operationId: importProducts
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportProductsDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a10
+        - API-token: []
+      summary: Produkte importieren (CSV)
+      tags:
+        - Produkte
+      x-api-token-scope: catalog:write
+  /api/events/{eventId}/products/low-stock:
+    get:
+      description: Produkte mit Bestandsführung, deren Bestand die Warnschwelle (`lowStockThreshold`) erreicht oder unterschritten hat. Scope `read`.
+      operationId: listLowStockProducts
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a10
+        - API-token: []
+      summary: Lagerbestand-Warnungen auflisten
+      tags:
+        - Produkte
+      x-api-token-scope: read
+  /api/events/{eventId}/products/{productId}:
+    get:
+      description: Ein Produkt der Veranstaltung mit allen Feldern. Scope `read`.
+      operationId: getProduct
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+        - name: productId
+          required: true
+          in: path
+          description: ID des Produkts
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a10
+        - API-token: []
+      summary: Produkt abrufen
+      tags:
+        - Produkte
+      x-api-token-scope: read
+    patch:
+      description: Ändert beliebige Felder eines Produkts; nicht genannte Felder bleiben. Scope `catalog:write`.
+      operationId: updateProduct
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+        - name: productId
+          required: true
+          in: path
+          description: ID des Produkts
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a10
+        - API-token: []
+      summary: Produkt ändern
+      tags:
+        - Produkte
+      x-api-token-scope: catalog:write
+  /api/events/{eventId}/products/{productId}/availability:
+    patch:
+      description: Markiert ein Produkt als verfügbar oder ausverkauft, ohne es zu deaktivieren; die Kassen übernehmen das sofort. Scope `catalog:write`.
+      operationId: setProductAvailability
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+        - name: productId
+          required: true
+          in: path
+          description: ID des Produkts
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - isAvailable
+              properties:
+                isAvailable:
+                  type: boolean
+                  description: true = verfügbar, false = ausverkauft
+                  example: false
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a10
+        - API-token: []
+      summary: Verfügbarkeit eines Produkts setzen
+      tags:
+        - Produkte
+      x-api-token-scope: catalog:write
+  /api/organizations/{organizationId}/print-templates:
+    get:
+      description: Alle Bon-Vorlagen der Organisation, seitenweise (`page`, `limit`). Scope `read`.
+      operationId: listPrintTemplates
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: page
+          required: false
+          in: query
+          description: Seite, beginnend bei 1
+          schema:
+            minimum: 1
+            default: 1
+            example: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Einträge je Seite (höchstens 500)
+          schema:
+            minimum: 1
+            maximum: 500
+            default: 20
+            example: 20
+            type: number
+      responses:
+        "200":
+          description: ""
+      security:
+        - &a11
+          JWT-auth: []
+        - API-token: []
+      summary: Bon-Vorlagen auflisten
+      tags:
+        - Bon-Vorlagen
+      x-api-token-scope: read
+    post:
+      description: Legt eine Vorlage für Bons oder Bestellzettel an. Scope `devices:write` und Modulrecht Geräte.
+      operationId: createPrintTemplate
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePrintTemplateDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a11
+        - API-token: []
+      summary: Bon-Vorlage anlegen
+      tags:
+        - Bon-Vorlagen
+      x-api-token-scope: devices:write
+  /api/organizations/{organizationId}/print-templates/{templateId}:
+    get:
+      description: Eine Bon-Vorlage mit ihrer Definition. Scope `read`.
+      operationId: getPrintTemplate
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: templateId
+          required: true
+          in: path
+          description: ID der Vorlage
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a11
+        - API-token: []
+      summary: Bon-Vorlage abrufen
+      tags:
+        - Bon-Vorlagen
+      x-api-token-scope: read
+    patch:
+      description: Ändert Name, Typ oder Definition einer Vorlage. Scope `devices:write`.
+      operationId: updatePrintTemplate
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: templateId
+          required: true
+          in: path
+          description: ID der Vorlage
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePrintTemplateDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a11
+        - API-token: []
+      summary: Bon-Vorlage ändern
+      tags:
+        - Bon-Vorlagen
+      x-api-token-scope: devices:write
+  /api/organizations/{organizationId}/print-templates/{templateId}/preview:
+    post:
+      description: Rendert die Vorlage mit Beispieldaten und liefert das Ergebnis als HTML (`data.html`), ohne zu drucken. Scope `read`.
+      operationId: previewPrintTemplate
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: templateId
+          required: true
+          in: path
+          description: ID der Vorlage
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a11
+        - API-token: []
+      summary: Bon-Vorlage als Vorschau rendern
+      tags:
+        - Bon-Vorlagen
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/sales:
+    get:
+      description: Umsatz, Bestellungen und Durchschnittsbon im Zeitraum (`startDate`, `endDate`), optional je Veranstaltung und gruppiert (`groupBy`). Scope `read` und Modulrecht Auswertung.
+      operationId: getSalesReport
+      parameters:
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: startDate
+          required: false
+          in: query
+          description: Startdatum für den Bericht
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: endDate
+          required: false
+          in: query
+          description: Enddatum für den Bericht
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: groupBy
+          required: false
+          in: query
+          description: Gruppierung der Berichtsdaten
+          schema:
+            example: day
+            type: string
+            enum:
+              - day
+              - week
+              - month
+              - category
+              - product
+              - payment_method
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - &a12
+          JWT-auth: []
+        - API-token: []
+      summary: Umsatzbericht
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/products:
+    get:
+      description: Verkaufte Menge und Umsatz je Produkt im Zeitraum, optional je Veranstaltung. Scope `read` und Modulrecht Auswertung.
+      operationId: getProductsReport
+      parameters:
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: startDate
+          required: false
+          in: query
+          description: Startdatum für den Bericht
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: endDate
+          required: false
+          in: query
+          description: Enddatum für den Bericht
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: groupBy
+          required: false
+          in: query
+          description: Gruppierung der Berichtsdaten
+          schema:
+            example: day
+            type: string
+            enum:
+              - day
+              - week
+              - month
+              - category
+              - product
+              - payment_method
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Umsatzbericht je Produkt
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/payments:
+    get:
+      description: Summen und Anzahl je Zahlart (bar, Karte, SumUp, Rabatt) im Zeitraum. Scope `read` und Modulrecht Auswertung.
+      operationId: getPaymentsReport
+      parameters:
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: startDate
+          required: false
+          in: query
+          description: Startdatum für den Bericht
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: endDate
+          required: false
+          in: query
+          description: Enddatum für den Bericht
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: groupBy
+          required: false
+          in: query
+          description: Gruppierung der Berichtsdaten
+          schema:
+            example: day
+            type: string
+            enum:
+              - day
+              - week
+              - month
+              - category
+              - product
+              - payment_method
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Zahlungsbericht je Zahlart
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/hourly:
+    get:
+      description: Bestellungen und Umsatz je Stunde im Zeitraum, für Stoßzeiten und Personalplanung. Scope `read` und Modulrecht Auswertung.
+      operationId: getHourlyReport
+      parameters:
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: startDate
+          required: false
+          in: query
+          description: Startdatum für den Bericht
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: endDate
+          required: false
+          in: query
+          description: Enddatum für den Bericht
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: groupBy
+          required: false
+          in: query
+          description: Gruppierung der Berichtsdaten
+          schema:
+            example: day
+            type: string
+            enum:
+              - day
+              - week
+              - month
+              - category
+              - product
+              - payment_method
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Umsatz je Stunde
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/channels:
+    get:
+      description: Bestellungen und Umsatz je Kanal (Kasse, Online, QR-Bestellung) im Zeitraum. Scope `read` und Modulrecht Auswertung.
+      operationId: getChannelsReport
+      parameters:
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: startDate
+          required: false
+          in: query
+          description: Startdatum für den Bericht
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: endDate
+          required: false
+          in: query
+          description: Enddatum für den Bericht
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: groupBy
+          required: false
+          in: query
+          description: Gruppierung der Berichtsdaten
+          schema:
+            example: day
+            type: string
+            enum:
+              - day
+              - week
+              - month
+              - category
+              - product
+              - payment_method
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Umsatz je Bestellkanal
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/categories:
+    get:
+      description: Verkaufte Menge, Umsatz und Anteil je Kategorie im Zeitraum. Scope `read` und Modulrecht Auswertung.
+      operationId: getCategoriesReport
+      parameters:
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: startDate
+          required: false
+          in: query
+          description: Startdatum für den Bericht
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: endDate
+          required: false
+          in: query
+          description: Enddatum für den Bericht
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: groupBy
+          required: false
+          in: query
+          description: Gruppierung der Berichtsdaten
+          schema:
+            example: day
+            type: string
+            enum:
+              - day
+              - week
+              - month
+              - category
+              - product
+              - payment_method
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Umsatzbericht je Kategorie
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/net-summary:
+    get:
+      description: "Produkt- und Kategoriezeilen zeigen den Warenwert netto (Storno und erstattete Mengen ab, Rabatt anteilig, ohne Pfand und Trinkgeld). Hier steht, was keiner Position gehört: `itemsRevenue` + `unassignedRefunds` (Kulanz-Erstattungen ohne Position, negativ) + `tips` = `netRevenue` (wie `totalRevenue` im Umsatzbericht). Die Summe der gerundeten Zeilen kann bei Rabatten um Cent von `itemsRevenue` abweichen. Scope `read` und Modulrecht Auswertung."
+      operationId: getNetSalesSummary
+      parameters:
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: startDate
+          required: false
+          in: query
+          description: Startdatum für den Bericht
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: endDate
+          required: false
+          in: query
+          description: Enddatum für den Bericht
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: groupBy
+          required: false
+          in: query
+          description: Gruppierung der Berichtsdaten
+          schema:
+            example: day
+            type: string
+            enum:
+              - day
+              - week
+              - month
+              - category
+              - product
+              - payment_method
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Netto-Abgleich Produkte und Kategorien
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/devices:
+    get:
+      description: Bestellungen und Umsatz je Kasse im Zeitraum. Scope `read` und Modulrecht Auswertung.
+      operationId: getDevicesReport
+      parameters:
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: startDate
+          required: false
+          in: query
+          description: Startdatum für den Bericht
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: endDate
+          required: false
+          in: query
+          description: Enddatum für den Bericht
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: groupBy
+          required: false
+          in: query
+          description: Gruppierung der Berichtsdaten
+          schema:
+            example: day
+            type: string
+            enum:
+              - day
+              - week
+              - month
+              - category
+              - product
+              - payment_method
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Umsatz je Gerät
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/inventory:
+    get:
+      description: Aktueller Bestand aller Produkte mit Bestandsführung samt Warnung bei leerem Bestand. Scope `read` und Modulrecht Auswertung.
+      operationId: getInventoryReport
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Bestandsbericht
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/stock-movements:
+    get:
+      description: Alle Bestandsbewegungen (Verkauf, Korrektur, Inventur) im Zeitraum, optional je Veranstaltung. Scope `read` und Modulrecht Auswertung.
+      operationId: getStockMovementsReport
+      parameters:
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: startDate
+          required: false
+          in: query
+          description: Startdatum für den Bericht
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: endDate
+          required: false
+          in: query
+          description: Enddatum für den Bericht
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: groupBy
+          required: false
+          in: query
+          description: Gruppierung der Berichtsdaten
+          schema:
+            example: day
+            type: string
+            enum:
+              - day
+              - week
+              - month
+              - category
+              - product
+              - payment_method
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Bestandsbewegungen
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/export:
+    get:
+      description: "`type` wählt den Bericht, `format` das Dateiformat; die Antwort ist ein Download (`Content-Disposition: attachment`). Scope `read` und Modulrecht Auswertung."
+      operationId: exportReport
+      parameters:
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: startDate
+          required: false
+          in: query
+          description: Startdatum für den Bericht
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: endDate
+          required: false
+          in: query
+          description: Enddatum für den Bericht
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: groupBy
+          required: false
+          in: query
+          description: Gruppierung der Berichtsdaten
+          schema:
+            example: day
+            type: string
+            enum:
+              - day
+              - week
+              - month
+              - category
+              - product
+              - payment_method
+        - name: format
+          required: true
+          in: query
+          description: Exportformat des Berichts
+          schema:
+            example: csv
+            type: string
+            enum:
+              - csv
+              - excel
+              - json
+        - name: type
+          required: false
+          in: query
+          description: "Welcher Bericht exportiert wird (Standard: sales)"
+          schema:
+            enum:
+              - sales
+              - products
+              - payments
+              - hourly
+              - channels
+              - categories
+              - devices
+              - inventory
+            type: string
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Bericht exportieren (CSV, Excel, JSON)
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/system-status:
+    get:
+      description: Geräte (verbunden/offline), Drucker, wartende Druckaufträge und offene Bestellungen der Organisation auf einen Blick. Scope `read` und Modulrecht Auswertung.
+      operationId: getSystemStatus
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Systemstatus
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/activity:
+    get:
+      description: Die jüngsten Bestellungen, Zahlungen und Druckaufträge der Organisation als Verlauf (höchstens 20 je Art). Scope `read` und Modulrecht Auswertung.
+      operationId: getActivityStream
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a12
+        - API-token: []
+      summary: Letzte Aktivitäten
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/shift-plans:
+    get:
+      description: Alle Schichtpläne der Organisation mit Status (Entwurf, veröffentlicht, geschlossen). Scope `read`.
+      operationId: listShiftPlans
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - &a13
+          JWT-auth: []
+        - API-token: []
+      summary: Schichtpläne auflisten
+      tags:
+        - Schichtpläne
+      x-api-token-scope: read
+    post:
+      description: Legt einen Schichtplan als Entwurf an. Scope `staff:write` und Modulrecht Schichtpläne.
+      operationId: createShiftPlan
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShiftPlanDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Schichtplan anlegen
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/{planId}:
+    get:
+      description: Ein Schichtplan mit seinen Jobs und Schichten. Scope `read`.
+      operationId: getShiftPlan
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: planId
+          required: true
+          in: path
+          description: ID des Schichtplans
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Schichtplan abrufen
+      tags:
+        - Schichtpläne
+      x-api-token-scope: read
+    patch:
+      description: Ändert Name, Zeitraum, Beschreibung oder Einstellungen eines Schichtplans. Scope `staff:write`.
+      operationId: updateShiftPlan
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: planId
+          required: true
+          in: path
+          description: ID des Schichtplans
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateShiftPlanDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Schichtplan ändern
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/{planId}/publish:
+    post:
+      description: Schaltet den Plan für die öffentliche Helfer-Anmeldung frei (`400 SHIFT_PLAN_ALREADY_PUBLISHED`, wenn er schon offen ist). Scope `staff:write`.
+      operationId: publishShiftPlan
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: planId
+          required: true
+          in: path
+          description: ID des Schichtplans
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Schichtplan veröffentlichen
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/{planId}/close:
+    post:
+      description: Beendet die Anmeldung; bestehende Anmeldungen bleiben erhalten. Scope `staff:write`.
+      operationId: closeShiftPlan
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: planId
+          required: true
+          in: path
+          description: ID des Schichtplans
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Schichtplan schließen
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/{planId}/export/pdf:
+    get:
+      description: Liefert den Plan mit allen Jobs, Schichten und eingetragenen Helfern als Datei (`application/pdf`). Scope `read`.
+      operationId: exportShiftPlanPdf
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: planId
+          required: true
+          in: path
+          description: ID des Schichtplans
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Schichtplan als PDF exportieren
+      tags:
+        - Schichtpläne
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/shift-plans/{planId}/jobs:
+    get:
+      description: Alle Jobs eines Schichtplans mit ihren Schichten. Scope `read`.
+      operationId: listShiftJobs
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: planId
+          required: true
+          in: path
+          description: ID des Schichtplans
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Jobs auflisten (je Schichtplan)
+      tags:
+        - Schichtpläne
+      x-api-token-scope: read
+    post:
+      description: Legt eine Aufgabe (z. B. Ausschank, Kasse) im Schichtplan an. Scope `staff:write`.
+      operationId: createShiftJob
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: planId
+          required: true
+          in: path
+          description: ID des Schichtplans
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShiftJobDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Job anlegen
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/jobs/{jobId}:
+    patch:
+      description: Ändert Name, Beschreibung oder Reihenfolge eines Jobs. Scope `staff:write`.
+      operationId: updateShiftJob
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: jobId
+          required: true
+          in: path
+          description: ID des Jobs
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateShiftJobDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Job ändern
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/jobs/{jobId}/shifts:
+    get:
+      description: Alle Schichten eines Jobs mit Belegung. Scope `read`.
+      operationId: listShifts
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: jobId
+          required: true
+          in: path
+          description: ID des Jobs
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Schichten auflisten (je Job)
+      tags:
+        - Schichtpläne
+      x-api-token-scope: read
+    post:
+      description: Legt eine Schicht (Zeitraum, benötigte Helfer) für einen Job an. Scope `staff:write`.
+      operationId: createShift
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: jobId
+          required: true
+          in: path
+          description: ID des Jobs
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShiftDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Schicht anlegen
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/jobs/{jobId}/shifts/bulk:
+    post:
+      description: Legt mehrere Schichten für einen Job in einem Aufruf an. Scope `staff:write`.
+      operationId: createShiftsBulk
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: jobId
+          required: true
+          in: path
+          description: ID des Jobs
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - shifts
+              properties:
+                shifts:
+                  type: array
+                  description: Schichten, die angelegt werden
+                  items:
+                    $ref: "#/components/schemas/CreateShiftDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Mehrere Schichten anlegen
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/shifts/{shiftId}:
+    patch:
+      description: Ändert Zeitraum, benötigte Helfer oder Notiz einer Schicht. Scope `staff:write`.
+      operationId: updateShift
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: shiftId
+          required: true
+          in: path
+          description: ID der Schicht
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateShiftDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Schicht ändern
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/{planId}/registrations:
+    get:
+      description: Alle Anmeldungen eines Schichtplans mit Status und Schicht. Scope `read`.
+      operationId: listShiftRegistrations
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: planId
+          required: true
+          in: path
+          description: ID des Schichtplans
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Helfer-Anmeldungen auflisten (je Schichtplan)
+      tags:
+        - Schichtpläne
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/approve:
+    post:
+      description: Bestätigt eine Helfer-Anmeldung; der Helfer bekommt eine E-Mail, optional mit Nachricht. Scope `staff:write`.
+      operationId: approveShiftRegistration
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: registrationId
+          required: true
+          in: path
+          description: ID der Anmeldung
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveRegistrationDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Anmeldung annehmen
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/reject:
+    post:
+      description: Lehnt eine Helfer-Anmeldung ab; der Grund geht per E-Mail an den Helfer. Scope `staff:write`.
+      operationId: rejectShiftRegistration
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: registrationId
+          required: true
+          in: path
+          description: ID der Anmeldung
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectRegistrationDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Anmeldung ablehnen
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/registrations/{registrationId}:
+    patch:
+      description: Ändert Name, Kontakt, Notizen oder Schicht einer Anmeldung; auf Wunsch wird der Helfer per E-Mail informiert. Scope `staff:write`.
+      operationId: updateShiftRegistration
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: registrationId
+          required: true
+          in: path
+          description: ID der Anmeldung
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUpdateRegistrationDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Anmeldung ändern
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/notes:
+    patch:
+      description: Speichert eine Notiz, die nur Organisatoren sehen. Scope `staff:write`.
+      operationId: updateShiftRegistrationNotes
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: registrationId
+          required: true
+          in: path
+          description: ID der Anmeldung
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRegistrationNotesDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Interne Notiz zur Anmeldung setzen
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/organizations/{organizationId}/shift-plans/shifts/{shiftId}/registrations:
+    post:
+      description: Trägt einen Helfer direkt in eine Schicht ein, ohne öffentliche Anmeldung. Scope `staff:write`.
+      operationId: createShiftRegistration
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: shiftId
+          required: true
+          in: path
+          description: ID der Schicht
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCreateRegistrationDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Helfer in Schicht eintragen
+      tags:
+        - Schichtpläne
+      x-api-token-scope: staff:write
+  /api/events/{eventId}/production-stations:
+    get:
+      description: Alle Produktionsstationen der Veranstaltung. Scope `read`.
+      operationId: listProductionStations
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - &a14
+          JWT-auth: []
+        - API-token: []
+      summary: Stationen auflisten (je Veranstaltung)
+      tags:
+        - Stationen
+      x-api-token-scope: read
+    post:
+      description: Legt eine Produktionsstation (Küche, Ausgabe, Bar) für die Veranstaltung an, optional mit Drucker. Scope `events:write` und Modulrecht Veranstaltungen.
+      operationId: createProductionStation
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductionStationDto"
+      responses:
+        "201":
+          description: ""
+      security:
+        - *a14
+        - API-token: []
+      summary: Station anlegen
+      tags:
+        - Stationen
+      x-api-token-scope: events:write
+  /api/events/{eventId}/production-stations/{stationId}:
+    get:
+      description: Eine Produktionsstation der Veranstaltung. Scope `read`.
+      operationId: getProductionStation
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+        - name: stationId
+          required: true
+          in: path
+          description: ID der Station
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a14
+        - API-token: []
+      summary: Station abrufen
+      tags:
+        - Stationen
+      x-api-token-scope: read
+    patch:
+      description: Ändert Name, Drucker oder Einstellungen einer Station. Scope `events:write`.
+      operationId: updateProductionStation
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+        - name: stationId
+          required: true
+          in: path
+          description: ID der Station
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductionStationDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a14
+        - API-token: []
+      summary: Station ändern
+      tags:
+        - Stationen
+      x-api-token-scope: events:write
+  /api/organizations/{organizationId}/assistant/icon-suggestions:
+    post:
+      description: "Schlägt zu Produktnamen passende Icons aus @openeos/pos-icons vor: Stufe 1 ohne Modell (Namen und Suchbegriffe der Icons), Stufe 2 fragt bei unklaren Namen das Klassifikationsmodell. `icon` ist die Referenz `pos-icon:<id>`. Scope `read`; `404 AI_DISABLED` ohne Anbieter, `403 ASSISTANT_DISABLED` ohne Opt-in der Organisation."
+      operationId: suggestProductIcons
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IconSuggestionsDto"
+      responses:
+        "201":
+          description: "{ data: [{ name, suggestions: [{ icon, score, source: lexical|model }] }] } — leeres Array, wenn kein Icon passt"
+      security:
+        - JWT-auth: []
+        - API-token: []
+      summary: Icon-Vorschläge für Produktnamen
+      tags:
+        - Assistent
+      x-api-token-scope: read
+info:
+  title: OpenEOS API
+  description: |-
+    OpenEOS ist ein Kassen- und Bestellsystem für Vereinsfeste. Diese Referenz beschreibt die REST-API unter `https://api.openeos.de/api` (selbst gehostet: `https://<deine-api>/api`).
+
+    ## Zugang mit API-Token
+
+    Für Skripte, Automatisierungen (z. B. Zapier) und KI-Agenten gibt es **API-Tokens je Organisation**. Dieselben Tokens öffnen den **MCP-Server** unter `https://api.openeos.de/mcp` (Streamable HTTP, außerhalb von `/api`) für Claude, Cursor und eigene Agenten — die Werkzeuge dort folgen denselben Scopes. Ein Token wirkt wie die Person, die ihn ausgestellt hat — beschränkt auf eine Organisation, auf die gewählten Scopes und auf die hier mit *API-token* markierten Endpunkte. Alles andere (Kasse, Zahlungen, Mitglieder, Abrechnung, Löschen, Freischaltung) bleibt der Anmeldung in der App vorbehalten.
+
+    **Token anlegen:** In der Web-App unter *Einstellungen → Organisation → Zugänge* (Organisations-Admin) oder per `POST /api/organizations/{organizationId}/api-tokens` mit einer angemeldeten Sitzung. Der Token (`oeos_…`) wird genau einmal angezeigt; gespeichert wird nur ein Hash. Höchstens 20 aktive Tokens je Organisation.
+
+    **Verwenden:** `Authorization: Bearer oeos_…` — derselbe Header wie für Sitzungs-JWTs. Welche Organisation gemeint ist, steht im Pfad; ein Token erreicht nur seine eigene (sonst `403 API_TOKEN_WRONG_ORGANIZATION`).
+
+    ### Scopes
+
+    | Scope | Erlaubt |
+    |---|---|
+    | `read` | Organisation, Veranstaltungen, Kategorien, Produkte, Pfandarten, Tische, Stationen, Bon-Vorlagen, Drucker, Schichtpläne, Geräte, Berichte und Bestellungen lesen |
+    | `catalog:write` | Kategorien, Produkte und Pfandarten anlegen und ändern |
+    | `events:write` | Veranstaltungen und Produktionsstationen anlegen und ändern (keine Freischaltung) |
+    | `tables:write` | Bereiche, Tische und Tischplan bearbeiten |
+    | `staff:write` | Schichtpläne, Jobs, Schichten und Helfer-Anmeldungen bearbeiten |
+    | `devices:write` | Bon-Vorlagen anlegen und ändern |
+    | `settings:write` | Organisationseinstellungen ändern |
+
+    Schreib-Scopes schließen `read` nicht ein. Jeder Endpunkt nennt den nötigen Scope als `x-api-token-scope`; fehlt er am Token, antwortet die API mit `403 API_TOKEN_SCOPE_MISSING`, bei nicht freigegebenen Endpunkten mit `403 API_TOKEN_NOT_ALLOWED`.
+
+    ### Grenzen
+
+    Je Token:
+    - 120 Aufrufe je Minute
+    - 5000 Aufrufe je Tag
+
+    Darüber hinaus `429 API_TOKEN_RATE_LIMITED` mit `Retry-After`. Zusätzlich gilt die allgemeine Grenze je IP-Adresse.
+
+    ### Fehler
+
+    Jede Fehlerantwort hat die Form `{ "error": { "code", "reason", "message", "params", "details", "requestId", "timestamp" } }`. `code` ist die allgemeine Klasse (`FORBIDDEN`, `NOT_FOUND`, …), `reason` der konkrete Fall (`API_TOKEN_SCOPE_MISSING`, `EVENT_NOT_FOUND`, …).
+
+    ## Was diese Referenz zeigt
+
+    Nur die Endpunkte, die ein API-Token erreichen kann, plus die Verwaltung der Tokens selbst (nur mit Anmeldung). Alle anderen Teile der API — Anmeldung und Sitzungen der Web-App, Kasse und Geräte-API (`/api/device-api/*`), Zahlungen, Mitglieder, Abrechnung, Admin — sind absichtlich nicht dokumentiert: Sie sind für die Apps von OpenEOS gedacht und keine stabile Schnittstelle für Integrationen. Wer OpenEOS selbst betreibt, findet die vollständige Beschreibung im Repository (`docs/openapi.json`) und außerhalb der Produktion unter `/docs`.
+
+    Zu jedem Endpunkt steht der nötige Scope (`x-api-token-scope`). Die Texte sind auf Deutsch; die Referenz ist für beide Sprachen der Doku-Seite dieselbe.
+  version: "1.0"
+  contact:
+    name: OpenEOS
+    url: https://openeos.de
+    email: info@openeos.de
+  license:
+    name: AGPL-3.0-or-later
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+tags:
+  - name: Organisation
+    description: Stammdaten und Einstellungen deiner Organisation
+  - name: Veranstaltungen
+    description: Veranstaltungen anlegen, ändern und lesen. Freischalten und aktivieren geht nur in der App.
+  - name: Kategorien
+    description: Kategorien je Veranstaltung
+  - name: Produkte
+    description: "Produkte je Veranstaltung: Preis, Steuersatz, Optionen, Pfand, Bestand und Verfügbarkeit"
+  - name: Pfand
+    description: Pfandarten der Organisation (z. B. Glas, Becher)
+  - name: Tische & Bereiche
+    description: Bereiche, Tische und der Tischplan der Organisation
+  - name: Stationen
+    description: Produktionsstationen (Küche, Ausgabe, Bar) je Veranstaltung, an die Bestellpositionen gehen
+  - name: Drucker
+    description: Drucker der Organisation lesen. Anlegen, ändern und Testdruck gehen nur in der App.
+  - name: Bon-Vorlagen
+    description: Vorlagen für Bons und Bestellzettel
+  - name: Schichtpläne
+    description: Schichtpläne mit Jobs, Schichten und Helfer-Anmeldungen. E-Mail-Versand und Löschen bleiben der App vorbehalten.
+  - name: Berichte
+    description: Auswertungen über Umsatz, Produkte, Zahlarten, Geräte und Bestand. Der Token-Besitzer braucht das Modulrecht „Auswertung“.
+  - name: Bestellungen (nur lesen)
+    description: Bestellungen lesen und auswerten. Anlegen, Kassieren, Stornieren und Erstatten sind der Kasse und der App vorbehalten.
+  - name: Geräte (nur lesen)
+    description: Kassen und Displays der Organisation lesen. Koppeln, sperren und löschen geht nur in der App.
+  - name: Assistent
+    description: KI-gestützte Hilfen. Nur verfügbar, wenn der Assistent für die Organisation aktiviert ist.
+  - name: API-Zugänge
+    description: API-Tokens der Organisation ausstellen und widerrufen — nur mit Anmeldung (JWT) als Administrator, nicht per Token.
+servers:
+  - url: https://api.openeos.de
+    description: OpenEOS (gehostet)
+  - url: http://localhost:3000
+    description: Lokale Entwicklung
+components:
+  securitySchemes:
+    API-token:
+      scheme: bearer
+      bearerFormat: oeos_…
+      type: http
+      description: API-Token der Organisation (Einstellungen → Organisation → Zugänge). Erreicht nur die mit diesem Schema markierten Endpunkte, und nur mit dem jeweils genannten Scope (`x-api-token-scope`).
+    JWT-auth:
+      scheme: bearer
+      bearerFormat: JWT
+      type: http
+      description: Access-Token einer angemeldeten Sitzung (Web-App)
+  schemas:
+    CreateOrganizationApiTokenDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Claude Desktop
+          description: Wofür der Token gedacht ist — erscheint in der Übersicht
+          maxLength: 100
+        scopes:
+          type: array
+          example:
+            - read
+            - catalog:write
+          description: Was der Token darf. Schreib-Scopes schließen `read` nicht ein — wer lesen und schreiben will, gibt beides an.
+          items:
+            type: string
+            enum:
+              - read
+              - catalog:write
+              - events:write
+              - tables:write
+              - staff:write
+              - devices:write
+              - settings:write
+        expiresAt:
+          type: string
+          description: ISO-8601. Ohne Angabe läuft der Token nicht ab
+          example: 2027-01-01T00:00:00.000Z
+      required:
+        - name
+        - scopes
+    UpdateOrganizationDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Musterverein e.V.
+          description: Name der Organisation
+        logoUrl:
+          type: string
+          example: https://example.com/logo.png
+          description: URL des Organisationslogos
+        settings:
+          type: object
+          example:
+            currency: EUR
+            timezone: Europe/Berlin
+          description: Organisationseinstellungen
+        isActive:
+          type: boolean
+          example: true
+          description: Gibt an, ob die Organisation aktiv ist
+    CreatePfandTypeDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Becher
+          description: Name des Pfand-Typs
+        amount:
+          type: number
+          example: 2
+          description: Pfandbetrag pro Einheit in EUR
+        isActive:
+          type: boolean
+          example: true
+          description: Ob der Pfand-Typ aktiv (an der Kasse nutzbar) ist
+        sortOrder:
+          type: number
+          example: 0
+          description: Sortierreihenfolge
+      required:
+        - name
+        - amount
+    UpdatePfandTypeDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Becher
+          description: Name des Pfand-Typs
+        amount:
+          type: number
+          example: 2
+          description: Pfandbetrag pro Einheit in EUR
+        isActive:
+          type: boolean
+          example: true
+          description: Ob der Pfand-Typ aktiv (an der Kasse nutzbar) ist
+        sortOrder:
+          type: number
+          example: 0
+          description: Sortierreihenfolge
+    CreateTableAreaDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Zelt A
+          description: Name des Bereichs
+        width:
+          type: number
+          example: 1200
+          description: Breite der Karte
+        height:
+          type: number
+          example: 800
+          description: Höhe der Karte
+        gridSize:
+          type: number
+          example: 20
+          description: Rasterweite
+      required:
+        - name
+    ReorderTableAreasDto:
+      type: object
+      properties:
+        ids:
+          description: Bereichs-IDs in neuer Reihenfolge
+          type: array
+          items:
+            type: string
+      required:
+        - ids
+    TableAreaPointDto:
+      type: object
+      properties:
+        x:
+          type: number
+          example: 120
+        y:
+          type: number
+          example: 40
+      required:
+        - x
+        - y
+    TableAreaDecorDto:
+      type: object
+      properties:
+        id:
+          type: string
+          example: d1
+          description: Vom Client vergebene ID
+        type:
+          type: string
+          enum:
+            - bar
+            - wall
+            - stage
+            - label
+            - zone
+        x:
+          type: number
+          description: Nur Rechteck-Elemente
+        y:
+          type: number
+          description: Nur Rechteck-Elemente
+        width:
+          type: number
+          description: Nur Rechteck-Elemente
+        height:
+          type: number
+          description: Nur Rechteck-Elemente
+        rotation:
+          type: number
+          example: 0
+          description: Nur Rechteck-Elemente
+        points:
+          description: Wand als Linienzug (>= 2 Punkte) bzw. Zone (>= 3 Punkte), höchstens 100
+          type: array
+          items:
+            $ref: "#/components/schemas/TableAreaPointDto"
+        thickness:
+          type: number
+          example: 10
+          description: Nur Wand als Linienzug
+        zoneType:
+          type: string
+          enum:
+            - kitchen
+            - blocked
+            - bar
+            - other
+          description: Nur Zonen
+        label:
+          type: string
+          example: Theke
+      required:
+        - id
+        - type
+    UpdateTableAreaDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Zelt A
+          description: Name des Bereichs
+        width:
+          type: number
+          example: 1200
+          description: Breite der Karte
+        height:
+          type: number
+          example: 800
+          description: Höhe der Karte
+        gridSize:
+          type: number
+          example: 20
+          description: Rasterweite
+        decor:
+          type: array
+          items:
+            $ref: "#/components/schemas/TableAreaDecorDto"
+        outline:
+          nullable: true
+          description: Umriss des Raums (Polygon, 3–100 Punkte); null = ganze Karte
+          type: array
+          items:
+            $ref: "#/components/schemas/TableAreaPointDto"
+    LayoutTableDto:
+      type: object
+      properties:
+        id:
+          type: string
+        x:
+          type: number
+        y:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+        rotation:
+          type: number
+        shape:
+          type: string
+          enum:
+            - rect
+            - round
+      required:
+        - id
+        - x
+        - y
+        - width
+        - height
+        - rotation
+    PutTableAreaLayoutDto:
+      type: object
+      properties:
+        tables:
+          type: array
+          items:
+            $ref: "#/components/schemas/LayoutTableDto"
+        decor:
+          type: array
+          items:
+            $ref: "#/components/schemas/TableAreaDecorDto"
+        outline:
+          nullable: true
+          description: Umriss des Raums (Polygon, 3–100 Punkte); null = ganze Karte
+          type: array
+          items:
+            $ref: "#/components/schemas/TableAreaPointDto"
+      required:
+        - tables
+    CreateDiningTableDto:
+      type: object
+      properties:
+        areaId:
+          type: string
+        label:
+          type: string
+          example: A03
+          description: Bezeichnung (1–20 Zeichen)
+        seats:
+          type: object
+          example: 6
+          nullable: true
+        shape:
+          type: string
+          enum: &a15
+            - rect
+            - round
+        x:
+          type: number
+        y:
+          type: number
+        width:
+          type: number
+          example: 80
+        height:
+          type: number
+          example: 80
+        rotation:
+          type: number
+          example: 0
+      required:
+        - areaId
+        - label
+    BulkLayoutDto:
+      type: object
+      properties:
+        cols:
+          type: number
+          example: 6
+          description: Tische je Reihe
+        gap:
+          type: number
+          example: 40
+          description: Abstand zwischen den Tischen
+      required:
+        - cols
+        - gap
+    BulkCreateDiningTablesDto:
+      type: object
+      properties:
+        areaId:
+          type: string
+        prefix:
+          type: string
+          example: A
+          description: Präfix, darf leer sein
+        start:
+          type: number
+          example: 1
+        count:
+          type: number
+          example: 12
+          description: 1–100 Tische
+        padding:
+          type: number
+          example: 2
+          description: Stellen der Nummer (0–3)
+        seats:
+          type: number
+          example: 6
+        shape:
+          type: string
+          enum:
+            - rect
+            - round
+        layout:
+          $ref: "#/components/schemas/BulkLayoutDto"
+      required:
+        - areaId
+        - prefix
+        - start
+        - count
+        - padding
+    UpdateDiningTableDto:
+      type: object
+      properties:
+        areaId:
+          type: string
+        label:
+          type: string
+          example: A03
+          description: Bezeichnung (1–20 Zeichen)
+        seats:
+          type: object
+          example: 6
+          nullable: true
+        shape:
+          type: string
+          enum: *a15
+        x:
+          type: number
+        y:
+          type: number
+        width:
+          type: number
+          example: 80
+        height:
+          type: number
+          example: 80
+        rotation:
+          type: number
+          example: 0
+        isActive:
+          type: boolean
+          example: true
+    CreateEventDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Sommerfest 2024
+          description: Name des Events
+        description:
+          type: string
+          example: Jährliches Sommerfest mit Livemusik und Buffet
+          description: Beschreibung des Events
+        startDate:
+          type: string
+          example: 2024-07-15T10:00:00.000Z
+          description: Beginn der Veranstaltung. Pflichtangabe — der Preis und die Shop-Öffnungszeiten leiten sich davon ab.
+        endDate:
+          type: string
+          example: 2024-07-16T02:00:00.000Z
+          description: Ende der Veranstaltung. Ohne Angabe endet sie am Starttag. Darf über Mitternacht hinausgehen.
+        settings:
+          type: object
+          example:
+            allowOnlineOrders: true
+            requireTableNumber: false
+          description: Event-Einstellungen
+      required:
+        - name
+        - startDate
+    UpdateEventDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Sommerfest 2024
+          description: Name des Events
+        description:
+          type: string
+          example: Jährliches Sommerfest mit Livemusik und Buffet
+          description: Beschreibung des Events
+        startDate:
+          type: string
+          example: 2024-07-15T10:00:00.000Z
+          description: Startdatum und -zeit des Events
+        endDate:
+          type: string
+          example: 2024-07-15T22:00:00.000Z
+          description: Enddatum und -zeit des Events
+        settings:
+          type: object
+          example:
+            allowOnlineOrders: true
+            requireTableNumber: false
+          description: Event-Einstellungen
+    CopyProductsDto:
+      type: object
+      properties:
+        categoryIds:
+          example:
+            - 550e8400-e29b-41d4-a716-446655440000
+          description: IDs der zu kopierenden Kategorien. Wenn leer, werden alle Kategorien kopiert.
+          type: array
+          items:
+            type: string
+        productIds:
+          example:
+            - 550e8400-e29b-41d4-a716-446655440001
+          description: IDs der zu kopierenden Produkte. Wenn leer und categoryIds leer, werden alle Produkte kopiert.
+          type: array
+          items:
+            type: string
+        copyStock:
+          type: boolean
+          example: false
+          description: "Wenn true, wird auch der Bestand kopiert. Standard: false (Bestand wird auf 0 gesetzt)"
+    CreateCategoryDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Hauptgerichte
+          description: Name der Kategorie
+        description:
+          type: string
+          example: Warme Hauptspeisen und Gerichte
+          description: Beschreibung der Kategorie
+        parentId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID der übergeordneten Kategorie
+        color:
+          type: string
+          example: "#FF5733"
+          description: Farbcode der Kategorie (Hex-Format)
+        icon:
+          type: string
+          example: restaurant
+          description: Icon-Name für die Kategorie
+        sortOrder:
+          type: number
+          example: 1
+          description: Sortierreihenfolge
+        isActive:
+          type: boolean
+          example: true
+          description: Gibt an, ob die Kategorie aktiv ist
+        printSettings:
+          type: object
+          example:
+            printToKitchen: true
+            printerIds: []
+          description: Druckeinstellungen für die Kategorie
+        productionStationId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID des Produktionsstandorts
+      required:
+        - name
+    ReorderCategoriesDto:
+      type: object
+      properties:
+        categoryIds:
+          example:
+            - 550e8400-e29b-41d4-a716-446655440000
+            - 550e8400-e29b-41d4-a716-446655440001
+          description: Sortierte Liste der Kategorie-IDs
+          type: array
+          items:
+            type: string
+    UpdateCategoryDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Hauptgerichte
+          description: Name der Kategorie
+        description:
+          type: string
+          example: Warme Hauptspeisen und Gerichte
+          description: Beschreibung der Kategorie
+        parentId:
+          type: object
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID der übergeordneten Kategorie
+        color:
+          type: object
+          example: "#FF5733"
+          description: Farbcode der Kategorie (Hex-Format)
+        icon:
+          type: object
+          example: restaurant
+          description: Icon-Name für die Kategorie
+        sortOrder:
+          type: number
+          example: 1
+          description: Sortierreihenfolge
+        isActive:
+          type: boolean
+          example: true
+          description: Gibt an, ob die Kategorie aktiv ist
+        printSettings:
+          type: object
+          example:
+            printToKitchen: true
+            printerIds: []
+          description: Druckeinstellungen für die Kategorie
+        productionStationId:
+          type: object
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID des Produktionsstandorts
+    CreateProductDto:
+      type: object
+      properties:
+        categoryId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID der Kategorie
+        name:
+          type: string
+          example: Wiener Schnitzel
+          description: Name des Produkts
+        description:
+          type: string
+          example: Paniertes Kalbsschnitzel mit Kartoffelsalat
+          description: Beschreibung des Produkts
+        price:
+          type: number
+          example: 12.5
+          description: Verkaufspreis in Euro
+        taxRate:
+          type: number
+          example: 19
+          description: Umsatzsteuersatz in Prozent. 0 heißt steuerfrei.
+        imageUrl:
+          type: string
+          example: https://example.com/images/schnitzel.jpg
+          description: URL des Produktbilds
+        icon:
+          type: string
+          example: oe:beer
+          description: "Icon: `oe:<name>` aus dem OpenEOS-Set (oder `pos-icon:<id>`/Emoji wie bisher)"
+        isFavorite:
+          type: boolean
+          example: false
+          description: "Favorit: erscheint an der Kasse unter „Favoriten“"
+        isActive:
+          type: boolean
+          example: true
+          description: Gibt an, ob das Produkt aktiv ist
+        isAvailable:
+          type: boolean
+          example: true
+          description: Gibt an, ob das Produkt verfügbar ist
+        trackInventory:
+          type: boolean
+          example: false
+          description: Gibt an, ob der Lagerbestand verfolgt wird
+        stockQuantity:
+          type: number
+          example: 50
+          description: Anfänglicher Lagerbestand
+        stockUnit:
+          type: string
+          example: Stück
+          description: Einheit für den Lagerbestand
+        options:
+          type: object
+          example:
+            sizes:
+              - S
+              - M
+              - L
+            extras:
+              - Pommes
+              - Salat
+          description: Produktoptionen
+        printSettings:
+          type: object
+          example:
+            printToKitchen: true
+            copies: 1
+          description: Druckeinstellungen
+        sortOrder:
+          type: number
+          example: 1
+          description: Sortierreihenfolge
+        productionStationId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID des Produktionsstandorts (überschreibt Kategorie-Einstellung)
+        pfandTypeId:
+          type: object
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID des Pfand-Typs (optional)
+      required:
+        - categoryId
+        - name
+        - price
+    ImportProductsDto:
+      type: object
+      properties:
+        csv:
+          type: string
+          description: Roher CSV-Inhalt der Produktliste
+        mode:
+          type: string
+          enum:
+            - skip
+            - update
+            - create
+          description: "Verhalten bei vorhandenen Produkten (gleicher Name + Kategorie): überspringen, aktualisieren oder immer neu anlegen"
+          default: skip
+        dryRun:
+          type: boolean
+          description: true = nur Vorschau berechnen, nichts speichern
+          default: true
+      required:
+        - csv
+    UpdateProductDto:
+      type: object
+      properties:
+        categoryId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID der Kategorie
+        name:
+          type: string
+          example: Wiener Schnitzel
+          description: Name des Produkts
+        description:
+          type: object
+          example: Paniertes Kalbsschnitzel mit Kartoffelsalat
+          description: Beschreibung des Produkts
+        price:
+          type: number
+          example: 12.5
+          description: Verkaufspreis in Euro
+        taxRate:
+          type: number
+          example: 19
+          description: Umsatzsteuersatz in Prozent. 0 heißt steuerfrei.
+        imageUrl:
+          type: object
+          example: https://example.com/images/schnitzel.jpg
+          description: URL des Produktbilds
+        icon:
+          type: object
+          example: oe:beer
+          description: "Icon: `oe:<name>` aus dem OpenEOS-Set (oder `pos-icon:<id>`/Emoji wie bisher)"
+        isFavorite:
+          type: boolean
+          example: false
+          description: "Favorit: erscheint an der Kasse unter „Favoriten“"
+        isActive:
+          type: boolean
+          example: true
+          description: Gibt an, ob das Produkt aktiv ist
+        isAvailable:
+          type: boolean
+          example: true
+          description: Gibt an, ob das Produkt verfügbar ist
+        trackInventory:
+          type: boolean
+          example: true
+          description: Gibt an, ob der Lagerbestand verfolgt wird
+        stockQuantity:
+          type: number
+          example: 50
+          description: Aktueller Lagerbestand
+        stockUnit:
+          type: string
+          example: Stück
+          description: Einheit für den Lagerbestand
+        options:
+          type: object
+          example:
+            sizes:
+              - S
+              - M
+              - L
+            extras:
+              - Pommes
+              - Salat
+          description: Produktoptionen
+        printSettings:
+          type: object
+          example:
+            printToKitchen: true
+            copies: 1
+          description: Druckeinstellungen
+        sortOrder:
+          type: number
+          example: 1
+          description: Sortierreihenfolge
+        productionStationId:
+          type: object
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID des Produktionsstandorts (überschreibt Kategorie-Einstellung)
+        pfandTypeId:
+          type: object
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID des Pfand-Typs (optional)
+    CreatePrintTemplateDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Kassenbon Standard
+          description: Name der Druckvorlage
+        type:
+          type: string
+          example: receipt
+          description: Typ der Druckvorlage
+          enum:
+            - receipt
+            - kitchen_ticket
+            - order_ticket
+        template:
+          type: object
+          example:
+            header: Musterverein e.V.
+            showLogo: true
+          description: Vorlagen-Definition
+        isDefault:
+          type: boolean
+          example: false
+          description: Gibt an, ob dies die Standardvorlage ist
+      required:
+        - name
+        - type
+    UpdatePrintTemplateDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Kassenbon Standard
+          description: Name der Druckvorlage
+        template:
+          type: object
+          example:
+            header: Musterverein e.V.
+            showLogo: true
+          description: Vorlagen-Definition
+        isDefault:
+          type: boolean
+          example: true
+          description: Gibt an, ob dies die Standardvorlage ist
+    CreateShiftDto:
+      type: object
+      properties:
+        date:
+          type: string
+          description: Date of the shift
+          example: 2024-07-20
+        startTime:
+          type: string
+          description: Start time (HH:mm)
+          example: 14:00
+        endTime:
+          type: string
+          description: End time (HH:mm)
+          example: 18:00
+        requiredWorkers:
+          type: number
+          description: Number of workers needed
+          default: 1
+        notes:
+          type: string
+          description: Internal notes (not shown to helpers)
+      required:
+        - date
+        - startTime
+        - endTime
+    CreateShiftPlanDto:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the shift plan
+          example: Vereinsfest 2024 Schichtplan
+        description:
+          type: string
+          description: Description shown to helpers
+        eventId:
+          type: string
+          description: Optional linked event ID
+        publicSlug:
+          type: string
+          description: Custom URL slug (auto-generated if not provided)
+          example: vereinsfest-2024
+        requireApproval:
+          type: boolean
+          description: Whether registrations require admin approval
+          default: true
+        allowMultipleShifts:
+          type: boolean
+          description: Allow registering for multiple shifts
+          default: true
+        reminderDaysBefore:
+          type: number
+          description: Days before shift to send reminder email
+          default: 1
+        maxShiftsPerPerson:
+          type: number
+          description: Max shifts per person (0 = unlimited)
+        verificationReminderEnabled:
+          type: boolean
+          description: Whether the cron sends verification reminders for pending_email helpers
+          default: true
+        verificationReminderIntervalHours:
+          type: number
+          description: Hours between two verification reminders
+          default: 24
+        verificationReminderMaxCount:
+          type: number
+          description: Max number of verification reminders per helper-group
+          default: 5
+      required:
+        - name
+    UpdateShiftPlanDto:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the shift plan
+          example: Vereinsfest 2024 Schichtplan
+        description:
+          type: string
+          description: Description shown to helpers
+        eventId:
+          type: string
+          description: Optional linked event ID
+        publicSlug:
+          type: string
+          description: Custom URL slug (auto-generated if not provided)
+          example: vereinsfest-2024
+        requireApproval:
+          type: boolean
+          description: Whether registrations require admin approval
+          default: true
+        allowMultipleShifts:
+          type: boolean
+          description: Allow registering for multiple shifts
+          default: true
+        reminderDaysBefore:
+          type: number
+          description: Days before shift to send reminder email
+          default: 1
+        maxShiftsPerPerson:
+          type: number
+          description: Max shifts per person (0 = unlimited)
+        verificationReminderEnabled:
+          type: boolean
+          description: Whether the cron sends verification reminders for pending_email helpers
+          default: true
+        verificationReminderIntervalHours:
+          type: number
+          description: Hours between two verification reminders
+          default: 24
+        verificationReminderMaxCount:
+          type: number
+          description: Max number of verification reminders per helper-group
+          default: 5
+    CreateShiftJobDto:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the job
+          example: Zapfen
+        description:
+          type: string
+          description: Description of what this job involves
+        color:
+          type: string
+          description: Color code for UI display
+          example: "#3b82f6"
+        sortOrder:
+          type: number
+          description: Sort order (lower = first)
+          default: 0
+        requiredWorkers:
+          type: number
+          description: Default number of helpers per shift
+          default: 1
+      required:
+        - name
+    UpdateShiftJobDto:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the job
+          example: Zapfen
+        description:
+          type: string
+          description: Description of what this job involves
+        color:
+          type: string
+          description: Color code for UI display
+          example: "#3b82f6"
+        sortOrder:
+          type: number
+          description: Sort order (lower = first)
+          default: 0
+        requiredWorkers:
+          type: number
+          description: Default number of helpers per shift
+          default: 1
+    UpdateShiftDto:
+      type: object
+      properties:
+        date:
+          type: string
+          description: Date of the shift
+          example: 2024-07-20
+        startTime:
+          type: string
+          description: Start time (HH:mm)
+          example: 14:00
+        endTime:
+          type: string
+          description: End time (HH:mm)
+          example: 18:00
+        requiredWorkers:
+          type: number
+          description: Number of workers needed
+          default: 1
+        notes:
+          type: string
+          description: Internal notes (not shown to helpers)
+    ApproveRegistrationDto:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Optional message to include in confirmation email
+    RejectRegistrationDto:
+      type: object
+      properties:
+        reason:
+          type: string
+          description: Reason for rejection (shown to helper)
+    UpdateRegistrationNotesDto:
+      type: object
+      properties:
+        adminNotes:
+          type: string
+          description: Internal admin notes
+    AdminCreateRegistrationDto:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Helper name
+          example: Max Mustermann
+        email:
+          type: string
+          description: Helper email — used for notifications. Optional when adding helpers manually.
+          example: max@example.com
+        phone:
+          type: string
+          description: Phone number
+        notes:
+          type: string
+          description: Helper-side notes (visible to admin too)
+        adminNotes:
+          type: string
+          description: Admin-only notes
+        notify:
+          type: boolean
+          description: When true, send a confirmation email to the helper. Default false (silent admin add).
+          default: false
+        registrationGroupId:
+          type: string
+          description: Append the new registration to an existing helper-group. When omitted, a fresh group ID is created (= a new standalone helper).
+      required:
+        - name
+    AdminUpdateRegistrationDto:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        notes:
+          type: string
+        adminNotes:
+          type: string
+        shiftId:
+          type: string
+          description: Move the registration to a different shift. The helper will be notified by default unless `notify` is false.
+        notifyMessage:
+          type: string
+          description: Optional note included in the change-notification email.
+        notify:
+          type: boolean
+          description: When true and the shift is moved, send the helper an update email. Default true.
+          default: true
+    CreateProductionStationDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Küche
+          description: Name des Produktionsstandorts
+        description:
+          type: string
+          example: Hauptküche für warme Speisen
+          description: Beschreibung
+        color:
+          type: string
+          example: "#FF5733"
+          description: Farbcode (Hex-Format)
+        sortOrder:
+          type: number
+          example: 0
+          description: Sortierreihenfolge
+        isActive:
+          type: boolean
+          example: true
+          description: Gibt an, ob der Standort aktiv ist
+        printerId:
+          type: object
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID des zugewiesenen Druckers
+        handoffStationId:
+          type: object
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID des Übergabe-Standorts (nächste Station in der Kette)
+      required:
+        - name
+    UpdateProductionStationDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Küche
+          description: Name des Produktionsstandorts
+        description:
+          type: object
+          example: Hauptküche für warme Speisen
+          description: Beschreibung
+        color:
+          type: object
+          example: "#FF5733"
+          description: Farbcode (Hex-Format)
+        sortOrder:
+          type: number
+          example: 0
+          description: Sortierreihenfolge
+        isActive:
+          type: boolean
+          example: true
+          description: Gibt an, ob der Standort aktiv ist
+        printerId:
+          type: object
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID des zugewiesenen Druckers
+        handoffStationId:
+          type: object
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID des Übergabe-Standorts (nächste Station in der Kette)
+    IconSuggestionsDto:
+      type: object
+      properties:
+        names:
+          example:
+            - Currywurst mit Pommes
+            - Radler 0,5 l
+          description: Produktnamen (1–100)
+          type: array
+          items:
+            type: string
+      required:
+        - names

@@ -81,7 +81,7 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: OpenAPI spec in sync (docs/openapi.json|yaml)
+      - name: OpenAPI specs in sync (docs/openapi*.json|yaml)
         env:
           NODE_ENV: test
           JWT_SECRET: ci-docs-check

@@ -149,7 +149,9 @@ Kassen und Displays sprechen \`/api/device-api/*\` mit einem Geräte-Token (\`X-
  * Einleitung der API-Beschreibung (Markdown). `full` fuer Swagger UI und
  * docs/openapi.json, `public` fuer docs/openapi.public.json (Doku-Seite).
  */
-export function openApiDescription(variant: 'full' | 'public' = 'full'): string {
+export function openApiDescription(
+  variant: 'full' | 'public' = 'full',
+): string {
   return `
 OpenEOS ist ein Kassen- und Bestellsystem für Vereinsfeste. Diese Referenz beschreibt die REST-API unter \`${PUBLIC_API_URL}/api\` (selbst gehostet: \`https://<deine-api>/api\`).
 
