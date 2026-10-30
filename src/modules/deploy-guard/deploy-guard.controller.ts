@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { Public } from '../../common/decorators';
+import { DEPLOY_GUARD_SECURITY_SCHEME } from '../../common/openapi/openapi-config';
 import { DeployGuardTokenGuard } from './deploy-guard-token.guard';
 import { DeployGuardService } from './deploy-guard.service';
 import { DeployGuardQueryDto } from './dto/deploy-guard-query.dto';
@@ -15,7 +16,7 @@ import { DeployGuardQueryDto } from './dto/deploy-guard-query.dto';
  * answers 404.
  */
 @ApiTags('Internal')
-@ApiBearerAuth()
+@ApiBearerAuth(DEPLOY_GUARD_SECURITY_SCHEME)
 @Public()
 @UseGuards(DeployGuardTokenGuard)
 @Controller('internal/deploy-guard')

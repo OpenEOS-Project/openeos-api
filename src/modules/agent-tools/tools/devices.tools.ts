@@ -11,11 +11,26 @@ import { TokenScope } from '../../api-tokens/api-scopes';
 import { DevicesService } from '../../devices/devices.service';
 import { OrganizationsService } from '../../organizations/organizations.service';
 import { PrintersService } from '../../printers/printers.service';
-import type { CreatePrintTemplateDto, UpdatePrintTemplateDto } from '../../print-templates/dto';
+import type {
+  CreatePrintTemplateDto,
+  UpdatePrintTemplateDto,
+} from '../../print-templates/dto';
 import { PrintTemplatesService } from '../../print-templates/print-templates.service';
 import { OrganizationRole } from '../../../database/entities';
 import { defineTool, type AgentTool } from '../agent-tool.types';
-import { confirmInput, defined, diff, done, fetchAll, iso, listInput, preview, slice, uuid, windowed } from '../tool-helpers';
+import {
+  confirmInput,
+  defined,
+  diff,
+  done,
+  fetchAll,
+  iso,
+  listInput,
+  preview,
+  slice,
+  uuid,
+  windowed,
+} from '../tool-helpers';
 
 /* Geraete tragen ihr Zugangstoken und den Kopplungscode in der Entitaet
    — beides bleibt hier draussen, es wird nur eine Auswahl abgebildet. */
@@ -59,7 +74,9 @@ function compactTemplate(template: PrintTemplate, includeDefinition = false) {
 const templateDefinition = z
   .object({})
   .passthrough()
-  .describe('Template definition as used by the web app (sections, width, fontSize …)');
+  .describe(
+    'Template definition as used by the web app (sections, width, fontSize …)',
+  );
 
 @Injectable()
 export class DeviceTools {
@@ -83,14 +100,26 @@ export class DeviceTools {
   private listDevices() {
     return defineTool({
       name: 'list_devices',
-      description: 'POS devices, displays and printer agents of the organization with status and last contact. No credentials.',
-      inputSchema: z.object({ type: z.enum(['pos', 'display', 'admin', 'printer_agent']).optional(), ...listInput }).strict(),
+      description:
+        'POS devices, displays and printer agents of the organization with status and last contact. No credentials.',
+      inputSchema: z
+        .object({
+          type: z.enum(['pos', 'display', 'admin', 'printer_agent']).optional(),
+          ...listInput,
+        })
+        .strict(),
       scope: TokenScope.READ,
       mutating: false,
       handler: async (ctx, input) => {
         if (input.type) {
-          const all = await fetchAll((p) => this.devices.findAll(ctx.organizationId, ctx.user, p));
-          const page = slice(all.filter((d) => d.type === input.type), input.offset, input.limit);
+          const all = await fetchAll((p) =>
+            this.devices.findAll(ctx.organizationId, ctx.user, p),
+          );
+          const page = slice(
+            all.filter((d) => d.type === input.type),
+            input.offset,
+            input.limit,
+          );
           return { ...page, items: page.items.map(compactDevice) };
         }
         const page = await windowed(
@@ -106,7 +135,8 @@ export class DeviceTools {
   private listPrinters() {
     return defineTool({
       name: 'list_printers',
-      description: 'Printers of the organization (receipt/kitchen/label) with online state. Read-only; printers are set up in the web app.',
+      description:
+        'Printers of the organization (receipt/kitchen/label) with online state. Read-only; printers are set up in the web app.',
       inputSchema: z.object({ ...listInput }).strict(),
       scope: TokenScope.READ,
       mutating: false,
@@ -124,7 +154,8 @@ export class DeviceTools {
   private listTemplates() {
     return defineTool({
       name: 'list_print_templates',
-      description: 'Receipt/ticket templates. includeDefinition returns the full template JSON (large).',
+      description:
+        'Receipt/ticket templates. includeDefinition returns the full template JSON (large).',
       inputSchema: z
         .object({
           type: z.nativeEnum(PrintTemplateType).optional(),
@@ -135,10 +166,17 @@ export class DeviceTools {
       scope: TokenScope.READ,
       mutating: false,
       handler: async (ctx, input) => {
-        let all = await fetchAll((p) => this.templates.findAll(ctx.organizationId, ctx.user, p));
+        let all = await fetchAll((p) =>
+          this.templates.findAll(ctx.organizationId, ctx.user, p),
+        );
         if (input.type) all = all.filter((t) => t.type === input.type);
         const page = slice(all, input.offset, input.limit);
-        return { ...page, items: page.items.map((t) => compactTemplate(t, input.includeDefinition)) };
+        return {
+          ...page,
+          items: page.items.map((t) =>
+            compactTemplate(t, input.includeDefinition),
+          ),
+        };
       },
     });
   }
@@ -146,7 +184,8 @@ export class DeviceTools {
   private createTemplate() {
     return defineTool({
       name: 'create_print_template',
-      description: 'Create a print template (receipt, kitchen_ticket, order_ticket). Admin only. isDefault makes it the default of its type.',
+      description:
+        'Create a print template (receipt, kitchen_ticket, order_ticket). Admin only. isDefault makes it the default of its type.',
       inputSchema: z
         .object({
           name: z.string().min(1).max(255),
@@ -162,13 +201,28 @@ export class DeviceTools {
         const { confirm, ...rest } = input;
         const dto = defined(rest) as CreatePrintTemplateDto;
         if (!confirm) {
-          await this.organizations.checkRole(ctx.organizationId, ctx.user, OrganizationRole.ADMIN);
+          await this.organizations.checkRole(
+            ctx.organizationId,
+            ctx.user,
+            OrganizationRole.ADMIN,
+          );
           return preview(`Würde Vorlage „${dto.name}“ (${dto.type}) anlegen`, {
-            wouldCreate: { name: dto.name, type: dto.type, isDefault: dto.isDefault ?? false, hasDefinition: !!dto.template },
+            wouldCreate: {
+              name: dto.name,
+              type: dto.type,
+              isDefault: dto.isDefault ?? false,
+              hasDefinition: !!dto.template,
+            },
           });
         }
-        const template = await this.templates.create(ctx.organizationId, dto, ctx.user);
-        return done(`Vorlage „${template.name}“ angelegt`, { template: compactTemplate(template) });
+        const template = await this.templates.create(
+          ctx.organizationId,
+          dto,
+          ctx.user,
+        );
+        return done(`Vorlage „${template.name}“ angelegt`, {
+          template: compactTemplate(template),
+        });
       },
     });
   }
@@ -176,7 +230,8 @@ export class DeviceTools {
   private updateTemplate() {
     return defineTool({
       name: 'update_print_template',
-      description: 'Rename a print template, replace its definition (whole object) or make it the default. Admin only.',
+      description:
+        'Rename a print template, replace its definition (whole object) or make it the default. Admin only.',
       inputSchema: z
         .object({
           templateId: uuid,
@@ -190,23 +245,54 @@ export class DeviceTools {
       mutating: true,
       handler: async (ctx, input) => {
         const { templateId, confirm, ...rest } = input;
-        const template = await this.templates.findOne(ctx.organizationId, templateId, ctx.user);
+        const template = await this.templates.findOne(
+          ctx.organizationId,
+          templateId,
+          ctx.user,
+        );
         const dto = defined(rest) as UpdatePrintTemplateDto;
         const changes = diff(
-          { name: template.name, isDefault: template.isDefault, template: template.template },
+          {
+            name: template.name,
+            isDefault: template.isDefault,
+            template: template.template,
+          },
           dto as Record<string, unknown>,
         );
         const keys = Object.keys(changes);
         if (!confirm) {
-          await this.organizations.checkRole(ctx.organizationId, ctx.user, OrganizationRole.ADMIN);
+          await this.organizations.checkRole(
+            ctx.organizationId,
+            ctx.user,
+            OrganizationRole.ADMIN,
+          );
           return preview(
-            keys.length ? `Würde Vorlage „${template.name}“ ändern: ${keys.join(', ')}` : `Keine Änderung an Vorlage „${template.name}“`,
-            { changes: keys.includes('template') ? { ...changes, template: { from: '(definition)', to: '(new definition)' } } : changes },
+            keys.length
+              ? `Würde Vorlage „${template.name}“ ändern: ${keys.join(', ')}`
+              : `Keine Änderung an Vorlage „${template.name}“`,
+            {
+              changes: keys.includes('template')
+                ? {
+                    ...changes,
+                    template: { from: '(definition)', to: '(new definition)' },
+                  }
+                : changes,
+            },
           );
         }
-        if (keys.length === 0) return done(`Keine Änderung an Vorlage „${template.name}“`, { template: compactTemplate(template) });
-        const updated = await this.templates.update(ctx.organizationId, templateId, dto, ctx.user);
-        return done(`Vorlage „${updated.name}“ geändert: ${keys.join(', ')}`, { template: compactTemplate(updated) });
+        if (keys.length === 0)
+          return done(`Keine Änderung an Vorlage „${template.name}“`, {
+            template: compactTemplate(template),
+          });
+        const updated = await this.templates.update(
+          ctx.organizationId,
+          templateId,
+          dto,
+          ctx.user,
+        );
+        return done(`Vorlage „${updated.name}“ geändert: ${keys.join(', ')}`, {
+          template: compactTemplate(updated),
+        });
       },
     });
   }

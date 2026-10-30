@@ -13,9 +13,17 @@ export function registerPrompts(server: McpServer): void {
       description:
         'Guided setup of a new event: event, categories, products, stations, tables, helper schedule — each step previewed before it is applied.',
       argsSchema: {
-        eventName: z.string().describe('Name of the event, e.g. "Sommerfest 2026"'),
-        date: z.string().optional().describe('Start date YYYY-MM-DD (and optional end date)'),
-        notes: z.string().optional().describe('Anything known about menu, stations, tables, helpers'),
+        eventName: z
+          .string()
+          .describe('Name of the event, e.g. "Sommerfest 2026"'),
+        date: z
+          .string()
+          .optional()
+          .describe('Start date YYYY-MM-DD (and optional end date)'),
+        notes: z
+          .string()
+          .optional()
+          .describe('Anything known about menu, stations, tables, helpers'),
       },
     },
     ({ eventName, date, notes }) => ({
@@ -53,8 +61,14 @@ export function registerPrompts(server: McpServer): void {
       description:
         'Summarise the sales of an event or day: revenue, orders, best sellers, payment methods, peak hours, cancellations.',
       argsSchema: {
-        eventId: z.string().optional().describe('Event id (from list_events); default: the active event'),
-        date: z.string().optional().describe('Day YYYY-MM-DD; default: whole event'),
+        eventId: z
+          .string()
+          .optional()
+          .describe('Event id (from list_events); default: the active event'),
+        date: z
+          .string()
+          .optional()
+          .describe('Day YYYY-MM-DD; default: whole event'),
       },
     },
     ({ eventId, date }) => ({
@@ -65,8 +79,12 @@ export function registerPrompts(server: McpServer): void {
             type: 'text',
             text: [
               'Write a short German end-of-day summary for the organizer.',
-              eventId ? `Event: ${eventId}.` : 'Find the event with list_events (status active, else the most recent).',
-              date ? `Day: ${date} (use startDate=endDate=${date}).` : 'Cover the whole event.',
+              eventId
+                ? `Event: ${eventId}.`
+                : 'Find the event with list_events (status active, else the most recent).',
+              date
+                ? `Day: ${date} (use startDate=endDate=${date}).`
+                : 'Cover the whole event.',
               '',
               'Call get_sales_report with sections ["summary","products","categories","payments","hourly"] (and "net" if refunds matter). Optionally list_orders with status=cancelled for cancellations.',
               'Report: total revenue and order count, average receipt, top 5 products with quantity and revenue, revenue by category, payment method split, the busiest hours, Pfand balance, cancellations. Amounts in EUR with two decimals, German number format.',

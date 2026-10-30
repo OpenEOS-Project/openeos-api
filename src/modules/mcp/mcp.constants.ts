@@ -15,7 +15,8 @@ function readPackageVersion(): string {
     try {
       const raw = readFileSync(join(dir, 'package.json'), 'utf8');
       const parsed = JSON.parse(raw) as { name?: string; version?: string };
-      if (parsed.name === 'openeos-api' && parsed.version) return parsed.version;
+      if (parsed.name === 'openeos-api' && parsed.version)
+        return parsed.version;
     } catch {
       // weiter nach oben
     }

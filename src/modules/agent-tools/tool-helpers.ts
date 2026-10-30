@@ -125,7 +125,9 @@ export function iso(value: Date | string | null | undefined): string | null {
 }
 
 /** Nur das Datum, fuer Veranstaltungen und Schichten. */
-export function isoDate(value: Date | string | null | undefined): string | null {
+export function isoDate(
+  value: Date | string | null | undefined,
+): string | null {
   const full = iso(value);
   return full ? full.slice(0, 10) : null;
 }

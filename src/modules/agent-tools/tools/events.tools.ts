@@ -41,7 +41,9 @@ const eventSettingsInput = z
       .object({
         mode: z
           .enum(['none', 'free', 'predefined'])
-          .describe('none = counter only, free = any number, predefined = table areas'),
+          .describe(
+            'none = counter only, free = any number, predefined = table areas',
+          ),
         areaIds: z.array(uuid).max(50).optional(),
       })
       .strict()
@@ -185,7 +187,9 @@ export class EventTools {
       mutating: true,
       handler: async (ctx, input) => {
         const { confirm, ...dto } = input;
-        const span = dto.endDate ? `${dto.startDate} – ${dto.endDate}` : dto.startDate;
+        const span = dto.endDate
+          ? `${dto.startDate} – ${dto.endDate}`
+          : dto.startDate;
         if (!confirm) {
           await this.organizations.checkPermission(
             ctx.organizationId,
@@ -239,11 +243,16 @@ export class EventTools {
           endDate: isoDate(event.endDate),
         };
         const after: Record<string, unknown> = {};
-        for (const key of ['name', 'description', 'startDate', 'endDate'] as const) {
+        for (const key of [
+          'name',
+          'description',
+          'startDate',
+          'endDate',
+        ] as const) {
           if (dto[key] !== undefined) {
             after[key] =
               key === 'startDate' || key === 'endDate'
-                ? isoDate(dto[key] as string)
+                ? isoDate(dto[key])
                 : dto[key];
           }
         }
@@ -333,7 +342,12 @@ export class EventTools {
             : products.length;
           return preview(
             `Würde ${categoryCount} Kategorien und ${productCount} Produkte von „${source.name}“ nach „${target.name}“ kopieren`,
-            { source: compactEvent(source), target: compactEvent(target), categoryCount, productCount },
+            {
+              source: compactEvent(source),
+              target: compactEvent(target),
+              categoryCount,
+              productCount,
+            },
           );
         }
         const result = await this.events.copyFromEvent(
@@ -412,7 +426,8 @@ export class EventTools {
   private updateStation() {
     return defineTool({
       name: 'update_production_station',
-      description: 'Change a production station (name, printer, handoff, active).',
+      description:
+        'Change a production station (name, printer, handoff, active).',
       inputSchema: z
         .object({
           eventId: uuid,
@@ -432,7 +447,11 @@ export class EventTools {
       handler: async (ctx, input) => {
         const { eventId, stationId, confirm, ...rest } = input;
         await assertEvent(this.events, ctx, eventId);
-        const station = await this.stations.findOne(eventId, stationId, ctx.user);
+        const station = await this.stations.findOne(
+          eventId,
+          stationId,
+          ctx.user,
+        );
         const dto = defined(rest) as UpdateProductionStationDto;
         const changes = diff(
           compactStation(station) as unknown as Record<string, unknown>,
@@ -457,7 +476,12 @@ export class EventTools {
             station: compactStation(station),
           });
         }
-        const updated = await this.stations.update(eventId, stationId, dto, ctx.user);
+        const updated = await this.stations.update(
+          eventId,
+          stationId,
+          dto,
+          ctx.user,
+        );
         return done(`Station „${updated.name}“ geändert: ${keys.join(', ')}`, {
           changes,
           station: compactStation(updated),

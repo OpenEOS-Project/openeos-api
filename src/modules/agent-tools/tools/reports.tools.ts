@@ -14,9 +14,24 @@ import { OrdersService } from '../../orders/orders.service';
 import type { QueryReportsDto } from '../../reports/dto';
 import { ReportsService } from '../../reports/reports.service';
 import { defineTool, type AgentTool } from '../agent-tool.types';
-import { dateInput, iso, listInput, money, uuid, windowed } from '../tool-helpers';
+import {
+  dateInput,
+  iso,
+  listInput,
+  money,
+  uuid,
+  windowed,
+} from '../tool-helpers';
 
-const SECTIONS = ['summary', 'net', 'products', 'categories', 'hourly', 'payments', 'channels'] as const;
+const SECTIONS = [
+  'summary',
+  'net',
+  'products',
+  'categories',
+  'hourly',
+  'payments',
+  'channels',
+] as const;
 
 /* Bestellungen ohne alles, was auf einen Gast zeigt: kein Name, keine
    Telefonnummer, keine Notizen, kein Kassierer. */
@@ -34,7 +49,10 @@ function compactItem(item: OrderItem) {
   };
 }
 
-function compactOrder(order: Order & { displayStatus?: string; paymentMethods?: string[] }, withItems: boolean) {
+function compactOrder(
+  order: Order & { displayStatus?: string; paymentMethods?: string[] },
+  withItems: boolean,
+) {
   return {
     id: order.id,
     orderNumber: order.orderNumber,
@@ -57,7 +75,9 @@ function compactOrder(order: Order & { displayStatus?: string; paymentMethods?: 
     total: money(order.total),
     paymentMethods: order.paymentMethods ?? [],
     itemCount: order.items?.length ?? undefined,
-    ...(withItems && order.items ? { items: order.items.map(compactItem) } : {}),
+    ...(withItems && order.items
+      ? { items: order.items.map(compactItem) }
+      : {}),
   };
 }
 
@@ -82,7 +102,10 @@ export class ReportTools {
           eventId: uuid.optional(),
           startDate: dateInput.optional(),
           endDate: dateInput.optional(),
-          sections: z.array(z.enum(SECTIONS)).min(1).default(['summary', 'products', 'categories', 'payments']),
+          sections: z
+            .array(z.enum(SECTIONS))
+            .min(1)
+            .default(['summary', 'products', 'categories', 'payments']),
         })
         .strict(),
       scope: TokenScope.READ,
@@ -120,7 +143,11 @@ export class ReportTools {
           };
         }
         if (wants.has('products')) {
-          const rows = await this.reports.getProductsReport(org, query, ctx.user);
+          const rows = await this.reports.getProductsReport(
+            org,
+            query,
+            ctx.user,
+          );
           out.products = rows.map((r) => ({
             productId: r.productId,
             name: r.productName,
@@ -131,7 +158,11 @@ export class ReportTools {
           }));
         }
         if (wants.has('categories')) {
-          const rows = await this.reports.getCategoriesReport(org, query, ctx.user);
+          const rows = await this.reports.getCategoriesReport(
+            org,
+            query,
+            ctx.user,
+          );
           out.categories = rows.map((r) => ({
             categoryId: r.categoryId,
             name: r.name,
@@ -143,10 +174,19 @@ export class ReportTools {
           const rows = await this.reports.getHourlyReport(org, query, ctx.user);
           out.hourly = rows
             .filter((r) => r.orders > 0)
-            .map((r) => ({ date: r.date, hour: r.hour, orders: r.orders, revenue: money(r.revenue) }));
+            .map((r) => ({
+              date: r.date,
+              hour: r.hour,
+              orders: r.orders,
+              revenue: money(r.revenue),
+            }));
         }
         if (wants.has('payments')) {
-          const rows = await this.reports.getPaymentsReport(org, query, ctx.user);
+          const rows = await this.reports.getPaymentsReport(
+            org,
+            query,
+            ctx.user,
+          );
           out.payments = rows.map((r) => ({
             method: r.method,
             count: r.count,
@@ -155,7 +195,11 @@ export class ReportTools {
           }));
         }
         if (wants.has('channels')) {
-          const rows = await this.reports.getChannelsReport(org, query, ctx.user);
+          const rows = await this.reports.getChannelsReport(
+            org,
+            query,
+            ctx.user,
+          );
           out.channels = rows.map((r) => ({
             channel: r.channel,
             orders: r.orders,
@@ -179,7 +223,9 @@ export class ReportTools {
           status: z.nativeEnum(OrderStatus).optional(),
           paymentStatus: z.nativeEnum(PaymentStatus).optional(),
           source: z.nativeEnum(OrderSource).optional(),
-          paymentMethod: z.enum(['cash', 'card', 'sumup', 'discount']).optional(),
+          paymentMethod: z
+            .enum(['cash', 'card', 'sumup', 'discount'])
+            .optional(),
           dateFrom: dateInput.optional(),
           dateTo: dateInput.optional(),
           includeItems: z.boolean().default(false),
@@ -201,7 +247,10 @@ export class ReportTools {
           limit,
           100,
         );
-        return { ...page, items: page.items.map((o) => compactOrder(o, includeItems)) };
+        return {
+          ...page,
+          items: page.items.map((o) => compactOrder(o, includeItems)),
+        };
       },
     });
   }
@@ -209,12 +258,20 @@ export class ReportTools {
   private getOrder() {
     return defineTool({
       name: 'get_order',
-      description: 'One order with line items, anonymised (no guest or cashier data).',
+      description:
+        'One order with line items, anonymised (no guest or cashier data).',
       inputSchema: z.object({ orderId: uuid }).strict(),
       scope: TokenScope.READ,
       mutating: false,
       handler: async (ctx, input) =>
-        compactOrder(await this.orders.findOne(ctx.organizationId, input.orderId, ctx.user), true),
+        compactOrder(
+          await this.orders.findOne(
+            ctx.organizationId,
+            input.orderId,
+            ctx.user,
+          ),
+          true,
+        ),
     });
   }
 }

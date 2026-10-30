@@ -155,7 +155,10 @@ export class OrganizationTools {
           OrganizationRole.ADMIN,
         );
 
-        const current = (org.settings ?? {}) as unknown as Record<string, unknown>;
+        const current = (org.settings ?? {}) as unknown as Record<
+          string,
+          unknown
+        >;
         const settingsPatch: Record<string, unknown> = {};
         for (const key of SETTINGS_KEYS) {
           const value = input.settings?.[key];
@@ -207,10 +210,13 @@ export class OrganizationTools {
         if (dto.settings) {
           this.gateway.notifyOrganizationSettingsUpdated(updated.id);
         }
-        return done(`Organisation aktualisiert: ${Object.keys(changes).join(', ')}`, {
-          changes,
-          organization: compactOrganization(updated),
-        });
+        return done(
+          `Organisation aktualisiert: ${Object.keys(changes).join(', ')}`,
+          {
+            changes,
+            organization: compactOrganization(updated),
+          },
+        );
       },
     });
   }

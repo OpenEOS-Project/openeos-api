@@ -9,7 +9,10 @@ import type {
 } from '../../../database/entities';
 import { TokenScope } from '../../api-tokens/api-scopes';
 import { CategoriesService } from '../../categories/categories.service';
-import type { CreateCategoryDto, UpdateCategoryDto } from '../../categories/dto';
+import type {
+  CreateCategoryDto,
+  UpdateCategoryDto,
+} from '../../categories/dto';
 import { EventsService } from '../../events/events.service';
 import { OrganizationsService } from '../../organizations/organizations.service';
 import { PfandTypesService } from '../../pfand-types/pfand-types.service';
@@ -99,7 +102,10 @@ const optionGroupInput = z
         z
           .object({
             name: z.string().min(1).max(100),
-            priceModifier: z.number().default(0).describe('EUR, added to price'),
+            priceModifier: z
+              .number()
+              .default(0)
+              .describe('EUR, added to price'),
             default: z.boolean().optional(),
           })
           .strict(),
@@ -121,16 +127,29 @@ const categoryFields = {
 
 const productInput = z
   .object({
-    id: uuid.optional().describe('Existing product to update; otherwise matched by exact name'),
+    id: uuid
+      .optional()
+      .describe('Existing product to update; otherwise matched by exact name'),
     name: z.string().min(2).max(255),
     categoryId: uuid.optional(),
     category: z
       .string()
       .max(255)
       .optional()
-      .describe('Category name (exact, case-insensitive) — alternative to categoryId'),
-    price: z.number().min(0).optional().describe('Gross price in EUR; required for new products'),
-    taxRate: z.number().min(0).max(100).optional().describe('Percent, e.g. 19 or 7'),
+      .describe(
+        'Category name (exact, case-insensitive) — alternative to categoryId',
+      ),
+    price: z
+      .number()
+      .min(0)
+      .optional()
+      .describe('Gross price in EUR; required for new products'),
+    taxRate: z
+      .number()
+      .min(0)
+      .max(100)
+      .optional()
+      .describe('Percent, e.g. 19 or 7'),
     description: z.string().max(2000).nullable().optional(),
     pfandTypeId: uuid.nullable().optional(),
     icon: z
@@ -199,8 +218,14 @@ export class CatalogTools {
       mutating: false,
       handler: async (ctx, input) => {
         await assertEvent(this.events, ctx, input.eventId);
-        const categories = await this.categories.findAll(input.eventId, ctx.user);
-        return { items: categories.map(compactCategory), total: categories.length };
+        const categories = await this.categories.findAll(
+          input.eventId,
+          ctx.user,
+        );
+        return {
+          items: categories.map(compactCategory),
+          total: categories.length,
+        };
       },
     });
   }
@@ -214,7 +239,11 @@ export class CatalogTools {
         .object({
           eventId: uuid,
           categoryId: uuid.optional(),
-          search: z.string().max(100).optional().describe('Substring of the name'),
+          search: z
+            .string()
+            .max(100)
+            .optional()
+            .describe('Substring of the name'),
           includeOptions: z.boolean().default(false),
           ...listInput,
         })
@@ -231,7 +260,9 @@ export class CatalogTools {
         }
         if (input.search) {
           const needle = input.search.toLocaleLowerCase('de');
-          all = all.filter((p) => p.name.toLocaleLowerCase('de').includes(needle));
+          all = all.filter((p) =>
+            p.name.toLocaleLowerCase('de').includes(needle),
+          );
         }
         const page = slice(all, input.offset, input.limit);
         return {
@@ -245,12 +276,16 @@ export class CatalogTools {
   private listPfandTypes() {
     return defineTool({
       name: 'list_pfand_types',
-      description: 'Deposit (Pfand) types of the organization with amounts in EUR.',
+      description:
+        'Deposit (Pfand) types of the organization with amounts in EUR.',
       inputSchema: z.object({}).strict(),
       scope: TokenScope.READ,
       mutating: false,
       handler: async (ctx) => {
-        const types = await this.pfandTypes.findAll(ctx.organizationId, ctx.user);
+        const types = await this.pfandTypes.findAll(
+          ctx.organizationId,
+          ctx.user,
+        );
         return { items: types.map(compactPfandType), total: types.length };
       },
     });
@@ -283,7 +318,11 @@ export class CatalogTools {
         const dto = defined(rest) as CreateCategoryDto;
         const duplicate = existing.find((c) => sameName(c.name, dto.name));
         if (!confirm) {
-          await this.organizations.checkPermission(ctx.organizationId, ctx.user, 'products');
+          await this.organizations.checkPermission(
+            ctx.organizationId,
+            ctx.user,
+            'products',
+          );
           return preview(
             duplicate
               ? `Kategorie „${dto.name}“ gibt es in „${event.name}“ schon (${duplicate.id}) — würde trotzdem eine zweite anlegen`
@@ -302,7 +341,8 @@ export class CatalogTools {
   private updateCategory() {
     return defineTool({
       name: 'update_category',
-      description: 'Change a category (name, parent, color, icon, order, station, active).',
+      description:
+        'Change a category (name, parent, color, icon, order, station, active).',
       inputSchema: z
         .object({
           eventId: uuid,
@@ -327,17 +367,27 @@ export class CatalogTools {
         const category = existing.find((c) => c.id === categoryId);
         if (!category) throw notFound('Kategorie', categoryId);
         if (rest.parentId === categoryId) {
-          throw new AgentToolError('INVALID_INPUT', 'parentId: a category cannot be its own parent');
+          throw new AgentToolError(
+            'INVALID_INPUT',
+            'parentId: a category cannot be its own parent',
+          );
         }
         await this.assertCategoryRefs(ctx, eventId, existing, rest);
         const dto = defined(rest) as UpdateCategoryDto;
         const changes = diff(
-          { ...compactCategory(category), description: category.description ?? null },
+          {
+            ...compactCategory(category),
+            description: category.description ?? null,
+          },
           dto as Record<string, unknown>,
         );
         const keys = Object.keys(changes);
         if (!confirm) {
-          await this.organizations.checkPermission(ctx.organizationId, ctx.user, 'products');
+          await this.organizations.checkPermission(
+            ctx.organizationId,
+            ctx.user,
+            'products',
+          );
           return preview(
             keys.length
               ? `Würde Kategorie „${category.name}“ ändern: ${keys.join(', ')}`
@@ -350,11 +400,19 @@ export class CatalogTools {
             category: compactCategory(category),
           });
         }
-        const updated = await this.categories.update(eventId, categoryId, dto, ctx.user);
-        return done(`Kategorie „${updated.name}“ geändert: ${keys.join(', ')}`, {
-          changes,
-          category: compactCategory(updated),
-        });
+        const updated = await this.categories.update(
+          eventId,
+          categoryId,
+          dto,
+          ctx.user,
+        );
+        return done(
+          `Kategorie „${updated.name}“ geändert: ${keys.join(', ')}`,
+          {
+            changes,
+            category: compactCategory(updated),
+          },
+        );
       },
     });
   }
@@ -376,14 +434,26 @@ export class CatalogTools {
       mutating: true,
       handler: async (ctx, input) => {
         const event = await assertEvent(this.events, ctx, input.eventId);
-        const plan = await this.planUpsert(ctx, input.eventId, input.products, input.createMissingCategories);
-        const summary = `${plan.create.length} Produkte anlegen, ${plan.update.length} ändern` +
+        const plan = await this.planUpsert(
+          ctx,
+          input.eventId,
+          input.products,
+          input.createMissingCategories,
+        );
+        const summary =
+          `${plan.create.length} Produkte anlegen, ${plan.update.length} ändern` +
           ` (${plan.unchanged.length} unverändert, ${plan.errors.length} Fehler` +
-          (plan.newCategories.length ? `, ${plan.newCategories.length} neue Kategorien` : '') +
+          (plan.newCategories.length
+            ? `, ${plan.newCategories.length} neue Kategorien`
+            : '') +
           `) in „${event.name}“`;
 
         if (!input.confirm) {
-          await this.organizations.checkPermission(ctx.organizationId, ctx.user, 'products');
+          await this.organizations.checkPermission(
+            ctx.organizationId,
+            ctx.user,
+            'products',
+          );
           return preview(`Würde ${summary}`, {
             wouldCreate: plan.create.map(({ dto, categoryName }) => ({
               name: dto.name,
@@ -391,7 +461,11 @@ export class CatalogTools {
               price: dto.price,
               taxRate: dto.taxRate ?? null,
             })),
-            wouldUpdate: plan.update.map(({ id, name, changes }) => ({ id, name, changes })),
+            wouldUpdate: plan.update.map(({ id, name, changes }) => ({
+              id,
+              name,
+              changes,
+            })),
             unchanged: plan.unchanged,
             newCategories: plan.newCategories,
             errors: plan.errors,
@@ -407,13 +481,18 @@ export class CatalogTools {
 
         const categoryIds = new Map<string, string>();
         for (const name of plan.newCategories) {
-          const category = await this.categories.create(input.eventId, { name }, ctx.user);
+          const category = await this.categories.create(
+            input.eventId,
+            { name },
+            ctx.user,
+          );
           categoryIds.set(name.toLocaleLowerCase('de'), category.id);
         }
         const created: Array<{ id: string; name: string }> = [];
         for (const { dto, categoryName } of plan.create) {
           const categoryId =
-            dto.categoryId || categoryIds.get((categoryName ?? '').toLocaleLowerCase('de'));
+            dto.categoryId ||
+            categoryIds.get((categoryName ?? '').toLocaleLowerCase('de'));
           const product = await this.products.create(
             input.eventId,
             { ...dto, categoryId: categoryId as string },
@@ -423,14 +502,26 @@ export class CatalogTools {
         }
         const updated: Array<{ id: string; name: string }> = [];
         for (const { id, dto } of plan.update) {
-          const product = await this.products.update(input.eventId, id, dto, ctx.user);
+          const product = await this.products.update(
+            input.eventId,
+            id,
+            dto,
+            ctx.user,
+          );
           updated.push({ id: product.id, name: product.name });
         }
         return done(
           `${created.length} Produkte angelegt, ${updated.length} geändert` +
-            (plan.newCategories.length ? `, ${plan.newCategories.length} Kategorien angelegt` : '') +
+            (plan.newCategories.length
+              ? `, ${plan.newCategories.length} Kategorien angelegt`
+              : '') +
             ` in „${event.name}“`,
-          { created, updated, unchanged: plan.unchanged, newCategories: plan.newCategories },
+          {
+            created,
+            updated,
+            unchanged: plan.unchanged,
+            newCategories: plan.newCategories,
+          },
         );
       },
     });
@@ -448,11 +539,18 @@ export class CatalogTools {
       this.pfandTypes.findAll(ctx.organizationId, ctx.user),
       this.stations.findAll(eventId, ctx.user),
     ]);
-    const plan: UpsertPlan = { create: [], update: [], unchanged: [], errors: [], newCategories: [] };
+    const plan: UpsertPlan = {
+      create: [],
+      update: [],
+      unchanged: [],
+      errors: [],
+      newCategories: [],
+    };
     const seen = new Set<string>();
 
     rows.forEach((row, index) => {
-      const fail = (error: string) => plan.errors.push({ row: index + 1, name: row.name, error });
+      const fail = (error: string) =>
+        plan.errors.push({ row: index + 1, name: row.name, error });
       const key = row.id ?? row.name.trim().toLocaleLowerCase('de');
       if (seen.has(key)) return fail('Doppelt in dieser Eingabe');
       seen.add(key);
@@ -466,11 +564,14 @@ export class CatalogTools {
       let categoryName: string | null = null;
       if (row.categoryId) {
         const category = categories.find((c) => c.id === row.categoryId);
-        if (!category) return fail('categoryId gehört nicht zu dieser Veranstaltung');
+        if (!category)
+          return fail('categoryId gehört nicht zu dieser Veranstaltung');
         categoryId = category.id;
         categoryName = category.name;
       } else if (row.category) {
-        const category = categories.find((c) => sameName(c.name, row.category!));
+        const category = categories.find((c) =>
+          sameName(c.name, row.category!),
+        );
         if (category) {
           categoryId = category.id;
           categoryName = category.name;
@@ -480,15 +581,23 @@ export class CatalogTools {
             plan.newCategories.push(categoryName);
           }
         } else {
-          return fail(`Kategorie „${row.category}“ nicht gefunden (createMissingCategories?)`);
+          return fail(
+            `Kategorie „${row.category}“ nicht gefunden (createMissingCategories?)`,
+          );
         }
       } else if (!target) {
         return fail('categoryId oder category nötig');
       }
-      if (row.pfandTypeId && !pfandTypes.some((t) => t.id === row.pfandTypeId)) {
+      if (
+        row.pfandTypeId &&
+        !pfandTypes.some((t) => t.id === row.pfandTypeId)
+      ) {
         return fail('pfandTypeId nicht gefunden');
       }
-      if (row.productionStationId && !stations.some((s) => s.id === row.productionStationId)) {
+      if (
+        row.productionStationId &&
+        !stations.some((s) => s.id === row.productionStationId)
+      ) {
         return fail('productionStationId gehört nicht zu dieser Veranstaltung');
       }
 
@@ -498,15 +607,27 @@ export class CatalogTools {
         : undefined;
 
       if (!target) {
-        if (row.price === undefined) return fail('price nötig für neue Produkte');
+        if (row.price === undefined)
+          return fail('price nötig für neue Produkte');
         plan.create.push({
-          dto: defined({ ...fields, categoryId, options }) as unknown as CreateProductDto,
+          dto: defined({
+            ...fields,
+            categoryId,
+            options,
+          }) as unknown as CreateProductDto,
           categoryName,
         });
         return;
       }
 
-      const dto = defined({ ...fields, categoryId, options }) as unknown as UpdateProductDto;
+      /* Ueber den Namen gefunden: der Name ist der Schluessel, nicht eine
+         Aenderung — „bier“ benennt „Bier“ nicht um. */
+      const dto = defined({
+        ...fields,
+        name: row.id ? fields.name : undefined,
+        categoryId,
+        options,
+      }) as unknown as UpdateProductDto;
       const before = {
         ...compactProduct(target, true),
         stockUnit: target.stockUnit,
@@ -529,12 +650,18 @@ export class CatalogTools {
     refs: { parentId?: string | null; productionStationId?: string | null },
   ): Promise<void> {
     if (refs.parentId && !categories.some((c) => c.id === refs.parentId)) {
-      throw new AgentToolError('INVALID_INPUT', 'parentId gehört nicht zu dieser Veranstaltung');
+      throw new AgentToolError(
+        'INVALID_INPUT',
+        'parentId gehört nicht zu dieser Veranstaltung',
+      );
     }
     if (refs.productionStationId) {
       const stations = await this.stations.findAll(eventId, ctx.user);
       if (!stations.some((s) => s.id === refs.productionStationId)) {
-        throw new AgentToolError('INVALID_INPUT', 'productionStationId gehört nicht zu dieser Veranstaltung');
+        throw new AgentToolError(
+          'INVALID_INPUT',
+          'productionStationId gehört nicht zu dieser Veranstaltung',
+        );
       }
     }
   }
@@ -542,22 +669,36 @@ export class CatalogTools {
   private updateProductAvailability() {
     return defineTool({
       name: 'update_product_availability',
-      description: 'Mark a product as sold out (isAvailable false) or available again.',
+      description:
+        'Mark a product as sold out (isAvailable false) or available again.',
       inputSchema: z
-        .object({ eventId: uuid, productId: uuid, isAvailable: z.boolean(), ...confirmInput })
+        .object({
+          eventId: uuid,
+          productId: uuid,
+          isAvailable: z.boolean(),
+          ...confirmInput,
+        })
         .strict(),
       scope: TokenScope.CATALOG_WRITE,
       mutating: true,
       handler: async (ctx, input) => {
         await assertEvent(this.events, ctx, input.eventId);
-        const product = await this.products.findOne(input.eventId, input.productId, ctx.user);
+        const product = await this.products.findOne(
+          input.eventId,
+          input.productId,
+          ctx.user,
+        );
         const label = input.isAvailable ? 'verfügbar' : 'ausverkauft';
         if (product.isAvailable === input.isAvailable) {
-          return done(`„${product.name}“ ist bereits ${label}`, { product: compactProduct(product) });
+          return done(`„${product.name}“ ist bereits ${label}`, {
+            product: compactProduct(product),
+          });
         }
         if (!input.confirm) {
           return preview(`Würde „${product.name}“ auf ${label} setzen`, {
-            changes: { isAvailable: { from: product.isAvailable, to: input.isAvailable } },
+            changes: {
+              isAvailable: { from: product.isAvailable, to: input.isAvailable },
+            },
           });
         }
         const updated = await this.products.updateAvailability(
@@ -566,7 +707,9 @@ export class CatalogTools {
           input.isAvailable,
           ctx.user,
         );
-        return done(`„${updated.name}“ ist jetzt ${label}`, { product: compactProduct(updated) });
+        return done(`„${updated.name}“ ist jetzt ${label}`, {
+          product: compactProduct(updated),
+        });
       },
     });
   }
@@ -589,10 +732,17 @@ export class CatalogTools {
       handler: async (ctx, input) => {
         const { confirm, ...rest } = input;
         const dto = defined(rest) as CreatePfandTypeDto;
-        const existing = await this.pfandTypes.findAll(ctx.organizationId, ctx.user);
+        const existing = await this.pfandTypes.findAll(
+          ctx.organizationId,
+          ctx.user,
+        );
         const duplicate = existing.find((t) => sameName(t.name, dto.name));
         if (!confirm) {
-          await this.organizations.checkPermission(ctx.organizationId, ctx.user, 'pfand');
+          await this.organizations.checkPermission(
+            ctx.organizationId,
+            ctx.user,
+            'pfand',
+          );
           return preview(
             duplicate
               ? `Pfandart „${dto.name}“ gibt es schon (${duplicate.id}, ${money(duplicate.amount)} €) — würde trotzdem eine zweite anlegen`
@@ -600,8 +750,14 @@ export class CatalogTools {
             { wouldCreate: dto, existingId: duplicate?.id ?? null },
           );
         }
-        const created = await this.pfandTypes.create(ctx.organizationId, dto, ctx.user);
-        return done(`Pfandart „${created.name}“ angelegt`, { pfandType: compactPfandType(created) });
+        const created = await this.pfandTypes.create(
+          ctx.organizationId,
+          dto,
+          ctx.user,
+        );
+        return done(`Pfandart „${created.name}“ angelegt`, {
+          pfandType: compactPfandType(created),
+        });
       },
     });
   }

@@ -31,15 +31,20 @@ describe('AgentToolsRegistry', () => {
   const readTool = defineTool({
     name: 'list_things',
     description: 'read',
-    inputSchema: z.object({ limit: z.number().int().max(100).default(50) }).strict(),
+    inputSchema: z
+      .object({ limit: z.number().int().max(100).default(50) })
+      .strict(),
     scope: TokenScope.READ,
     mutating: false,
-    handler: async (_ctx, input) => ({ items: [], limit: input.limit }),
+    handler: (_ctx, input) =>
+      Promise.resolve({ items: [], limit: input.limit }),
   });
   const writeTool = defineTool({
     name: 'create_thing',
     description: 'write',
-    inputSchema: z.object({ name: z.string().min(2), ...confirmInput }).strict(),
+    inputSchema: z
+      .object({ name: z.string().min(2), ...confirmInput })
+      .strict(),
     scope: TokenScope.CATALOG_WRITE,
     mutating: true,
     handler: async (_ctx, input) => {
@@ -54,9 +59,13 @@ describe('AgentToolsRegistry', () => {
     inputSchema: z.object({}).strict(),
     scope: TokenScope.READ,
     mutating: false,
-    handler: async () => {
-      throw new ForbiddenException({ code: 'FORBIDDEN', reason: 'INSUFFICIENT_PERMISSIONS' });
-    },
+    handler: () =>
+      Promise.reject(
+        new ForbiddenException({
+          code: 'FORBIDDEN',
+          reason: 'INSUFFICIENT_PERMISSIONS',
+        }),
+      ),
   });
 
   beforeEach(() => {
@@ -74,7 +83,7 @@ describe('AgentToolsRegistry', () => {
           inputSchema: z.object({}),
           scope: TokenScope.READ,
           mutating: true,
-          handler: async () => ({}),
+          handler: () => Promise.resolve({}),
         }),
       ),
     ).toThrow(/confirm/);
@@ -82,18 +91,31 @@ describe('AgentToolsRegistry', () => {
   });
 
   it('lists only tools the scopes allow', () => {
-    expect(registry.list(['read']).map((t) => t.name)).toEqual(['list_things', 'fail_thing']);
-    expect(registry.list(['catalog:write']).map((t) => t.name)).toEqual(['create_thing']);
+    expect(registry.list(['read']).map((t) => t.name)).toEqual([
+      'list_things',
+      'fail_thing',
+    ]);
+    expect(registry.list(['catalog:write']).map((t) => t.name)).toEqual([
+      'create_thing',
+    ]);
     expect(registry.list([])).toEqual([]);
   });
 
   it('rejects unknown tools, missing scopes and invalid input', async () => {
-    await expect(registry.call('nope', context(['read']), {})).rejects.toMatchObject({
+    await expect(
+      registry.call('nope', context(['read']), {}),
+    ).rejects.toMatchObject({
       code: 'TOOL_NOT_FOUND',
     });
     await expect(
-      registry.call('create_thing', context(['read']), { name: 'Bier', confirm: true }),
-    ).rejects.toMatchObject({ code: 'SCOPE_MISSING', details: { scope: 'catalog:write' } });
+      registry.call('create_thing', context(['read']), {
+        name: 'Bier',
+        confirm: true,
+      }),
+    ).rejects.toMatchObject({
+      code: 'SCOPE_MISSING',
+      details: { scope: 'catalog:write' },
+    });
     expect(create).not.toHaveBeenCalled();
 
     const error = await registry
@@ -109,7 +131,9 @@ describe('AgentToolsRegistry', () => {
   });
 
   it('applies defaults and never audits reads', async () => {
-    await expect(registry.call('list_things', context(['read']), undefined)).resolves.toEqual({
+    await expect(
+      registry.call('list_things', context(['read']), undefined),
+    ).resolves.toEqual({
       items: [],
       limit: 50,
     });
@@ -117,17 +141,27 @@ describe('AgentToolsRegistry', () => {
   });
 
   it('previews without confirm and writes nothing', async () => {
-    const result = await registry.call('create_thing', context(['catalog:write']), {
-      name: 'Bier',
+    const result = await registry.call(
+      'create_thing',
+      context(['catalog:write']),
+      {
+        name: 'Bier',
+      },
+    );
+    expect(result).toMatchObject({
+      preview: true,
+      summary: 'Würde „Bier“ anlegen',
     });
-    expect(result).toMatchObject({ preview: true, summary: 'Würde „Bier“ anlegen' });
     expect(create).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
   });
 
   it('applies with confirm and writes one audit entry with the input hash', async () => {
     const ctx = context(['catalog:write']);
-    const result = await registry.call('create_thing', ctx, { name: 'Bier', confirm: true });
+    const result = await registry.call('create_thing', ctx, {
+      name: 'Bier',
+      confirm: true,
+    });
     expect(result).toEqual({ ok: true, summary: '„Bier“ angelegt' });
     expect(create).toHaveBeenCalledTimes(1);
     expect(audit.record).toHaveBeenCalledWith(
@@ -139,9 +173,9 @@ describe('AgentToolsRegistry', () => {
   });
 
   it('lets service exceptions through unchanged', async () => {
-    await expect(registry.call('fail_thing', context(['read']), {})).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(
+      registry.call('fail_thing', context(['read']), {}),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
 
@@ -157,7 +191,10 @@ describe('hashInput', () => {
 describe('AgentAuditService', () => {
   it('stores via=agent, tool, token and hash — not the input', async () => {
     const saved: Record<string, unknown>[] = [];
-    const repo = { create: (e: unknown) => e, save: (e: Record<string, unknown>) => (saved.push(e), Promise.resolve(e)) };
+    const repo = {
+      create: (e: unknown) => e,
+      save: (e: Record<string, unknown>) => (saved.push(e), Promise.resolve(e)),
+    };
     const service = new AgentAuditService(repo as never);
     const ctx = context(['catalog:write']);
     await service.record(ctx, 'create_thing', { name: 'Geheim' }, 'angelegt');
@@ -169,9 +206,17 @@ describe('AgentAuditService', () => {
       resourceType: 'agent_tool',
       ipAddress: '10.0.0.1',
       userAgent: 'jest',
-      details: { via: 'agent', tool: 'create_thing', tokenId: 'token-1', tokenName: 'Agent', summary: 'angelegt' },
+      details: {
+        via: 'agent',
+        tool: 'create_thing',
+        tokenId: 'token-1',
+        tokenName: 'Agent',
+        summary: 'angelegt',
+      },
     });
     expect(JSON.stringify(saved[0])).not.toContain('Geheim');
-    expect((saved[0].details as { inputHash: string }).inputHash).toHaveLength(64);
+    expect((saved[0].details as { inputHash: string }).inputHash).toHaveLength(
+      64,
+    );
   });
 });

@@ -73,7 +73,9 @@ export class AgentToolsRegistry {
       throw new AgentToolError(
         'INVALID_INPUT',
         parsed.error.issues
-          .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+          .map(
+            (issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`,
+          )
           .join('; '),
         parsed.error.issues,
       );

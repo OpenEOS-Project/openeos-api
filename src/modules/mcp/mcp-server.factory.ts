@@ -1,7 +1,6 @@
 import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { z } from 'zod';
 
 import type { AppRequest } from '../../common/types/request.types';
 import type { User } from '../../database/entities';
@@ -62,7 +61,7 @@ export class McpServerFactory {
         tool.name,
         {
           description: tool.description,
-          inputSchema: tool.inputSchema as z.ZodTypeAny,
+          inputSchema: tool.inputSchema,
           annotations: {
             readOnlyHint: !tool.mutating,
             destructiveHint: false,
@@ -84,7 +83,9 @@ export class McpServerFactory {
           mimeType: 'text/markdown',
         },
         (uri) => ({
-          contents: [{ uri: uri.href, mimeType: 'text/markdown', text: doc.text }],
+          contents: [
+            { uri: uri.href, mimeType: 'text/markdown', text: doc.text },
+          ],
         }),
       );
     }
@@ -113,12 +114,18 @@ export class McpServerFactory {
      und Text, keine Stacktraces. Unerwartetes landet im Log. */
   private describe(error: unknown): Record<string, unknown> {
     if (error instanceof AgentToolError) {
-      return { error: error.code, message: error.message, details: error.details ?? undefined };
+      return {
+        error: error.code,
+        message: error.message,
+        details: error.details ?? undefined,
+      };
     }
     if (error instanceof HttpException) {
       const body = error.getResponse();
       const info =
-        typeof body === 'object' && body ? (body as Record<string, unknown>) : {};
+        typeof body === 'object' && body
+          ? (body as Record<string, unknown>)
+          : {};
       return {
         error: (info.reason as string) || (info.code as string) || 'HTTP_ERROR',
         message: (info.message as string) || error.message,

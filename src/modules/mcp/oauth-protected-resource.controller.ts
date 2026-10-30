@@ -33,6 +33,7 @@ export function protectedResourceMetadata(baseUrl: string) {
     resource_name: 'OpenEOS MCP',
     bearer_methods_supported: ['header'],
     scopes_supported: [...ORGANIZATION_TOKEN_SCOPES],
-    resource_documentation: 'https://github.com/OpenEOS-Project/openeos-api#mcp',
+    resource_documentation:
+      'https://github.com/OpenEOS-Project/openeos-api#mcp',
   };
 }

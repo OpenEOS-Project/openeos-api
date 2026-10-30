@@ -18,7 +18,8 @@ export const MCP_DOCS: McpDoc[] = [
   {
     slug: 'produkte',
     title: 'Produkte',
-    description: 'Produkte anlegen, bepreisen, Icons, Bestand, Import aus der Speisekarte.',
+    description:
+      'Produkte anlegen, bepreisen, Icons, Bestand, Import aus der Speisekarte.',
     text: `# Produkte
 
 Unter **Produkte** verwaltest du das Sortiment einer Veranstaltung – alles, was an der Kasse verkauft wird. Jedes Produkt hat mindestens einen Namen und einen Preis und gehört zu einer Kategorie. Produkte gehören immer zu einer Veranstaltung.
@@ -51,7 +52,8 @@ Die Liste zeigt Name, Kategorie, Preis, Bestand und Status. **Verfügbar/ausverk
   {
     slug: 'veranstaltungen',
     title: 'Veranstaltungen',
-    description: 'Veranstaltungen anlegen, Kassiermodus, Tische, Testmodus und Freischaltung.',
+    description:
+      'Veranstaltungen anlegen, Kassiermodus, Tische, Testmodus und Freischaltung.',
     text: `# Veranstaltungen
 
 Eine **Veranstaltung** (Event) ist der Rahmen für ein Fest oder einen Verkaufstag. Produkte, Preise, Stationen, Bestellungen und Auswertungen beziehen sich immer auf eine Veranstaltung.
@@ -82,7 +84,8 @@ Die aktive Veranstaltung bestimmt, welche Produkte an der Kasse erscheinen und w
   {
     slug: 'tische',
     title: 'Tische',
-    description: 'Bereiche und Tische anlegen, Serien, Tischplan, Bezeichnungen.',
+    description:
+      'Bereiche und Tische anlegen, Serien, Tischplan, Bezeichnungen.',
     text: `# Tische
 
 Unter **Tische** legst du fest, in welchen **Bereichen** (z. B. *Zelt A*, *Saal*, *Biergarten*) welche **Tische** stehen und wie sie auf dem **Tischplan** liegen. Die Kasse zeigt die Tische als Liste und als Karte.
@@ -113,7 +116,8 @@ Tische ziehen, drehen, Größe ändern; Deko (Theke, Bühne, Beschriftung), Wän
   {
     slug: 'drucker',
     title: 'Drucker',
-    description: 'Drucker-Agent, Drucker übernehmen, Zuordnung zu Stationen und Kassen, Vorlagen, Bon-Workflows.',
+    description:
+      'Drucker-Agent, Drucker übernehmen, Zuordnung zu Stationen und Kassen, Vorlagen, Bon-Workflows.',
     text: `# Drucker
 
 Im Bereich **Drucker** verbindest du Bondrucker mit OpenEOS und legst fest, wie und wohin gedruckt wird. Drei Reiter: **Drucker**, **Vorlagen**, **Bon-Workflows**.
@@ -151,7 +155,8 @@ Agent und Drucker zeigen **Online** und **zuletzt gesehen**. Der Agent meldet si
   {
     slug: 'schichten',
     title: 'Schichtpläne',
-    description: 'Schichtpläne, Arbeiten, Schichten erzeugen, veröffentlichen, Helfer-Anmeldungen.',
+    description:
+      'Schichtpläne, Arbeiten, Schichten erzeugen, veröffentlichen, Helfer-Anmeldungen.',
     text: `# Schichtpläne
 
 Mit **Schichtplänen** organisierst du die Helferinnen und Helfer einer Veranstaltung: Arbeiten (Theke, Grill, Auf- und Abbau) anlegen, daraus Schichten erzeugen und einen **öffentlichen Helfer-Link** veröffentlichen, über den sich Helfer selbst eintragen.
