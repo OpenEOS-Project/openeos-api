@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
 import { DeploymentService } from './services/deployment.service';
+import { OrganizationLimitsService } from './services/organization-limits.service';
 import { ShutdownService } from './lifecycle/shutdown.service';
 
 /**
@@ -13,10 +14,14 @@ import { ShutdownService } from './lifecycle/shutdown.service';
  *
  * `ShutdownService` haelt fest, ob die Instanz gerade herunterfaehrt —
  * die Readiness-Pruefung fragt ihn, main.ts schaltet die Hooks ein.
+ *
+ * `OrganizationLimitsService` (Organisationen je Benutzer, Mitglieder je
+ * Organisation) brauchen Organisationen, Auth, Setup und Admin — aus
+ * demselben Grund global.
  */
 @Global()
 @Module({
-  providers: [DeploymentService, ShutdownService],
-  exports: [DeploymentService, ShutdownService],
+  providers: [DeploymentService, ShutdownService, OrganizationLimitsService],
+  exports: [DeploymentService, ShutdownService, OrganizationLimitsService],
 })
 export class CommonModule {}

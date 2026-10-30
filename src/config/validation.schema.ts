@@ -127,6 +127,11 @@ export const validationSchema = Joi.object({
   // Empfänger für Support-Nachrichten und Kontaktanfragen (optional)
   SUPPORT_NOTIFY_EMAIL: Joi.string().allow('').default(''),
 
+  // Missbrauchsschranken: Organisationen je Benutzer und Mitglieder (inkl.
+  // offener Einladungen) je Organisation. 0 = unbegrenzt.
+  ORGANIZATIONS_PER_USER_LIMIT: Joi.number().integer().min(0).default(5),
+  MEMBERS_PER_ORGANIZATION_LIMIT: Joi.number().integer().min(0).default(10),
+
   // Token fuer GET /api/internal/deploy-guard (Deploy-Workflows fragen dort,
   // ob gerade ein Fest laeuft). Leer: Endpunkt antwortet 404.
   DEPLOY_GUARD_TOKEN: Joi.string().min(32).allow('').optional(),

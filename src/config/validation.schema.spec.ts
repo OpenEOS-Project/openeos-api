@@ -82,3 +82,34 @@ describe('validationSchema: empty optional assistant variables', () => {
     expect(provider.modelFor('classify')).toBe(OPENAI_DEFAULT_MODELS.classify);
   });
 });
+
+describe('validationSchema: abuse limits', () => {
+  it('defaults to 5 organizations per user and 10 members per organization', () => {
+    const { error, value } = validate({ JWT_SECRET: 'test-secret' });
+    expect(error).toBeUndefined();
+    expect(value.ORGANIZATIONS_PER_USER_LIMIT).toBe(5);
+    expect(value.MEMBERS_PER_ORGANIZATION_LIMIT).toBe(10);
+  });
+
+  it('accepts 0 (unlimited) and rejects negative or fractional values', () => {
+    expect(
+      validate({
+        JWT_SECRET: 'test-secret',
+        ORGANIZATIONS_PER_USER_LIMIT: '0',
+        MEMBERS_PER_ORGANIZATION_LIMIT: '0',
+      }).error,
+    ).toBeUndefined();
+    expect(
+      validate({
+        JWT_SECRET: 'test-secret',
+        ORGANIZATIONS_PER_USER_LIMIT: '-1',
+      }).error,
+    ).toBeDefined();
+    expect(
+      validate({
+        JWT_SECRET: 'test-secret',
+        MEMBERS_PER_ORGANIZATION_LIMIT: '2.5',
+      }).error,
+    ).toBeDefined();
+  });
+});

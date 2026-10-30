@@ -41,6 +41,7 @@ import { OrganizationCashlessChange } from '../../database/entities/organization
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { ConfigService } from '@nestjs/config';
 import { DeploymentService } from '../../common/services/deployment.service';
+import { OrganizationLimitsService } from '../../common/services/organization-limits.service';
 import { restoreMaskedCredentials } from '../../common/utils/response-redaction.util';
 import { isKnownIntegration } from '../integrations/integration-catalog';
 
@@ -65,6 +66,7 @@ export class OrganizationsService {
     private readonly platformSettingsService: PlatformSettingsService,
     private readonly configService: ConfigService,
     private readonly deployment: DeploymentService,
+    private readonly limits: OrganizationLimitsService,
   ) {}
 
   async create(
@@ -81,6 +83,10 @@ export class OrganizationsService {
     await queryRunner.startTransaction();
 
     try {
+      // Sperrt die Benutzerzeile bis zum Commit — zwei gleichzeitige
+      // Anfragen koennen so nicht beide die letzte freie Organisation anlegen.
+      await this.limits.assertCanJoinOrganization(user, queryRunner.manager);
+
       const organization = this.organizationRepository.create({
         name: createDto.name,
         slug,
@@ -261,6 +267,18 @@ export class OrganizationsService {
     await this.checkMembership(organization.id, user);
 
     return organization;
+  }
+
+  /**
+   * Belegte und verfuegbare Plaetze fuer die Mitgliederseite. `memberLimit`
+   * ist die wirksame Schranke (eigener Wert oder Standard, 0 = unbegrenzt),
+   * nicht der rohe Spaltenwert — die Oberflaeche soll nicht wissen muessen,
+   * was der Standard ist. Bewusst nicht am Entity selbst gesetzt: findOne()
+   * dient auch den Schreibpfaden, und ein ueberschriebener Spaltenwert
+   * wuerde beim naechsten save() in der Datenbank landen.
+   */
+  async memberUsage(organization: Organization) {
+    return this.limits.memberUsage(organization);
   }
 
   async update(
@@ -580,7 +598,14 @@ export class OrganizationsService {
           : addMemberDto.permissions || {},
     });
 
-    await this.userOrganizationRepository.save(userOrganization);
+    await this.dataSource.transaction(async (manager) => {
+      await this.limits.assertMemberSeatAvailable(
+        organizationId,
+        currentUser,
+        manager,
+      );
+      await manager.save(userOrganization);
+    });
 
     this.logger.log(
       `Member added to organization ${organizationId}: ${user.email}`,
@@ -789,7 +814,16 @@ export class OrganizationsService {
       invitedByUserId: currentUser.id,
     });
 
-    await this.invitationRepository.save(invitation);
+    // Eine offene Einladung belegt ihren Platz schon jetzt; die Sperre auf
+    // der Organisationszeile haelt gleichzeitige Einladungen auseinander.
+    await this.dataSource.transaction(async (manager) => {
+      await this.limits.assertMemberSeatAvailable(
+        organizationId,
+        currentUser,
+        manager,
+      );
+      await manager.save(invitation);
+    });
 
     // Send invitation email
     const appUrl =
@@ -976,6 +1010,11 @@ export class OrganizationsService {
     await queryRunner.startTransaction();
 
     try {
+      // Der Platz in der Organisation ist seit der Einladung belegt; hier
+      // zaehlt nur noch, ob der Eingeladene selbst noch Organisationen
+      // dazunehmen darf.
+      await this.limits.assertCanJoinOrganization(user, queryRunner.manager);
+
       // Create membership with permissions from invitation
       const userOrganization = this.userOrganizationRepository.create({
         organizationId: invitation.organizationId,

@@ -46,6 +46,9 @@ export const ErrorCodes = {
   INVENTORY_ALREADY_COMPLETED: 'INVENTORY_ALREADY_COMPLETED',
   EVENT_NOT_PAID: 'EVENT_NOT_PAID',
   TEST_LIMIT_REACHED: 'TEST_LIMIT_REACHED',
+  // Missbrauchsschranken — 403, params.limit (und params.used bei Mitgliedern)
+  ORGANIZATION_LIMIT_REACHED: 'ORGANIZATION_LIMIT_REACHED',
+  MEMBER_LIMIT_REACHED: 'MEMBER_LIMIT_REACHED',
 
   // Credit & License Errors
   INSUFFICIENT_CREDITS: 'INSUFFICIENT_CREDITS',
@@ -137,6 +140,10 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.EVENT_NOT_PAID]:
     'Veranstaltung ist noch nicht freigeschaltet — bitte zuerst kostenpflichtig bestellen',
   [ErrorCodes.TEST_LIMIT_REACHED]: 'Test-Limit erreicht',
+  [ErrorCodes.ORGANIZATION_LIMIT_REACHED]:
+    'Du hast die Höchstzahl an Organisationen erreicht',
+  [ErrorCodes.MEMBER_LIMIT_REACHED]:
+    'Diese Organisation hat die Höchstzahl an Mitgliedern erreicht (inklusive offener Einladungen)',
 
   [ErrorCodes.INSUFFICIENT_CREDITS]: 'Nicht genug Guthaben',
   [ErrorCodes.CREDITS_REQUIRED]: 'Guthaben erforderlich für diese Aktion',

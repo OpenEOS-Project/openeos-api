@@ -294,6 +294,14 @@ export class Organization extends SoftDeleteEntity {
   @Column({ name: 'priority_support', type: 'boolean', default: false })
   prioritySupport: boolean;
 
+  /**
+   * Eigene Obergrenze fuer Mitglieder (aktive plus offene Einladungen).
+   * NULL: es gilt MEMBERS_PER_ORGANIZATION_LIMIT; 0: unbegrenzt. Setzt nur
+   * ein Super-Admin.
+   */
+  @Column({ name: 'member_limit', type: 'int', nullable: true })
+  memberLimit: number | null;
+
   // Relations
   @OneToMany(() => UserOrganization, (userOrg) => userOrg.organization)
   userOrganizations: UserOrganization[];

@@ -71,7 +71,22 @@ export class MessageResponseDto {
   message: string;
 }
 
+export class CurrentUserWithLimitsDto extends UserResponseDto {
+  @ApiProperty({
+    example: 5,
+    description:
+      'Wirksame Höchstzahl an Organisationen (Mitgliedschaften); 0 = unbegrenzt',
+  })
+  organizationLimit: number;
+
+  @ApiProperty({
+    example: 2,
+    description: 'Aktuelle Mitgliedschaften des Benutzers, egal welche Rolle',
+  })
+  organizationCount: number;
+}
+
 export class CurrentUserResponseDto {
-  @ApiProperty({ type: UserResponseDto })
-  user: UserResponseDto;
+  @ApiProperty({ type: CurrentUserWithLimitsDto })
+  user: CurrentUserWithLimitsDto;
 }

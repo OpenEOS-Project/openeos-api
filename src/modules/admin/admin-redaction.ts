@@ -25,6 +25,7 @@ export type RedigierterAdminUser = Pick<
   | 'lastLoginAt'
   | 'lockedUntil'
   | 'failedLoginAttempts'
+  | 'organizationLimit'
   | 'createdAt'
   | 'updatedAt'
 > & { userOrganizations?: User['userOrganizations'] };
@@ -43,6 +44,8 @@ export function redigiereAdminUser(user: User): RedigierterAdminUser {
     lastLoginAt: user.lastLoginAt,
     lockedUntil: user.lockedUntil,
     failedLoginAttempts: user.failedLoginAttempts,
+    // Roher Spaltenwert: null = Standard aus der Umgebung, 0 = unbegrenzt.
+    organizationLimit: user.organizationLimit,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
     userOrganizations: user.userOrganizations,

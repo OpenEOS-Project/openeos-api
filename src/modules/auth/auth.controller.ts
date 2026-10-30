@@ -22,6 +22,7 @@ import {
 } from '@nestjs/swagger';
 import type { Response, Request } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { OrganizationLimitsService } from '../../common/services/organization-limits.service';
 import { AuthService, SessionClient } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
 import {
@@ -87,6 +88,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly twoFactorService: TwoFactorService,
     private readonly configService: ConfigService,
+    private readonly limits: OrganizationLimitsService,
   ) {}
 
   @Public()
@@ -475,8 +477,16 @@ export class AuthController {
   async getCurrentUser(@CurrentUser() user: User) {
     const fullUser = await this.authService.getCurrentUser(user.id);
 
+    /* `organizationLimit` ist hier die wirksame Schranke (eigener Wert oder
+       Standard, 0 = unbegrenzt), `organizationCount` zaehlt alle
+       Mitgliedschaften — die Oberflaeche blendet damit "Neue Organisation"
+       aus, bevor die API 403 ORGANIZATION_LIMIT_REACHED antworten muesste. */
     return {
-      user: this.sanitizeUser(fullUser),
+      user: {
+        ...this.sanitizeUser(fullUser),
+        organizationLimit: this.limits.effectiveOrganizationLimit(fullUser),
+        organizationCount: fullUser.userOrganizations?.length ?? 0,
+      },
     };
   }
 

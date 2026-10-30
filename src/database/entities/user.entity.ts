@@ -180,6 +180,14 @@ export class User extends SoftDeleteEntity {
   })
   newsletterOptInAt: Date | null;
 
+  /**
+   * Eigene Obergrenze fuer Organisationen (Anlegen und Einladungen
+   * annehmen). NULL: es gilt ORGANIZATIONS_PER_USER_LIMIT; 0: unbegrenzt.
+   * Setzt nur ein Super-Admin, etwa im Support-Fall.
+   */
+  @Column({ name: 'organization_limit', type: 'int', nullable: true })
+  organizationLimit: number | null;
+
   // Pending Email Change
   @Column({
     name: 'pending_email',

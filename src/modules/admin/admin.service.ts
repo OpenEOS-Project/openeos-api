@@ -80,6 +80,7 @@ import {
   SetDiscountDto,
   AccessOrganizationDto,
   UpdateOrganizationAdminDto,
+  UpdateUserAdminDto,
   CreateSubscriptionConfigDto,
   UpdateSubscriptionConfigDto,
 } from './dto';
@@ -365,6 +366,54 @@ export class AdminService {
         message: 'Benutzer nicht gefunden',
       });
     }
+
+    return redigiereAdminUser(user);
+  }
+
+  /**
+   * Felder, die nur ein Super-Admin setzt — derzeit die eigene Obergrenze
+   * fuer Organisationen (Support-Fall: "ich brauche eine sechste").
+   */
+  async updateUser(
+    userId: string,
+    updateDto: UpdateUserAdminDto,
+    adminUserId: string,
+    ipAddress: string,
+    userAgent?: string,
+  ): Promise<RedigierterAdminUser> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['userOrganizations', 'userOrganizations.organization'],
+    });
+
+    if (!user) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.USER_NOT_FOUND,
+        message: 'Benutzer nicht gefunden',
+      });
+    }
+
+    const before = { organizationLimit: user.organizationLimit };
+    if (updateDto.organizationLimit !== undefined) {
+      user.organizationLimit = updateDto.organizationLimit;
+    }
+    await this.userRepository.save(user);
+
+    await this.createAuditLog(
+      adminUserId,
+      null,
+      AdminAction.EDIT_USER,
+      'user',
+      userId,
+      {
+        email: user.email,
+        before,
+        after: { organizationLimit: user.organizationLimit },
+      },
+      ipAddress,
+      userAgent,
+    );
 
     return redigiereAdminUser(user);
   }

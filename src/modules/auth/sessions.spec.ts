@@ -207,6 +207,7 @@ describe('AuthController passes the client to the session', () => {
       authService,
       twoFactorService as never,
       config,
+      undefined as never,
     );
     return { ctrl, login, refreshTokens };
   }
