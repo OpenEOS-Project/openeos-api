@@ -2,6 +2,7 @@ import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
+import { appVersion } from '../../common/constants/app-version';
 import type { AppRequest } from '../../common/types/request.types';
 import type { User } from '../../database/entities';
 import {
@@ -12,7 +13,7 @@ import {
 } from '../agent-tools';
 import { MCP_DOCS } from './mcp-docs';
 import { registerPrompts } from './mcp-prompts';
-import { MCP_SERVER_NAME, MCP_SERVER_VERSION } from './mcp.constants';
+import { MCP_SERVER_NAME } from './mcp.constants';
 
 const INSTRUCTIONS = [
   'OpenEOS is a point-of-sale system for clubs, festivals and events in Germany.',
@@ -51,8 +52,9 @@ export class McpServerFactory {
   }
 
   create(ctx: AgentToolContext): McpServer {
+    /* Dieselbe Version wie /health (Build-Nummer), nicht package.json. */
     const server = new McpServer(
-      { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
+      { name: MCP_SERVER_NAME, version: appVersion() },
       { instructions: INSTRUCTIONS },
     );
 
