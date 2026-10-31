@@ -38,9 +38,17 @@ Every writing tool takes `confirm: boolean` (default `false`):
   and **nothing changes**. Previews also run the permission check so a member
   without rights fails early.
 - `confirm: true` → the change is applied and `{ ok: true, summary, … }` returned.
+- Nothing to change → return `noChange(summary, …)` (`{ ok: true, noChange: true, … }`)
+  without calling the service.
+- The preview runs the same checks as the apply step (refs, tax rates allowed
+  for the organization, …) and lists per-row `errors`; a confirmed call with
+  errors writes nothing. Batch writes (several rows) go through one service
+  call that writes in a single DB transaction — all or nothing
+  (`ProductsService.upsertMany`, `TablesService.bulkCreate`,
+  `ShiftsService.createShiftsBulk`, `EventsService.copyFromEvent`).
 
-After a confirmed, non-preview result the registry writes an
-`admin_audit_logs` row (`action = agent_tool_call`, `details = { via: 'agent',
+After a confirmed result that is neither a preview nor `noChange` the registry
+writes an `admin_audit_logs` row (`action = agent_tool_call`, `details = { via: 'agent',
 tool, tokenId, tokenName, inputHash, summary }`). Inputs themselves are never
 stored, only their SHA-256.
 

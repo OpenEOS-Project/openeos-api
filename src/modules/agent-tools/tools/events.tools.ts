@@ -24,6 +24,7 @@ import {
   hexColor,
   isoDate,
   listInput,
+  noChange,
   preview,
   slice,
   uuid,
@@ -279,7 +280,7 @@ export class EventTools {
           );
         }
         if (count === 0) {
-          return done(`Keine Änderung an „${event.name}“`, {
+          return noChange(`Keine Änderung an „${event.name}“`, {
             event: compactEvent(event),
           });
         }
@@ -472,7 +473,7 @@ export class EventTools {
           );
         }
         if (keys.length === 0) {
-          return done(`Keine Änderung an Station „${station.name}“`, {
+          return noChange(`Keine Änderung an Station „${station.name}“`, {
             station: compactStation(station),
           });
         }

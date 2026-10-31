@@ -36,6 +36,7 @@ import {
   hexColor,
   listInput,
   money,
+  noChange,
   notFound,
   preview,
   sameName,
@@ -142,6 +143,7 @@ const productInput = z
     price: z
       .number()
       .min(0)
+      .max(99_999_999.99)
       .optional()
       .describe('Gross price in EUR; required for new products'),
     taxRate: z
@@ -154,6 +156,7 @@ const productInput = z
     pfandTypeId: uuid.nullable().optional(),
     icon: z
       .string()
+      .max(50)
       .regex(PRODUCT_ICON_PATTERN)
       .nullable()
       .optional()
@@ -162,9 +165,9 @@ const productInput = z
     isAvailable: z.boolean().optional(),
     isFavorite: z.boolean().optional(),
     trackInventory: z.boolean().optional(),
-    stockQuantity: z.number().int().min(0).optional(),
+    stockQuantity: z.number().int().min(0).max(2_147_483_647).optional(),
     stockUnit: z.string().max(20).optional(),
-    sortOrder: z.number().int().min(0).optional(),
+    sortOrder: z.number().int().min(0).max(2_147_483_647).optional(),
     productionStationId: uuid.nullable().optional(),
     optionGroups: z.array(optionGroupInput).max(20).optional(),
   })
@@ -396,7 +399,7 @@ export class CatalogTools {
           );
         }
         if (keys.length === 0) {
-          return done(`Keine Änderung an Kategorie „${category.name}“`, {
+          return noChange(`Keine Änderung an Kategorie „${category.name}“`, {
             category: compactCategory(category),
           });
         }
@@ -421,7 +424,7 @@ export class CatalogTools {
     return defineTool({
       name: 'upsert_products',
       description:
-        'Create or update up to 100 products of an event in one call. A row with id updates that product; otherwise a product with the exact same name (case-insensitive) is updated, else created. New products need price and categoryId or category (name). Set createMissingCategories to create categories named in `category` that do not exist yet. Without confirm: preview with counts and per-row errors; nothing is written if any row has an error.',
+        'Create or update up to 100 products of an event in one call. A row with id updates that product; otherwise a product with the exact same name (case-insensitive) is updated, else created. New products need price and categoryId or category (name). Set createMissingCategories to create categories named in `category` that do not exist yet. Without confirm: preview with counts and per-row errors (same checks as confirm, incl. the tax rates allowed for the organization). With confirm everything is written in one transaction: nothing is written if any row has an error.',
       inputSchema: z
         .object({
           eventId: uuid,
@@ -478,49 +481,40 @@ export class CatalogTools {
             plan.errors,
           );
         }
+        if (plan.create.length === 0 && plan.update.length === 0) {
+          return noChange(
+            `Keine Änderung: ${plan.unchanged.length} Produkte unverändert in „${event.name}“`,
+            { unchanged: plan.unchanged },
+          );
+        }
 
-        const categoryIds = new Map<string, string>();
-        for (const name of plan.newCategories) {
-          const category = await this.categories.create(
-            input.eventId,
-            { name },
-            ctx.user,
-          );
-          categoryIds.set(name.toLocaleLowerCase('de'), category.id);
-        }
-        const created: Array<{ id: string; name: string }> = [];
-        for (const { dto, categoryName } of plan.create) {
-          const categoryId =
-            dto.categoryId ||
-            categoryIds.get((categoryName ?? '').toLocaleLowerCase('de'));
-          const product = await this.products.create(
-            input.eventId,
-            { ...dto, categoryId: categoryId as string },
-            ctx.user,
-          );
-          created.push({ id: product.id, name: product.name });
-        }
-        const updated: Array<{ id: string; name: string }> = [];
-        for (const { id, dto } of plan.update) {
-          const product = await this.products.update(
-            input.eventId,
-            id,
-            dto,
-            ctx.user,
-          );
-          updated.push({ id: product.id, name: product.name });
-        }
+        /* Alles oder nichts: der Dienst prueft noch einmal und schreibt
+           Kategorien, neue und geaenderte Produkte in einer Transaktion. */
+        const result = await this.products.upsertMany(
+          input.eventId,
+          {
+            newCategories: plan.newCategories,
+            create: plan.create,
+            update: plan.update.map(({ id, dto }) => ({ id, dto })),
+          },
+          ctx.user,
+        );
+        const created = result.created.map((p) => ({ id: p.id, name: p.name }));
+        const updated = result.updated.map((p) => ({ id: p.id, name: p.name }));
         return done(
           `${created.length} Produkte angelegt, ${updated.length} geändert` +
-            (plan.newCategories.length
-              ? `, ${plan.newCategories.length} Kategorien angelegt`
+            (result.categories.length
+              ? `, ${result.categories.length} Kategorien angelegt`
               : '') +
             ` in „${event.name}“`,
           {
             created,
             updated,
             unchanged: plan.unchanged,
-            newCategories: plan.newCategories,
+            newCategories: result.categories.map((c) => ({
+              id: c.id,
+              name: c.name,
+            })),
           },
         );
       },
@@ -533,12 +527,14 @@ export class CatalogTools {
     rows: ProductInput[],
     createMissingCategories: boolean,
   ): Promise<UpsertPlan> {
-    const [categories, existing, pfandTypes, stations] = await Promise.all([
-      this.categories.findAll(eventId, ctx.user),
-      fetchAll((p) => this.products.findAll(eventId, ctx.user, p)),
-      this.pfandTypes.findAll(ctx.organizationId, ctx.user),
-      this.stations.findAll(eventId, ctx.user),
-    ]);
+    const [categories, existing, pfandTypes, stations, taxRates] =
+      await Promise.all([
+        this.categories.findAll(eventId, ctx.user),
+        fetchAll((p) => this.products.findAll(eventId, ctx.user, p)),
+        this.pfandTypes.findAll(ctx.organizationId, ctx.user),
+        this.stations.findAll(eventId, ctx.user),
+        this.products.allowedTaxRates(ctx.organizationId),
+      ]);
     const plan: UpsertPlan = {
       create: [],
       update: [],
@@ -577,6 +573,9 @@ export class CatalogTools {
           categoryName = category.name;
         } else if (createMissingCategories) {
           categoryName = row.category.trim();
+          if (categoryName.length < 2) {
+            return fail('Neue Kategorie braucht mindestens 2 Zeichen');
+          }
           if (!plan.newCategories.some((n) => sameName(n, categoryName!))) {
             plan.newCategories.push(categoryName);
           }
@@ -587,6 +586,13 @@ export class CatalogTools {
         }
       } else if (!target) {
         return fail('categoryId oder category nötig');
+      }
+      /* Dieselbe Pruefung wie beim Schreiben (ProductsService): ein
+         steuerbefreiter Verein darf nur 0 % fuehren. */
+      if (row.taxRate !== undefined && !taxRates.includes(row.taxRate)) {
+        return fail(
+          `Steuersatz ${row.taxRate} % ist für diese Organisation nicht zulässig (erlaubt: ${taxRates.join(', ')} %)`,
+        );
       }
       if (
         row.pfandTypeId &&
@@ -690,7 +696,7 @@ export class CatalogTools {
         );
         const label = input.isAvailable ? 'verfügbar' : 'ausverkauft';
         if (product.isAvailable === input.isAvailable) {
-          return done(`„${product.name}“ ist bereits ${label}`, {
+          return noChange(`„${product.name}“ ist bereits ${label}`, {
             product: compactProduct(product),
           });
         }

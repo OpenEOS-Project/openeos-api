@@ -33,6 +33,25 @@ import { ImportProductsDto } from './dto/import-products.dto';
 import { parseProductCsv } from './product-csv';
 import { GatewayService } from '../gateway/gateway.service';
 
+/** Ein geprueftes Paket fuer `upsertMany`. */
+export interface ProductUpsertBatch {
+  /** Neue Kategorien (Namen); Produkte verweisen ueber `categoryName` darauf. */
+  newCategories: string[];
+  create: Array<{ dto: CreateProductDto; categoryName?: string | null }>;
+  update: Array<{ id: string; dto: UpdateProductDto }>;
+}
+
+function assertTaxRateIn(allowed: number[], taxRate: number): void {
+  if (!allowed.includes(Number(taxRate))) {
+    throw new BadRequestException({
+      code: ErrorCodes.VALIDATION_ERROR,
+      reason: ErrorReasons.TAX_RATE_NOT_ALLOWED,
+      message: `Steuersatz ${taxRate} % ist für diese Organisation nicht zulässig`,
+      params: { rate: taxRate },
+    });
+  }
+}
+
 @Injectable()
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
@@ -171,6 +190,121 @@ export class ProductsService {
     });
 
     return product;
+  }
+
+  /**
+   * Viele Produkte auf einmal anlegen und aendern — alles oder nichts.
+   *
+   * Erst wird alles geprueft (Berechtigung, Steuersaetze, Kategorien),
+   * dann in einer Transaktion geschrieben: neue Kategorien, neue
+   * Produkte, Aenderungen. Scheitert eine Zeile, bleibt der Bestand wie
+   * vorher. Fuer `upsert_products` der Agenten; die Anzeigen bekommen
+   * danach ein einziges `menuRefresh`.
+   */
+  async upsertMany(
+    eventId: string,
+    batch: ProductUpsertBatch,
+    user: User,
+  ): Promise<{
+    categories: Category[];
+    created: Product[];
+    updated: Product[];
+  }> {
+    const event = await this.getEventAndCheckPermission(
+      eventId,
+      user.id,
+      'products',
+    );
+    const rates = [...batch.create, ...batch.update]
+      .map(({ dto }) => dto.taxRate)
+      .filter((rate): rate is number => rate !== undefined);
+    if (rates.length > 0) {
+      const allowed = await this.allowedTaxRates(event.organizationId);
+      for (const rate of rates) assertTaxRateIn(allowed, rate);
+    }
+
+    const key = (name: string) => name.trim().toLocaleLowerCase('de');
+    const result = await this.productRepository.manager.transaction(
+      async (manager) => {
+        const categoryRepo = manager.getRepository(Category);
+        const productRepo = manager.getRepository(Product);
+
+        const known = new Set(
+          (await categoryRepo.find({ where: { eventId } })).map((c) => c.id),
+        );
+        const assertCategory = (categoryId: string | undefined) => {
+          if (categoryId && !known.has(categoryId)) {
+            throw new BadRequestException({
+              code: ErrorCodes.VALIDATION_ERROR,
+              reason: ErrorReasons.CATEGORY_NOT_FOUND,
+              message: 'Kategorie gehört nicht zu diesem Event',
+              params: { categoryId },
+            });
+          }
+        };
+
+        const categories: Category[] = [];
+        const newCategoryIds = new Map<string, string>();
+        for (const name of batch.newCategories) {
+          const category = await categoryRepo.save(
+            categoryRepo.create({ eventId, name: name.trim() }),
+          );
+          categories.push(category);
+          known.add(category.id);
+          newCategoryIds.set(key(name), category.id);
+        }
+
+        const created: Product[] = [];
+        for (const { dto, categoryName } of batch.create) {
+          const categoryId =
+            dto.categoryId ||
+            (categoryName ? newCategoryIds.get(key(categoryName)) : undefined);
+          if (!categoryId) {
+            throw new BadRequestException({
+              code: ErrorCodes.VALIDATION_ERROR,
+              reason: ErrorReasons.CATEGORY_NOT_FOUND,
+              message: `Keine Kategorie für „${dto.name}“`,
+            });
+          }
+          assertCategory(categoryId);
+          created.push(
+            await productRepo.save(
+              productRepo.create({ ...dto, eventId: event.id, categoryId }),
+            ),
+          );
+        }
+
+        const updated: Product[] = [];
+        for (const { id, dto } of batch.update) {
+          assertCategory(dto.categoryId);
+          const product = await productRepo.findOne({
+            where: { id, eventId },
+          });
+          if (!product) {
+            throw new NotFoundException({
+              code: ErrorCodes.NOT_FOUND,
+              reason: ErrorReasons.PRODUCT_NOT_FOUND,
+              message: 'Produkt nicht gefunden',
+              params: { productId: id },
+            });
+          }
+          Object.assign(product, dto);
+          updated.push(await productRepo.save(product));
+        }
+        return { categories, created, updated };
+      },
+    );
+
+    this.logger.log(
+      `Products upserted for event ${eventId}: +${result.created.length} ~${result.updated.length} categories +${result.categories.length}`,
+    );
+    // Erst nach dem Commit: die Anzeigen laden die Karte neu.
+    this.gatewayService.notifyMenuRefresh(
+      event.organizationId,
+      eventId,
+      'product-upsert',
+    );
+    return result;
   }
 
   async remove(eventId: string, productId: string, user: User): Promise<void> {
@@ -562,35 +696,30 @@ export class ProductsService {
   }
 
   /**
-   * Darf diese Organisation diesen Steuersatz fuehren?
+   * Welche Steuersaetze (Prozent) darf diese Organisation fuehren?
    *
    * Die Auswahl im Formular richtet sich schon danach, aber sie ist nur
    * eine Anzeige — geprueft wird hier. Ein steuerbefreiter Verein darf
    * sonst ueber die API 19 % an ein Produkt schreiben und haette einen
-   * Satz im Bestand, den er nie erheben darf.
+   * Satz im Bestand, den er nie erheben darf. Die Agenten-Werkzeuge
+   * fragen das fuer ihre Vorschau ebenfalls hier ab.
    */
+  async allowedTaxRates(organizationId: string): Promise<number[]> {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
+    return taxRatesFor(
+      organization?.settings?.address?.country,
+      organization?.settings?.vatExempt,
+    ).map((option) => option.rate);
+  }
+
   private async assertTaxRateAllowed(
     organizationId: string,
     taxRate: number | undefined,
   ): Promise<void> {
     if (taxRate === undefined) return;
-
-    const organization = await this.organizationRepository.findOne({
-      where: { id: organizationId },
-    });
-    const allowed = taxRatesFor(
-      organization?.settings?.address?.country,
-      organization?.settings?.vatExempt,
-    );
-
-    if (!allowed.some((option) => option.rate === Number(taxRate))) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.TAX_RATE_NOT_ALLOWED,
-        message: `Steuersatz ${taxRate} % ist für diese Organisation nicht zulässig`,
-        params: { rate: taxRate },
-      });
-    }
+    assertTaxRateIn(await this.allowedTaxRates(organizationId), taxRate);
   }
 
   private async getEventAndCheckPermission(
