@@ -1830,6 +1830,66 @@
         ]
       }
     },
+    "/api/organizations/{id}/operating-mode": {
+      "get": {
+        "description": "Betriebsmodus `pos` oder `order_only` („Nur Bestellen“) mit Verlauf. Umschalten kann nur der OpenEOS-Support.",
+        "operationId": "organizations_getOperatingMode",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Operating mode with change log (read-only for the organization)",
+        "tags": [
+          "Organizations"
+        ]
+      }
+    },
+    "/api/organizations/{id}/operating-mode/certificate.pdf": {
+      "get": {
+        "description": "Herstellerbescheinigung für die Verfahrensdokumentation: das Kassen- und Zahlungsmodul ist deaktiviert und kann von der Organisation nicht selbst aktiviert werden. Nur im Modus `order_only`.",
+        "operationId": "organizations_getOperatingModeCertificate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Manufacturer certificate for the order-only mode (PDF, admins)",
+        "tags": [
+          "Organizations"
+        ]
+      }
+    },
     "/api/organizations/{id}/members": {
       "get": {
         "operationId": "organizations_getMembers",
@@ -4166,6 +4226,42 @@
           }
         },
         "summary": "Mark ready items as delivered (served at the table)",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/orders/complete": {
+      "post": {
+        "description": "Nur im Betriebsmodus „Nur Bestellen“: „Abschließen“ statt „Kassieren“, z. B. für alle offenen Bestellungen eines Tisches oder eine abgeholte Thekenbestellung. Fertige Positionen gelten damit als ausgegeben. Solange eine Station noch arbeitet: 400 ORDER_ITEMS_IN_PRODUCTION. Im Kassenbetrieb: 400 ORDER_NOT_FULLY_PAID.",
+        "operationId": "deviceTables_completeOrders",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteOrdersDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Complete open orders without payment (order-only mode)",
         "tags": [
           "Device API"
         ]
@@ -10648,6 +10744,75 @@
         ]
       }
     },
+    "/api/admin/organizations/{id}/operating-mode": {
+      "patch": {
+        "description": "Nur Support (Super-Admin). Im Modus `order_only` sperrt der Server jede Zahlung, Erstattung, Trinkgeld, Kassenlade und Pfand-Auszahlung (403 ORDER_ONLY_MODE). Jede Umschaltung steht mit Zeitpunkt, Person und Grund im Verlauf und im Admin-Protokoll.",
+        "operationId": "admin_setOperatingMode",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetOperatingModeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Switch the operating mode (pos / order_only), logged with reason",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/organizations/{id}/operating-mode/history": {
+      "get": {
+        "operationId": "admin_getOperatingModeHistory",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Operating mode change log (newest first)",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
     "/api/admin/organizations/{id}/discount": {
       "patch": {
         "operationId": "admin_setDiscount",
@@ -11290,7 +11455,8 @@
                 "menu_import_applied",
                 "api_token_created",
                 "api_token_revoked",
-                "agent_tool_call"
+                "agent_tool_call",
+                "set_operating_mode"
               ]
             }
           },
@@ -18278,6 +18444,21 @@
           "itemIds"
         ]
       },
+      "CompleteOrdersDto": {
+        "type": "object",
+        "properties": {
+          "orderIds": {
+            "description": "Offene Bestellungen, die ohne Zahlung abgeschlossen werden (z. B. alle eines Tisches)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orderIds"
+        ]
+      },
       "BatchPaymentDto": {
         "type": "object",
         "properties": {
@@ -20298,6 +20479,28 @@
             "description": "Eigene Höchstzahl an Mitgliedern (aktive plus offene Einladungen); leer = Standard (MEMBERS_PER_ORGANIZATION_LIMIT), 0 = unbegrenzt"
           }
         }
+      },
+      "SetOperatingModeDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "pos",
+              "order_only"
+            ],
+            "example": "order_only"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Antrag des Vereins per E-Mail vom 01.11.2026",
+            "description": "Anlass der Umschaltung (erscheint auf der Bescheinigung der Organisation)"
+          }
+        },
+        "required": [
+          "mode",
+          "reason"
+        ]
       },
       "SetDiscountDto": {
         "type": "object",

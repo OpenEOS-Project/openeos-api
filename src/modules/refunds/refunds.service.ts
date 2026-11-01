@@ -52,6 +52,11 @@ import {
   isCashlessMode,
 } from '../../common/utils/cashless-mode.util';
 import {
+  isOnlinePrepaymentMethod,
+  isOrderOnlyMode,
+  orderOnlyModeError,
+} from '../../common/utils/operating-mode.util';
+import {
   OrderPrintService,
   refundReasonLabel,
 } from '../print-jobs/order-print.service';
@@ -754,13 +759,16 @@ export class RefundsService {
       return { order, refunds: [], cancelled, reason };
     }
 
-    // Auf Zahlungen verteilen.
-    const refundable = payments
-      .filter(
-        (p) =>
-          p.status === PaymentTransactionStatus.CAPTURED ||
-          p.status === PaymentTransactionStatus.REFUNDED,
-      )
+    // Auf Zahlungen verteilen. „Nur Bestellen“: nur zurueck auf eine
+    // Online-Vorauszahlung des Gastes (Shop/QR), nie aus einer Kasse.
+    const orderOnly = isOrderOnlyMode(organization?.settings);
+    const settledPayments = payments.filter(
+      (p) =>
+        p.status === PaymentTransactionStatus.CAPTURED ||
+        p.status === PaymentTransactionStatus.REFUNDED,
+    );
+    const refundable = settledPayments
+      .filter((p) => !orderOnly || isOnlinePrepaymentMethod(p.paymentMethod))
       .map((p) => ({
         id: p.id,
         refundable: Math.max(
@@ -782,6 +790,13 @@ export class RefundsService {
     );
     if (cashBlocked) {
       assertCashAllowed(organization?.settings, PaymentMethod.CASH);
+    }
+    if (
+      !allocation &&
+      orderOnly &&
+      settledPayments.some((p) => !isOnlinePrepaymentMethod(p.paymentMethod))
+    ) {
+      throw orderOnlyModeError();
     }
     if (!allocation) {
       if (dto.paymentId) {

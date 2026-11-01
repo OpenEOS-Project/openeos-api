@@ -177,5 +177,19 @@ describe('refund-calc', () => {
     ])('%j -> %s', (over, expected) => {
       expect(displayStatusOf({ ...base, ...over })).toBe(expected);
     });
+
+    it.each([
+      [{ paymentStatus: 'unpaid', paidAmount: 0 }, 'in_kitchen'],
+      [{ paymentStatus: 'unpaid', paidAmount: 0, status: 'ready' }, 'ready'],
+      [
+        { paymentStatus: 'unpaid', paidAmount: 0, status: 'completed' },
+        'completed',
+      ],
+      [{ paymentStatus: 'unpaid', status: 'cancelled' }, 'cancelled'],
+    ])('order-only mode (no „unpaid“): %j -> %s', (over, expected) => {
+      expect(displayStatusOf({ ...base, ...over }, { orderOnly: true })).toBe(
+        expected,
+      );
+    });
   });
 });

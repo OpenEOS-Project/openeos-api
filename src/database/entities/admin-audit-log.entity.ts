@@ -47,6 +47,8 @@ export enum AdminAction {
   API_TOKEN_REVOKED = 'api_token_revoked',
   /** Schreibender Aufruf eines Agenten-Tools (MCP), ki-plan.md Abschnitt 9. */
   AGENT_TOOL_CALL = 'agent_tool_call',
+  /** Betriebsmodus umgeschaltet (pos ↔ order_only), nur durch den Support. */
+  SET_OPERATING_MODE = 'set_operating_mode',
 }
 
 /**

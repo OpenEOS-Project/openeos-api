@@ -31,6 +31,7 @@ import { CreatePaymentDto, SplitPaymentDto, QueryPaymentsDto } from './dto';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { cashReceivedMetadata } from '../print-jobs/receipt-tax.util';
 import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
+import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 
@@ -60,6 +61,7 @@ export class PaymentsService {
     user: User,
   ): Promise<Payment> {
     await this.checkMembership(organizationId, user.id);
+    await this.assertPaymentsAllowedFor(organizationId);
 
     const order = await this.orderRepository.findOne({
       where: { id: createDto.orderId, organizationId },
@@ -160,6 +162,7 @@ export class PaymentsService {
     user: User,
   ): Promise<Payment> {
     await this.checkMembership(organizationId, user.id);
+    await this.assertPaymentsAllowedFor(organizationId);
 
     const order = await this.orderRepository.findOne({
       where: { id: splitDto.orderId, organizationId },
@@ -409,6 +412,17 @@ export class PaymentsService {
    * Anbindung und bleibt immer moeglich), Bargeld nicht im bargeldlosen
    * Modus.
    */
+  /** „Nur Bestellen“: keine Zahlung, auch nicht aus der Verwaltung. */
+  private async assertPaymentsAllowedFor(
+    organizationId: string,
+  ): Promise<void> {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: { id: true, settings: true },
+    });
+    assertPaymentsAllowed(organization?.settings);
+  }
+
   private async assertPaymentMethodAllowed(
     organizationId: string,
     method: PaymentMethod,

@@ -1,6 +1,7 @@
 import {
   ArrayMaxSize,
   ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsNotEmpty,
   IsOptional,
@@ -28,6 +29,21 @@ export class AcknowledgeTableDto {
   @IsOptional()
   @IsUUID()
   eventId?: string;
+}
+
+/** „Abschließen“ im Modus „Nur Bestellen“ (statt „Kassieren“). */
+export class CompleteOrdersDto {
+  @ApiProperty({
+    type: [String],
+    description:
+      'Offene Bestellungen, die ohne Zahlung abgeschlossen werden (z. B. alle eines Tisches)',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(50)
+  @ArrayUnique()
+  @IsUUIDLoose({ each: true })
+  orderIds: string[];
 }
 
 export class DeliverOrderItemsDto {

@@ -5,6 +5,7 @@ import {
   InvitationsController,
 } from './organizations.controller';
 import { OrganizationsService } from './organizations.service';
+import { OperatingModeService } from './operating-mode/operating-mode.service';
 import {
   Organization,
   User,
@@ -26,7 +27,7 @@ import { DevicesModule } from '../devices/devices.module';
     DevicesModule,
   ],
   controllers: [OrganizationsController, InvitationsController],
-  providers: [OrganizationsService],
-  exports: [OrganizationsService],
+  providers: [OrganizationsService, OperatingModeService],
+  exports: [OrganizationsService, OperatingModeService],
 })
 export class OrganizationsModule {}

@@ -85,6 +85,7 @@ import {
   UpdateSubscriptionConfigDto,
 } from './dto';
 import { endOfDay } from '../../common/utils/date-range.util';
+import { stripOperatingMode } from '../../common/utils/operating-mode.util';
 
 @Injectable()
 export class AdminService {
@@ -171,6 +172,28 @@ export class AdminService {
   ): Promise<Organization> {
     const org = await this.getOrganization(orgId);
     const before = { ...org };
+
+    // Der Betriebsmodus laeuft nur ueber setOperatingMode (mit Grund und
+    // Verlauf); eine Bearbeitung hier laesst ihn stehen, wie er ist.
+    if (updateDto.settings) {
+      const current = (org.settings ?? {}) as unknown as Record<
+        string,
+        unknown
+      >;
+      const incoming = stripOperatingMode({ ...updateDto.settings });
+      updateDto = {
+        ...updateDto,
+        settings: {
+          ...incoming,
+          ...(current.operatingMode !== undefined
+            ? { operatingMode: current.operatingMode }
+            : {}),
+          ...(current.operatingModeSince !== undefined
+            ? { operatingModeSince: current.operatingModeSince }
+            : {}),
+        },
+      };
+    }
 
     Object.assign(org, updateDto);
     await this.organizationRepository.save(org);

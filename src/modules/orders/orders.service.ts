@@ -62,6 +62,12 @@ import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { GatewayService } from '../gateway/gateway.service';
 import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 import { saveOrderWithNumbers } from './order-numbering';
+import {
+  assertOrderOnlyCompletable,
+  assertPaymentsAllowed,
+  isOrderOnlyMode,
+  shouldAutoCompleteOrderOnly,
+} from '../../common/utils/operating-mode.util';
 
 export interface OrderStats {
   count: number;
@@ -303,9 +309,12 @@ export class OrdersService {
         )
       : [];
     const methodsOf = new Map(methods.map((m) => [m.order_id, m.methods]));
+    const orderOnly =
+      items.length > 0 &&
+      isOrderOnlyMode(await this.organizationSettings(organizationId));
     const withStatus = items.map((order) =>
       Object.assign(order, {
-        displayStatus: displayStatusOf(order),
+        displayStatus: displayStatusOf(order, { orderOnly }),
         paymentMethods: methodsOf.get(order.id) ?? [],
       }),
     );
@@ -426,6 +435,11 @@ export class OrdersService {
         message:
           'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
       });
+    }
+
+    // „Nur Bestellen“: kein Trinkgeld (gehoert zur Zahlung).
+    if (Number(updateDto.tipAmount || 0) > 0) {
+      assertPaymentsAllowed(await this.organizationSettings(organizationId));
     }
 
     Object.assign(order, updateDto);
@@ -796,7 +810,24 @@ export class OrdersService {
       activeItems.length > 0 &&
       activeItems.every((i) => i.status === OrderItemStatus.DELIVERED);
 
-    if (allDelivered) {
+    const orderOnly = isOrderOnlyMode(
+      await this.organizationSettings(organizationId),
+    );
+    if (orderOnly) {
+      // „Nur Bestellen“: Ausgabe statt Zahlung schliesst die Bestellung ab
+      // (Theke/Abholung; Tische schliesst die Bedienung selbst).
+      if (
+        updatedOrder.status !== OrderStatus.COMPLETED &&
+        shouldAutoCompleteOrderOnly(
+          updatedOrder.fulfillmentType,
+          updatedOrder.items,
+        )
+      ) {
+        updatedOrder.status = OrderStatus.COMPLETED;
+        updatedOrder.completedAt = new Date();
+        await this.orderRepository.save(updatedOrder);
+      }
+    } else if (allDelivered) {
       // Auto-complete if all delivered and fully paid
       if (updatedOrder.paymentStatus === PaymentStatus.PAID) {
         updatedOrder.status = OrderStatus.COMPLETED;
@@ -821,6 +852,9 @@ export class OrdersService {
   ): Promise<DeliverItemsResult> {
     const ids = Array.from(new Set(itemIds));
     const now = new Date();
+    const orderOnly = isOrderOnlyMode(
+      await this.organizationSettings(organizationId),
+    );
 
     const outcome = await this.orderRepository.manager.transaction(
       async (manager) => {
@@ -894,9 +928,12 @@ export class OrdersService {
           const previous = order.status;
           order.status = orderStatusFromItems(order.items, order.status);
           // Wie markItemDelivered: alles ausgegeben und bezahlt → fertig.
+          // „Nur Bestellen“: ausgegeben genuegt (nicht am Tisch).
           if (
-            order.status === OrderStatus.READY &&
-            order.paymentStatus === PaymentStatus.PAID
+            orderOnly
+              ? shouldAutoCompleteOrderOnly(order.fulfillmentType, order.items)
+              : order.status === OrderStatus.READY &&
+                order.paymentStatus === PaymentStatus.PAID
           ) {
             order.status = OrderStatus.COMPLETED;
             order.completedAt = now;
@@ -969,6 +1006,115 @@ export class OrdersService {
     };
   }
 
+  /**
+   * „Abschließen“ an der Kasse im Modus „Nur Bestellen“ (statt
+   * „Kassieren“): eine oder mehrere offene Bestellungen, z. B. alle eines
+   * Tisches oder eine abgeholte Thekenbestellung. Alles oder nichts.
+   *
+   * - Nur im Modus `order_only` (sonst 400 ORDER_NOT_FULLY_PAID: im
+   *   Kassenbetrieb schliesst die Zahlung ab).
+   * - Abgeschlossene werden uebersprungen, stornierte → 400.
+   * - Solange eine Station an einer Position arbeitet → 400
+   *   ORDER_ITEMS_IN_PRODUCTION.
+   * - Fertige Positionen gelten damit als ausgegeben (`delivered`).
+   */
+  async completeOrdersForDevice(
+    organizationId: string,
+    orderIds: string[],
+  ): Promise<{ orders: { id: string; status: OrderStatus }[] }> {
+    const ids = Array.from(new Set(orderIds));
+    if (!isOrderOnlyMode(await this.organizationSettings(organizationId))) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORDER_NOT_FULLY_PAID,
+        message:
+          'Bestellungen werden im Kassenbetrieb mit der Zahlung abgeschlossen.',
+      });
+    }
+    const now = new Date();
+
+    const changed = await this.orderRepository.manager.transaction(
+      async (manager) => {
+        const orders = await manager.find(Order, {
+          where: { id: In(ids), organizationId },
+          order: { id: 'ASC' },
+          lock: { mode: 'pessimistic_write' },
+        });
+        const found = new Set(orders.map((o) => o.id));
+        const missing = ids.filter((id) => !found.has(id));
+        if (missing.length) {
+          throw new NotFoundException({
+            code: ErrorCodes.NOT_FOUND,
+            reason: ErrorReasons.ORDER_NOT_FOUND,
+            message: 'Bestellung nicht gefunden',
+            params: { orderIds: missing },
+          });
+        }
+        const items = await manager.find(OrderItem, {
+          where: { orderId: In(ids) },
+        });
+        const result: Order[] = [];
+        for (const order of orders) {
+          if (order.status === OrderStatus.COMPLETED) continue;
+          if (order.status === OrderStatus.CANCELLED) {
+            throw new BadRequestException({
+              code: ErrorCodes.VALIDATION_ERROR,
+              reason: ErrorReasons.ORDER_CANCELLED_CANNOT_COMPLETE,
+              message: 'Stornierte Bestellung kann nicht abgeschlossen werden',
+            });
+          }
+          const own = items.filter((i) => i.orderId === order.id);
+          assertOrderOnlyCompletable(own);
+          const handedOver = own.filter(
+            (i) => i.status === OrderItemStatus.READY,
+          );
+          for (const item of handedOver) {
+            item.status = OrderItemStatus.DELIVERED;
+            item.deliveredAt = now;
+          }
+          if (handedOver.length) await manager.save(handedOver);
+          await manager.update(
+            Order,
+            { id: order.id },
+            { status: OrderStatus.COMPLETED, completedAt: now },
+          );
+          order.status = OrderStatus.COMPLETED;
+          order.completedAt = now;
+          result.push(order);
+        }
+        return result;
+      },
+    );
+
+    for (const order of changed) {
+      this.gatewayService.notifyOrderUpdated(
+        organizationId,
+        order.eventId,
+        order.id,
+        { status: OrderStatus.COMPLETED, completedAt: order.completedAt },
+      );
+    }
+    if (changed.length) {
+      this.logger.log(
+        `Device completed ${changed.length} order(s) without payment (order-only mode)`,
+      );
+    }
+    return {
+      orders: changed.map((o) => ({ id: o.id, status: o.status })),
+    };
+  }
+
+  /** Einstellungen der Organisation (fuer den Betriebsmodus). */
+  private async organizationSettings(
+    organizationId: string,
+  ): Promise<Organization['settings'] | undefined> {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: { id: true, settings: true },
+    });
+    return organization?.settings;
+  }
+
   async callOrder(
     organizationId: string,
     orderId: string,
@@ -1008,7 +1154,11 @@ export class OrdersService {
       });
     }
 
-    if (order.paymentStatus !== PaymentStatus.PAID) {
+    // „Nur Bestellen“: abschliessen ohne Zahlung, aber nicht, solange eine
+    // Station noch daran arbeitet.
+    if (isOrderOnlyMode(await this.organizationSettings(organizationId))) {
+      assertOrderOnlyCompletable(order.items ?? []);
+    } else if (order.paymentStatus !== PaymentStatus.PAID) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.ORDER_NOT_FULLY_PAID,

@@ -1206,3 +1206,112 @@ describe('DeviceApiController.createOrder — bargeldloser Modus', () => {
     expect(db.orders).toHaveLength(1);
   });
 });
+
+describe('DeviceApiController.createOrder — Betriebsmodus „Nur Bestellen“', () => {
+  const orderOnly = { operatingMode: 'order_only' };
+
+  it.each([
+    ['cash', { paymentMethod: PaymentMethod.CASH, amountReceived: 20 }],
+    ['card', { paymentMethod: PaymentMethod.CARD }],
+    ['SumUp', { paymentMethod: PaymentMethod.SUMUP_TERMINAL }],
+  ])(
+    'rejects an order paid by %s before anything is created',
+    async (_label, payment) => {
+      const {
+        db,
+        controller,
+        device,
+        paymentsBatchService,
+        orderPrintService,
+        response,
+      } = setupController({ orgSettings: orderOnly });
+
+      const call = controller.createOrder(
+        device,
+        dto({ payment: payment as CreateDeviceOrderDto['payment'] }),
+        response() as never,
+      );
+
+      await expect(call).rejects.toMatchObject({
+        status: HttpStatus.FORBIDDEN,
+        response: { code: 'ORDER_ONLY_MODE' },
+      });
+      expect(db.orders).toHaveLength(0);
+      expect(db.products[0].stockQuantity).toBe(10);
+      expect(paymentsBatchService.settle).not.toHaveBeenCalled();
+      expect(orderPrintService.handleOrderCreated).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects a tip on the order', async () => {
+    const { db, controller, device, response } = setupController({
+      orgSettings: orderOnly,
+    });
+    await expect(
+      controller.createOrder(
+        device,
+        dto({ tipAmount: 2 }),
+        response() as never,
+      ),
+    ).rejects.toMatchObject({ response: { code: 'ORDER_ONLY_MODE' } });
+    expect(db.orders).toHaveLength(0);
+  });
+
+  it('ignores „Sofort kassieren“: the order is created unpaid and goes to the kitchen', async () => {
+    const { db, controller, device, orderPrintService, response } =
+      setupController({
+        orderingMode: 'immediate',
+        serviceMode: 'table',
+        orgSettings: orderOnly,
+      });
+
+    const { data } = await controller.createOrder(
+      device,
+      dto({ fulfillmentType: OrderFulfillmentType.TABLE_SERVICE }),
+      response() as never,
+    );
+
+    expect(data).toMatchObject({
+      paymentStatus: PaymentStatus.UNPAID,
+      status: OrderStatus.OPEN,
+    });
+    expect(db.orders).toHaveLength(1);
+    expect(orderPrintService.handleOrderCreated).toHaveBeenCalledTimes(1);
+  });
+
+  it('a counter order without stations is handed over and completed at once', async () => {
+    const { controller, device, response } = setupController({
+      serviceMode: 'counter',
+      orgSettings: orderOnly,
+    });
+
+    const { data } = await controller.createOrder(
+      device,
+      dto({ fulfillmentType: OrderFulfillmentType.COUNTER_PICKUP }),
+      response() as never,
+    );
+
+    expect(data).toMatchObject({
+      status: OrderStatus.COMPLETED,
+      paymentStatus: PaymentStatus.UNPAID,
+    });
+    expect((data as { completedAt: Date | null }).completedAt).toBeInstanceOf(
+      Date,
+    );
+  });
+
+  it('a table order stays open until „Abschließen“', async () => {
+    const { controller, device, response } = setupController({
+      serviceMode: 'table',
+      orgSettings: orderOnly,
+    });
+
+    const { data } = await controller.createOrder(
+      device,
+      dto({ fulfillmentType: OrderFulfillmentType.TABLE_SERVICE }),
+      response() as never,
+    );
+
+    expect(data).toMatchObject({ status: OrderStatus.OPEN });
+  });
+});

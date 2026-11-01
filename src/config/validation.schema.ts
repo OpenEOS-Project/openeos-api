@@ -94,6 +94,11 @@ export const validationSchema = Joi.object({
     .uri({ scheme: ['http', 'https'] })
     .allow(''),
 
+  // Hersteller auf der Bescheinigung „Nur Bestellen“ (Adresszeilen mit |).
+  OPERATOR_NAME: Joi.string().allow(''),
+  OPERATOR_ADDRESS: Joi.string().allow(''),
+  OPERATOR_EMAIL: Joi.string().allow(''),
+
   // Event billing (pay-per-event activation)
   STRIPE_SECRET_KEY: Joi.string().allow('').default(''),
   STRIPE_WEBHOOK_SECRET: Joi.string().allow('').default(''),

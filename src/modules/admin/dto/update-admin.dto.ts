@@ -11,8 +11,11 @@ import {
   IsObject,
   IsInt,
   ValidateIf,
+  IsIn,
+  MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 
 export class SetDiscountDto {
   @ApiProperty({ example: 15, description: 'Rabattprozentsatz (0-100)' })
@@ -235,4 +238,28 @@ export class UpdateSubscriptionConfigDto {
   @IsOptional()
   @IsObject()
   features?: Record<string, unknown>;
+}
+
+/**
+ * Betriebsmodus einer Organisation umschalten (nur Support). Der Grund ist
+ * Pflicht: er steht im Verlauf, im Admin-Protokoll und auf der
+ * Herstellerbescheinigung der Organisation.
+ */
+export class SetOperatingModeDto {
+  @ApiProperty({ enum: ['pos', 'order_only'], example: 'order_only' })
+  @IsIn(['pos', 'order_only'])
+  mode: 'pos' | 'order_only';
+
+  @ApiProperty({
+    example: 'Antrag des Vereins per E-Mail vom 01.11.2026',
+    description:
+      'Anlass der Umschaltung (erscheint auf der Bescheinigung der Organisation)',
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MinLength(5)
+  @MaxLength(500)
+  reason: string;
 }

@@ -33,6 +33,7 @@ import { requireOrganization } from './device-api.controller';
 import { effectiveTableMode } from './device-order-table';
 import {
   AcknowledgeTableDto,
+  CompleteOrdersDto,
   DeliverOrderItemsDto,
 } from './dto/device-tables.dto';
 
@@ -240,6 +241,26 @@ export class DeviceTablesController {
       data: await this.ordersService.deliverItemsForDevice(
         organizationId,
         dto.itemIds,
+      ),
+    };
+  }
+
+  @Post('orders/complete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Complete open orders without payment (order-only mode)',
+    description:
+      'Nur im Betriebsmodus „Nur Bestellen“: „Abschließen“ statt „Kassieren“, z. B. für alle offenen Bestellungen eines Tisches oder eine abgeholte Thekenbestellung. Fertige Positionen gelten damit als ausgegeben. Solange eine Station noch arbeitet: 400 ORDER_ITEMS_IN_PRODUCTION. Im Kassenbetrieb: 400 ORDER_NOT_FULLY_PAID.',
+  })
+  async completeOrders(
+    @CurrentDevice() device: Device,
+    @Body() dto: CompleteOrdersDto,
+  ) {
+    const organizationId = requireOrganization(device);
+    return {
+      data: await this.ordersService.completeOrdersForDevice(
+        organizationId,
+        dto.orderIds,
       ),
     };
   }

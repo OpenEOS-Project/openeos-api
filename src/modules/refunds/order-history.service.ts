@@ -11,9 +11,11 @@ import {
   Order,
   OrderItem,
   OrderEvent,
+  Organization,
   Payment,
   Refund,
 } from '../../database/entities';
+import { isOrderOnlyMode } from '../../common/utils/operating-mode.util';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import {
   PaymentMethod,
@@ -443,6 +445,15 @@ export class OrderHistoryService {
   }
 
   /** Detail einer Bestellung inkl. Zahlungen, Erstattungen und Verlauf. */
+  /** „Nur Bestellen“: kein Status „offen“ (siehe displayStatusSql). */
+  private async isOrderOnly(organizationId: string): Promise<boolean> {
+    const organization = await this.orderRepository.manager.findOne(
+      Organization,
+      { where: { id: organizationId }, select: { id: true, settings: true } },
+    );
+    return isOrderOnlyMode(organization?.settings);
+  }
+
   async detail(organizationId: string, orderId: string) {
     const order = await this.orderRepository.findOne({
       where: { id: orderId, organizationId },
@@ -547,7 +558,9 @@ export class OrderHistoryService {
       notes: order.notes,
       status: order.status,
       paymentStatus: order.paymentStatus,
-      displayStatus: displayStatusOf(order),
+      displayStatus: displayStatusOf(order, {
+        orderOnly: await this.isOrderOnly(organizationId),
+      }),
       subtotal: Number(order.subtotal),
       taxTotal: Number(order.taxTotal),
       total: Number(order.total),

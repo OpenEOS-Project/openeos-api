@@ -32,6 +32,7 @@ import {
 import { GatewayService } from '../gateway/gateway.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
+import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import {
   cashReceivedMetadata,
@@ -181,6 +182,8 @@ export class PaymentsBatchService {
     // SumUp nur bei eingeschalteter Integration; fremdes Kartengeraet geht
     // immer, Bargeld nicht im bargeldlosen Modus (Trinkgeld und erhaltenes
     // Bargeld haengen an derselben Zahlart).
+    // „Nur Bestellen“: keine Zahlung an der Kasse (403 ORDER_ONLY_MODE).
+    assertPaymentsAllowed(organization?.settings);
     if (provider === PaymentProvider.SUMUP) {
       assertIntegrationEnabled(organization?.settings, 'sumup');
     }
