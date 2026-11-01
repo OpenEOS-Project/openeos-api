@@ -6,6 +6,7 @@ import {
   assertPaymentsAllowed,
   getOperatingMode,
   getOperatingModeSince,
+  handOverOnCompletion,
   isOnlinePrepaymentMethod,
   isOrderOnlyMode,
   itemsStillInProduction,
@@ -125,5 +126,29 @@ describe('closing orders without payment', () => {
     expect(() =>
       assertOrderOnlyCompletable([item(OrderItemStatus.READY, 's1')]),
     ).not.toThrow();
+  });
+
+  it('on completion everything not at a station any more counts as handed over', () => {
+    const now = new Date('2026-11-01T12:00:00Z');
+    const items = [
+      { ...item(OrderItemStatus.PENDING), deliveredAt: null }, // Getraenk ohne Station
+      { ...item(OrderItemStatus.READY), deliveredAt: null },
+      { ...item(OrderItemStatus.READY, 's1'), deliveredAt: null },
+      { ...item(OrderItemStatus.PREPARING, 's1'), deliveredAt: null },
+      { ...item(OrderItemStatus.DELIVERED, 's1'), deliveredAt: null },
+      { ...item(OrderItemStatus.CANCELLED), deliveredAt: null },
+    ];
+    const changed = handOverOnCompletion(items, now);
+    expect(changed).toHaveLength(3);
+    expect(items.map((i) => i.status)).toEqual([
+      OrderItemStatus.DELIVERED,
+      OrderItemStatus.DELIVERED,
+      OrderItemStatus.DELIVERED,
+      OrderItemStatus.PREPARING,
+      OrderItemStatus.DELIVERED,
+      OrderItemStatus.CANCELLED,
+    ]);
+    expect(changed.every((i) => i.deliveredAt === now)).toBe(true);
+    expect(items[4].deliveredAt).toBeNull();
   });
 });

@@ -425,6 +425,7 @@ const templates = {
   ),
 };
 const reports = {
+  getOperatingMode: jest.fn(() => Promise.resolve('pos')),
   getSalesReport: jest.fn(() =>
     Promise.resolve({
       totalRevenue: 1234.567,
@@ -1404,6 +1405,41 @@ describe('reports and orders', () => {
       'categories',
       'payments',
     ]);
+  });
+  it('get_sales_report in order-only mode returns counts and orderValue, never revenue', async () => {
+    reports.getOperatingMode.mockResolvedValueOnce('order_only');
+    const report = await r('get_sales_report', {
+      eventId: EVENT,
+      sections: ['summary', 'products', 'categories', 'hourly', 'channels'],
+    });
+    expect(report.operatingMode).toBe('order_only');
+    expect(report.note).toMatch(/not collected/);
+    expect(report.summary).toEqual({
+      orders: 10,
+      itemsSold: 30,
+      cancelledOrders: 1,
+      cancellationRatePercent: 9.09,
+      orderValue: 1234.57,
+      averageOrderValue: 123.46,
+    });
+    expect(report.products[0]).toMatchObject({ quantity: 20, orderValue: 90 });
+    expect(report.categories[0]).toMatchObject({
+      quantity: 20,
+      orderValue: 90,
+    });
+    expect(report.hourly).toEqual([
+      { date: '2026-07-10', hour: 18, orders: 5, orderValue: 50 },
+    ]);
+    expect(report.channels[0]).toEqual({
+      channel: 'pos',
+      orders: 10,
+      orderValue: 100,
+      averageOrderValue: 10,
+    });
+    // Keine Kennzahl heisst Umsatz (der Hinweistext erklaert es nur).
+    expect(JSON.stringify({ ...report, note: undefined })).not.toMatch(
+      /revenue|averageReceipt/i,
+    );
   });
   it('list_orders and get_order are anonymous', async () => {
     const list = await r('list_orders', {

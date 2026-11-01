@@ -23,6 +23,9 @@ import {
   windowed,
 } from '../tool-helpers';
 
+const ORDER_ONLY_NOTE =
+  'Order-only mode (Nur Bestellen): OpenEOS takes orders but collects no money. There is no revenue; orderValue is the sum of the order prices, not collected by OpenEOS (Bestellwert, nicht kassiert). Payments only contain online prepayments from the shop.';
+
 const SECTIONS = [
   'summary',
   'net',
@@ -96,7 +99,8 @@ export class ReportTools {
     return defineTool({
       name: 'get_sales_report',
       description:
-        'Sales figures (EUR) for an event and/or date range: summary (revenue, orders, average receipt, Pfand, cancellations), net (items revenue, refunds, tips, net), by product, by category, by hour (only hours with orders), by payment method, by channel. Pick sections to keep the answer small. Needs the reports permission.',
+        'Sales figures (EUR) for an event and/or date range: summary (revenue, orders, average receipt, Pfand, cancellations), net (items revenue, refunds, tips, net), by product, by category, by hour (only hours with orders), by payment method, by channel. Pick sections to keep the answer small. Needs the reports permission. ' +
+        'If the answer has operatingMode "order_only" (Nur Bestellen), OpenEOS only takes orders and does not collect money: there is no revenue — use the counts (orders, items, quantities) and treat orderValue as the sum of the order prices, not collected by OpenEOS (German: „Bestellwert (nicht kassiert)“). Payments then only contain online prepayments from the shop.',
       inputSchema: z
         .object({
           eventId: uuid.optional(),
@@ -117,31 +121,61 @@ export class ReportTools {
           endDate: input.endDate,
         } as QueryReportsDto;
         const wants = new Set(input.sections);
-        const out: Record<string, unknown> = { filter: query };
         const org = ctx.organizationId;
+        /* „Nur Bestellen“: OpenEOS kassiert nicht. Die Berichte rechnen
+           gleich, aber ein Betrag heisst hier `orderValue` (Bestellwert,
+           nicht kassiert) statt `revenue` — sonst liest ein Modell die
+           Summe als Umsatz. */
+        const orderOnly =
+          (await this.reports.getOperatingMode(org)) === 'order_only';
+        const out: Record<string, unknown> = orderOnly
+          ? {
+              filter: query,
+              operatingMode: 'order_only',
+              note: ORDER_ONLY_NOTE,
+            }
+          : { filter: query };
         if (wants.has('summary')) {
           const s = await this.reports.getSalesReport(org, query, ctx.user);
-          out.summary = {
-            revenue: money(s.totalRevenue),
-            orders: s.totalOrders,
-            averageReceipt: money(s.averageOrderValue),
-            itemsSold: s.totalItemsSold,
-            pfandCollected: money(s.pfandCollected),
-            pfandReturned: money(s.pfandReturned),
-            pfandBalance: money(s.pfandBalance),
-            cancelledOrders: s.cancelledOrders,
-            cancellationRatePercent: money(s.cancellationRate),
-          };
+          out.summary = orderOnly
+            ? {
+                orders: s.totalOrders,
+                itemsSold: s.totalItemsSold,
+                cancelledOrders: s.cancelledOrders,
+                cancellationRatePercent: money(s.cancellationRate),
+                orderValue: money(s.totalRevenue),
+                averageOrderValue: money(s.averageOrderValue),
+              }
+            : {
+                revenue: money(s.totalRevenue),
+                orders: s.totalOrders,
+                averageReceipt: money(s.averageOrderValue),
+                itemsSold: s.totalItemsSold,
+                pfandCollected: money(s.pfandCollected),
+                pfandReturned: money(s.pfandReturned),
+                pfandBalance: money(s.pfandBalance),
+                cancelledOrders: s.cancelledOrders,
+                cancellationRatePercent: money(s.cancellationRate),
+              };
         }
         if (wants.has('net')) {
           const n = await this.reports.getNetSalesSummary(org, query, ctx.user);
-          out.net = {
-            itemsRevenue: money(n.itemsRevenue),
-            unassignedRefunds: money(n.unassignedRefunds),
-            tips: money(n.tips),
-            netRevenue: money(n.netRevenue),
-          };
+          out.net = orderOnly
+            ? {
+                itemsOrderValue: money(n.itemsRevenue),
+                unassignedRefunds: money(n.unassignedRefunds),
+                orderValue: money(n.netRevenue),
+              }
+            : {
+                itemsRevenue: money(n.itemsRevenue),
+                unassignedRefunds: money(n.unassignedRefunds),
+                tips: money(n.tips),
+                netRevenue: money(n.netRevenue),
+              };
         }
+        /** Betrag einer Zeile: Umsatz bzw. Bestellwert (nicht kassiert). */
+        const amount = (value: number) =>
+          orderOnly ? { orderValue: money(value) } : { revenue: money(value) };
         if (wants.has('products')) {
           const rows = await this.reports.getProductsReport(
             org,
@@ -153,7 +187,7 @@ export class ReportTools {
             name: r.productName,
             category: r.categoryName ?? null,
             quantity: r.quantitySold,
-            revenue: money(r.revenue),
+            ...amount(r.revenue),
             averagePrice: money(r.averagePrice),
           }));
         }
@@ -167,7 +201,7 @@ export class ReportTools {
             categoryId: r.categoryId,
             name: r.name,
             quantity: r.quantity,
-            revenue: money(r.revenue),
+            ...amount(r.revenue),
           }));
         }
         if (wants.has('hourly')) {
@@ -178,7 +212,7 @@ export class ReportTools {
               date: r.date,
               hour: r.hour,
               orders: r.orders,
-              revenue: money(r.revenue),
+              ...amount(r.revenue),
             }));
         }
         if (wants.has('payments')) {
@@ -203,8 +237,10 @@ export class ReportTools {
           out.channels = rows.map((r) => ({
             channel: r.channel,
             orders: r.orders,
-            revenue: money(r.revenue),
-            averageReceipt: money(r.avgReceipt),
+            ...amount(r.revenue),
+            ...(orderOnly
+              ? { averageOrderValue: money(r.avgReceipt) }
+              : { averageReceipt: money(r.avgReceipt) }),
           }));
         }
         return out;

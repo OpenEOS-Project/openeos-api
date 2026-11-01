@@ -89,6 +89,7 @@ export function registerPrompts(server: McpServer): void {
               'Call get_sales_report with sections ["summary","products","categories","payments","hourly"] (and "net" if refunds matter). Optionally list_orders with status=cancelled for cancellations.',
               'Report: total revenue and order count, average receipt, top 5 products with quantity and revenue, revenue by category, payment method split, the busiest hours, Pfand balance, cancellations. Amounts in EUR with two decimals, German number format.',
               'Point out anything unusual (many cancellations, a product selling far below others, refunds). Keep it under 200 words; use a few bullet points.',
+              'If the report has operatingMode "order_only" (Nur Bestellen), OpenEOS collected no money: never call anything revenue (Umsatz). Report orders, items and quantities instead, show orderValue only as „Bestellwert (nicht kassiert)“, and skip average receipt, payment split and Pfand.',
             ].join('\n'),
           },
         },

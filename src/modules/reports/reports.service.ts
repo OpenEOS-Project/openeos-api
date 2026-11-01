@@ -20,6 +20,7 @@ import {
   Device,
   Printer,
   PrintJob,
+  Organization,
 } from '../../database/entities';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { OrderStatus } from '../../database/entities/order.entity';
@@ -29,6 +30,10 @@ import { PaymentTransactionStatus } from '../../database/entities/payment.entity
 import { PrintJobStatus } from '../../database/entities/print-job.entity';
 import { QueryReportsDto, ReportExportFormat } from './dto';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import {
+  getOperatingMode,
+  type OperatingMode,
+} from '../../common/utils/operating-mode.util';
 import {
   endOfDay,
   localDateKey,
@@ -162,6 +167,27 @@ export const ITEM_NET_QUANTITY = `(item.quantity - item.refundedQuantity)`;
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
+/**
+ * Spalten, die im Modus `order_only` umbenannt werden: OpenEOS kassiert
+ * dort nicht, die Betraege sind Bestellwerte (nicht kassiert), kein Umsatz.
+ */
+const ORDER_ONLY_EXPORT_KEYS: Record<string, string> = {
+  totalRevenue: 'orderValue',
+  revenue: 'orderValue',
+  avgReceipt: 'averageOrderValue',
+};
+
+/** Berichtszeile fuer den Export im Modus `order_only` (Schluessel umbenannt). */
+export function orderOnlyExportRow(
+  row: Record<string, CsvZelle>,
+): Record<string, CsvZelle> {
+  const out: Record<string, CsvZelle> = {};
+  for (const [key, value] of Object.entries(row)) {
+    out[ORDER_ONLY_EXPORT_KEYS[key] ?? key] = value;
+  }
+  return out;
+}
+
 /** Erstattungen je Zahlung (negativ, alle Arten — Geldfluss). */
 export const PAYMENT_REFUNDS = `COALESCE((SELECT SUM(rf.amount) FROM refunds rf WHERE rf.payment_id = payment.id), 0)`;
 
@@ -193,7 +219,24 @@ export class ReportsService {
     @InjectRepository(PrintJob)
     private readonly printJobRepository: Repository<PrintJob>,
     private readonly configService: ConfigService,
+    @InjectRepository(Organization)
+    private readonly organizationRepository: Repository<Organization>,
   ) {}
+
+  /**
+   * Betriebsmodus der Organisation. Im Modus `order_only` („Nur
+   * Bestellen“) kassiert OpenEOS nicht: die Betraege der Berichte sind
+   * dann Bestellwerte (Summe der Bestellpreise, nicht kassiert), kein
+   * Umsatz. Die Berichte rechnen gleich; Export und Agenten-Werkzeug
+   * beschriften die Betraege entsprechend (`orderValue`).
+   */
+  async getOperatingMode(organizationId: string): Promise<OperatingMode> {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: { id: true, settings: true },
+    });
+    return getOperatingMode(organization?.settings);
+  }
 
   /**
    * Zeitzone für stundenbasierte Auswertungen. created_at ist timestamptz —
@@ -928,6 +971,13 @@ export class ReportsService {
         break;
       default:
         reportData = [];
+    }
+
+    // „Nur Bestellen“: kein Umsatz, sondern Bestellwert (nicht kassiert).
+    if ((await this.getOperatingMode(organizationId)) === 'order_only') {
+      reportData = reportData.map((row) =>
+        orderOnlyExportRow(row as Record<string, CsvZelle>),
+      );
     }
 
     if (format === ReportExportFormat.JSON) {

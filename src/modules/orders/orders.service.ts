@@ -64,6 +64,7 @@ import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 import { saveOrderWithNumbers } from './order-numbering';
 import {
   assertOrderOnlyCompletable,
+  handOverOnCompletion,
   assertPaymentsAllowed,
   isOrderOnlyMode,
   shouldAutoCompleteOrderOnly,
@@ -208,6 +209,13 @@ export class OrdersService {
 
       // Recalculate totals
       await this.recalculateOrderTotals(order.id);
+    }
+
+    // „Nur Bestellen“: wie an der Kasse — Theken-/Abholbestellungen ohne
+    // Stationsarbeit sind mit dem Anlegen ausgegeben und abgeschlossen,
+    // alles andere schliesst die Ausgabe bzw. „Abschließen“.
+    if (isOrderOnlyMode(await this.organizationSettings(organizationId))) {
+      await this.autoCompleteOrderOnly(order.id, order.fulfillmentType);
     }
 
     this.logger.log(`Order created: ${order.orderNumber} (${order.id})`);
@@ -823,8 +831,12 @@ export class OrdersService {
           updatedOrder.items,
         )
       ) {
+        const now = new Date();
+        // Positionen ohne Station (z. B. Getraenke) gelten als mitgegeben.
+        const handedOver = handOverOnCompletion(updatedOrder.items, now);
+        if (handedOver.length) await this.orderItemRepository.save(handedOver);
         updatedOrder.status = OrderStatus.COMPLETED;
-        updatedOrder.completedAt = new Date();
+        updatedOrder.completedAt = now;
         await this.orderRepository.save(updatedOrder);
       }
     } else if (allDelivered) {
@@ -937,6 +949,11 @@ export class OrdersService {
           ) {
             order.status = OrderStatus.COMPLETED;
             order.completedAt = now;
+            if (orderOnly) {
+              // Positionen ohne Station gelten mit der Ausgabe als mitgegeben.
+              const handedOver = handOverOnCompletion(order.items, now);
+              if (handedOver.length) await manager.save(handedOver);
+            }
           }
           if (order.status !== previous) {
             await manager.update(
@@ -1065,13 +1082,8 @@ export class OrdersService {
           }
           const own = items.filter((i) => i.orderId === order.id);
           assertOrderOnlyCompletable(own);
-          const handedOver = own.filter(
-            (i) => i.status === OrderItemStatus.READY,
-          );
-          for (const item of handedOver) {
-            item.status = OrderItemStatus.DELIVERED;
-            item.deliveredAt = now;
-          }
+          // Fertige Positionen und solche ohne Station gelten als ausgegeben.
+          const handedOver = handOverOnCompletion(own, now);
           if (handedOver.length) await manager.save(handedOver);
           await manager.update(
             Order,
@@ -1102,6 +1114,26 @@ export class OrdersService {
     return {
       orders: changed.map((o) => ({ id: o.id, status: o.status })),
     };
+  }
+
+  /**
+   * Neue Bestellung im Modus `order_only` abschliessen, wenn an keiner
+   * Station etwas zu tun ist (`shouldAutoCompleteOrderOnly`). Die
+   * Positionen ohne Station gelten dann als ausgegeben.
+   */
+  private async autoCompleteOrderOnly(
+    orderId: string,
+    fulfillmentType: OrderFulfillmentType,
+  ): Promise<void> {
+    const items = await this.orderItemRepository.find({ where: { orderId } });
+    if (!shouldAutoCompleteOrderOnly(fulfillmentType, items)) return;
+    const now = new Date();
+    const handedOver = handOverOnCompletion(items, now);
+    if (handedOver.length) await this.orderItemRepository.save(handedOver);
+    await this.orderRepository.update(
+      { id: orderId },
+      { status: OrderStatus.COMPLETED, completedAt: now },
+    );
   }
 
   /** Einstellungen der Organisation (fuer den Betriebsmodus). */
@@ -1156,8 +1188,12 @@ export class OrdersService {
 
     // „Nur Bestellen“: abschliessen ohne Zahlung, aber nicht, solange eine
     // Station noch daran arbeitet.
+    const now = new Date();
     if (isOrderOnlyMode(await this.organizationSettings(organizationId))) {
       assertOrderOnlyCompletable(order.items ?? []);
+      // Wie „Abschließen“ an der Kasse: nichts bleibt auf „offen“.
+      const handedOver = handOverOnCompletion(order.items ?? [], now);
+      if (handedOver.length) await this.orderItemRepository.save(handedOver);
     } else if (order.paymentStatus !== PaymentStatus.PAID) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
@@ -1167,7 +1203,7 @@ export class OrdersService {
     }
 
     order.status = OrderStatus.COMPLETED;
-    order.completedAt = new Date();
+    order.completedAt = now;
     await this.orderRepository.save(order);
 
     this.logger.log(`Order completed: ${order.orderNumber}`);
