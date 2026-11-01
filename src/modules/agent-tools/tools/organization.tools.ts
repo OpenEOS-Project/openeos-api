@@ -10,7 +10,14 @@ import { GatewayService } from '../../gateway/gateway.service';
 import { OrganizationsService } from '../../organizations/organizations.service';
 import type { UpdateOrganizationDto } from '../../organizations/dto';
 import { defineTool, type AgentTool } from '../agent-tool.types';
-import { confirmInput, defined, diff, done, preview } from '../tool-helpers';
+import {
+  confirmInput,
+  defined,
+  diff,
+  done,
+  noChange,
+  preview,
+} from '../tool-helpers';
 
 const addressInput = z
   .object({
@@ -195,7 +202,9 @@ export class OrganizationTools {
           return preview(`Würde ${summary}`, { changes });
         }
         if (count === 0) {
-          return done(summary, { organization: compactOrganization(org) });
+          return noChange(summary, {
+            organization: compactOrganization(org),
+          });
         }
 
         const dto: UpdateOrganizationDto = {

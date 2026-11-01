@@ -542,43 +542,6 @@ export class EventsService {
       });
     }
 
-    const categoryIdMap = new Map<string, string>();
-
-    const topLevelCategories = sourceCategories.filter((c) => !c.parentId);
-    for (const sourceCategory of topLevelCategories) {
-      const newCategory = this.categoryRepository.create({
-        eventId: targetEventId,
-        name: sourceCategory.name,
-        description: sourceCategory.description,
-        color: sourceCategory.color,
-        icon: sourceCategory.icon,
-        sortOrder: sourceCategory.sortOrder,
-        isActive: sourceCategory.isActive,
-        printSettings: sourceCategory.printSettings,
-        parentId: null,
-      });
-      await this.categoryRepository.save(newCategory);
-      categoryIdMap.set(sourceCategory.id, newCategory.id);
-    }
-
-    const childCategories = sourceCategories.filter((c) => c.parentId);
-    for (const sourceCategory of childCategories) {
-      const newParentId = categoryIdMap.get(sourceCategory.parentId!) || null;
-      const newCategory = this.categoryRepository.create({
-        eventId: targetEventId,
-        name: sourceCategory.name,
-        description: sourceCategory.description,
-        color: sourceCategory.color,
-        icon: sourceCategory.icon,
-        sortOrder: sourceCategory.sortOrder,
-        isActive: sourceCategory.isActive,
-        printSettings: sourceCategory.printSettings,
-        parentId: newParentId,
-      });
-      await this.categoryRepository.save(newCategory);
-      categoryIdMap.set(sourceCategory.id, newCategory.id);
-    }
-
     let sourceProducts: Product[];
     if (copyDto.productIds && copyDto.productIds.length > 0) {
       sourceProducts = await this.productRepository.find({
@@ -594,37 +557,80 @@ export class EventsService {
       });
     }
 
+    // All or nothing: a copy that fails halfway must not leave a partial
+    // menu in the target event.
+    const categoryIdMap = new Map<string, string>();
     let productsCopied = 0;
-    for (const sourceProduct of sourceProducts) {
-      const newCategoryId = categoryIdMap.get(sourceProduct.categoryId);
-      if (!newCategoryId) {
-        continue;
+    await this.eventRepository.manager.transaction(async (manager) => {
+      const categoryRepo = manager.getRepository(Category);
+      const productRepo = manager.getRepository(Product);
+
+      const topLevelCategories = sourceCategories.filter((c) => !c.parentId);
+      for (const sourceCategory of topLevelCategories) {
+        const newCategory = categoryRepo.create({
+          eventId: targetEventId,
+          name: sourceCategory.name,
+          description: sourceCategory.description,
+          color: sourceCategory.color,
+          icon: sourceCategory.icon,
+          sortOrder: sourceCategory.sortOrder,
+          isActive: sourceCategory.isActive,
+          printSettings: sourceCategory.printSettings,
+          parentId: null,
+        });
+        await categoryRepo.save(newCategory);
+        categoryIdMap.set(sourceCategory.id, newCategory.id);
       }
 
-      const newProduct = this.productRepository.create({
-        eventId: targetEventId,
-        categoryId: newCategoryId,
-        name: sourceProduct.name,
-        description: sourceProduct.description,
-        price: sourceProduct.price,
-        imageUrl: sourceProduct.imageUrl,
-        isActive: sourceProduct.isActive,
-        isAvailable: sourceProduct.isAvailable,
-        trackInventory: sourceProduct.trackInventory,
-        stockQuantity: copyDto.copyStock ? sourceProduct.stockQuantity : 0,
-        stockUnit: sourceProduct.stockUnit,
-        options: sourceProduct.options,
-        printSettings: sourceProduct.printSettings,
-        sortOrder: sourceProduct.sortOrder,
-        icon: sourceProduct.icon,
-        isFavorite: sourceProduct.isFavorite,
-      });
-      await this.productRepository.save(newProduct);
-      productsCopied++;
-    }
+      const childCategories = sourceCategories.filter((c) => c.parentId);
+      for (const sourceCategory of childCategories) {
+        const newParentId = categoryIdMap.get(sourceCategory.parentId!) || null;
+        const newCategory = categoryRepo.create({
+          eventId: targetEventId,
+          name: sourceCategory.name,
+          description: sourceCategory.description,
+          color: sourceCategory.color,
+          icon: sourceCategory.icon,
+          sortOrder: sourceCategory.sortOrder,
+          isActive: sourceCategory.isActive,
+          printSettings: sourceCategory.printSettings,
+          parentId: newParentId,
+        });
+        await categoryRepo.save(newCategory);
+        categoryIdMap.set(sourceCategory.id, newCategory.id);
+      }
 
-    targetEvent.copiedFromEventId = sourceEventId;
-    await this.eventRepository.save(targetEvent);
+      for (const sourceProduct of sourceProducts) {
+        const newCategoryId = categoryIdMap.get(sourceProduct.categoryId);
+        if (!newCategoryId) {
+          continue;
+        }
+
+        const newProduct = productRepo.create({
+          eventId: targetEventId,
+          categoryId: newCategoryId,
+          name: sourceProduct.name,
+          description: sourceProduct.description,
+          price: sourceProduct.price,
+          imageUrl: sourceProduct.imageUrl,
+          isActive: sourceProduct.isActive,
+          isAvailable: sourceProduct.isAvailable,
+          trackInventory: sourceProduct.trackInventory,
+          stockQuantity: copyDto.copyStock ? sourceProduct.stockQuantity : 0,
+          stockUnit: sourceProduct.stockUnit,
+          options: sourceProduct.options,
+          printSettings: sourceProduct.printSettings,
+          sortOrder: sourceProduct.sortOrder,
+          icon: sourceProduct.icon,
+          isFavorite: sourceProduct.isFavorite,
+        });
+        await productRepo.save(newProduct);
+        productsCopied++;
+      }
+
+      targetEvent.copiedFromEventId = sourceEventId;
+      await manager.getRepository(Event).save(targetEvent);
+    });
 
     this.logger.log(
       `Copied ${categoryIdMap.size} categories and ${productsCopied} products from event ${sourceEventId} to ${targetEventId}`,

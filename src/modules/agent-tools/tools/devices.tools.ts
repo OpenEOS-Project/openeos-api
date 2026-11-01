@@ -26,6 +26,7 @@ import {
   fetchAll,
   iso,
   listInput,
+  noChange,
   preview,
   slice,
   uuid,
@@ -281,7 +282,7 @@ export class DeviceTools {
           );
         }
         if (keys.length === 0)
-          return done(`Keine Änderung an Vorlage „${template.name}“`, {
+          return noChange(`Keine Änderung an Vorlage „${template.name}“`, {
             template: compactTemplate(template),
           });
         const updated = await this.templates.update(

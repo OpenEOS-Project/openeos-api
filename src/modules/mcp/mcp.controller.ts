@@ -28,6 +28,12 @@ import { MCP_PATH } from './mcp.constants';
  *
  * Je Anfrage ein neuer Server und Transport: keine Sitzung, nichts im
  * Speicher, jede Instanz kann jede Anfrage beantworten.
+ *
+ * Deshalb gibt es nur POST. GET (eigener SSE-Strom fuer Nachrichten des
+ * Servers) und DELETE (Sitzung beenden) beantwortet der Endpunkt wie die
+ * zustandslosen Beispiele des SDK mit 405 — der Client nimmt das als
+ * „kein Strom angeboten“ und arbeitet normal weiter. Ein offener, aber
+ * stummer Strom wuerde je verbundenem Agenten eine Verbindung binden.
  */
 @ApiExcludeController()
 @Public()
@@ -42,13 +48,13 @@ export class McpController {
   }
 
   @Get()
-  get(@Req() req: AppRequest, @Res() res: Response): Promise<void> {
-    return this.handle(req, res);
+  get(@Res() res: Response): void {
+    methodNotAllowed(res);
   }
 
   @Delete()
-  delete(@Req() req: AppRequest, @Res() res: Response): Promise<void> {
-    return this.handle(req, res);
+  delete(@Res() res: Response): void {
+    methodNotAllowed(res);
   }
 
   private async handle(req: AppRequest, res: Response): Promise<void> {
@@ -65,4 +71,16 @@ export class McpController {
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   }
+}
+
+/** 405 als JSON-RPC-Fehler, so wie es das SDK zustandslos vormacht. */
+function methodNotAllowed(res: Response): void {
+  res
+    .status(405)
+    .set('Allow', 'POST')
+    .json({
+      jsonrpc: '2.0',
+      error: { code: -32000, message: 'Method not allowed.' },
+      id: null,
+    });
 }

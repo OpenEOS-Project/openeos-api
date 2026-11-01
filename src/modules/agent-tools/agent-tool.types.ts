@@ -48,6 +48,25 @@ export function isPreview(value: unknown): value is ToolPreview {
   );
 }
 
+/**
+ * Bestaetigt, aber nichts zu tun — der Bestand entspricht schon der
+ * Eingabe. Kein Dienstaufruf, kein Eintrag im Audit-Log.
+ */
+export interface ToolNoChange {
+  ok: true;
+  noChange: true;
+  summary: string;
+  [key: string]: unknown;
+}
+
+export function isNoChange(value: unknown): value is ToolNoChange {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { noChange?: unknown }).noChange === true
+  );
+}
+
 /** Typsicheres Anlegen, damit `input` im Handler den Schema-Typ hat. */
 export function defineTool<Schema extends z.ZodTypeAny>(
   tool: AgentTool<Schema>,

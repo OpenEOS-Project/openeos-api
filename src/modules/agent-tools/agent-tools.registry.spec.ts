@@ -10,7 +10,7 @@ import {
   defineTool,
   type AgentToolContext,
 } from './agent-tool.types';
-import { confirmInput, preview } from './tool-helpers';
+import { confirmInput, noChange, preview } from './tool-helpers';
 
 const ORG = '7d0c7a52-4f43-4a3e-9f8e-0f2b8f3f1a11';
 
@@ -48,7 +48,9 @@ describe('AgentToolsRegistry', () => {
     scope: TokenScope.CATALOG_WRITE,
     mutating: true,
     handler: async (_ctx, input) => {
+      if (input.name === 'Gibt es schon') return noChange('Keine Änderung');
       if (!input.confirm) return preview(`Würde „${input.name}“ anlegen`);
+      if (input.name === 'Kaputt') throw new Error('half written');
       await create();
       return { ok: true, summary: `„${input.name}“ angelegt` };
     },
@@ -170,6 +172,31 @@ describe('AgentToolsRegistry', () => {
       { name: 'Bier', confirm: true },
       '„Bier“ angelegt',
     );
+  });
+
+  it('does not audit a confirmed call that changes nothing', async () => {
+    const result = await registry.call(
+      'create_thing',
+      context(['catalog:write']),
+      { name: 'Gibt es schon', confirm: true },
+    );
+    expect(result).toEqual({
+      ok: true,
+      noChange: true,
+      summary: 'Keine Änderung',
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('does not audit a confirmed call that fails', async () => {
+    await expect(
+      registry.call('create_thing', context(['catalog:write']), {
+        name: 'Kaputt',
+        confirm: true,
+      }),
+    ).rejects.toThrow('half written');
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it('lets service exceptions through unchanged', async () => {

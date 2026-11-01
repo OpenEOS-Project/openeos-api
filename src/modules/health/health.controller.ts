@@ -4,6 +4,7 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type { Response } from 'express';
+import { appVersion } from '../../common/constants/app-version';
 import { Public } from '../../common/decorators';
 import { ShutdownService } from '../../common/lifecycle/shutdown.service';
 import { REDIS_CLIENT } from '../../common/redis';
@@ -25,8 +26,7 @@ interface HealthCheck {
 
 // Injected by the GitHub Action as build number (e.g. "1.0.123"); falls back
 // to the package version for local/dev runs.
-const APP_VERSION =
-  process.env.APP_VERSION || process.env.npm_package_version || 'dev';
+const APP_VERSION = appVersion();
 
 /** A readiness check that takes longer than this counts as failed. */
 const CHECK_TIMEOUT_MS = 2000;
