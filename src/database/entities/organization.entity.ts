@@ -87,6 +87,16 @@ export interface OrganizationSettings {
     changedAt?: string;
   };
   /**
+   * Betriebsmodus: `pos` (Standard, Kasse) oder `order_only` („Nur
+   * Bestellen“, ohne Kassenmodul). Nur der Support schaltet um
+   * (PATCH /admin/organizations/:id/operating-mode); das Bearbeiten der
+   * Organisation laesst beide Felder unberuehrt. Siehe
+   * operating-mode.util.ts, Verlauf in organization_operating_mode_changes.
+   */
+  operatingMode?: 'pos' | 'order_only';
+  /** Letzte Umschaltung des Betriebsmodus (ISO). */
+  operatingModeSince?: string;
+  /**
    * Assistent-Funktionen (Speisekarten-Import, Icon-Vorschlaege). Opt-in
    * je Organisation durch einen Admin; das Einschalten steht im
    * Admin-Protokoll. Siehe ki-plan.md Abschnitt 6.2.

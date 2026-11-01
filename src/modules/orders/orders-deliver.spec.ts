@@ -29,7 +29,7 @@ function matches(value: unknown, condition: unknown): boolean {
   return value === condition;
 }
 
-function setup() {
+function setup(orgSettings: Record<string, unknown> = {}) {
   let orders: Row[] = [];
   let items: Row[] = [];
   const locks: unknown[] = [];
@@ -91,12 +91,15 @@ function setup() {
     notifyOrderItemStatusChanged: jest.fn(),
     notifyOrderUpdated: jest.fn(),
   };
+  const organizationRepository = {
+    findOne: jest.fn(() => Promise.resolve({ id: ORG, settings: orgSettings })),
+  };
   const none = undefined as never;
   const service = new OrdersService(
     orderRepository as never,
     none,
     none,
-    none,
+    organizationRepository as never,
     none,
     none,
     none,
@@ -132,12 +135,18 @@ const order = (id: string, extra: Partial<Order> = {}) =>
     ...extra,
   }) as unknown as Row;
 
-const item = (id: string, orderId: string, status: OrderItemStatus): Row => ({
+const item = (
+  id: string,
+  orderId: string,
+  status: OrderItemStatus,
+  productionStationId: string | null = null,
+): Row => ({
   id,
   orderId,
   status,
   productName: `P-${id}`,
   deliveredAt: null,
+  productionStationId,
 });
 
 describe('orderStatusFromItems', () => {
@@ -257,6 +266,101 @@ describe('OrdersService.deliverItemsForDevice', () => {
       response: { reason: 'ORDER_ITEM_NOT_FOUND' },
     });
     expect(t.item('i1').status).toBe(OrderItemStatus.READY);
+  });
+});
+
+/**
+ * Betriebsmodus „Nur Bestellen“: Ausgabe statt Zahlung schliesst ab —
+ * Theke automatisch, Tisch mit „Abschließen“.
+ */
+describe('OrdersService — „Nur Bestellen“ (Abschluss ohne Zahlung)', () => {
+  const orderOnly = { operatingMode: 'order_only' };
+
+  it('counter: handing over the last station item completes the unpaid order', async () => {
+    const t = setup(orderOnly);
+    t.seed(
+      [order('o1', { fulfillmentType: 'counter_pickup' } as Partial<Order>)],
+      [
+        item('i1', 'o1', OrderItemStatus.READY, 'station-1'),
+        item('i2', 'o1', OrderItemStatus.PENDING),
+      ],
+    );
+    await t.service.deliverItemsForDevice(ORG, ['i1']);
+    expect(t.order('o1')).toMatchObject({
+      status: OrderStatus.COMPLETED,
+      paymentStatus: PaymentStatus.UNPAID,
+    });
+    expect(t.order('o1').completedAt).toBeInstanceOf(Date);
+  });
+
+  it('table: serving does not close the table', async () => {
+    const t = setup(orderOnly);
+    t.seed(
+      [order('o1', { fulfillmentType: 'table_service' } as Partial<Order>)],
+      [item('i1', 'o1', OrderItemStatus.READY, 'station-1')],
+    );
+    await t.service.deliverItemsForDevice(ORG, ['i1']);
+    expect(t.order('o1').status).toBe(OrderStatus.READY);
+  });
+
+  it('„Abschließen“ closes all orders of a table, ready items count as handed over', async () => {
+    const t = setup(orderOnly);
+    t.seed(
+      [
+        order('o1', { fulfillmentType: 'table_service' } as Partial<Order>),
+        order('o2', {
+          fulfillmentType: 'table_service',
+          status: OrderStatus.OPEN,
+        } as Partial<Order>),
+      ],
+      [
+        item('i1', 'o1', OrderItemStatus.READY, 'station-1'),
+        item('i2', 'o1', OrderItemStatus.DELIVERED, 'station-1'),
+        item('i3', 'o2', OrderItemStatus.PENDING),
+      ],
+    );
+
+    const result = await t.service.completeOrdersForDevice(ORG, ['o1', 'o2']);
+
+    expect(result.orders.map((o) => o.status)).toEqual([
+      OrderStatus.COMPLETED,
+      OrderStatus.COMPLETED,
+    ]);
+    expect(t.order('o1').status).toBe(OrderStatus.COMPLETED);
+    expect(t.order('o2').status).toBe(OrderStatus.COMPLETED);
+    expect(t.order('o1').paymentStatus).toBe(PaymentStatus.UNPAID);
+    expect(t.item('i1').status).toBe(OrderItemStatus.DELIVERED);
+    expect(t.gatewayService.notifyOrderUpdated).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses while a station is still working on an item (all or nothing)', async () => {
+    const t = setup(orderOnly);
+    t.seed(
+      [
+        order('o1', { fulfillmentType: 'table_service' } as Partial<Order>),
+        order('o2', { fulfillmentType: 'table_service' } as Partial<Order>),
+      ],
+      [
+        item('i1', 'o1', OrderItemStatus.READY, 'station-1'),
+        item('i2', 'o2', OrderItemStatus.PREPARING, 'station-1'),
+      ],
+    );
+    await expect(
+      t.service.completeOrdersForDevice(ORG, ['o1', 'o2']),
+    ).rejects.toMatchObject({
+      response: { reason: 'ORDER_ITEMS_IN_PRODUCTION' },
+    });
+    expect(t.order('o1').status).toBe(OrderStatus.IN_PROGRESS);
+    expect(t.item('i1').status).toBe(OrderItemStatus.READY);
+  });
+
+  it('cash register mode: completing without payment stays impossible', async () => {
+    const t = setup();
+    t.seed([order('o1')], [item('i1', 'o1', OrderItemStatus.READY)]);
+    await expect(
+      t.service.completeOrdersForDevice(ORG, ['o1']),
+    ).rejects.toMatchObject({ response: { reason: 'ORDER_NOT_FULLY_PAID' } });
+    expect(t.order('o1').status).toBe(OrderStatus.IN_PROGRESS);
   });
 });
 

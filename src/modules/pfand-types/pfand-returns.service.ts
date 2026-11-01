@@ -10,6 +10,7 @@ import { PfandType } from '../../database/entities/pfand-type.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
 import { Organization } from '../../database/entities/organization.entity';
 import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
+import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import {
   PfandReturn,
   PfandReturnLine,
@@ -55,6 +56,8 @@ export class PfandReturnsService {
       Organization,
       { where: { id: organizationId }, select: { id: true, settings: true } },
     );
+    // „Nur Bestellen“: keine Auszahlung aus einer Kasse.
+    assertPaymentsAllowed(organization?.settings);
     assertCashAllowed(organization?.settings);
 
     const typeIds = dto.lines.map((l) => l.pfandTypeId);

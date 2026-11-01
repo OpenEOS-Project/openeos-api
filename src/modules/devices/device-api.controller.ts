@@ -59,6 +59,11 @@ import { CreatePaymentDto } from '../payments/dto';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
+import {
+  assertPaymentsAllowed,
+  isOrderOnlyMode,
+  shouldAutoCompleteOrderOnly,
+} from '../../common/utils/operating-mode.util';
 import { PrintersService } from '../printers/printers.service';
 import { PrinterAgentsService } from '../printers/printer-agents.service';
 import { ReportDiscoveredPrintersDto } from '../printers/dto';
@@ -610,6 +615,12 @@ export class DeviceApiController {
       }
     }
 
+    // „Nur Bestellen“: Bestellungen ja, aber ohne Zahlung und Trinkgeld
+    // (403 ORDER_ONLY_MODE), bevor irgendetwas angelegt wird.
+    if (createDto.payment || Number(createDto.tipAmount || 0) > 0) {
+      await this.assertPaymentsAllowedFor(organizationId);
+    }
+
     // Testmodus: keine echte SumUp-Kartenzahlung; Bar und manuelle Karte
     // gehen weiter.
     if (createDto.payment) {
@@ -733,6 +744,24 @@ export class DeviceApiController {
               settled.orders.find((o) => o.id === completeOrder.id) ??
               completeOrder;
             return { order: paidOrder, stockChanges, settled };
+          }
+
+          // „Nur Bestellen“: keine Zahlung, kein „Sofort kassieren“. Theken-
+          // bestellungen ohne Station sind mit dem Anlegen ausgegeben und
+          // damit abgeschlossen; alles andere schliesst die Ausgabe bzw.
+          // „Abschließen“ (siehe operating-mode.util.ts).
+          if (isOrderOnlyMode(organization?.settings)) {
+            if (
+              shouldAutoCompleteOrderOnly(
+                completeOrder.fulfillmentType,
+                completeOrder.items ?? [],
+              )
+            ) {
+              completeOrder.status = OrderStatus.COMPLETED;
+              completeOrder.completedAt = new Date();
+              await manager.save(completeOrder);
+            }
+            return { order: completeOrder, stockChanges, settled: null };
           }
 
           // A fully-discounted order (total 0) has nothing to pay. Mark it
@@ -900,6 +929,7 @@ export class DeviceApiController {
     @Body() createDto: CreatePaymentDto,
   ) {
     const organizationId = requireOrganization(device);
+    await this.assertPaymentsAllowedFor(organizationId);
 
     const order = await this.orderRepository.findOne({
       where: { id: createDto.orderId, organizationId },
@@ -1030,6 +1060,7 @@ export class DeviceApiController {
     },
   ) {
     const organizationId = requireOrganization(device);
+    await this.assertPaymentsAllowedFor(organizationId);
 
     const order = await this.orderRepository.findOne({
       where: { id: createDto.orderId, organizationId },
@@ -1260,6 +1291,7 @@ export class DeviceApiController {
     @Body() body: { amount: number; currency?: string },
   ) {
     const organizationId = requireOrganization(device);
+    await this.assertPaymentsAllowedFor(organizationId);
     // Testmodus: keine echte Kartenzahlung (400 SUMUP_DISABLED_IN_TEST_MODE).
     await this.assertSumUpAllowedForOrganization(organizationId);
     const readerId = device.settings?.sumupReaderId;
@@ -1527,6 +1559,8 @@ export class DeviceApiController {
     @Body() body: CreateRefundDto,
   ) {
     const organizationId = requireOrganization(device);
+    // „Nur Bestellen“: die Kasse vor Ort erstattet nie (auch nicht online).
+    await this.assertPaymentsAllowedFor(organizationId);
     const actor = await this.refundsService.resolveDeviceActor(device, body);
     const outcome = await this.refundsService.createRefund(
       actor,
@@ -1909,6 +1943,9 @@ export class DeviceApiController {
     organizationId: string,
     method?: PaymentMethod,
   ): Promise<void> {
+    // „Nur Bestellen“ zuerst: dort gibt es gar keine Zahlart (und keine
+    // Kassenlade) — 403 ORDER_ONLY_MODE statt einer Zahlart-Meldung.
+    await this.assertPaymentsAllowedFor(organizationId);
     const sumup =
       method !== undefined &&
       this.getProviderForMethod(method) === PaymentProvider.SUMUP;
@@ -1920,6 +1957,17 @@ export class DeviceApiController {
     });
     if (sumup) assertIntegrationEnabled(organization?.settings, 'sumup');
     assertCashAllowed(organization?.settings, method);
+  }
+
+  /** 403 ORDER_ONLY_MODE, wenn die Organisation „Nur Bestellen“ nutzt. */
+  private async assertPaymentsAllowedFor(
+    organizationId: string,
+  ): Promise<void> {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: { id: true, settings: true },
+    });
+    assertPaymentsAllowed(organization?.settings);
   }
 
   /** Testmodus der Organisation: kein SumUp-Checkout am Lesegeraet. */

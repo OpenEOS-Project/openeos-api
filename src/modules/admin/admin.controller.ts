@@ -9,8 +9,9 @@ import {
   Query,
   UseGuards,
   Req,
+  ParseUUIDPipe,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { AdminService } from './admin.service';
 import { PrintersService } from '../printers/printers.service';
@@ -27,11 +28,14 @@ import {
   CreateSubscriptionConfigDto,
   UpdateSubscriptionConfigDto,
   UpdateNotificationSettingsDto,
+  SetOperatingModeDto,
 } from './dto';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../database/entities';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
+import { OperatingModeService } from '../organizations/operating-mode/operating-mode.service';
+import { GatewayService } from '../gateway/gateway.service';
 
 @ApiTags('Admin')
 @ApiBearerAuth('JWT-auth')
@@ -42,6 +46,8 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly printersService: PrintersService,
     private readonly platformSettingsService: PlatformSettingsService,
+    private readonly operatingModeService: OperatingModeService,
+    private readonly gatewayService: GatewayService,
   ) {}
 
   private getClientInfo(req: Request): { ip: string; userAgent?: string } {
@@ -92,6 +98,49 @@ export class AdminController {
       userAgent,
     );
     return { data: org };
+  }
+
+  /**
+   * Betriebsmodus „Nur Bestellen“ ein- oder ausschalten. Nur hier — die
+   * Organisation selbst kann das Kassenmodul nicht wieder einschalten. Nur
+   * im gehosteten Betrieb: in einer eigenen Installation ist der Verein
+   * selbst Betreiber, eine Herstellerbescheinigung waere dort falsch.
+   */
+  @SaasOnly()
+  @Patch('organizations/:id/operating-mode')
+  @ApiOperation({
+    summary: 'Switch the operating mode (pos / order_only), logged with reason',
+    description:
+      'Nur Support (Super-Admin). Im Modus `order_only` sperrt der Server jede Zahlung, Erstattung, Trinkgeld, Kassenlade und Pfand-Auszahlung (403 ORDER_ONLY_MODE). Jede Umschaltung steht mit Zeitpunkt, Person und Grund im Verlauf und im Admin-Protokoll.',
+  })
+  async setOperatingMode(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetOperatingModeDto,
+    @CurrentUser() user: User,
+    @Req() req: unknown,
+  ) {
+    const { ip, userAgent } = this.getClientInfo(req as Request);
+    const state = await this.operatingModeService.setMode(
+      id,
+      dto.mode,
+      dto.reason,
+      user,
+      { ipAddress: ip, userAgent: userAgent ?? null },
+    );
+    // Kassen sofort umstellen, nicht erst beim naechsten Neuladen.
+    this.gatewayService.notifyOrganizationSettingsUpdated(id);
+    return { data: state };
+  }
+
+  @SaasOnly()
+  @Get('organizations/:id/operating-mode/history')
+  @ApiOperation({ summary: 'Operating mode change log (newest first)' })
+  async getOperatingModeHistory(@Param('id', ParseUUIDPipe) id: string) {
+    const [state, history] = await Promise.all([
+      this.operatingModeService.stateOf(id),
+      this.operatingModeService.history(id),
+    ]);
+    return { data: { ...state, history } };
   }
 
   @SaasOnly()

@@ -11,8 +11,10 @@ import {
   HttpCode,
   HttpStatus,
   Req,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -38,6 +40,12 @@ import { CurrentUser, Public, ApiTokenAccess } from '../../common/decorators';
 import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
+import { SaasOnly } from '../../common/decorators/saas-only.decorator';
+import {
+  getOperatingMode,
+  getOperatingModeSince,
+} from '../../common/utils/operating-mode.util';
+import { OperatingModeService } from './operating-mode/operating-mode.service';
 
 @ApiTags('Organizations')
 @ApiBearerAuth('JWT-auth')
@@ -47,6 +55,7 @@ export class OrganizationsController {
     private readonly organizationsService: OrganizationsService,
     private readonly gatewayService: GatewayService,
     private readonly devicesService: DevicesService,
+    private readonly operatingModeService: OperatingModeService,
   ) {}
 
   @Post()
@@ -81,7 +90,15 @@ export class OrganizationsController {
   ) {
     const organization = await this.organizationsService.findOne(id, user);
     const usage = await this.organizationsService.memberUsage(organization);
-    return { data: { ...organization, ...usage } };
+    return {
+      data: {
+        ...organization,
+        ...usage,
+        // Betriebsmodus (nur lesbar; umschalten kann nur der Support)
+        operatingMode: getOperatingMode(organization.settings),
+        operatingModeSince: getOperatingModeSince(organization.settings),
+      },
+    };
   }
 
   @ApiTokenAccess(TokenScope.SETTINGS_WRITE)
@@ -165,6 +182,44 @@ export class OrganizationsController {
     return {
       data: await this.organizationsService.getCashlessHistory(id, user),
     };
+  }
+
+  @Get(':id/operating-mode')
+  @ApiOperation({
+    summary: 'Operating mode with change log (read-only for the organization)',
+    description:
+      'Betriebsmodus `pos` oder `order_only` („Nur Bestellen“) mit Verlauf. Umschalten kann nur der OpenEOS-Support.',
+  })
+  async getOperatingMode(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ) {
+    return { data: await this.operatingModeService.getForMember(id, user) };
+  }
+
+  @SaasOnly()
+  @Get(':id/operating-mode/certificate.pdf')
+  @ApiOperation({
+    summary: 'Manufacturer certificate for the order-only mode (PDF, admins)',
+    description:
+      'Herstellerbescheinigung für die Verfahrensdokumentation: das Kassen- und Zahlungsmodul ist deaktiviert und kann von der Organisation nicht selbst aktiviert werden. Nur im Modus `order_only`.',
+  })
+  async getOperatingModeCertificate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { pdf, filename } = await this.operatingModeService.certificatePdf(
+      id,
+      user,
+    );
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${safeName}"`,
+      'Cache-Control': 'no-store',
+    });
+    return new StreamableFile(pdf);
   }
 
   @Delete(':id')

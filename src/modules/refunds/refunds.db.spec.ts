@@ -149,6 +149,7 @@ describeWithDb('RefundsService against Postgres', () => {
       vatExempt?: boolean;
       sumup?: boolean;
       cashless?: boolean;
+      orderOnly?: boolean;
     } = {},
   ): Promise<World> {
     const orgId = randomUUID();
@@ -161,6 +162,7 @@ describeWithDb('RefundsService against Postgres', () => {
       settings.integrations = { sumup: { enabled: true } };
     }
     if (options.cashless) settings.payments = { cashless: true };
+    if (options.orderOnly) settings.operatingMode = 'order_only';
     await q(
       `INSERT INTO organizations (id, name, slug, support_pin, settings)
        VALUES ($1, 'Verein', $2, '123456', $3)`,
@@ -212,7 +214,7 @@ describeWithDb('RefundsService against Postgres', () => {
   async function order(
     w: World,
     options: {
-      pay?: 'cash' | 'sumup_terminal' | 'card' | null;
+      pay?: 'cash' | 'sumup_terminal' | 'card' | 'paypal' | null;
       itemStatus?: string;
       discount?: number;
       tip?: number;
@@ -272,7 +274,13 @@ describeWithDb('RefundsService against Postgres', () => {
     let paymentId: string | null = null;
     if (pay) {
       const provider =
-        pay === 'cash' ? 'CASH' : pay === 'card' ? 'CARD' : 'SUMUP';
+        pay === 'cash'
+          ? 'CASH'
+          : pay === 'card'
+            ? 'CARD'
+            : pay === 'paypal'
+              ? 'PAYPAL'
+              : 'SUMUP';
       const [p] = await q<{ id: string }>(
         `INSERT INTO payments (order_id, amount, payment_method, payment_provider,
            provider_transaction_id, status, processed_by_device_id)
@@ -630,6 +638,40 @@ describeWithDb('RefundsService against Postgres', () => {
       reasonCode: 'other',
     });
     expect(outcome.refunds[0].status).toBe('manual');
+  });
+
+  it('order-only mode: no refund from the till, a refund back to an online prepayment still works', async () => {
+    const w = await world({ orderOnly: true });
+    for (const pay of ['cash', 'card'] as const) {
+      const paid = await order(w, { pay });
+      let error: unknown;
+      try {
+        await service.createRefund(w.actor, paid.orderId, {
+          mode: 'amount',
+          amount: 2,
+          reasonCode: 'other',
+        });
+      } catch (e) {
+        error = e;
+      }
+      expect(
+        (error as BadRequestException).getResponse?.() as { code?: string },
+      ).toMatchObject({ code: 'ORDER_ONLY_MODE' });
+      const [after] = await q<{ refunded: string }>(
+        `SELECT refunded_amount AS refunded FROM orders WHERE id = $1`,
+        [paid.orderId],
+      );
+      expect(Number(after.refunded)).toBe(0);
+    }
+    expect(gateway.sendOpenCashDrawer).not.toHaveBeenCalled();
+
+    const online = await order(w, { pay: 'paypal' });
+    const outcome = await service.createRefund(w.actor, online.orderId, {
+      mode: 'amount',
+      amount: 2,
+      reasonCode: 'other',
+    });
+    expect(outcome.refunds[0]).toMatchObject({ paymentMethod: 'paypal' });
   });
 
   it('cashless mode: no cash refund (nothing changes), card refunds still work', async () => {

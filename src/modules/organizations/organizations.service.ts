@@ -37,6 +37,7 @@ import {
 import { EmailService } from '../email/email.service';
 import { normalizeLegalSettings } from './legal/legal-settings.util';
 import { isCashlessMode } from '../../common/utils/cashless-mode.util';
+import { stripOperatingMode } from '../../common/utils/operating-mode.util';
 import { OrganizationCashlessChange } from '../../database/entities/organization-cashless-change.entity';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { ConfigService } from '@nestjs/config';
@@ -91,7 +92,7 @@ export class OrganizationsService {
         name: createDto.name,
         slug,
         supportPin,
-        settings: createDto.settings || {},
+        settings: stripOperatingMode(createDto.settings) || {},
       });
       await queryRunner.manager.save(organization);
 
@@ -324,6 +325,10 @@ export class OrganizationsService {
     if (incomingSettings && 'payments' in incomingSettings) {
       delete incomingSettings.payments;
     }
+    // Den Betriebsmodus schaltet nur der Support (Admin-Endpunkt
+    // operating-mode) — die Organisation darf das Kassenmodul nicht selbst
+    // einschalten, sonst traegt die Herstellerbescheinigung nicht.
+    stripOperatingMode(incomingSettings);
     if (incomingSettings) {
       organization.settings = {
         ...organization.settings,

@@ -75,6 +75,11 @@ services:
       ADMIN_NOTIFY_EMAIL: ${ADMIN_NOTIFY_EMAIL:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
 
+      # Herstellerangaben fuer die Bescheinigung „Nur Bestellen“
+      OPERATOR_NAME: ${OPERATOR_NAME:-LUXCODE by Lukas Lukic-Spitznagel}
+      OPERATOR_ADDRESS: ${OPERATOR_ADDRESS:-}
+      OPERATOR_EMAIL: ${OPERATOR_EMAIL:-hello@openeos.de}
+
       # Abrechnung (§ 19 UStG — Endpreise ohne USt)
       EVENT_PRICE_EUR: ${EVENT_PRICE_EUR:-25}
       # Tageswechsel der Abrechnung (Stunde, Ortszeit): 6 = Tag von 6 bis 6 Uhr
