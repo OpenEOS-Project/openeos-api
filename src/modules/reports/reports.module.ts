@@ -12,6 +12,7 @@ import {
   Device,
   Printer,
   PrintJob,
+  Organization,
 } from '../../database/entities';
 import { ReportsController } from './reports.controller';
 import { ReportsService } from './reports.service';
@@ -31,6 +32,7 @@ import { GatewayModule } from '../gateway/gateway.module';
       Device,
       Printer,
       PrintJob,
+      Organization,
     ]),
     // forwardRef: GatewayModule haengt seinerseits an Modulen, die
     // ReportsService nutzen.

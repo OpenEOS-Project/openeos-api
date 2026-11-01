@@ -291,6 +291,9 @@ describe('OrdersService — „Nur Bestellen“ (Abschluss ohne Zahlung)', () =>
       paymentStatus: PaymentStatus.UNPAID,
     });
     expect(t.order('o1').completedAt).toBeInstanceOf(Date);
+    // Position ohne Station steht danach nicht mehr auf „offen“.
+    expect(t.item('i2').status).toBe(OrderItemStatus.DELIVERED);
+    expect(t.item('i2').deliveredAt).toBeInstanceOf(Date);
   });
 
   it('table: serving does not close the table', async () => {
@@ -330,6 +333,8 @@ describe('OrdersService — „Nur Bestellen“ (Abschluss ohne Zahlung)', () =>
     expect(t.order('o2').status).toBe(OrderStatus.COMPLETED);
     expect(t.order('o1').paymentStatus).toBe(PaymentStatus.UNPAID);
     expect(t.item('i1').status).toBe(OrderItemStatus.DELIVERED);
+    // Getraenk ohne Station: mit dem Abschluss ausgegeben.
+    expect(t.item('i3').status).toBe(OrderItemStatus.DELIVERED);
     expect(t.gatewayService.notifyOrderUpdated).toHaveBeenCalledTimes(2);
   });
 

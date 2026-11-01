@@ -7,7 +7,10 @@ import {
 import { QueryFailedError } from 'typeorm';
 import { Device } from '../../database/entities/device.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
-import { OrderItem } from '../../database/entities/order-item.entity';
+import {
+  OrderItem,
+  OrderItemStatus,
+} from '../../database/entities/order-item.entity';
 import {
   Order,
   OrderFulfillmentType,
@@ -403,11 +406,13 @@ class FakeDb {
         this.repo(entity).findOne(opts),
       create: (entity: new () => object, data: Record<string, unknown>) =>
         instance(entity, data),
-      save: (row: Row) =>
-        this.save(
+      save: (input: Row | Row[]) => {
+        const row = Array.isArray(input) ? input[0] : input;
+        return this.save(
           (row as object).constructor === Object ? Order : row.constructor,
-          row,
-        ),
+          input,
+        );
+      },
     };
     this.shared = manager;
     return manager;
@@ -1298,6 +1303,23 @@ describe('DeviceApiController.createOrder — Betriebsmodus „Nur Bestellen“'
     expect((data as { completedAt: Date | null }).completedAt).toBeInstanceOf(
       Date,
     );
+  });
+
+  it('items without a station in a completed counter order do not stay open', async () => {
+    const { db, controller, device, response } = setupController({
+      serviceMode: 'counter',
+      orgSettings: orderOnly,
+    });
+
+    await controller.createOrder(
+      device,
+      dto({ fulfillmentType: OrderFulfillmentType.COUNTER_PICKUP }),
+      response() as never,
+    );
+
+    expect(db.items).toHaveLength(1);
+    expect(db.items[0]).toMatchObject({ status: OrderItemStatus.DELIVERED });
+    expect(db.items[0].deliveredAt).toBeInstanceOf(Date);
   });
 
   it('a table order stays open until „Abschließen“', async () => {

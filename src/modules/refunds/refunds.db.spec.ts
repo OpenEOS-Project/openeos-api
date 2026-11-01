@@ -1031,6 +1031,7 @@ describeWithDb('RefundsService against Postgres', () => {
       ds.getRepository(Printer),
       ds.getRepository(PrintJob),
       { get: () => undefined } as never,
+      ds.getRepository(Organization),
     );
     const user = { id: userId } as User;
     const query = { eventId: w.eventId };

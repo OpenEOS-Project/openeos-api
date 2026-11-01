@@ -33,6 +33,11 @@ export interface CartUpdatePayload {
     payable: number;
   };
   vouchers: { name: string; amount: number }[];
+  /**
+   * „Nur Bestellen“: die Kasse sendet keine Preise (alle Betraege 0) und
+   * die Kundenanzeige zeigt nur Positionen und Mengen.
+   */
+  orderOnly?: boolean;
   updatedAt: number;
 }
 

@@ -61,6 +61,7 @@ import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
 import {
   assertPaymentsAllowed,
+  handOverOnCompletion,
   isOrderOnlyMode,
   shouldAutoCompleteOrderOnly,
 } from '../../common/utils/operating-mode.util';
@@ -757,8 +758,16 @@ export class DeviceApiController {
                 completeOrder.items ?? [],
               )
             ) {
+              const now = new Date();
+              // Positionen ohne Station gelten als gleich mitgegeben —
+              // sonst stuenden sie in der fertigen Bestellung auf „offen“.
+              const handedOver = handOverOnCompletion(
+                completeOrder.items ?? [],
+                now,
+              );
+              if (handedOver.length) await manager.save(handedOver);
               completeOrder.status = OrderStatus.COMPLETED;
-              completeOrder.completedAt = new Date();
+              completeOrder.completedAt = now;
               await manager.save(completeOrder);
             }
             return { order: completeOrder, stockChanges, settled: null };

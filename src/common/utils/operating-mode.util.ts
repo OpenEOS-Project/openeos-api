@@ -149,6 +149,32 @@ export function shouldAutoCompleteOrderOnly(
   );
 }
 
+/**
+ * Abschluss im Modus `order_only`: was jetzt noch nicht ausgegeben ist,
+ * gilt als ausgegeben (`delivered`) — Positionen ohne Station (z. B.
+ * Getraenke, die gleich mitgegeben werden) und fertige Stationspositionen.
+ * Sonst stuenden in einer abgeschlossenen Bestellung Positionen auf „offen“.
+ *
+ * Positionen, an denen eine Station noch arbeitet, bleiben unberuehrt; der
+ * Aufrufer stellt sicher, dass es keine gibt (`assertOrderOnlyCompletable`
+ * bzw. `shouldAutoCompleteOrderOnly`). Aendert die Positionen und gibt die
+ * geaenderten zurueck, damit der Aufrufer sie speichert.
+ */
+export function handOverOnCompletion<
+  T extends ItemLike & { deliveredAt?: Date | null },
+>(items: T[], now: Date): T[] {
+  const changed = activeItems(items).filter(
+    (i) =>
+      i.status !== OrderItemStatus.DELIVERED &&
+      (!i.productionStationId || i.status === OrderItemStatus.READY),
+  );
+  for (const item of changed) {
+    item.status = OrderItemStatus.DELIVERED;
+    item.deliveredAt = now;
+  }
+  return changed;
+}
+
 /** 400, solange eine Station an der Bestellung noch arbeitet. */
 export function assertOrderOnlyCompletable(
   items: (ItemLike & { productName?: string })[],
