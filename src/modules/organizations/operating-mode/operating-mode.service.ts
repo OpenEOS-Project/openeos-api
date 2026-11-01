@@ -100,7 +100,7 @@ export class OperatingModeService {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
           reason: ErrorReasons.OPERATING_MODE_UNCHANGED,
-          message: 'Die Organisation ist bereits in diesem Betriebsmodus.',
+          message: 'Die Organisation ist bereits in dieser Betriebsart.',
           params: { mode },
         });
       }
@@ -221,7 +221,7 @@ export class OperatingModeService {
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.CERTIFICATE_REQUIRES_ORDER_ONLY,
         message:
-          'Die Bescheinigung gibt es nur im Betriebsmodus „Nur Bestellen“.',
+          'Die Bescheinigung gibt es nur in der Betriebsart „Nur Bestellen“.',
       });
     }
 

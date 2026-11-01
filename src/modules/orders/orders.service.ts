@@ -309,9 +309,12 @@ export class OrdersService {
         )
       : [];
     const methodsOf = new Map(methods.map((m) => [m.order_id, m.methods]));
+    const orderOnly =
+      items.length > 0 &&
+      isOrderOnlyMode(await this.organizationSettings(organizationId));
     const withStatus = items.map((order) =>
       Object.assign(order, {
-        displayStatus: displayStatusOf(order),
+        displayStatus: displayStatusOf(order, { orderOnly }),
         paymentMethods: methodsOf.get(order.id) ?? [],
       }),
     );

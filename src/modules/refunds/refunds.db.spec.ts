@@ -42,6 +42,7 @@ import {
   User,
 } from '../../database/entities';
 import { RefundsService, type RefundActor } from './refunds.service';
+import { displayStatusSql } from './refund-calc';
 
 /**
  * Storno und Erstattung gegen ein echtes Postgres (Sperren, Transaktion,
@@ -665,6 +666,14 @@ describeWithDb('RefundsService against Postgres', () => {
     }
     expect(gateway.sendOpenCashDrawer).not.toHaveBeenCalled();
 
+    // Liste/Filter: ohne Kasse gibt es keinen Status „offen“.
+    const unpaid = await order(w, { pay: null });
+    const [row] = await q<{ s: string }>(
+      `SELECT ${displayStatusSql('o')} AS s FROM orders o WHERE o.id = $1`,
+      [unpaid.orderId],
+    );
+    expect(row.s).toBe('in_kitchen');
+
     const online = await order(w, { pay: 'paypal' });
     const outcome = await service.createRefund(w.actor, online.orderId, {
       mode: 'amount',
@@ -1085,7 +1094,7 @@ describeWithDb('RefundsService against Postgres', () => {
       ds.getRepository(Order),
       ds.getRepository(OrderItem),
       none,
-      none,
+      ds.getRepository(Organization),
       ds.getRepository(UserOrganization),
       none,
       none,

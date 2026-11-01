@@ -164,7 +164,7 @@ export function buildCertificateContent(
   return {
     title: 'Herstellerbescheinigung',
     subtitle:
-      'OpenEOS im Betriebsmodus „Nur Bestellen“ – ohne Kassen- und Zahlungsmodul',
+      'OpenEOS in der Betriebsart „Nur Bestellen“ – ohne Kassen- und Zahlungsmodul',
     operator: { label: 'Hersteller', lines: operatorLines },
     organization: {
       label: 'Organisation',
@@ -177,21 +177,21 @@ export function buildCertificateContent(
       ['Software', 'OpenEOS (Bestell- und Kassensystem, Cloud-Dienst)'],
       ['Version', input.version],
       ['Organisations-ID', input.organization.id],
-      ['Betriebsmodus', modeLabel('order_only')],
+      ['Betriebsart', modeLabel('order_only')],
       ['Gültig seit', since],
     ],
     sections: [
       {
         heading: 'Bescheinigung',
         paragraphs: [
-          `Der Hersteller bescheinigt, dass für die oben genannte Organisation seit dem ${since} der Betriebsmodus „Nur Bestellen“ eingestellt ist. In diesem Modus ist das Kassen- und Zahlungsmodul von OpenEOS für die Organisation deaktiviert.`,
+          `Der Hersteller bescheinigt, dass für die oben genannte Organisation seit dem ${since} die Betriebsart „Nur Bestellen“ eingestellt ist. In diesem Modus ist das Kassen- und Zahlungsmodul von OpenEOS für die Organisation deaktiviert.`,
           'Die Organisation kann das Kassen- und Zahlungsmodul nicht selbst aktivieren. Weder die Verwaltungsoberfläche noch die Schnittstellen (API, Geräte, Integrationen) bieten der Organisation eine solche Einstellung. Eine Umschaltung ist ausschließlich durch den Hersteller (OpenEOS-Support) auf dokumentierten Antrag möglich. Jede Umschaltung wird mit Zeitpunkt, handelnder Person und Grund protokolliert; der Verlauf ist unten abgedruckt.',
         ],
       },
       {
         heading: 'Technische Durchsetzung',
         paragraphs: [
-          'Die Sperre wirkt auf dem OpenEOS-Server, nicht nur in der Oberfläche. Im Betriebsmodus „Nur Bestellen“ weist der Server jeden Vorgang ab, der eine Zahlung erfasst oder abwickelt, insbesondere:',
+          'Die Sperre wirkt auf dem OpenEOS-Server, nicht nur in der Oberfläche. In der Betriebsart „Nur Bestellen“ weist der Server jeden Vorgang ab, der eine Zahlung erfasst oder abwickelt, insbesondere:',
         ],
         bullets: [
           'Barzahlungen sowie Kartenzahlungen an der Kasse (auch über ein angebundenes SumUp-Terminal),',
@@ -221,7 +221,7 @@ export function buildCertificateContent(
       },
     ],
     history: {
-      heading: 'Verlauf des Betriebsmodus',
+      heading: 'Verlauf der Betriebsart',
       columns: ['Zeitpunkt', 'Umschaltung', 'Grund'],
       rows: input.history.map((h) => [
         formatDateTime(h.at, tz),

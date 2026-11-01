@@ -336,7 +336,10 @@ export function displayStatusSql(alias: string): string {
     WHEN ${alias}.status = 'cancelled' THEN 'cancelled'
     WHEN ${alias}.refunded_amount > 0 AND ${alias}.refunded_amount >= ${alias}.paid_amount THEN 'refunded'
     WHEN ${alias}.refunded_amount > 0 THEN 'partly_refunded'
-    WHEN ${alias}.payment_status IN ('unpaid', 'partly_paid') AND ${alias}.total > 0 THEN 'unpaid'
+    WHEN ${alias}.payment_status IN ('unpaid', 'partly_paid') AND ${alias}.total > 0
+      AND NOT EXISTS (SELECT 1 FROM organizations dso
+        WHERE dso.id = ${alias}.organization_id
+          AND dso.settings->>'operatingMode' = 'order_only') THEN 'unpaid'
     WHEN ${alias}.status = 'completed' THEN 'completed'
     WHEN ${alias}.status = 'ready' THEN 'ready'
     ELSE 'in_kitchen'
@@ -344,18 +347,23 @@ export function displayStatusSql(alias: string): string {
 }
 
 /** Dieselbe Regel wie `displayStatusSql`, fuer bereits geladene Bestellungen. */
-export function displayStatusOf(order: {
-  status: string;
-  paymentStatus: string;
-  total: number;
-  paidAmount: number;
-  refundedAmount?: number | null;
-}): OrderDisplayStatus {
+export function displayStatusOf(
+  order: {
+    status: string;
+    paymentStatus: string;
+    total: number;
+    paidAmount: number;
+    refundedAmount?: number | null;
+  },
+  options: { orderOnly?: boolean } = {},
+): OrderDisplayStatus {
   const refunded = cents(order.refundedAmount ?? 0);
   if (order.status === 'cancelled') return 'cancelled';
   if (refunded > 0 && refunded >= cents(order.paidAmount)) return 'refunded';
   if (refunded > 0) return 'partly_refunded';
+  // „Nur Bestellen“: kassiert wird ausserhalb — „offen“ gibt es nicht.
   if (
+    !options.orderOnly &&
     (order.paymentStatus === 'unpaid' ||
       order.paymentStatus === 'partly_paid') &&
     cents(order.total) > 0
