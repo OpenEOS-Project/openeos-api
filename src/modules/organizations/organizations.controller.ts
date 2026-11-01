@@ -267,6 +267,10 @@ export class OrganizationsController {
     return { data: state };
   }
 
+  // Nur gehostet: in einer eigenen Installation ist der Verein selbst
+  // Betreiber, eine Sperre durch den Hersteller (und der Weg zurueck ueber
+  // den Support) gibt es dort nicht.
+  @SaasOnly()
   @Post(':id/cash-policy/switch')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

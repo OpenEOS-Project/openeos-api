@@ -87,7 +87,9 @@ describe('certificate "Deutschland ohne Bargeld"', () => {
     expect(c.history.rows[1][1]).toBe(
       'Bargeld-Regel: Bestandsschutz (wie bisher) zu Regel des Landes',
     );
-    expect(c.history.rows[1][2]).toContain('(Organisation)');
+    expect(c.history.rows[1][2]).toBe(
+      'Freiwilliger Wechsel durch die Organisation',
+    );
   });
 
   it('labels country changes', () => {

@@ -48,8 +48,8 @@ export function cashPolicyChangeLabel(entry: CashPolicyHistoryEntry): string {
 }
 
 function changeReason(entry: CashPolicyHistoryEntry): string {
-  const who = entry.bySupport ? 'OpenEOS-Support' : 'Organisation';
-  return entry.reason ? `${entry.reason} (${who})` : who;
+  if (!entry.bySupport) return entry.reason ?? 'Organisation';
+  return entry.reason ? `${entry.reason} (OpenEOS-Support)` : 'OpenEOS-Support';
 }
 
 export function buildCashPolicyCertificateContent(
