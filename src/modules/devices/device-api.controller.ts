@@ -58,7 +58,11 @@ import { SelectedOptionDto } from '../orders/dto';
 import { CreatePaymentDto } from '../payments/dto';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
-import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
+import {
+  assertCashAllowed,
+  CASH_POLICY_SELECT,
+  cashPolicyView,
+} from '../../common/utils/cash-policy.util';
 import {
   assertPaymentsAllowed,
   handOverOnCompletion,
@@ -92,6 +96,11 @@ import {
   type SettledBatch,
 } from '../payments/payments-batch.service';
 import { saveOrderWithNumbers } from '../orders/order-numbering';
+import {
+  assertCloseWithoutPaymentAllowed,
+  closedWithoutPaymentError,
+  closeOrdersWithoutPayment,
+} from '../orders/close-without-payment';
 import {
   createDeviceTableLookup,
   isClientRequestConflict,
@@ -200,6 +209,9 @@ export class DeviceApiController {
         id: organization.id,
         name: organization.name,
         settings: organization.settings,
+        // Bargeld-Regel des Landes: bei `blocked_de_no_tse` kein Bargeld,
+        // stattdessen „Ohne Zahlung abschließen“ (cash-policy.util.ts).
+        ...cashPolicyView(organization),
       },
     };
   }
@@ -515,7 +527,9 @@ export class DeviceApiController {
       })
       .andWhere('o.status NOT IN (:...closedStatus)', {
         closedStatus: [OrderStatus.CANCELLED, OrderStatus.COMPLETED],
-      });
+      })
+      // „Ohne Zahlung abgeschlossen“: bar ausserhalb kassiert, erledigt.
+      .andWhere('o.closedWithoutPaymentAt IS NULL');
 
     const key = tableKey?.trim();
     if (tableId) {
@@ -620,6 +634,26 @@ export class DeviceApiController {
     // (403 ORDER_ONLY_MODE), bevor irgendetwas angelegt wird.
     if (createDto.payment || Number(createDto.tipAmount || 0) > 0) {
       await this.assertPaymentsAllowedFor(organizationId);
+    }
+
+    // „Ohne Zahlung abschließen“ nur bei der Bargeld-Regel „Deutschland
+    // ohne Bargeld“ und nie zusammen mit einer Zahlung.
+    if (createDto.closeWithoutPayment) {
+      if (createDto.payment || Number(createDto.tipAmount || 0) > 0) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.CLOSE_WITHOUT_PAYMENT_NOT_AVAILABLE,
+          message:
+            '„Ohne Zahlung abschließen“ geht nicht zusammen mit einer Zahlung oder Trinkgeld.',
+        });
+      }
+      await this.assertPaymentsAllowedFor(organizationId);
+      assertCloseWithoutPaymentAllowed(
+        await this.organizationRepository.findOne({
+          where: { id: organizationId },
+          select: CASH_POLICY_SELECT,
+        }),
+      );
     }
 
     // Testmodus: keine echte SumUp-Kartenzahlung; Bar und manuelle Karte
@@ -745,6 +779,33 @@ export class DeviceApiController {
               settled.orders.find((o) => o.id === completeOrder.id) ??
               completeOrder;
             return { order: paidOrder, stockChanges, settled };
+          }
+
+          // „Ohne Zahlung abschließen“: bar ausserhalb kassiert. Die neue
+          // Bestellung und die mitgeschickten offenen gelten als erledigt,
+          // ohne Zahlung (close-without-payment.ts).
+          if (createDto.closeWithoutPayment) {
+            const others = createDto.closeWithoutPayment.orderIds ?? [];
+            const closed = await closeOrdersWithoutPayment(
+              manager,
+              organizationId,
+              [
+                ...others.filter((id) => id !== completeOrder.id),
+                completeOrder.id,
+              ],
+              new Date(),
+            );
+            const own = closed.find((o) => o.id === completeOrder.id);
+            if (own) {
+              completeOrder.status = own.status;
+              completeOrder.completedAt = own.completedAt;
+              completeOrder.closedWithoutPaymentAt = own.closedWithoutPaymentAt;
+              const fresh = await manager.find(OrderItem, {
+                where: { orderId: completeOrder.id },
+              });
+              completeOrder.items = fresh;
+            }
+            return { order: completeOrder, stockChanges, settled: null };
           }
 
           // „Nur Bestellen“: keine Zahlung, kein „Sofort kassieren“. Theken-
@@ -915,8 +976,23 @@ export class DeviceApiController {
     device: Device,
   ): Promise<Order> {
     const open =
-      existing.paymentStatus === PaymentStatus.UNPAID ||
-      existing.paymentStatus === PaymentStatus.PARTLY_PAID;
+      (existing.paymentStatus === PaymentStatus.UNPAID ||
+        existing.paymentStatus === PaymentStatus.PARTLY_PAID) &&
+      !existing.closedWithoutPaymentAt;
+    if (createDto.closeWithoutPayment && open) {
+      const organizationId = requireOrganization(device);
+      const others = createDto.closeWithoutPayment.orderIds ?? [];
+      await this.ordersService.closeWithoutPaymentForDevice(organizationId, [
+        ...others.filter((id) => id !== existing.id),
+        existing.id,
+      ]);
+      return (
+        (await this.orderRepository.findOne({
+          where: { id: existing.id },
+          relations: ['items'],
+        })) ?? existing
+      );
+    }
     if (!createDto.payment || !open) return existing;
 
     const organizationId = requireOrganization(device);
@@ -959,6 +1035,9 @@ export class DeviceApiController {
         reason: ErrorReasons.ORDER_ALREADY_PAID,
         message: 'Bestellung ist bereits vollständig bezahlt',
       });
+    }
+    if (order.closedWithoutPaymentAt) {
+      throw closedWithoutPaymentError([order.id]);
     }
 
     const remainingAmount = Number(order.total) - Number(order.paidAmount);
@@ -1090,6 +1169,9 @@ export class DeviceApiController {
         reason: ErrorReasons.ORDER_ALREADY_PAID,
         message: 'Bestellung ist bereits vollständig bezahlt',
       });
+    }
+    if (order.closedWithoutPaymentAt) {
+      throw closedWithoutPaymentError([order.id]);
     }
 
     // Validate items and calculate expected amount
@@ -1945,7 +2027,8 @@ export class DeviceApiController {
    *
    * - SumUp nur bei eingeschaltetem SumUp. `card` ist ein fremdes
    *   Kartengeraet ohne Anbindung und bleibt immer moeglich.
-   * - Bargeld nicht im bargeldlosen Modus (`assertCashAllowed`). Ohne
+   * - Bargeld nicht bei Landessperre oder im bargeldlosen Modus
+   *   (`assertCashAllowed`). Ohne
    *   Zahlart gilt der Vorgang als reiner Bargeldvorgang (Kassenlade).
    */
   private async assertPaymentMethodAllowed(
@@ -1962,10 +2045,10 @@ export class DeviceApiController {
     if (!sumup && !cash) return;
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
-      select: { id: true, settings: true },
+      select: CASH_POLICY_SELECT,
     });
     if (sumup) assertIntegrationEnabled(organization?.settings, 'sumup');
-    assertCashAllowed(organization?.settings, method);
+    assertCashAllowed(organization, method);
   }
 
   /** 403 ORDER_ONLY_MODE, wenn die Organisation „Nur Bestellen“ nutzt. */

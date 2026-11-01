@@ -176,6 +176,10 @@ export class SetupService {
         slug,
         supportPin,
         settings: {},
+        // Eigene Installation: der Verein betreibt den Server selbst — es
+        // bleibt beim bisherigen Verhalten (Bargeld erlaubt). Im gehosteten
+        // Betrieb fragt die Oberflaeche das Land danach einmal ab.
+        cashPolicyLegacy: this.deployment.isSelfHosted,
       });
       await queryRunner.manager.save(organization);
 

@@ -29,12 +29,15 @@ import {
   UpdateSubscriptionConfigDto,
   UpdateNotificationSettingsDto,
   SetOperatingModeDto,
+  SetOrganizationCountryAdminDto,
+  SetCashPolicyAdminDto,
 } from './dto';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../database/entities';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 import { OperatingModeService } from '../organizations/operating-mode/operating-mode.service';
+import { CashPolicyService } from '../organizations/cash-policy/cash-policy.service';
 import { GatewayService } from '../gateway/gateway.service';
 
 @ApiTags('Admin')
@@ -48,6 +51,7 @@ export class AdminController {
     private readonly platformSettingsService: PlatformSettingsService,
     private readonly operatingModeService: OperatingModeService,
     private readonly gatewayService: GatewayService,
+    private readonly cashPolicyService: CashPolicyService,
   ) {}
 
   private getClientInfo(req: Request): { ip: string; userAgent?: string } {
@@ -139,6 +143,76 @@ export class AdminController {
     const [state, history] = await Promise.all([
       this.operatingModeService.stateOf(id),
       this.operatingModeService.history(id),
+    ]);
+    return { data: { ...state, history } };
+  }
+
+  /**
+   * Land einer Organisation aendern. Der Verein selbst kann es nur einmal
+   * setzen (solange keins hinterlegt ist); danach nur hier, mit Grund.
+   */
+  @SaasOnly()
+  @Patch('organizations/:id/country')
+  @ApiOperation({
+    summary: 'Change the country of an organization (logged with reason)',
+    description:
+      'Nur Support (Super-Admin). Das Land steuert die Bargeld-Regel (DE ohne TSE: kein Bargeld) und die Steuersätze. Steht mit Grund im Verlauf, im Admin-Protokoll und auf der Bescheinigung.',
+  })
+  async setOrganizationCountry(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetOrganizationCountryAdminDto,
+    @CurrentUser() user: User,
+    @Req() req: unknown,
+  ) {
+    const { ip, userAgent } = this.getClientInfo(req as Request);
+    const state = await this.cashPolicyService.adminSetCountry(
+      id,
+      dto.country,
+      dto.reason,
+      user,
+      { ipAddress: ip, userAgent: userAgent ?? null },
+    );
+    this.gatewayService.notifyOrganizationSettingsUpdated(id);
+    return { data: state };
+  }
+
+  /**
+   * Bestandsschutz der Bargeld-Regel setzen/aufheben — der Weg zurueck,
+   * nachdem ein Verein freiwillig auf „Deutschland ohne Bargeld“
+   * gewechselt hat.
+   */
+  @SaasOnly()
+  @Patch('organizations/:id/cash-policy')
+  @ApiOperation({
+    summary: 'Set or clear the legacy cash rules (logged with reason)',
+    description:
+      'Nur Support (Super-Admin). `legacy: true` = Verhalten wie vor der Länderregel (Bargeld erlaubt), `legacy: false` = Regel des Landes.',
+  })
+  async setCashPolicy(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetCashPolicyAdminDto,
+    @CurrentUser() user: User,
+    @Req() req: unknown,
+  ) {
+    const { ip, userAgent } = this.getClientInfo(req as Request);
+    const state = await this.cashPolicyService.adminSetLegacy(
+      id,
+      dto.legacy,
+      dto.reason,
+      user,
+      { ipAddress: ip, userAgent: userAgent ?? null },
+    );
+    this.gatewayService.notifyOrganizationSettingsUpdated(id);
+    return { data: state };
+  }
+
+  @SaasOnly()
+  @Get('organizations/:id/cash-policy/history')
+  @ApiOperation({ summary: 'Country and cash policy change log' })
+  async getCashPolicyHistory(@Param('id', ParseUUIDPipe) id: string) {
+    const [state, history] = await Promise.all([
+      this.cashPolicyService.stateOf(id),
+      this.cashPolicyService.history(id),
     ]);
     return { data: { ...state, history } };
   }

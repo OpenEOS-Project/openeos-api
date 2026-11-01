@@ -1,4 +1,4 @@
-import { Entity, Column, OneToMany, Index } from 'typeorm';
+import { Entity, Column, OneToMany, Index, AfterLoad } from 'typeorm';
 import { SoftDeleteEntity } from './base.entity';
 import { UserOrganization } from './user-organization.entity';
 import { Event } from './event.entity';
@@ -9,6 +9,12 @@ import { Order } from './order.entity';
 import { QrCode } from './qr-code.entity';
 import { Invitation } from './invitation.entity';
 import { Invoice } from './invoice.entity';
+import {
+  cashPolicyReason,
+  resolveCashPolicy,
+  type CashPolicy,
+  type CashPolicyReason,
+} from '../../common/utils/cash-policy.util';
 
 /**
  * Rechtliche Angaben des Vereins fuer seine oeffentlichen Seiten (Shop,
@@ -311,6 +317,43 @@ export class Organization extends SoftDeleteEntity {
    */
   @Column({ name: 'member_limit', type: 'int', nullable: true })
   memberLimit: number | null;
+
+  /**
+   * Land der Organisation (ISO 3166-1 alpha-2), einzige Quelle dafuer —
+   * `settings.address.country` ist nur eine Kopie. Pflicht fuer neue
+   * Organisationen; Bestandsorganisationen ohne Land setzen es einmal
+   * selbst. Danach aendert es nur der Support (mit Grund, protokolliert).
+   * Steuert die Bargeld-Regel (cash-policy.util.ts) und die Steuersaetze.
+   */
+  @Column({ type: 'varchar', length: 2, nullable: true })
+  country: string | null;
+
+  /**
+   * Bestandsschutz der Bargeld-Regel: Organisationen, die es vor der
+   * Einfuehrung (2026-11) schon gab, verhalten sich weiter wie bisher
+   * (Bargeld erlaubt, bargeldloser Schalter), egal in welchem Land. Der
+   * Verein kann einmalig auf die Regel „Deutschland ohne Bargeld“
+   * wechseln; zurueck nur ueber den Support.
+   */
+  @Column({ name: 'cash_policy_legacy', type: 'boolean', default: false })
+  cashPolicyLegacy: boolean;
+
+  /**
+   * Berechnet nach dem Laden (keine Spalten, save() ignoriert sie): die
+   * wirksame Bargeld-Regel fuer Oberflaeche und Kasse. Nur gesetzt, wenn
+   * Land und Bestandsschutz mitgeladen wurden.
+   */
+  cashPolicy?: CashPolicy;
+  cashPolicyReason?: CashPolicyReason;
+
+  @AfterLoad()
+  protected computeCashPolicy(): void {
+    if (this.country === undefined || this.cashPolicyLegacy === undefined) {
+      return;
+    }
+    this.cashPolicy = resolveCashPolicy(this);
+    this.cashPolicyReason = cashPolicyReason(this);
+  }
 
   // Relations
   @OneToMany(() => UserOrganization, (userOrg) => userOrg.organization)

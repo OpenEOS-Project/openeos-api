@@ -36,6 +36,8 @@ function matches(value: unknown, condition: unknown): boolean {
         return (condition.value as unknown as unknown[]).includes(value);
       case 'not':
         return !matches(value, condition.child ?? condition.value);
+      case 'isNull':
+        return value === null || value === undefined;
       default:
         throw new Error(`operator ${condition.type} not faked`);
     }

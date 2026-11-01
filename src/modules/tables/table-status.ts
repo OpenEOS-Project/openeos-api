@@ -51,6 +51,7 @@ export interface TableStatusOrderRow {
   updatedAt: Date | string;
   total: string | number;
   paidAmount: string | number;
+  closedWithoutPaymentAt?: Date | string | null;
   itemCount: string | number | null;
   readySince: Date | string | null;
   lastItemAt: Date | string | null;
@@ -81,6 +82,7 @@ export const TABLE_STATUS_SQL = `
          o.updated_at        AS "updatedAt",
          o.total             AS "total",
          o.paid_amount       AS "paidAmount",
+         o.closed_without_payment_at AS "closedWithoutPaymentAt",
          i.item_count        AS "itemCount",
          i.ready_since       AS "readySince",
          i.last_item_at      AS "lastItemAt",
@@ -108,7 +110,8 @@ export const TABLE_STATUS_SQL = `
      AND btrim(o.table_number) <> ''
      AND o.status <> 'cancelled'
      AND (
-           (o.payment_status IN ('unpaid', 'partly_paid') AND o.status <> 'completed')
+           (o.payment_status IN ('unpaid', 'partly_paid') AND o.status <> 'completed'
+            AND o.closed_without_payment_at IS NULL)
         OR (o.source IN ('online', 'qr_order') AND o.status = 'open' AND o.acknowledged_at IS NULL)
         OR (o.fulfillment_type = 'table_service' AND i.ready_since IS NOT NULL)
          )
@@ -136,10 +139,13 @@ function maxDate(a: Date | null, b: Date | null): Date | null {
 export function isOpenOrder(row: {
   status: string;
   paymentStatus: string;
+  /** „Ohne Zahlung abgeschlossen“: nicht mehr zu kassieren. */
+  closedWithoutPaymentAt?: Date | string | null;
 }): boolean {
   return (
     OPEN_PAYMENT.includes(row.paymentStatus) &&
-    !CLOSED_ORDER.includes(row.status)
+    !CLOSED_ORDER.includes(row.status) &&
+    !row.closedWithoutPaymentAt
   );
 }
 

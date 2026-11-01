@@ -337,6 +337,7 @@ export function displayStatusSql(alias: string): string {
     WHEN ${alias}.refunded_amount > 0 AND ${alias}.refunded_amount >= ${alias}.paid_amount THEN 'refunded'
     WHEN ${alias}.refunded_amount > 0 THEN 'partly_refunded'
     WHEN ${alias}.payment_status IN ('unpaid', 'partly_paid') AND ${alias}.total > 0
+      AND ${alias}.closed_without_payment_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM organizations dso
         WHERE dso.id = ${alias}.organization_id
           AND dso.settings->>'operatingMode' = 'order_only') THEN 'unpaid'
@@ -354,6 +355,8 @@ export function displayStatusOf(
     total: number;
     paidAmount: number;
     refundedAmount?: number | null;
+    /** „Ohne Zahlung abgeschlossen“: nie „offen“. */
+    closedWithoutPaymentAt?: Date | string | null;
   },
   options: { orderOnly?: boolean } = {},
 ): OrderDisplayStatus {
@@ -364,6 +367,7 @@ export function displayStatusOf(
   // „Nur Bestellen“: kassiert wird ausserhalb — „offen“ gibt es nicht.
   if (
     !options.orderOnly &&
+    !order.closedWithoutPaymentAt &&
     (order.paymentStatus === 'unpaid' ||
       order.paymentStatus === 'partly_paid') &&
     cents(order.total) > 0

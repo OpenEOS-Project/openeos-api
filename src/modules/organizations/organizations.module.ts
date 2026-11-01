@@ -6,6 +6,7 @@ import {
 } from './organizations.controller';
 import { OrganizationsService } from './organizations.service';
 import { OperatingModeService } from './operating-mode/operating-mode.service';
+import { CashPolicyService } from './cash-policy/cash-policy.service';
 import {
   Organization,
   User,
@@ -27,7 +28,7 @@ import { DevicesModule } from '../devices/devices.module';
     DevicesModule,
   ],
   controllers: [OrganizationsController, InvitationsController],
-  providers: [OrganizationsService, OperatingModeService],
-  exports: [OrganizationsService, OperatingModeService],
+  providers: [OrganizationsService, OperatingModeService, CashPolicyService],
+  exports: [OrganizationsService, OperatingModeService, CashPolicyService],
 })
 export class OrganizationsModule {}

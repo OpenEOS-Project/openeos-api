@@ -1,8 +1,11 @@
 import { ForbiddenException } from '@nestjs/common';
 import { PaymentMethod } from '../../database/entities/payment.entity';
-import { assertCashAllowed, isCashlessMode } from './cashless-mode.util';
+import { isCashlessMode } from './cashless-mode.util';
+import { assertCashAllowed } from './cash-policy.util';
 
-const cashless = { payments: { cashless: true } };
+const cashlessSettings = { payments: { cashless: true } };
+// Bestandsorganisation: nur der Schalter des Vereins zaehlt.
+const cashless = { settings: cashlessSettings, cashPolicyLegacy: true };
 
 describe('cashless mode helper', () => {
   it('is off unless settings.payments.cashless is exactly true', () => {
@@ -11,7 +14,7 @@ describe('cashless mode helper', () => {
     expect(isCashlessMode({ payments: {} })).toBe(false);
     expect(isCashlessMode({ payments: { cashless: 'true' } })).toBe(false);
     expect(isCashlessMode({ payments: { cashless: false } })).toBe(false);
-    expect(isCashlessMode(cashless)).toBe(true);
+    expect(isCashlessMode(cashlessSettings)).toBe(true);
   });
 
   it('rejects cash (and cash-only operations) with 403 CASH_PAYMENTS_DISABLED', () => {
@@ -41,7 +44,9 @@ describe('cashless mode helper', () => {
   });
 
   it('allows cash when the mode is off (default)', () => {
-    expect(() => assertCashAllowed({}, PaymentMethod.CASH)).not.toThrow();
+    expect(() =>
+      assertCashAllowed({ settings: {} }, PaymentMethod.CASH),
+    ).not.toThrow();
     expect(() => assertCashAllowed(null)).not.toThrow();
   });
 });

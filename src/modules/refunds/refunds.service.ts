@@ -49,8 +49,9 @@ import { GatewayService } from '../gateway/gateway.service';
 import { isIntegrationEnabled } from '../integrations/integration-catalog';
 import {
   assertCashAllowed,
-  isCashlessMode,
-} from '../../common/utils/cashless-mode.util';
+  CASH_POLICY_SELECT,
+  isCashBlocked,
+} from '../../common/utils/cash-policy.util';
 import {
   isOnlinePrepaymentMethod,
   isOrderOnlyMode,
@@ -779,17 +780,18 @@ export class RefundsService {
         createdAt: new Date(p.createdAt),
         isCash: p.paymentMethod === PaymentMethod.CASH,
       }));
-    // Bargeldloser Modus: nichts bar auszahlen. Erstattet wird nur auf
+    // Bargeld gesperrt (Landesregel DE ohne TSE oder bargeldloser Modus):
+    // nichts bar auszahlen. Erstattet wird nur auf
     // unbare Zahlungen (Karte, SumUp, online) — reichen die nicht, wird
     // abgewiesen statt den Rest aus der Kasse zu geben.
     const { allocation, cashBlocked } = allocateRefundFor(
       refundable,
       refundCents,
       dto.paymentId,
-      isCashlessMode(organization?.settings),
+      isCashBlocked(organization),
     );
     if (cashBlocked) {
-      assertCashAllowed(organization?.settings, PaymentMethod.CASH);
+      assertCashAllowed(organization, PaymentMethod.CASH);
     }
     if (
       !allocation &&
@@ -987,7 +989,7 @@ export class RefundsService {
     if (payment.paymentMethod === PaymentMethod.CASH) {
       // Bargeldlos: refundInTransaction verteilt gar nicht erst auf
       // Barzahlungen; hier nur zur Sicherheit.
-      assertCashAllowed(options.organization?.settings, PaymentMethod.CASH);
+      assertCashAllowed(options.organization, PaymentMethod.CASH);
       return {
         status: options.isTestMode ? 'test' : 'completed',
         providerReference: null,
@@ -1159,7 +1161,7 @@ export class RefundsService {
     order.items = items;
     const organization = await manager.findOne(Organization, {
       where: { id: organizationId },
-      select: { id: true, settings: true },
+      select: CASH_POLICY_SELECT,
     });
     const event = order.eventId
       ? await manager.findOne(Event, {
@@ -1388,7 +1390,12 @@ export class RefundsService {
     const workflowDone = active.every(
       (i) => !i.productionStationId || i.status === OrderItemStatus.DELIVERED,
     );
-    if (order.paymentStatus === PaymentStatus.PAID && workflowDone) {
+    // „Ohne Zahlung abgeschlossen“ zaehlt wie bezahlt.
+    if (
+      (order.paymentStatus === PaymentStatus.PAID ||
+        !!order.closedWithoutPaymentAt) &&
+      workflowDone
+    ) {
       order.status = OrderStatus.COMPLETED;
       order.completedAt = order.completedAt ?? new Date();
     } else if (

@@ -1108,6 +1108,76 @@ paths:
       security: *a9
       summary: Manufacturer certificate for the order-only mode (PDF, admins)
       tags: *a10
+  /api/organizations/{id}/cash-policy:
+    get:
+      description: "Land (`country`), wirksame Bargeld-Regel (`cashPolicy`: `allowed` oder `blocked_de_no_tse`), Bestandsschutz (`cashPolicyLegacy`), Kurzgrund (`cashPolicyReason`) und Verlauf."
+      operationId: organizations_getCashPolicy
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a9
+      summary: Country and cash policy with change log
+      tags: *a10
+  /api/organizations/{id}/country:
+    patch:
+      description: "Für Bestandsorganisationen ohne Land: einmalig setzen. Steht schon ein Land, 403 COUNTRY_ALREADY_SET — ändern kann es dann nur der OpenEOS-Support."
+      operationId: organizations_setCountry
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetOrganizationCountryDto"
+      responses:
+        "200":
+          description: ""
+      security: *a9
+      summary: Set the country once (admins, only while none is set)
+      tags: *a10
+  /api/organizations/{id}/cash-policy/switch:
+    post:
+      description: Nur Bestandsorganisationen mit Land DE. Danach ist Bargeld gesperrt (403 CASH_NOT_ALLOWED_IN_COUNTRY), ohne Schalter für den Verein; zurück nur über den OpenEOS-Support.
+      operationId: organizations_switchCashPolicy
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a9
+      summary: Leave the legacy cash rules and switch to "Germany without cash" (admins, one-way)
+      tags: *a10
+  /api/organizations/{id}/cash-policy/certificate.pdf:
+    get:
+      description: "Herstellerbescheinigung für die Verfahrensdokumentation: Bargeld kann in OpenEOS nicht erfasst und von der Organisation nicht aktiviert werden; Kartenzahlungen werden erfasst, Bargeld läuft über eine offene Ladenkasse außerhalb. Nur bei `cashPolicy = blocked_de_no_tse`."
+      operationId: organizations_getCashPolicyCertificate
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a9
+      summary: Manufacturer certificate for "Germany without cash" (PDF, admins)
+      tags: *a10
   /api/organizations/{id}/members:
     get:
       operationId: organizations_getMembers
@@ -6291,6 +6361,65 @@ paths:
       security: *a62
       summary: Operating mode change log (newest first)
       tags: *a63
+  /api/admin/organizations/{id}/country:
+    patch:
+      description: "Nur Support (Super-Admin). Das Land steuert die Bargeld-Regel (DE ohne TSE: kein Bargeld) und die Steuersätze. Steht mit Grund im Verlauf, im Admin-Protokoll und auf der Bescheinigung."
+      operationId: admin_setOrganizationCountry
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetOrganizationCountryAdminDto"
+      responses:
+        "200":
+          description: ""
+      security: *a62
+      summary: Change the country of an organization (logged with reason)
+      tags: *a63
+  /api/admin/organizations/{id}/cash-policy:
+    patch:
+      description: "Nur Support (Super-Admin). `legacy: true` = Verhalten wie vor der Länderregel (Bargeld erlaubt), `legacy: false` = Regel des Landes."
+      operationId: admin_setCashPolicy
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetCashPolicyAdminDto"
+      responses:
+        "200":
+          description: ""
+      security: *a62
+      summary: Set or clear the legacy cash rules (logged with reason)
+      tags: *a63
+  /api/admin/organizations/{id}/cash-policy/history:
+    get:
+      operationId: admin_getCashPolicyHistory
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a62
+      summary: Country and cash policy change log
+      tags: *a63
   /api/admin/organizations/{id}/discount:
     patch:
       operationId: admin_setDiscount
@@ -6667,6 +6796,8 @@ paths:
               - api_token_revoked
               - agent_tool_call
               - set_operating_mode
+              - set_organization_country
+              - set_cash_policy
         - name: startDate
           required: false
           in: query
@@ -9806,6 +9937,10 @@ components:
           description: Name der Organisation, wird bei der Registrierung angelegt
           minLength: 2
           maxLength: 200
+        country:
+          type: string
+          example: DE
+          description: Land der Organisation (ISO 3166-1 alpha-2), Pflicht. Steuert die Bargeld-Regel und die Steuersätze.
         newsletterOptIn:
           type: boolean
           example: false
@@ -9815,6 +9950,7 @@ components:
         - firstName
         - lastName
         - organizationName
+        - country
     UserResponseDto:
       type: object
       properties:
@@ -10366,6 +10502,10 @@ components:
           type: string
           example: Musterverein e.V.
           description: Name der Organisation
+        country:
+          type: string
+          example: DE
+          description: Land der Organisation (ISO 3166-1 alpha-2), Pflicht. Steuert die Bargeld-Regel (in Deutschland ohne TSE kein Bargeld) und die Steuersätze; ändern kann es danach nur der Support.
         settings:
           type: object
           example:
@@ -10374,6 +10514,7 @@ components:
           description: Organisationseinstellungen
       required:
         - name
+        - country
     UpdateOrganizationDto:
       type: object
       properties:
@@ -10413,6 +10554,15 @@ components:
           description: "Bargeldloser Modus: true sperrt Bargeld an allen Kassen und in der Verwaltung"
       required:
         - cashless
+    SetOrganizationCountryDto:
+      type: object
+      properties:
+        country:
+          type: string
+          example: DE
+          description: Land der Organisation (ISO 3166-1 alpha-2)
+      required:
+        - country
     AddMemberDto:
       type: object
       properties:
@@ -10833,6 +10983,14 @@ components:
       required:
         - productId
         - quantity
+    DeviceOrderCloseWithoutPaymentDto:
+      type: object
+      properties:
+        orderIds:
+          description: Weitere offene Bestellungen (z. B. am Tisch), die ebenfalls ohne Zahlung abgeschlossen werden.
+          type: array
+          items:
+            type: string
     DeviceOrderPaymentDto:
       type: object
       properties:
@@ -10944,6 +11102,10 @@ components:
           type: string
           example: Künstler-Bon 3 €
           description: Grund/Bezeichnung des Rabatts
+        closeWithoutPayment:
+          description: "Nur bei der Bargeld-Regel „Deutschland ohne Bargeld“ (`cashPolicy = blocked_de_no_tse`): Bestellung ohne Zahlung abschließen, weil bar außerhalb von OpenEOS kassiert wurde (offene Ladenkasse). Ersetzt `payment`; sonst 403 CLOSE_WITHOUT_PAYMENT_NOT_AVAILABLE."
+          allOf:
+            - $ref: "#/components/schemas/DeviceOrderCloseWithoutPaymentDto"
         payment:
           description: Zahlung gleich mitbuchen (alles oder nichts). Pflicht im Kassiermodus „Sofort kassieren“ (`immediate`), sonst ORDER_PAYMENT_REQUIRED.
           allOf:
@@ -12667,6 +12829,33 @@ components:
           description: Anlass der Umschaltung (erscheint auf der Bescheinigung der Organisation)
       required:
         - mode
+        - reason
+    SetOrganizationCountryAdminDto:
+      type: object
+      properties:
+        country:
+          type: string
+          example: AT
+          description: ISO 3166-1 alpha-2
+        reason:
+          type: string
+          example: Verein sitzt in Österreich, Antrag per E-Mail vom 01.11.2026
+          description: Anlass (Verlauf, Admin-Protokoll, Bescheinigung)
+      required:
+        - country
+        - reason
+    SetCashPolicyAdminDto:
+      type: object
+      properties:
+        legacy:
+          type: boolean
+          example: true
+          description: "true: Bestandsschutz (Bargeld wie bisher), false: Regel des Landes"
+        reason:
+          type: string
+          example: Wechsel versehentlich, Antrag vom 01.11.2026
+      required:
+        - legacy
         - reason
     SetDiscountDto:
       type: object

@@ -9,7 +9,14 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Not, QueryFailedError } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  In,
+  IsNull,
+  Not,
+  QueryFailedError,
+} from 'typeorm';
 import {
   DiningTable,
   DiningTableShape,
@@ -63,6 +70,8 @@ export type TableAreaWithTables = TableArea & { tables: DiningTable[] };
 const OPEN_ORDER_WHERE = {
   paymentStatus: In([PaymentStatus.UNPAID, PaymentStatus.PARTLY_PAID]),
   status: Not(In([OrderStatus.CANCELLED, OrderStatus.COMPLETED])),
+  // „Ohne Zahlung abgeschlossen“ (bar ausserhalb kassiert) ist erledigt.
+  closedWithoutPaymentAt: IsNull(),
 };
 
 const DEFAULT_TABLE_SIZE = 80;

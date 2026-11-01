@@ -63,6 +63,12 @@ import { GatewayService } from '../gateway/gateway.service';
 import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 import { saveOrderWithNumbers } from './order-numbering';
 import {
+  assertCloseWithoutPaymentAllowed,
+  closeOrdersWithoutPayment,
+  workflowDoneForClose,
+} from './close-without-payment';
+import { CASH_POLICY_SELECT } from '../../common/utils/cash-policy.util';
+import {
   assertOrderOnlyCompletable,
   handOverOnCompletion,
   assertPaymentsAllowed,
@@ -839,6 +845,19 @@ export class OrdersService {
         updatedOrder.completedAt = now;
         await this.orderRepository.save(updatedOrder);
       }
+    } else if (
+      updatedOrder.closedWithoutPaymentAt &&
+      updatedOrder.status !== OrderStatus.COMPLETED &&
+      workflowDoneForClose(updatedOrder.items)
+    ) {
+      // „Ohne Zahlung abgeschlossen“: wie bezahlt — mit der letzten
+      // Stationsposition fertig.
+      const now = new Date();
+      const handedOver = handOverOnCompletion(updatedOrder.items, now);
+      if (handedOver.length) await this.orderItemRepository.save(handedOver);
+      updatedOrder.status = OrderStatus.COMPLETED;
+      updatedOrder.completedAt = now;
+      await this.orderRepository.save(updatedOrder);
     } else if (allDelivered) {
       // Auto-complete if all delivered and fully paid
       if (updatedOrder.paymentStatus === PaymentStatus.PAID) {
@@ -941,15 +960,22 @@ export class OrdersService {
           order.status = orderStatusFromItems(order.items, order.status);
           // Wie markItemDelivered: alles ausgegeben und bezahlt → fertig.
           // „Nur Bestellen“: ausgegeben genuegt (nicht am Tisch).
+          // „Ohne Zahlung abgeschlossen“: wie bezahlt, sobald keine Station
+          // mehr arbeitet.
+          const closedOutside =
+            !orderOnly &&
+            !!order.closedWithoutPaymentAt &&
+            workflowDoneForClose(order.items);
           if (
-            orderOnly
+            closedOutside ||
+            (orderOnly
               ? shouldAutoCompleteOrderOnly(order.fulfillmentType, order.items)
               : order.status === OrderStatus.READY &&
-                order.paymentStatus === PaymentStatus.PAID
+                order.paymentStatus === PaymentStatus.PAID)
           ) {
             order.status = OrderStatus.COMPLETED;
             order.completedAt = now;
-            if (orderOnly) {
+            if (orderOnly || closedOutside) {
               // Positionen ohne Station gelten mit der Ausgabe als mitgegeben.
               const handedOver = handOverOnCompletion(order.items, now);
               if (handedOver.length) await manager.save(handedOver);
@@ -1040,7 +1066,13 @@ export class OrdersService {
     orderIds: string[],
   ): Promise<{ orders: { id: string; status: OrderStatus }[] }> {
     const ids = Array.from(new Set(orderIds));
-    if (!isOrderOnlyMode(await this.organizationSettings(organizationId))) {
+    const organization = await this.cashPolicyOrganization(organizationId);
+    if (!isOrderOnlyMode(organization?.settings)) {
+      // „Deutschland ohne Bargeld“: bar ausserhalb kassiert → ohne Zahlung
+      // abschliessen (close-without-payment.ts).
+      if (organization && this.closesWithoutPayment(organization)) {
+        return this.closeWithoutPaymentForDevice(organizationId, ids);
+      }
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.ORDER_NOT_FULLY_PAID,
@@ -1136,6 +1168,64 @@ export class OrdersService {
     );
   }
 
+  /** Bargeld-Regel erlaubt „Ohne Zahlung abschließen“? */
+  private closesWithoutPayment(organization: Organization): boolean {
+    try {
+      assertCloseWithoutPaymentAllowed(organization);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * „Ohne Zahlung abschließen“ an der Kasse (Bargeld-Regel DE ohne TSE):
+   * Bestellungen gelten als ausserhalb bezahlt, ohne Zahlung in OpenEOS.
+   * Abgeschlossen sind sie, sobald keine Station mehr daran arbeitet.
+   */
+  async closeWithoutPaymentForDevice(
+    organizationId: string,
+    orderIds: string[],
+  ): Promise<{ orders: { id: string; status: OrderStatus }[] }> {
+    assertCloseWithoutPaymentAllowed(
+      await this.cashPolicyOrganization(organizationId),
+    );
+    const now = new Date();
+    const changed = await this.orderRepository.manager.transaction((manager) =>
+      closeOrdersWithoutPayment(manager, organizationId, orderIds, now),
+    );
+    for (const order of changed) {
+      this.gatewayService.notifyOrderUpdated(
+        organizationId,
+        order.eventId,
+        order.id,
+        {
+          status: order.status,
+          completedAt: order.completedAt,
+          closedWithoutPaymentAt: order.closedWithoutPaymentAt,
+        },
+      );
+    }
+    if (changed.length) {
+      this.logger.log(
+        `Device closed ${changed.length} order(s) without payment (cash outside OpenEOS)`,
+      );
+    }
+    return {
+      orders: changed.map((o) => ({ id: o.id, status: o.status })),
+    };
+  }
+
+  /** Organisation mit allem, was die Bargeld-Regel braucht. */
+  private async cashPolicyOrganization(
+    organizationId: string,
+  ): Promise<Organization | null> {
+    return this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: CASH_POLICY_SELECT,
+    });
+  }
+
   /** Einstellungen der Organisation (fuer den Betriebsmodus). */
   private async organizationSettings(
     organizationId: string,
@@ -1189,12 +1279,33 @@ export class OrdersService {
     // „Nur Bestellen“: abschliessen ohne Zahlung, aber nicht, solange eine
     // Station noch daran arbeitet.
     const now = new Date();
-    if (isOrderOnlyMode(await this.organizationSettings(organizationId))) {
+    const organization = await this.cashPolicyOrganization(organizationId);
+    if (isOrderOnlyMode(organization?.settings)) {
       assertOrderOnlyCompletable(order.items ?? []);
       // Wie „Abschließen“ an der Kasse: nichts bleibt auf „offen“.
       const handedOver = handOverOnCompletion(order.items ?? [], now);
       if (handedOver.length) await this.orderItemRepository.save(handedOver);
-    } else if (order.paymentStatus !== PaymentStatus.PAID) {
+    } else if (
+      order.paymentStatus !== PaymentStatus.PAID &&
+      !order.closedWithoutPaymentAt &&
+      organization &&
+      this.closesWithoutPayment(organization)
+    ) {
+      // „Deutschland ohne Bargeld“: bar ausserhalb kassiert. Abschliessen
+      // nur, wenn keine Station mehr arbeitet (sonst ginge die Bestellung
+      // der Kueche verloren).
+      assertOrderOnlyCompletable(order.items ?? []);
+      await this.orderRepository.manager.transaction((manager) =>
+        closeOrdersWithoutPayment(manager, organizationId, [order.id], now),
+      );
+      this.logger.log(
+        `Order closed without payment: ${order.orderNumber} (cash outside OpenEOS)`,
+      );
+      return this.findOne(organizationId, orderId, user);
+    } else if (
+      order.paymentStatus !== PaymentStatus.PAID &&
+      !order.closedWithoutPaymentAt
+    ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.ORDER_NOT_FULLY_PAID,

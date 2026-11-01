@@ -37,6 +37,11 @@ import {
 import { EmailService } from '../email/email.service';
 import { normalizeLegalSettings } from './legal/legal-settings.util';
 import { isCashlessMode } from '../../common/utils/cashless-mode.util';
+import {
+  isCashBlockedByPolicy,
+  keepCountryMirror,
+} from '../../common/utils/cash-policy.util';
+import { recordInitialCountry } from './cash-policy/cash-policy.writes';
 import { stripOperatingMode } from '../../common/utils/operating-mode.util';
 import { OrganizationCashlessChange } from '../../database/entities/organization-cashless-change.entity';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
@@ -93,8 +98,19 @@ export class OrganizationsService {
         slug,
         supportPin,
         settings: stripOperatingMode(createDto.settings) || {},
+        country: createDto.country,
+        // Eigene Installation: der Verein betreibt den Server selbst, eine
+        // Sperre durch den Hersteller gibt es dort nicht — es bleibt beim
+        // bisherigen Verhalten (Bargeld erlaubt, bargeldloser Schalter).
+        cashPolicyLegacy: this.deployment.isSelfHosted,
       });
       await queryRunner.manager.save(organization);
+      await recordInitialCountry(
+        queryRunner.manager,
+        organization.id,
+        createDto.country,
+        user,
+      );
 
       // Add creator as admin
       const userOrganization = this.userOrganizationRepository.create({
@@ -329,6 +345,9 @@ export class OrganizationsService {
     // operating-mode) — die Organisation darf das Kassenmodul nicht selbst
     // einschalten, sonst traegt die Herstellerbescheinigung nicht.
     stripOperatingMode(incomingSettings);
+    // Das Land kommt aus organizations.country; settings.address.country
+    // ist nur dessen Kopie und laesst sich hier nicht aendern.
+    keepCountryMirror(incomingSettings, organization.country);
     if (incomingSettings) {
       organization.settings = {
         ...organization.settings,
@@ -418,6 +437,17 @@ export class OrganizationsService {
   ): Promise<Organization> {
     const organization = await this.findOne(id, user);
     await this.checkRole(organization.id, user, OrganizationRole.ADMIN);
+
+    // „Deutschland ohne Bargeld“: Bargeld ist ohnehin gesperrt und der
+    // Verein soll es auch nicht ueber diesen Schalter einschalten koennen.
+    if (isCashBlockedByPolicy(organization)) {
+      throw new ForbiddenException({
+        code: ErrorCodes.CASH_NOT_ALLOWED_IN_COUNTRY,
+        reason: ErrorReasons.CASHLESS_TOGGLE_NOT_AVAILABLE,
+        message:
+          'Für deine Organisation gilt „Deutschland ohne Bargeld“: Bargeld ist in OpenEOS gesperrt, ein Schalter dafür entfällt.',
+      });
+    }
 
     await this.dataSource.transaction(async (manager) => {
       const [row] = await manager.query<

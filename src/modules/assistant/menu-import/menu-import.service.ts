@@ -286,7 +286,7 @@ export class MenuImportService implements OnApplicationBootstrap {
     const organization =
       await this.assistantService.assertUsable(organizationId);
     const allowedRates = taxRatesFor(
-      organization.settings?.address?.country,
+      organization.country ?? undefined,
       organization.settings?.vatExempt,
     ).map((option) => option.rate);
 

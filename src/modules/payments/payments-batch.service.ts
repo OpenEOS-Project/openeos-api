@@ -31,7 +31,11 @@ import {
 } from '../../database/entities/payment.entity';
 import { GatewayService } from '../gateway/gateway.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
-import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
+import {
+  assertCashAllowed,
+  CASH_POLICY_SELECT,
+} from '../../common/utils/cash-policy.util';
+import { closedWithoutPaymentError } from '../orders/close-without-payment';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import {
@@ -177,7 +181,7 @@ export class PaymentsBatchService {
     const batchId = randomUUID();
     const organization = await manager.findOne(Organization, {
       where: { id: organizationId },
-      select: { id: true, settings: true },
+      select: CASH_POLICY_SELECT,
     });
     // SumUp nur bei eingeschalteter Integration; fremdes Kartengeraet geht
     // immer, Bargeld nicht im bargeldlosen Modus (Trinkgeld und erhaltenes
@@ -187,7 +191,7 @@ export class PaymentsBatchService {
     if (provider === PaymentProvider.SUMUP) {
       assertIntegrationEnabled(organization?.settings, 'sumup');
     }
-    assertCashAllowed(organization?.settings, dto.paymentMethod);
+    assertCashAllowed(organization, dto.paymentMethod);
 
     const locked = await manager.find(Order, {
       where: { id: In(dto.orderIds), organizationId },
@@ -252,6 +256,13 @@ export class PaymentsBatchService {
           'Mindestens eine Bestellung wurde gerade schon kassiert (z. B. an einem anderen Gerät). Lade die offenen Bestellungen neu.',
         params: { orderIds: paid.map((o) => o.id) },
       });
+    }
+
+    // „Ohne Zahlung abgeschlossen“ (bar ausserhalb kassiert): nichts mehr
+    // zu kassieren.
+    const closedOutside = orders.filter((o) => !!o.closedWithoutPaymentAt);
+    if (closedOutside.length) {
+      throw closedWithoutPaymentError(closedOutside.map((o) => o.id));
     }
 
     const items = await manager.find(OrderItem, {

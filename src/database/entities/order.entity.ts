@@ -277,6 +277,20 @@ export class Order extends BaseEntity {
   })
   completedAt: Date | null;
 
+  /**
+   * „Ohne Zahlung abschließen“ (Bargeld-Regel DE ohne TSE): Die Bestellung
+   * wurde ausserhalb von OpenEOS bezahlt (offene Ladenkasse) und gilt damit
+   * als erledigt — ohne Zahlung, ohne bezahlten Betrag. Offen fuer eine
+   * Zahlung ist sie danach nicht mehr; abgeschlossen ist sie, sobald keine
+   * Station mehr daran arbeitet. Siehe close-without-payment.ts.
+   */
+  @Column({
+    name: 'closed_without_payment_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  closedWithoutPaymentAt: Date | null;
+
   @Column({
     name: 'cancelled_at',
     type: 'timestamp with time zone',

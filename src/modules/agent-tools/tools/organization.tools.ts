@@ -24,7 +24,8 @@ const addressInput = z
     street: z.string().max(200),
     city: z.string().max(100),
     zip: z.string().max(20),
-    country: z.string().length(2).describe('ISO 3166-1 alpha-2, e.g. DE'),
+    // Kein Land: das legt die Organisation einmal in der Web-App fest
+    // (organizations.country, steuert die Bargeld-Regel).
   })
   .partial()
   .strict();

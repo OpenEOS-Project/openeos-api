@@ -16,6 +16,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
+import { COUNTRY_CODES } from '../../../common/constants/countries';
 
 export class SetDiscountDto {
   @ApiProperty({ example: 15, description: 'Rabattprozentsatz (0-100)' })
@@ -255,6 +256,51 @@ export class SetOperatingModeDto {
     description:
       'Anlass der Umschaltung (erscheint auf der Bescheinigung der Organisation)',
   })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MinLength(5)
+  @MaxLength(500)
+  reason: string;
+}
+
+/** Land einer Organisation aendern (nur Support, Grund ist Pflicht). */
+export class SetOrganizationCountryAdminDto {
+  @ApiProperty({ example: 'AT', description: 'ISO 3166-1 alpha-2' })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsIn(COUNTRY_CODES, { message: 'Bitte wähle ein Land aus der Liste.' })
+  country: string;
+
+  @ApiProperty({
+    example: 'Verein sitzt in Österreich, Antrag per E-Mail vom 01.11.2026',
+    description: 'Anlass (Verlauf, Admin-Protokoll, Bescheinigung)',
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @MinLength(5)
+  @MaxLength(500)
+  reason: string;
+}
+
+/**
+ * Bestandsschutz der Bargeld-Regel setzen oder aufheben (nur Support).
+ * `legacy: true` ist der Weg zurueck nach dem freiwilligen Wechsel.
+ */
+export class SetCashPolicyAdminDto {
+  @ApiProperty({
+    example: true,
+    description:
+      'true: Bestandsschutz (Bargeld wie bisher), false: Regel des Landes',
+  })
+  @IsBoolean()
+  legacy: boolean;
+
+  @ApiProperty({ example: 'Wechsel versehentlich, Antrag vom 01.11.2026' })
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
   )
