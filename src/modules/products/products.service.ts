@@ -709,7 +709,7 @@ export class ProductsService {
       where: { id: organizationId },
     });
     return taxRatesFor(
-      organization?.settings?.address?.country,
+      organization?.country ?? undefined,
       organization?.settings?.vatExempt,
     ).map((option) => option.rate);
   }

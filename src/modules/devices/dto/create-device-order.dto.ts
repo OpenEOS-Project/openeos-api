@@ -95,7 +95,36 @@ export class DeviceOrderPaymentDto {
  * (außer die Bestellung kostet nichts): Bestellung und Zahlung entstehen
  * dann in einer Transaktion, Küchenbon und Stationen erst danach.
  */
+/**
+ * „Ohne Zahlung abschließen“ gleich bei der Anlage (Bargeld-Regel
+ * „Deutschland ohne Bargeld“): Der Gast hat bar ausserhalb von OpenEOS
+ * bezahlt. Keine Zahlung, kein bezahlter Betrag.
+ */
+export class DeviceOrderCloseWithoutPaymentDto {
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Weitere offene Bestellungen (z. B. am Tisch), die ebenfalls ohne Zahlung abgeschlossen werden.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(BATCH_MAX_ORDERS - 1)
+  @ArrayUnique()
+  @IsUUIDLoose({ each: true })
+  orderIds?: string[];
+}
+
 export class CreateDeviceOrderDto extends CreateOrderDto {
+  @ApiPropertyOptional({
+    type: DeviceOrderCloseWithoutPaymentDto,
+    description:
+      'Nur bei der Bargeld-Regel „Deutschland ohne Bargeld“ (`cashPolicy = blocked_de_no_tse`): Bestellung ohne Zahlung abschließen, weil bar außerhalb von OpenEOS kassiert wurde (offene Ladenkasse). Ersetzt `payment`; sonst 403 CLOSE_WITHOUT_PAYMENT_NOT_AVAILABLE.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeviceOrderCloseWithoutPaymentDto)
+  closeWithoutPayment?: DeviceOrderCloseWithoutPaymentDto;
+
   @ApiPropertyOptional({
     type: DeviceOrderPaymentDto,
     description:

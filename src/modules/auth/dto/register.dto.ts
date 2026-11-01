@@ -1,7 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { COUNTRY_CODES } from '../../../common/constants/countries';
+import {
+  COUNTRY_MESSAGE,
+  toCountryCode,
+} from '../../organizations/dto/cash-policy.dto';
 import {
   IsBoolean,
   IsEmail,
+  IsIn,
   IsOptional,
   IsString,
   MinLength,
@@ -70,6 +77,15 @@ export class RegisterDto {
     message: 'Organisationsname darf maximal 200 Zeichen lang sein',
   })
   organizationName: string;
+
+  @ApiProperty({
+    example: 'DE',
+    description:
+      'Land der Organisation (ISO 3166-1 alpha-2), Pflicht. Steuert die Bargeld-Regel und die Steuersätze.',
+  })
+  @Transform(toCountryCode)
+  @IsIn(COUNTRY_CODES, { message: COUNTRY_MESSAGE })
+  country: string;
 
   @ApiPropertyOptional({
     example: false,

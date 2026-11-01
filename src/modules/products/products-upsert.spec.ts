@@ -24,6 +24,7 @@ type Row = Record<string, unknown>;
 function setup(
   options: {
     settings?: Record<string, unknown>;
+    country?: string | null;
     membership?: Row | null;
   } = {},
 ) {
@@ -96,6 +97,7 @@ function setup(
       findOne: () =>
         Promise.resolve({
           id: ORG,
+          country: options.country === undefined ? 'DE' : options.country,
           settings: options.settings ?? {
             vatExempt: false,
             address: { country: 'DE' },

@@ -26,6 +26,7 @@ import {
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { EmailService } from '../email/email.service';
+import { recordInitialCountry } from '../organizations/cash-policy/cash-policy.writes';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { TwoFactorService } from './two-factor.service';
 import {
@@ -124,6 +125,7 @@ export class AuthService {
       firstName,
       lastName,
       organizationName,
+      country,
       newsletterOptIn,
     } = registerDto;
 
@@ -200,8 +202,17 @@ export class AuthService {
           slug,
           supportPin,
           settings: {},
+          // Neue Organisation: es gilt die Bargeld-Regel ihres Landes.
+          country,
+          cashPolicyLegacy: false,
         });
         await queryRunner.manager.save(organization);
+        await recordInitialCountry(
+          queryRunner.manager,
+          organization.id,
+          country,
+          user,
+        );
 
         // Create user-organization relationship as admin
         const userOrganization = this.userOrganizationRepository.create({

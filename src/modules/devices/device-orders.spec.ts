@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { QueryFailedError } from 'typeorm';
+import { FindOperator, QueryFailedError } from 'typeorm';
 import { Device } from '../../database/entities/device.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
 import {
@@ -302,7 +302,37 @@ class FakeDb {
   }
 
   private matches(row: Row, where: Record<string, unknown> = {}) {
-    return Object.entries(where).every(([k, v]) => row[k] === v);
+    return Object.entries(where).every(([k, v]) =>
+      v instanceof FindOperator && v.type === 'in'
+        ? (v.value as unknown as unknown[]).includes(row[k])
+        : row[k] === v,
+    );
+  }
+
+  find(entity: unknown, opts: { where?: Record<string, unknown> } = {}) {
+    return Promise.resolve(
+      this.rowsOf(entity)
+        .filter((r) => this.matches(r, opts.where))
+        // Kopien mit Prototyp, damit save() die Tabelle erkennt.
+        .map((r) =>
+          entity === OrderItem
+            ? instance(OrderItem, { ...r })
+            : this.hydrate(entity, r),
+        ),
+    );
+  }
+
+  update(
+    entity: unknown,
+    criteria: Record<string, unknown>,
+    patch: Record<string, unknown>,
+  ) {
+    for (const row of this.rowsOf(entity).filter((r) =>
+      this.matches(r, criteria),
+    )) {
+      Object.assign(row, patch);
+    }
+    return Promise.resolve({ affected: 1 });
   }
 
   private hydrate(entity: unknown, row: Row) {
@@ -404,6 +434,13 @@ class FakeDb {
       getRepository: (entity: unknown) => this.repo(entity),
       findOne: (entity: unknown, opts: { where: Record<string, unknown> }) =>
         this.repo(entity).findOne(opts),
+      find: (entity: unknown, opts: { where?: Record<string, unknown> }) =>
+        this.find(entity, opts),
+      update: (
+        entity: unknown,
+        criteria: Record<string, unknown>,
+        patch: Record<string, unknown>,
+      ) => this.update(entity, criteria, patch),
       create: (entity: new () => object, data: Record<string, unknown>) =>
         instance(entity, data),
       save: (input: Row | Row[]) => {
@@ -437,6 +474,8 @@ function setupController(
     orgOrderingMode?: 'immediate' | 'tab';
     /** Weitere Einstellungen der Organisation (bargeldlos, SumUp). */
     orgSettings?: Record<string, unknown>;
+    /** Spalten der Organisation (Land, Bestandsschutz). */
+    org?: { country?: string | null; cashPolicyLegacy?: boolean };
   } = {},
 ) {
   const db = new FakeDb();
@@ -456,6 +495,11 @@ function setupController(
       pos: { orderingMode: options.orgOrderingMode },
     };
   }
+  Object.assign(db.organizations[0], {
+    country: null,
+    cashPolicyLegacy: true,
+    ...(options.org ?? {}),
+  });
   if (options.orgSettings) {
     db.organizations[0].settings = {
       ...(db.organizations[0].settings as object),
@@ -1335,5 +1379,87 @@ describe('DeviceApiController.createOrder — Betriebsmodus „Nur Bestellen“'
     );
 
     expect(data).toMatchObject({ status: OrderStatus.OPEN });
+  });
+});
+
+describe('DeviceApiController.createOrder — „Ohne Zahlung abschließen“ (DE ohne TSE)', () => {
+  const germany = { country: 'DE', cashPolicyLegacy: false };
+
+  it('rejects cash for a new German organization before anything is created', async () => {
+    const { db, controller, device, paymentsBatchService, response } =
+      setupController({ orderingMode: 'immediate', org: germany });
+    const call = controller.createOrder(
+      device,
+      dto({ payment: { paymentMethod: PaymentMethod.CASH } }),
+      response() as never,
+    );
+    await expect(call).rejects.toMatchObject({
+      status: HttpStatus.FORBIDDEN,
+      response: { code: 'CASH_NOT_ALLOWED_IN_COUNTRY' },
+    });
+    expect(db.orders).toHaveLength(0);
+    expect(paymentsBatchService.settle).not.toHaveBeenCalled();
+  });
+
+  it('immediate: creates the order and completes it without any payment', async () => {
+    const { db, controller, device, paymentsBatchService, response } =
+      setupController({ orderingMode: 'immediate', org: germany });
+    const { data } = await controller.createOrder(
+      device,
+      dto({ closeWithoutPayment: {} }),
+      response() as never,
+    );
+    expect(paymentsBatchService.settle).not.toHaveBeenCalled();
+    expect(data).toMatchObject({
+      status: OrderStatus.COMPLETED,
+      paymentStatus: PaymentStatus.UNPAID,
+    });
+    expect(db.orders).toHaveLength(1);
+    expect(db.orders[0].closedWithoutPaymentAt).toBeInstanceOf(Date);
+    expect(Number(db.orders[0].paidAmount ?? 0)).toBe(0);
+    expect(db.items.every((i) => i.status === OrderItemStatus.DELIVERED)).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    ['legacy DE', { country: 'DE', cashPolicyLegacy: true }],
+    ['AT', { country: 'AT', cashPolicyLegacy: false }],
+  ])(
+    '%s: not available (cash is recorded there), nothing created',
+    async (_label, org) => {
+      const { db, controller, device, response } = setupController({
+        orderingMode: 'immediate',
+        org,
+      });
+      const call = controller.createOrder(
+        device,
+        dto({ closeWithoutPayment: {} }),
+        response() as never,
+      );
+      await expect(call).rejects.toMatchObject({
+        response: { reason: 'CLOSE_WITHOUT_PAYMENT_NOT_AVAILABLE' },
+      });
+      expect(db.orders).toHaveLength(0);
+    },
+  );
+
+  it('never together with a payment', async () => {
+    const { db, controller, device, response } = setupController({
+      orderingMode: 'immediate',
+      org: germany,
+    });
+    const call = controller.createOrder(
+      device,
+      dto({
+        closeWithoutPayment: {},
+        payment: { paymentMethod: PaymentMethod.CARD },
+      }),
+      response() as never,
+    );
+    await expect(call).rejects.toMatchObject({
+      status: HttpStatus.BAD_REQUEST,
+    });
+    expect(db.orders).toHaveLength(0);
   });
 });

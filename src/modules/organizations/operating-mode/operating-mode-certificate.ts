@@ -131,7 +131,7 @@ export function formatDateTime(date: Date, timeZone: string): string {
   }).format(date)} Uhr`;
 }
 
-function addressLines(
+export function addressLines(
   address: CertificateInput['organization']['address'],
 ): string[] {
   if (!address) return [];

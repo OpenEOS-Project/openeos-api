@@ -93,5 +93,7 @@ export function redigiereAdminOrganisation(
        derselben Liste mitzuliefern, aus der sich der Support bedient,
        nimmt ihr genau diesen Zweck. */
     supportPin: undefined as unknown as string,
-  };
+    // Kopie ohne Prototyp: der AfterLoad-Hook des Entitys fehlt hier, die
+    // berechneten Felder (cashPolicy) sind schon gesetzt.
+  } as Organization;
 }

@@ -297,6 +297,7 @@ export class OrderHistoryService {
         'o.status AS status',
         'o.payment_status AS "paymentStatus"',
         `${displayStatusSql('o')} AS "displayStatus"`,
+        'o.closed_without_payment_at AS "closedWithoutPaymentAt"',
         'o.subtotal AS subtotal',
         'o.total AS total',
         'o.paid_amount AS "paidAmount"',
@@ -567,9 +568,11 @@ export class OrderHistoryService {
       paidAmount: Number(order.paidAmount),
       refundedAmount: Number(order.refundedAmount || 0),
       refundable,
-      remaining: round2(
-        Math.max(0, Number(order.total) - Number(order.paidAmount)),
-      ),
+      // „Ohne Zahlung abgeschlossen“: ausserhalb bezahlt, nichts offen.
+      remaining: order.closedWithoutPaymentAt
+        ? 0
+        : round2(Math.max(0, Number(order.total) - Number(order.paidAmount))),
+      closedWithoutPaymentAt: order.closedWithoutPaymentAt ?? null,
       tipAmount: Number(order.tipAmount),
       discountAmount: Number(order.discountAmount),
       discountReason: order.discountReason,

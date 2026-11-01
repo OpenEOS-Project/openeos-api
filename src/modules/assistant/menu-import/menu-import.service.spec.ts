@@ -135,6 +135,7 @@ function setup(
     assertUsable: jest.fn(() =>
       Promise.resolve({
         id: ORG,
+        country: 'DE',
         settings: {
           vatExempt: options.vatExempt ?? false,
           address: { country: 'DE' },

@@ -64,6 +64,7 @@ function fakeManager(counts: Counts) {
       },
     ),
     save: jest.fn((entity: unknown) => Promise.resolve(entity)),
+    insert: jest.fn(() => Promise.resolve({})),
   };
   return {
     manager: manager as unknown as EntityManager,
@@ -455,7 +456,7 @@ describe('OrganizationsService enforces the limits', () => {
       { orgs: 5 },
     );
     await expectForbidden(
-      service.create({ name: 'Noch ein Verein' }, actor),
+      service.create({ name: 'Noch ein Verein', country: 'DE' }, actor),
       ErrorCodes.ORGANIZATION_LIMIT_REACHED,
       { limit: 5, used: 5 },
     );
@@ -470,7 +471,7 @@ describe('OrganizationsService enforces the limits', () => {
       { orgs: 5 },
     );
     await expect(
-      service.create({ name: 'Verein' }, actor),
+      service.create({ name: 'Verein', country: 'DE' }, actor),
     ).resolves.toMatchObject({
       name: 'Verein',
     });
@@ -487,7 +488,7 @@ describe('OrganizationsService enforces the limits', () => {
       { orgs: 5 },
     );
     await expect(
-      service.create({ name: 'Verein' }, {
+      service.create({ name: 'Verein', country: 'DE' }, {
         ...actor,
         isSuperAdmin: true,
       } as User),

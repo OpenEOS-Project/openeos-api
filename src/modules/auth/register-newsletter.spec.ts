@@ -34,6 +34,8 @@ function setup() {
         saved.push(entity);
         return Promise.resolve(entity);
       }),
+      query: jest.fn(() => Promise.resolve([])),
+      insert: jest.fn(() => Promise.resolve({})),
     },
   };
   const dataSource = { createQueryRunner: () => queryRunner };
@@ -67,6 +69,7 @@ const base = {
   firstName: 'Nina',
   lastName: 'Neu',
   organizationName: 'TSV Musterstadt',
+  country: 'DE',
 };
 
 describe('AuthService.register — newsletter consent', () => {

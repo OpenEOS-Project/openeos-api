@@ -49,6 +49,10 @@ export enum AdminAction {
   AGENT_TOOL_CALL = 'agent_tool_call',
   /** Betriebsmodus umgeschaltet (pos ↔ order_only), nur durch den Support. */
   SET_OPERATING_MODE = 'set_operating_mode',
+  /** Land einer Organisation geaendert (nur Support, mit Grund). */
+  SET_ORGANIZATION_COUNTRY = 'set_organization_country',
+  /** Bestandsschutz der Bargeld-Regel gesetzt/aufgehoben (nur Support). */
+  SET_CASH_POLICY = 'set_cash_policy',
 }
 
 /**

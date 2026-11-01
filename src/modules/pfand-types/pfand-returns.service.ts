@@ -9,7 +9,10 @@ import { In, Repository } from 'typeorm';
 import { PfandType } from '../../database/entities/pfand-type.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
 import { Organization } from '../../database/entities/organization.entity';
-import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
+import {
+  assertCashAllowed,
+  CASH_POLICY_SELECT,
+} from '../../common/utils/cash-policy.util';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import {
   PfandReturn,
@@ -54,11 +57,11 @@ export class PfandReturnsService {
   ): Promise<PfandReturn> {
     const organization = await this.pfandReturnRepository.manager.findOne(
       Organization,
-      { where: { id: organizationId }, select: { id: true, settings: true } },
+      { where: { id: organizationId }, select: CASH_POLICY_SELECT },
     );
     // „Nur Bestellen“: keine Auszahlung aus einer Kasse.
     assertPaymentsAllowed(organization?.settings);
-    assertCashAllowed(organization?.settings);
+    assertCashAllowed(organization);
 
     const typeIds = dto.lines.map((l) => l.pfandTypeId);
     const types = await this.pfandTypeRepository.find({

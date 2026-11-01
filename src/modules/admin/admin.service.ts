@@ -86,6 +86,7 @@ import {
 } from './dto';
 import { endOfDay } from '../../common/utils/date-range.util';
 import { stripOperatingMode } from '../../common/utils/operating-mode.util';
+import { keepCountryMirror } from '../../common/utils/cash-policy.util';
 
 @Injectable()
 export class AdminService {
@@ -181,6 +182,9 @@ export class AdminService {
         unknown
       >;
       const incoming = stripOperatingMode({ ...updateDto.settings });
+      // Land nur ueber PATCH …/country (mit Grund); die Kopie in den
+      // Einstellungen folgt der Spalte.
+      keepCountryMirror(incoming, org.country);
       updateDto = {
         ...updateDto,
         settings: {

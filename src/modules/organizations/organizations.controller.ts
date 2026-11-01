@@ -34,6 +34,7 @@ import {
   BroadcastMessageDto,
   UpdateIntegrationDto,
   UpdateCashlessDto,
+  SetOrganizationCountryDto,
 } from './dto';
 import { SetPinDto } from '../devices/dto';
 import { CurrentUser, Public, ApiTokenAccess } from '../../common/decorators';
@@ -46,6 +47,8 @@ import {
   getOperatingModeSince,
 } from '../../common/utils/operating-mode.util';
 import { OperatingModeService } from './operating-mode/operating-mode.service';
+import { CashPolicyService } from './cash-policy/cash-policy.service';
+import { cashPolicyView } from '../../common/utils/cash-policy.util';
 
 @ApiTags('Organizations')
 @ApiBearerAuth('JWT-auth')
@@ -56,6 +59,7 @@ export class OrganizationsController {
     private readonly gatewayService: GatewayService,
     private readonly devicesService: DevicesService,
     private readonly operatingModeService: OperatingModeService,
+    private readonly cashPolicyService: CashPolicyService,
   ) {}
 
   @Post()
@@ -97,6 +101,9 @@ export class OrganizationsController {
         // Betriebsmodus (nur lesbar; umschalten kann nur der Support)
         operatingMode: getOperatingMode(organization.settings),
         operatingModeSince: getOperatingModeSince(organization.settings),
+        // Land und Bargeld-Regel (cash-policy.util.ts): country,
+        // cashPolicy, cashPolicyLegacy, cashPolicyReason
+        ...cashPolicyView(organization),
       },
     };
   }
@@ -210,6 +217,96 @@ export class OrganizationsController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     const { pdf, filename } = await this.operatingModeService.certificatePdf(
+      id,
+      user,
+    );
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${safeName}"`,
+      'Cache-Control': 'no-store',
+    });
+    return new StreamableFile(pdf);
+  }
+
+  @Get(':id/cash-policy')
+  @ApiOperation({
+    summary: 'Country and cash policy with change log',
+    description:
+      'Land (`country`), wirksame Bargeld-Regel (`cashPolicy`: `allowed` oder `blocked_de_no_tse`), Bestandsschutz (`cashPolicyLegacy`), Kurzgrund (`cashPolicyReason`) und Verlauf.',
+  })
+  async getCashPolicy(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ) {
+    return { data: await this.cashPolicyService.getForMember(id, user) };
+  }
+
+  @Patch(':id/country')
+  @ApiOperation({
+    summary: 'Set the country once (admins, only while none is set)',
+    description:
+      'Für Bestandsorganisationen ohne Land: einmalig setzen. Steht schon ein Land, 403 COUNTRY_ALREADY_SET — ändern kann es dann nur der OpenEOS-Support.',
+  })
+  async setCountry(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetOrganizationCountryDto,
+    @CurrentUser() user: User,
+    @Req() request: Request,
+  ) {
+    const state = await this.cashPolicyService.setCountryOnce(
+      id,
+      dto.country,
+      user,
+      {
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
+    );
+    this.gatewayService.notifyOrganizationSettingsUpdated(id);
+    return { data: state };
+  }
+
+  // Nur gehostet: in einer eigenen Installation ist der Verein selbst
+  // Betreiber, eine Sperre durch den Hersteller (und der Weg zurueck ueber
+  // den Support) gibt es dort nicht.
+  @SaasOnly()
+  @Post(':id/cash-policy/switch')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Leave the legacy cash rules and switch to "Germany without cash" (admins, one-way)',
+    description:
+      'Nur Bestandsorganisationen mit Land DE. Danach ist Bargeld gesperrt (403 CASH_NOT_ALLOWED_IN_COUNTRY), ohne Schalter für den Verein; zurück nur über den OpenEOS-Support.',
+  })
+  async switchCashPolicy(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Req() request: Request,
+  ) {
+    const state = await this.cashPolicyService.adoptCountryPolicy(id, user, {
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
+    // Kassen sofort umstellen (Bargeld weg), nicht erst beim Neuladen.
+    this.gatewayService.notifyOrganizationSettingsUpdated(id);
+    return { data: state };
+  }
+
+  @SaasOnly()
+  @Get(':id/cash-policy/certificate.pdf')
+  @ApiOperation({
+    summary:
+      'Manufacturer certificate for "Germany without cash" (PDF, admins)',
+    description:
+      'Herstellerbescheinigung für die Verfahrensdokumentation: Bargeld kann in OpenEOS nicht erfasst und von der Organisation nicht aktiviert werden; Kartenzahlungen werden erfasst, Bargeld läuft über eine offene Ladenkasse außerhalb. Nur bei `cashPolicy = blocked_de_no_tse`.',
+  })
+  async getCashPolicyCertificate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { pdf, filename } = await this.cashPolicyService.certificatePdf(
       id,
       user,
     );

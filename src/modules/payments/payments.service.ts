@@ -30,7 +30,11 @@ import {
 import { CreatePaymentDto, SplitPaymentDto, QueryPaymentsDto } from './dto';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { cashReceivedMetadata } from '../print-jobs/receipt-tax.util';
-import { assertCashAllowed } from '../../common/utils/cashless-mode.util';
+import {
+  assertCashAllowed,
+  CASH_POLICY_SELECT,
+} from '../../common/utils/cash-policy.util';
+import { closedWithoutPaymentError } from '../orders/close-without-payment';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
@@ -82,6 +86,9 @@ export class PaymentsService {
         reason: ErrorReasons.ORDER_ALREADY_PAID,
         message: 'Bestellung ist bereits vollständig bezahlt',
       });
+    }
+    if (order.closedWithoutPaymentAt) {
+      throw closedWithoutPaymentError([order.id]);
     }
 
     const remainingAmount = Number(order.total) - Number(order.paidAmount);
@@ -432,10 +439,10 @@ export class PaymentsService {
     if (!sumup && !cash) return;
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
-      select: { id: true, settings: true },
+      select: CASH_POLICY_SELECT,
     });
     if (sumup) assertIntegrationEnabled(organization?.settings, 'sumup');
-    assertCashAllowed(organization?.settings, method);
+    assertCashAllowed(organization, method);
   }
 
   private getProviderForMethod(method: PaymentMethod): PaymentProvider {
