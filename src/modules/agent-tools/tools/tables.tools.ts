@@ -20,6 +20,7 @@ import {
   defined,
   diff,
   done,
+  noChange,
   notFound,
   preview,
   sameName,
@@ -287,7 +288,7 @@ export class TableTools {
           );
         }
         if (keys.length === 0)
-          return done(`Keine Änderung an Tisch „${table.label}“`, {
+          return noChange(`Keine Änderung an Tisch „${table.label}“`, {
             table: compactTable(table),
           });
         const updated = await this.tables.updateTable(

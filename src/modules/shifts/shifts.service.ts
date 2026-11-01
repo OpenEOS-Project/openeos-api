@@ -412,10 +412,8 @@ export class ShiftsService {
       });
     }
 
-    const createdShifts: Shift[] = [];
-
-    for (const dto of shifts) {
-      const shift = this.shiftRepository.create({
+    const entities = shifts.map((dto) =>
+      this.shiftRepository.create({
         shiftJobId: job.id,
         date: new Date(dto.date),
         startTime: dto.startTime,
@@ -423,11 +421,13 @@ export class ShiftsService {
         // Required workers is job-level only.
         requiredWorkers: job.requiredWorkers ?? 1,
         notes: dto.notes,
-      });
-      createdShifts.push(await this.shiftRepository.save(shift));
-    }
+      }),
+    );
 
-    return createdShifts;
+    // All or nothing: a failing row must not leave half a batch behind.
+    return this.shiftRepository.manager.transaction((manager) =>
+      manager.getRepository(Shift).save(entities),
+    );
   }
 
   // ============ Registrations (Admin) ============

@@ -10,6 +10,7 @@ import type { AddressInfo } from 'net';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 
+import { appVersion } from '../../common/constants/app-version';
 import { HttpExceptionFilter } from '../../common/filters';
 import {
   AdminAuditLog,
@@ -267,6 +268,50 @@ describe('MCP over HTTP', () => {
     expect(meta.data).toBeUndefined();
   });
 
+  it('reports the app version from /health as server version', async () => {
+    issue(SECRET, [TokenScope.READ]);
+    const before = process.env.APP_VERSION;
+    process.env.APP_VERSION = '1.0.999';
+    try {
+      const init = await request(app.getHttpServer())
+        .post('/mcp')
+        .set(accept)
+        .set('Authorization', `Bearer ${SECRET}`)
+        .send(initialize)
+        .expect(200);
+      expect((init.body as RpcBody).result.serverInfo).toEqual({
+        name: 'openeos',
+        version: '1.0.999',
+      });
+      expect(appVersion()).toBe('1.0.999');
+    } finally {
+      if (before === undefined) delete process.env.APP_VERSION;
+      else process.env.APP_VERSION = before;
+    }
+  });
+
+  it('answers GET and DELETE with 405 instead of an idle stream', async () => {
+    issue(SECRET, [TokenScope.READ]);
+    for (const method of ['get', 'delete'] as const) {
+      const res = await request(app.getHttpServer())
+        [method]('/mcp')
+        .set('Authorization', `Bearer ${SECRET}`)
+        .set('Accept', 'text/event-stream')
+        .set('mcp-protocol-version', '2025-06-18')
+        .timeout(3000)
+        .expect(405);
+      expect(res.headers.allow).toBe('POST');
+      expect(res.headers['content-type']).toMatch(/application\/json/);
+      expect(res.body).toEqual({
+        jsonrpc: '2.0',
+        error: { code: -32000, message: 'Method not allowed.' },
+        id: null,
+      });
+    }
+    /* Ohne Token bleibt es bei 401 mit dem Hinweis auf die Metadaten. */
+    await request(app.getHttpServer()).get('/mcp').expect(401);
+  });
+
   it('is stateless: no session id, each request on a fresh server, no initialize needed', async () => {
     issue(SECRET, [TokenScope.READ]);
     const init = await request(app.getHttpServer())
@@ -278,7 +323,7 @@ describe('MCP over HTTP', () => {
     expect(init.headers['mcp-session-id']).toBeUndefined();
     expect((init.body as RpcBody).result.serverInfo).toEqual({
       name: 'openeos',
-      version: expect.any(String) as string,
+      version: appVersion(),
     });
     expect(init.headers['x-ratelimit-limit-api-token-minute']).toBe('120');
 
@@ -393,6 +438,17 @@ describe('MCP over HTTP', () => {
       },
     });
     expect(JSON.stringify(audits[0])).not.toContain('TSV 1900');
+
+    /* Bestaetigt, aber nichts zu aendern: ok, kein Dienstaufruf, kein Audit. */
+    const same = parse(
+      await client.callTool({
+        name: 'update_organization',
+        arguments: { name: 'TSV', confirm: true },
+      }),
+    );
+    expect(same).toMatchObject({ ok: true, noChange: true });
+    expect(organizations.update).toHaveBeenCalledTimes(1);
+    expect(audits).toHaveLength(1);
 
     const invalid = (await client.callTool({
       name: 'update_organization',

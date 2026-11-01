@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
 import type { PaginatedResult, PaginationDto } from '../../common/dto';
-import { AgentToolError, type ToolPreview } from './agent-tool.types';
+import {
+  AgentToolError,
+  type ToolNoChange,
+  type ToolPreview,
+} from './agent-tool.types';
 
 /** Mehr Zeilen je Antwort gibt es nicht — Antworten sollen knapp bleiben. */
 export const MAX_LIMIT = 100;
@@ -144,6 +148,17 @@ export function done(
   details: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return { ok: true, summary, ...details };
+}
+
+/**
+ * Nichts zu aendern: `ok`, aber ohne Dienstaufruf und ohne Protokoll —
+ * die Registry schreibt dafuer keinen Audit-Eintrag.
+ */
+export function noChange(
+  summary: string,
+  details: Record<string, unknown> = {},
+): ToolNoChange {
+  return { ok: true, noChange: true, summary, ...details };
 }
 
 /** Nur definierte Felder — fuer PATCH-artige Aufrufe. */

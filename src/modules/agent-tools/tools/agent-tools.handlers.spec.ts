@@ -302,6 +302,34 @@ const products = {
   updateAvailability: jest.fn((_e: string, _id: string, isAvailable: boolean) =>
     Promise.resolve({ ...product, isAvailable }),
   ),
+  allowedTaxRates: jest.fn(() => Promise.resolve([19, 7, 0])),
+  upsertMany: jest.fn(
+    (
+      _e: string,
+      batch: {
+        newCategories: string[];
+        create: Array<{ dto: Record<string, unknown> }>;
+        update: Array<{ id: string; dto: Record<string, unknown> }>;
+      },
+    ) =>
+      Promise.resolve({
+        categories: batch.newCategories.map((name, i) => ({
+          ...category,
+          id: `cat-new-${i}`,
+          name,
+        })),
+        created: batch.create.map(({ dto }, i) => ({
+          ...product,
+          ...dto,
+          id: `prod-new-${i}`,
+        })),
+        updated: batch.update.map(({ id, dto }) => ({
+          ...product,
+          ...dto,
+          id,
+        })),
+      }),
+  ),
 };
 const pfandTypes = {
   findAll: jest.fn(() => Promise.resolve([pfand])),
@@ -706,15 +734,13 @@ describe('events', () => {
       { name: 'Sommerfest 2026' },
       ctx.user,
     );
-    expect(
-      (
-        await r('update_event', {
-          eventId: EVENT,
-          name: 'Sommerfest',
-          confirm: true,
-        })
-      ).summary,
-    ).toMatch(/Keine Änderung/);
+    const same = await r('update_event', {
+      eventId: EVENT,
+      name: 'Sommerfest',
+      confirm: true,
+    });
+    expect(same.summary).toMatch(/Keine Änderung/);
+    expect(same.noChange).toBe(true);
     expect(events.update).toHaveBeenCalledTimes(1);
   });
   it('copy_event counts then copies', async () => {
@@ -848,6 +874,14 @@ describe('catalog', () => {
       { name: 'Drinks' },
       ctx.user,
     );
+    const same = await r('update_category', {
+      eventId: EVENT,
+      categoryId: CAT,
+      name: 'Getränke',
+      confirm: true,
+    });
+    expect(same).toMatchObject({ ok: true, noChange: true });
+    expect(categories.update).toHaveBeenCalledTimes(1);
     await expect(
       r('update_category', { eventId: EVENT, categoryId: UNKNOWN, name: 'XY' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -896,29 +930,108 @@ describe('catalog', () => {
       createMissingCategories: true,
       confirm: true,
     });
-    expect(categories.create).toHaveBeenCalledWith(
+    /* Ein einziger Dienstaufruf — der schreibt alles in einer Transaktion. */
+    expect(products.upsertMany).toHaveBeenCalledTimes(1);
+    expect(products.upsertMany).toHaveBeenCalledWith(
       EVENT,
-      { name: 'Essen' },
+      {
+        newCategories: ['Essen'],
+        create: [
+          {
+            dto: {
+              name: 'Radler',
+              price: 4.5,
+              icon: 'pos-icon:radler',
+              categoryId: CAT,
+              options: {
+                groups: [
+                  {
+                    name: 'Größe',
+                    type: 'single',
+                    required: false,
+                    options: [{ name: '0,5 l', priceModifier: 0 }],
+                  },
+                ],
+              },
+            },
+            categoryName: 'Getränke',
+          },
+          { dto: { name: 'Bratwurst', price: 3.5 }, categoryName: 'Essen' },
+        ],
+        update: [{ id: PROD, dto: { price: 4.8 } }],
+      },
       ctx.user,
     );
-    expect(products.update).toHaveBeenCalledWith(
-      EVENT,
-      PROD,
-      { price: 4.8 },
-      ctx.user,
-    );
-    expect(products.create).toHaveBeenCalledTimes(2);
-    expect(products.create).toHaveBeenLastCalledWith(
-      EVENT,
-      { name: 'Bratwurst', price: 3.5, categoryId: 'cat-new' },
-      ctx.user,
-    );
-    expect(products.create.mock.calls[0][1]).toMatchObject({
-      categoryId: CAT,
-      icon: 'pos-icon:radler',
-      options: { groups: [{ name: 'Größe', type: 'single', required: false }] },
-    });
+    expect(categories.create).not.toHaveBeenCalled();
+    expect(products.create).not.toHaveBeenCalled();
+    expect(products.update).not.toHaveBeenCalled();
     expect(d.summary).toMatch(/2 Produkte angelegt, 1 geändert, 1 Kategorien/);
+    expect(d.newCategories).toEqual([{ id: 'cat-new-0', name: 'Essen' }]);
+  });
+  it('upsert_products previews tax rates the organization may not use', async () => {
+    /* Steuerbefreiter Verein: nur 0 % (wie ProductsService beim Schreiben). */
+    products.allowedTaxRates.mockResolvedValue([0]);
+    const rows = [
+      { name: 'MCP Partial A', categoryId: CAT, price: 1, taxRate: 0 },
+      { name: 'MCP Partial B', categoryId: CAT, price: 1, taxRate: 19 },
+      { name: 'Bier', taxRate: 7 },
+    ];
+    const p = await r('upsert_products', { eventId: EVENT, products: rows });
+    expect(products.allowedTaxRates).toHaveBeenCalledWith(ORG);
+    expect(p.preview).toBe(true);
+    expect(p.wouldCreate).toEqual([
+      { name: 'MCP Partial A', category: 'Getränke', price: 1, taxRate: 0 },
+    ]);
+    expect(p.errors).toEqual([
+      {
+        row: 2,
+        name: 'MCP Partial B',
+        error: expect.stringMatching(/Steuersatz 19 %.*erlaubt: 0 %/),
+      },
+      { row: 3, name: 'Bier', error: expect.stringMatching(/Steuersatz 7 %/) },
+    ]);
+    expect(p.summary).toMatch(/2 Fehler/);
+    await expect(
+      r('upsert_products', { eventId: EVENT, products: rows, confirm: true }),
+    ).rejects.toMatchObject({ code: 'INVALID_INPUT', details: p.errors });
+    expect(products.upsertMany).not.toHaveBeenCalled();
+    expect(products.create).not.toHaveBeenCalled();
+    products.allowedTaxRates.mockResolvedValue([19, 7, 0]);
+  });
+  it('upsert_products without effective changes is a no-op', async () => {
+    const d = await r('upsert_products', {
+      eventId: EVENT,
+      products: [{ name: 'Bier', price: 4.5, taxRate: 19 }],
+      confirm: true,
+    });
+    expect(d).toMatchObject({
+      ok: true,
+      noChange: true,
+      unchanged: ['Bier'],
+    });
+    expect(d.summary).toMatch(/Keine Änderung/);
+    expect(products.upsertMany).not.toHaveBeenCalled();
+  });
+  it('upsert_products lets a failing write through (nothing applied)', async () => {
+    products.upsertMany.mockRejectedValueOnce(
+      new NotFoundException({ reason: 'PRODUCT_NOT_FOUND' }),
+    );
+    await expect(
+      r('upsert_products', {
+        eventId: EVENT,
+        products: [{ name: 'Bier', price: 5 }],
+        confirm: true,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+  it('rejects category names that are too short to create', async () => {
+    const p = await r('upsert_products', {
+      eventId: EVENT,
+      products: [{ name: 'Brezel', price: 2, category: ' X ' }],
+      createMissingCategories: true,
+    });
+    expect(p.errors[0].error).toMatch(/mindestens 2 Zeichen/);
+    expect(p.newCategories).toEqual([]);
   });
   it('upsert_products refuses unchanged noise and bad refs', async () => {
     const p = await r('upsert_products', {
@@ -932,15 +1045,14 @@ describe('catalog', () => {
     expect(p.errors[0].error).toMatch(/pfandTypeId/);
   });
   it('update_product_availability', async () => {
-    expect(
-      (
-        await r('update_product_availability', {
-          eventId: EVENT,
-          productId: PROD,
-          isAvailable: true,
-        })
-      ).summary,
-    ).toMatch(/bereits/);
+    const same = await r('update_product_availability', {
+      eventId: EVENT,
+      productId: PROD,
+      isAvailable: true,
+      confirm: true,
+    });
+    expect(same.summary).toMatch(/bereits/);
+    expect(same.noChange).toBe(true);
     const p = await r('update_product_availability', {
       eventId: EVENT,
       productId: PROD,

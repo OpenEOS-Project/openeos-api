@@ -6,6 +6,7 @@ import {
   AgentTool,
   AgentToolContext,
   AgentToolError,
+  isNoChange,
   isPreview,
 } from './agent-tool.types';
 
@@ -84,11 +85,14 @@ export class AgentToolsRegistry {
     const started = Date.now();
     try {
       const result = await tool.handler(ctx, parsed.data);
+      /* Protokolliert wird nur, was wirklich geschrieben wurde: keine
+         Vorschau, kein „Keine Änderung“. */
       const confirmed =
         tool.mutating &&
         (parsed.data as { confirm?: boolean }).confirm === true &&
         !isPreview(result);
-      if (confirmed) {
+      const applied = confirmed && !isNoChange(result);
+      if (applied) {
         const summary = (result as { summary?: unknown })?.summary;
         await this.audit.record(
           ctx,
@@ -97,7 +101,12 @@ export class AgentToolsRegistry {
           typeof summary === 'string' ? summary : null,
         );
       }
-      this.log(tool, ctx, started, confirmed ? 'ok (applied)' : 'ok');
+      this.log(
+        tool,
+        ctx,
+        started,
+        applied ? 'ok (applied)' : confirmed ? 'ok (no change)' : 'ok',
+      );
       return result;
     } catch (error) {
       this.log(tool, ctx, started, `error ${describe(error)}`);
