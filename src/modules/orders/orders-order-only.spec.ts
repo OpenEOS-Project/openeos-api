@@ -30,7 +30,7 @@ beforeAll(() => {
 });
 
 /**
- * Bestellungen aus der Verwaltung im Modus „Nur Bestellen“: dieselben
+ * Bestellungen aus der Verwaltung im Modus „Nur Bons“: dieselben
  * Regeln wie an der Kasse (Abschluss ohne Zahlung, sobald an keiner
  * Station mehr etwas zu tun ist) und nichts bleibt in einer
  * abgeschlossenen Bestellung auf „offen“.
@@ -49,7 +49,9 @@ function setup(orgSettings: Row, items: Row[]) {
     save: jest.fn((list: Row[]) => Promise.resolve(list)),
   };
   const organizationRepository = {
-    findOne: jest.fn(() => Promise.resolve({ id: ORG, settings: orgSettings })),
+    findOne: jest.fn(() =>
+      Promise.resolve({ id: ORG, settings: {}, ...orgSettings }),
+    ),
   };
   const orderPrintService = {
     handleOrderCreated: jest.fn(() => Promise.resolve()),
@@ -109,9 +111,9 @@ const createDto = (fulfillmentType: OrderFulfillmentType): CreateOrderDto =>
     items: [{ productId: 'p-1', quantity: 1 }],
   }) as unknown as CreateOrderDto;
 
-const orderOnly = { operatingMode: 'order_only' };
+const orderOnly = { operatingMode: 'orders_only' };
 
-describe('OrdersService.create — „Nur Bestellen“', () => {
+describe('OrdersService.create — „Nur Bons“', () => {
   it('a counter order without station work completes at once, items are handed over', async () => {
     const items = [item('i1', OrderItemStatus.PENDING)];
     const t = setup(orderOnly, items);
@@ -174,7 +176,7 @@ describe('OrdersService.create — „Nur Bestellen“', () => {
   });
 });
 
-describe('OrdersService.completeOrder — „Nur Bestellen“', () => {
+describe('OrdersService.completeOrder — „Nur Bons“', () => {
   function withOrder(orgSettings: Row, items: Row[]) {
     const t = setup(orgSettings, items);
     t.orders.push({

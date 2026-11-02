@@ -31,6 +31,7 @@ import { PrintJobStatus } from '../../database/entities/print-job.entity';
 import { QueryReportsDto, ReportExportFormat } from './dto';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
+  OPERATING_MODE_SELECT,
   getOperatingMode,
   type OperatingMode,
 } from '../../common/utils/operating-mode.util';
@@ -168,24 +169,49 @@ export const ITEM_NET_QUANTITY = `(item.quantity - item.refundedQuantity)`;
 const round2 = (value: number): number => Math.round(value * 100) / 100;
 
 /**
- * Spalten, die im Modus `order_only` umbenannt werden: OpenEOS kassiert
- * dort nicht, die Betraege sind Bestellwerte (nicht kassiert), kein Umsatz.
+ * Geldspalten der Berichte. In der Betriebsart „Nur Bons“ (`orders_only`)
+ * kassiert OpenEOS nicht und zeigt keine Preise — Berichte enthalten dann
+ * nur Mengen (Bestellungen, Positionen, Stueckzahlen).
  */
-const ORDER_ONLY_EXPORT_KEYS: Record<string, string> = {
-  totalRevenue: 'orderValue',
-  revenue: 'orderValue',
-  avgReceipt: 'averageOrderValue',
-};
+export const REPORT_MONEY_KEYS = new Set([
+  'revenue',
+  'totalRevenue',
+  'netRevenue',
+  'itemsRevenue',
+  'avgReceipt',
+  'averagePrice',
+  'averageOrderValue',
+  'averageReceipt',
+  'orderValue',
+  'tips',
+  'amount',
+  'total',
+  'tax',
+  'taxTotal',
+  'pfandCollected',
+  'pfandReturned',
+  'pfandBalance',
+  'goodwillGoods',
+  'attributedRefunds',
+  'unassignedRefunds',
+  'refunds',
+  'percentage',
+]);
 
-/** Berichtszeile fuer den Export im Modus `order_only` (Schluessel umbenannt). */
-export function orderOnlyExportRow(
-  row: Record<string, CsvZelle>,
-): Record<string, CsvZelle> {
-  const out: Record<string, CsvZelle> = {};
-  for (const [key, value] of Object.entries(row)) {
-    out[ORDER_ONLY_EXPORT_KEYS[key] ?? key] = value;
+/** Berichtswerte ohne Geldspalten (rekursiv), fuer `orders_only`. */
+export function countsOnly<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return (value as unknown[]).map((v) => countsOnly(v)) as T;
   }
-  return out;
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+      if (REPORT_MONEY_KEYS.has(key)) continue;
+      out[key] = countsOnly(v);
+    }
+    return out as T;
+  }
+  return value;
 }
 
 /** Erstattungen je Zahlung (negativ, alle Arten — Geldfluss). */
@@ -224,18 +250,16 @@ export class ReportsService {
   ) {}
 
   /**
-   * Betriebsmodus der Organisation. Im Modus `order_only` („Nur
-   * Bestellen“) kassiert OpenEOS nicht: die Betraege der Berichte sind
-   * dann Bestellwerte (Summe der Bestellpreise, nicht kassiert), kein
-   * Umsatz. Die Berichte rechnen gleich; Export und Agenten-Werkzeug
-   * beschriften die Betraege entsprechend (`orderValue`).
+   * Betriebsart der Organisation. In `orders_only` („Nur Bons“) kassiert
+   * OpenEOS nicht und zeigt keine Preise: Export und Agenten-Werkzeug
+   * liefern dann nur Mengen (`countsOnly`), die Oberflaeche ebenso.
    */
   async getOperatingMode(organizationId: string): Promise<OperatingMode> {
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
-      select: { id: true, settings: true },
+      select: OPERATING_MODE_SELECT,
     });
-    return getOperatingMode(organization?.settings);
+    return getOperatingMode(organization);
   }
 
   /**
@@ -973,11 +997,9 @@ export class ReportsService {
         reportData = [];
     }
 
-    // „Nur Bestellen“: kein Umsatz, sondern Bestellwert (nicht kassiert).
-    if ((await this.getOperatingMode(organizationId)) === 'order_only') {
-      reportData = reportData.map((row) =>
-        orderOnlyExportRow(row as Record<string, CsvZelle>),
-      );
+    // „Nur Bons“: keine Betraege, nur Mengen.
+    if ((await this.getOperatingMode(organizationId)) === 'orders_only') {
+      reportData = countsOnly(reportData);
     }
 
     if (format === ReportExportFormat.JSON) {

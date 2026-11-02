@@ -3,13 +3,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Herstellerbescheinigung fuer den Betriebsmodus „Nur Bestellen“.
+ * Herstellerbescheinigung fuer Organisationen in Deutschland in den
+ * Betriebsarten „Nur Bons“ (`orders_only`) und „Bargeldlos“ (`cashless`).
  *
- * Laut BMF-Antwort (2026-10) faellt ein Bestellsystem ohne Kassenmodul
- * nicht unter § 146a AO, wenn der Verein das Kassenmodul nicht selbst
- * einschalten kann — nachzuweisen in der Systemdokumentation, z. B. mit
- * einer Bescheinigung des Herstellers. Dieses Modul baut den Inhalt (rein,
- * testbar) und setzt ihn mit pdfkit als A4-PDF.
+ * Laut BMF-Antwort (2026-10) hat eine Software eine Kassenfunktion, sobald
+ * sie Bargeld erfassen kann — auch wenn der Verein das nur selbst
+ * einschalten koennte. In beiden Betriebsarten kann OpenEOS kein Bargeld
+ * erfassen, und Bargeld (Betriebsart „Alle Funktionen“) ist in Deutschland
+ * nur mit aktiver zertifizierter TSE waehlbar — das belegt diese
+ * Bescheinigung fuer die Verfahrensdokumentation. Dieses Modul baut den
+ * Inhalt (rein, testbar) und setzt ihn mit pdfkit als A4-PDF.
  *
  * Der Text beschreibt nur die technische Konfiguration; die steuerliche
  * Beurteilung bleibt beim Finanzamt. Keine Unterschrift, kein Siegel:
@@ -26,8 +29,11 @@ export interface CertificateHistoryEntry {
   at: Date;
   fromMode: string;
   toMode: string;
-  reason: string;
+  reason: string | null;
+  bySupport: boolean;
 }
+
+export type CertificateMode = 'orders_only' | 'cashless';
 
 export interface CertificateInput {
   organization: {
@@ -40,6 +46,9 @@ export interface CertificateInput {
       country?: string;
     } | null;
   };
+  mode: CertificateMode;
+  country: string;
+  tseActive: boolean;
   since: Date;
   issuedAt: Date;
   version: string;
@@ -89,17 +98,35 @@ export function operatorFromEnv(
   return { name, addressLines, email };
 }
 
-/** Kurzform fuer die Verlaufstabelle. */
+/** Name der Betriebsart wie in der Oberflaeche, fuer Verlauf und Text. */
 export function modeShortLabel(mode: string): string {
-  if (mode === 'order_only') return '„Nur Bestellen“';
-  if (mode === 'pos') return '„Kasse“';
-  return mode;
+  switch (mode) {
+    case 'orders_only':
+      return '„Nur Bons“';
+    case 'cashless':
+      return '„Bargeldlos“';
+    case 'full':
+      return '„Alle Funktionen“';
+    case 'full_legacy':
+      return '„Alle Funktionen (Bestand)“';
+    default:
+      return mode;
+  }
 }
 
 export function modeLabel(mode: string): string {
-  if (mode === 'order_only') return '„Nur Bestellen“ (ohne Kassenmodul)';
-  if (mode === 'pos') return '„Kasse“ (mit Kassen- und Zahlungsmodul)';
-  return mode;
+  if (mode === 'orders_only') {
+    return '„Nur Bons“ (ohne Preise und Zahlungen, ohne Bargeld)';
+  }
+  if (mode === 'cashless') {
+    return '„Bargeldlos“ (Karte und Online-Zahlung, ohne Bargeld)';
+  }
+  return modeShortLabel(mode);
+}
+
+function historyReason(entry: CertificateHistoryEntry): string {
+  if (!entry.bySupport) return entry.reason ?? 'Durch die Organisation';
+  return entry.reason ? `${entry.reason} (OpenEOS-Support)` : 'OpenEOS-Support';
 }
 
 function formatter(
@@ -160,11 +187,72 @@ export function buildCertificateContent(
     ...(input.operator.email ? [input.operator.email] : []),
   ];
   const orgAddress = addressLines(input.organization.address);
+  const ordersOnly = input.mode === 'orders_only';
+  const name = modeShortLabel(input.mode);
+
+  const sections: CertificateSection[] = [
+    {
+      heading: 'Bescheinigung',
+      paragraphs: [
+        `Der Hersteller bescheinigt, dass für die oben genannte Organisation seit dem ${since} die Betriebsart ${name} eingestellt ist. Bargeld kann in dieser Organisation nicht erfasst werden; Bargeld ist ausschließlich mit aktiver zertifizierter TSE möglich.`,
+        `Die Organisation kann selbst zwischen den Betriebsarten „Nur Bons“ und „Bargeldlos“ wechseln – in beiden gibt es in OpenEOS kein Bargeld. Die Betriebsart „Alle Funktionen“, die Bargeld erfasst, lässt sich für Organisationen in Deutschland nur einstellen, wenn für die Organisation eine zertifizierte Cloud-TSE aktiv ist. Weder die Organisation noch der Hersteller können Bargeld ohne aktive TSE einschalten${input.tseActive ? '.' : '; derzeit ist für die Organisation keine TSE aktiv.'} Das Land der Organisation, an dem diese Regel hängt, kann die Organisation nach dem ersten Festlegen nicht selbst ändern.`,
+        'Jeder Wechsel der Betriebsart wird mit Zeitpunkt, handelnder Person, alter und neuer Betriebsart (beim Hersteller zusätzlich mit Grund) protokolliert; der Verlauf ist unten abgedruckt.',
+      ],
+    },
+    {
+      heading: 'Technische Durchsetzung',
+      paragraphs: [
+        ordersOnly
+          ? 'Die Sperre wirkt auf dem OpenEOS-Server, nicht nur in der Oberfläche. In der Betriebsart „Nur Bons“ weist der Server jeden Vorgang ab, der eine Zahlung erfasst oder abwickelt, insbesondere:'
+          : 'Die Sperre wirkt auf dem OpenEOS-Server, nicht nur in der Oberfläche. Der Server weist jeden Vorgang ab, der Bargeld erfasst oder auszahlt, insbesondere:',
+      ],
+      bullets: ordersOnly
+        ? [
+            'Barzahlungen sowie Kartenzahlungen an der Kasse (auch über ein angebundenes SumUp-Terminal),',
+            'Teil-, Sammel- und Tischzahlungen, Trinkgeld, Rabatte und Gutscheine,',
+            'Online-Vorkasse im Online-Shop und bei der Bestellung per QR-Code,',
+            'Erstattungen an der Kasse und Auszahlungen aus der Kasse,',
+            'Pfand und Pfand-Auszahlungen sowie das Öffnen der Kassenlade.',
+          ]
+        : [
+            'Barzahlungen an der Kasse und in der Verwaltung (einzeln, geteilt, gesammelt und mit Trinkgeld),',
+            'Erstattungen auf Barzahlungen und Auszahlungen in bar,',
+            'Pfand-Auszahlungen in bar (Pfand lässt sich nur mit einer Bestellung verrechnen),',
+            'das Öffnen der Kassenlade.',
+          ],
+    },
+    ordersOnly
+      ? {
+          heading: 'Weiterhin verfügbare Funktionen',
+          paragraphs: [
+            'OpenEOS dient der Organisation in dieser Betriebsart als Bestellsystem ohne Preise und Beträge:',
+          ],
+          bullets: [
+            'Erfassung von Bestellungen an Geräten, im Tischbetrieb und an der Theke,',
+            'Weiterleitung an Küche und Ausgabestationen (Bons und Bildschirme, jeweils ohne Preise),',
+            'Status „in Zubereitung“, „fertig“, „ausgegeben/serviert“ und Abschluss der Bestellung ohne Zahlung („Abgeholt“ bzw. „Tisch abschließen“),',
+            'Berichte mit Mengen, ohne Umsätze.',
+          ],
+        }
+      : {
+          heading: 'Erfasste Zahlungen',
+          paragraphs: [
+            'Unbare Zahlungen erfasst OpenEOS weiterhin: Kartenzahlungen an der Kasse (über ein angebundenes SumUp-Terminal oder ein eigenes Kartengerät) sowie Online-Zahlungen und Vorkasse im Online-Shop oder bei der Bestellung per QR-Code. Erstattungen sind nur auf diese unbaren Zahlungen möglich.',
+          ],
+        },
+    {
+      heading: 'Bargeld außerhalb von OpenEOS',
+      paragraphs: [
+        ordersOnly
+          ? 'Kassiert wird außerhalb von OpenEOS, zum Beispiel über eine offene Ladenkasse oder mit Wertmarken. Die dafür geltenden Aufzeichnungspflichten liegen bei der Organisation.'
+          : 'Bargeldumsätze außerhalb von OpenEOS, zum Beispiel in einer offenen Ladenkasse, erfasst OpenEOS nicht. Die dafür geltenden Aufzeichnungspflichten liegen bei der Organisation.',
+      ],
+    },
+  ];
 
   return {
     title: 'Herstellerbescheinigung',
-    subtitle:
-      'OpenEOS in der Betriebsart „Nur Bestellen“ – ohne Kassen- und Zahlungsmodul',
+    subtitle: `OpenEOS in der Betriebsart ${name} – Bargeld kann nicht erfasst werden`,
     operator: { label: 'Hersteller', lines: operatorLines },
     organization: {
       label: 'Organisation',
@@ -177,56 +265,24 @@ export function buildCertificateContent(
       ['Software', 'OpenEOS (Bestell- und Kassensystem, Cloud-Dienst)'],
       ['Version', input.version],
       ['Organisations-ID', input.organization.id],
-      ['Betriebsart', modeLabel('order_only')],
+      ['Land', input.country === 'DE' ? 'Deutschland (DE)' : input.country],
+      ['Betriebsart', modeLabel(input.mode)],
+      [
+        'TSE',
+        input.tseActive
+          ? 'aktiv (in dieser Betriebsart wird kein Bargeld erfasst)'
+          : 'keine aktive TSE – Bargeld gesperrt',
+      ],
       ['Gültig seit', since],
     ],
-    sections: [
-      {
-        heading: 'Bescheinigung',
-        paragraphs: [
-          `Der Hersteller bescheinigt, dass für die oben genannte Organisation seit dem ${since} die Betriebsart „Nur Bestellen“ eingestellt ist. In diesem Modus ist das Kassen- und Zahlungsmodul von OpenEOS für die Organisation deaktiviert.`,
-          'Die Organisation kann das Kassen- und Zahlungsmodul nicht selbst aktivieren. Weder die Verwaltungsoberfläche noch die Schnittstellen (API, Geräte, Integrationen) bieten der Organisation eine solche Einstellung. Eine Umschaltung ist ausschließlich durch den Hersteller (OpenEOS-Support) auf dokumentierten Antrag möglich. Jede Umschaltung wird mit Zeitpunkt, handelnder Person und Grund protokolliert; der Verlauf ist unten abgedruckt.',
-        ],
-      },
-      {
-        heading: 'Technische Durchsetzung',
-        paragraphs: [
-          'Die Sperre wirkt auf dem OpenEOS-Server, nicht nur in der Oberfläche. In der Betriebsart „Nur Bestellen“ weist der Server jeden Vorgang ab, der eine Zahlung erfasst oder abwickelt, insbesondere:',
-        ],
-        bullets: [
-          'Barzahlungen sowie Kartenzahlungen an der Kasse (auch über ein angebundenes SumUp-Terminal),',
-          'Teil-, Sammel- und Tischzahlungen sowie Trinkgeld,',
-          'Erstattungen an der Kasse und Auszahlungen aus der Kasse,',
-          'das Öffnen der Kassenlade und Pfand-Auszahlungen in bar.',
-        ],
-      },
-      {
-        heading: 'Weiterhin verfügbare Funktionen',
-        paragraphs: [
-          'OpenEOS dient der Organisation in diesem Modus als Bestellsystem:',
-        ],
-        bullets: [
-          'Erfassung von Bestellungen an Geräten, im Tischbetrieb und an der Theke,',
-          'Weiterleitung an Küche und Ausgabestationen (Bons und Bildschirme),',
-          'Status „in Zubereitung“, „fertig“, „ausgegeben/serviert“ und Abschluss der Bestellung ohne Zahlung,',
-          'Storno von Bestellungen ohne Erstattung.',
-        ],
-      },
-      {
-        heading: 'Bezahlung',
-        paragraphs: [
-          'Zahlungen vor Ort wickelt die Organisation außerhalb von OpenEOS ab, zum Beispiel über eine offene Ladenkasse. Die dafür geltenden Aufzeichnungspflichten liegen bei der Organisation.',
-          'Vorkasse im Online-Shop: Bezahlen Gäste bereits bei einer Online-Bestellung (Online-Shop oder Bestellung per QR-Code) unbar über einen Online-Zahlungsdienst (PayPal oder SumUp Online), erfasst OpenEOS diese Online-Zahlung weiterhin. Sie läuft nicht über eine Kasse vor Ort; Bargeld wird dabei nicht angenommen. Erstattungen sind in diesem Modus nur auf solche Online-Zahlungen möglich.',
-        ],
-      },
-    ],
+    sections,
     history: {
       heading: 'Verlauf der Betriebsart',
-      columns: ['Zeitpunkt', 'Umschaltung', 'Grund'],
+      columns: ['Zeitpunkt', 'Wechsel', 'Grund'],
       rows: input.history.map((h) => [
         formatDateTime(h.at, tz),
         `${modeShortLabel(h.fromMode)} zu ${modeShortLabel(h.toMode)}`,
-        h.reason,
+        historyReason(h),
       ]),
     },
     footer: [

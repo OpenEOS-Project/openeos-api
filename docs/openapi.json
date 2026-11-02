@@ -1644,7 +1644,7 @@
         "x-api-token-scope": "read"
       },
       "patch": {
-        "description": "Ändert Name, Kontaktdaten oder Einstellungen (z. B. bargeldloser Modus). Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen.",
+        "description": "Ändert Name, Kontaktdaten oder Einstellungen. Die Betriebsart und das Land ändern sich nur über ihre eigenen Endpunkte. Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen.",
         "operationId": "updateOrganization",
         "parameters": [
           {
@@ -1761,78 +1761,9 @@
         ]
       }
     },
-    "/api/organizations/{id}/payments/cashless": {
-      "patch": {
-        "description": "Bargeldloser Modus: sperrt jede Barzahlung, Bar-Erstattung, Pfand-Auszahlung und die Kassenlade (403 CASH_PAYMENTS_DISABLED). Jede Umschaltung wird mit Zeitpunkt und Person protokolliert (GET :id/payments/cashless/history).",
-        "operationId": "organizations_setCashlessMode",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateCashlessDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Switch cashless mode on or off (admins only, logged)",
-        "tags": [
-          "Organizations"
-        ]
-      }
-    },
-    "/api/organizations/{id}/payments/cashless/history": {
-      "get": {
-        "operationId": "organizations_getCashlessHistory",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Change log of the cashless mode (newest first)",
-        "tags": [
-          "Organizations"
-        ]
-      }
-    },
     "/api/organizations/{id}/operating-mode": {
       "get": {
-        "description": "Betriebsmodus `pos` oder `order_only` („Nur Bestellen“) mit Verlauf. Umschalten kann nur der OpenEOS-Support.",
+        "description": "Betriebsart (`orders_only` „Nur Bons“, `cashless` „Bargeldlos“, `full` „Alle Funktionen“), Bestand (`operatingModeLegacy`), Land, TSE, abgeleitete Werte (`cashAllowed`, `pricesVisible`), wählbare Betriebsarten (`options`) und Verlauf.",
         "operationId": "organizations_getOperatingMode",
         "parameters": [
           {
@@ -1854,7 +1785,45 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Operating mode with change log (read-only for the organization)",
+        "summary": "Operating mode with options and change log",
+        "tags": [
+          "Organizations"
+        ]
+      },
+      "patch": {
+        "description": "Wechselt die Betriebsart. `full` geht in Deutschland nur mit aktiver Cloud-TSE (sonst 403 TSE_REQUIRED_FOR_CASH); ohne Land 400 COUNTRY_REQUIRED. Jeder Wechsel hebt den Bestand auf, steht im Verlauf und im Protokoll und geht sofort an die Kassen.",
+        "operationId": "organizations_setOperatingMode",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetOperatingModeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Switch the operating mode (admins, logged)",
         "tags": [
           "Organizations"
         ]
@@ -1862,7 +1831,7 @@
     },
     "/api/organizations/{id}/operating-mode/certificate.pdf": {
       "get": {
-        "description": "Herstellerbescheinigung für die Verfahrensdokumentation: das Kassen- und Zahlungsmodul ist deaktiviert und kann von der Organisation nicht selbst aktiviert werden. Nur im Modus `order_only`.",
+        "description": "Herstellerbescheinigung für die Verfahrensdokumentation: Bargeld kann in dieser Organisation nicht erfasst werden; Bargeld ist ausschließlich mit aktiver zertifizierter TSE möglich. Nur in Deutschland in den Betriebsarten `orders_only` und `cashless`.",
         "operationId": "organizations_getOperatingModeCertificate",
         "parameters": [
           {
@@ -1884,37 +1853,7 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Manufacturer certificate for the order-only mode (PDF, admins)",
-        "tags": [
-          "Organizations"
-        ]
-      }
-    },
-    "/api/organizations/{id}/cash-policy": {
-      "get": {
-        "description": "Land (`country`), wirksame Bargeld-Regel (`cashPolicy`: `allowed` oder `blocked_de_no_tse`), Bestandsschutz (`cashPolicyLegacy`), Kurzgrund (`cashPolicyReason`) und Verlauf.",
-        "operationId": "organizations_getCashPolicy",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Country and cash policy with change log",
+        "summary": "Manufacturer certificate for the operating mode (PDF, admins)",
         "tags": [
           "Organizations"
         ]
@@ -1955,66 +1894,6 @@
           }
         ],
         "summary": "Set the country once (admins, only while none is set)",
-        "tags": [
-          "Organizations"
-        ]
-      }
-    },
-    "/api/organizations/{id}/cash-policy/switch": {
-      "post": {
-        "description": "Nur Bestandsorganisationen mit Land DE. Danach ist Bargeld gesperrt (403 CASH_NOT_ALLOWED_IN_COUNTRY), ohne Schalter für den Verein; zurück nur über den OpenEOS-Support.",
-        "operationId": "organizations_switchCashPolicy",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Leave the legacy cash rules and switch to \"Germany without cash\" (admins, one-way)",
-        "tags": [
-          "Organizations"
-        ]
-      }
-    },
-    "/api/organizations/{id}/cash-policy/certificate.pdf": {
-      "get": {
-        "description": "Herstellerbescheinigung für die Verfahrensdokumentation: Bargeld kann in OpenEOS nicht erfasst und von der Organisation nicht aktiviert werden; Kartenzahlungen werden erfasst, Bargeld läuft über eine offene Ladenkasse außerhalb. Nur bei `cashPolicy = blocked_de_no_tse`.",
-        "operationId": "organizations_getCashPolicyCertificate",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Manufacturer certificate for \"Germany without cash\" (PDF, admins)",
         "tags": [
           "Organizations"
         ]
@@ -4363,7 +4242,7 @@
     },
     "/api/device-api/orders/complete": {
       "post": {
-        "description": "Nur im Betriebsmodus „Nur Bestellen“: „Abschließen“ statt „Kassieren“, z. B. für alle offenen Bestellungen eines Tisches oder eine abgeholte Thekenbestellung. Fertige Positionen gelten damit als ausgegeben. Solange eine Station noch arbeitet: 400 ORDER_ITEMS_IN_PRODUCTION. Im Kassenbetrieb: 400 ORDER_NOT_FULLY_PAID.",
+        "description": "Nur in der Betriebsart `orders_only` („Nur Bons“): „Abgeholt“ (Theke) bzw. „Tisch abschließen“ statt „Kassieren“, z. B. für alle offenen Bestellungen eines Tisches oder eine abgeholte Thekenbestellung. Fertige Positionen gelten damit als ausgegeben. Solange eine Station noch arbeitet: 400 ORDER_ITEMS_IN_PRODUCTION. In den Betriebsarten `cashless` und `full`: 400 ORDER_NOT_FULLY_PAID.",
         "operationId": "deviceTables_completeOrders",
         "parameters": [
           {
@@ -4391,7 +4270,7 @@
             "description": ""
           }
         },
-        "summary": "Complete open orders without payment (order-only mode)",
+        "summary": "Complete open orders without payment (operating mode orders_only)",
         "tags": [
           "Device API"
         ]
@@ -10876,7 +10755,7 @@
     },
     "/api/admin/organizations/{id}/operating-mode": {
       "patch": {
-        "description": "Nur Support (Super-Admin). Im Modus `order_only` sperrt der Server jede Zahlung, Erstattung, Trinkgeld, Kassenlade und Pfand-Auszahlung (403 ORDER_ONLY_MODE). Jede Umschaltung steht mit Zeitpunkt, Person und Grund im Verlauf und im Admin-Protokoll.",
+        "description": "Nur Support (Super-Admin). Betriebsart `orders_only`, `cashless` oder `full` (in Deutschland nur mit aktiver Cloud-TSE, sonst 403 TSE_REQUIRED_FOR_CASH). Steht mit Zeitpunkt, Person und Grund im Verlauf und im Admin-Protokoll.",
         "operationId": "admin_setOperatingMode",
         "parameters": [
           {
@@ -10908,7 +10787,7 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Switch the operating mode (pos / order_only), logged with reason",
+        "summary": "Switch the operating mode, logged with reason",
         "tags": [
           "Admin"
         ]
@@ -10937,7 +10816,7 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Operating mode change log (newest first)",
+        "summary": "Operating mode and country change log (newest first)",
         "tags": [
           "Admin"
         ]
@@ -10945,7 +10824,7 @@
     },
     "/api/admin/organizations/{id}/country": {
       "patch": {
-        "description": "Nur Support (Super-Admin). Das Land steuert die Bargeld-Regel (DE ohne TSE: kein Bargeld) und die Steuersätze. Steht mit Grund im Verlauf, im Admin-Protokoll und auf der Bescheinigung.",
+        "description": "Nur Support (Super-Admin). Das Land bestimmt die wählbaren Betriebsarten (Deutschland: Bargeld nur mit Cloud-TSE) und die Steuersätze. Steht mit Grund im Verlauf und im Admin-Protokoll.",
         "operationId": "admin_setOrganizationCountry",
         "parameters": [
           {
@@ -10978,75 +10857,6 @@
           }
         ],
         "summary": "Change the country of an organization (logged with reason)",
-        "tags": [
-          "Admin"
-        ]
-      }
-    },
-    "/api/admin/organizations/{id}/cash-policy": {
-      "patch": {
-        "description": "Nur Support (Super-Admin). `legacy: true` = Verhalten wie vor der Länderregel (Bargeld erlaubt), `legacy: false` = Regel des Landes.",
-        "operationId": "admin_setCashPolicy",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetCashPolicyAdminDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Set or clear the legacy cash rules (logged with reason)",
-        "tags": [
-          "Admin"
-        ]
-      }
-    },
-    "/api/admin/organizations/{id}/cash-policy/history": {
-      "get": {
-        "operationId": "admin_getCashPolicyHistory",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Country and cash policy change log",
         "tags": [
           "Admin"
         ]
@@ -17694,17 +17504,27 @@
           "enabled"
         ]
       },
-      "UpdateCashlessDto": {
+      "SetOperatingModeDto": {
         "type": "object",
         "properties": {
-          "cashless": {
-            "type": "boolean",
-            "example": true,
-            "description": "Bargeldloser Modus: true sperrt Bargeld an allen Kassen und in der Verwaltung"
+          "mode": {
+            "type": "string",
+            "enum": [
+              "orders_only",
+              "cashless",
+              "full"
+            ],
+            "example": "cashless"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Antrag des Vereins per E-Mail vom 01.11.2026",
+            "description": "Anlass des Wechsels (erscheint auf der Bescheinigung der Organisation)"
           }
         },
         "required": [
-          "cashless"
+          "mode",
+          "reason"
         ]
       },
       "SetOrganizationCountryDto": {
@@ -18284,18 +18104,6 @@
           "quantity"
         ]
       },
-      "DeviceOrderCloseWithoutPaymentDto": {
-        "type": "object",
-        "properties": {
-          "orderIds": {
-            "description": "Weitere offene Bestellungen (z. B. am Tisch), die ebenfalls ohne Zahlung abgeschlossen werden.",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
       "DeviceOrderPaymentDto": {
         "type": "object",
         "properties": {
@@ -18438,14 +18246,6 @@
             "type": "string",
             "example": "Künstler-Bon 3 €",
             "description": "Grund/Bezeichnung des Rabatts"
-          },
-          "closeWithoutPayment": {
-            "description": "Nur bei der Bargeld-Regel „Deutschland ohne Bargeld“ (`cashPolicy = blocked_de_no_tse`): Bestellung ohne Zahlung abschließen, weil bar außerhalb von OpenEOS kassiert wurde (offene Ladenkasse). Ersetzt `payment`; sonst 403 CLOSE_WITHOUT_PAYMENT_NOT_AVAILABLE.",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/DeviceOrderCloseWithoutPaymentDto"
-              }
-            ]
           },
           "payment": {
             "description": "Zahlung gleich mitbuchen (alles oder nichts). Pflicht im Kassiermodus „Sofort kassieren“ (`immediate`), sonst ORDER_PAYMENT_REQUIRED.",
@@ -20766,28 +20566,6 @@
           }
         }
       },
-      "SetOperatingModeDto": {
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string",
-            "enum": [
-              "pos",
-              "order_only"
-            ],
-            "example": "order_only"
-          },
-          "reason": {
-            "type": "string",
-            "example": "Antrag des Vereins per E-Mail vom 01.11.2026",
-            "description": "Anlass der Umschaltung (erscheint auf der Bescheinigung der Organisation)"
-          }
-        },
-        "required": [
-          "mode",
-          "reason"
-        ]
-      },
       "SetOrganizationCountryAdminDto": {
         "type": "object",
         "properties": {
@@ -20804,24 +20582,6 @@
         },
         "required": [
           "country",
-          "reason"
-        ]
-      },
-      "SetCashPolicyAdminDto": {
-        "type": "object",
-        "properties": {
-          "legacy": {
-            "type": "boolean",
-            "example": true,
-            "description": "true: Bestandsschutz (Bargeld wie bisher), false: Regel des Landes"
-          },
-          "reason": {
-            "type": "string",
-            "example": "Wechsel versehentlich, Antrag vom 01.11.2026"
-          }
-        },
-        "required": [
-          "legacy",
           "reason"
         ]
       },

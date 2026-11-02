@@ -2,6 +2,10 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsIn, IsString } from 'class-validator';
 import { COUNTRY_CODES } from '../../../common/constants/countries';
+import {
+  OPERATING_MODES,
+  type OperatingMode,
+} from '../../../common/utils/operating-mode.util';
 
 /** Grossbuchstaben ohne Leerraum, damit `de` und ` DE ` gelten. */
 export const toCountryCode = ({ value }: { value: unknown }) =>
@@ -19,4 +23,16 @@ export class SetOrganizationCountryDto {
   @IsString()
   @IsIn(COUNTRY_CODES, { message: COUNTRY_MESSAGE })
   country: string;
+}
+
+/** Betriebsart wechseln (Admins des Vereins). */
+export class SetOperatingModeDto {
+  @ApiProperty({
+    enum: OPERATING_MODES,
+    example: 'cashless',
+    description:
+      'Betriebsart: `orders_only` („Nur Bons“), `cashless` („Bargeldlos“) oder `full` („Alle Funktionen“, in Deutschland nur mit aktiver Cloud-TSE)',
+  })
+  @IsIn(OPERATING_MODES, { message: 'Bitte wähle eine Betriebsart.' })
+  operatingMode: OperatingMode;
 }

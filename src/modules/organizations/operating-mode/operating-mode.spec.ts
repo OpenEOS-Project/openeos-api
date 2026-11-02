@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { ForbiddenException, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import {
   GUARDS_METADATA,
   METHOD_METADATA,
@@ -16,6 +16,7 @@ import {
 } from '../../../database/entities/user-organization.entity';
 import { SuperAdminGuard } from '../../../common/guards/super-admin.guard';
 import { SAAS_ONLY_KEY } from '../../../common/decorators/saas-only.decorator';
+import { tseStatus } from '../../../common/utils/tse.util';
 import { AdminController } from '../../admin/admin.controller';
 import { AdminService } from '../../admin/admin.service';
 import { OrganizationsController } from '../organizations.controller';
@@ -27,6 +28,11 @@ import {
 } from './operating-mode-certificate';
 import { OperatingModeService } from './operating-mode.service';
 
+/**
+ * Betriebsart wechseln (Verein und Support), Verlauf, Protokoll und
+ * Herstellerbescheinigung (betriebsarten-spec.md §2–§4).
+ */
+
 jest.mock('uuid', () => ({
   v4: () => jest.requireActual<typeof import('crypto')>('crypto').randomUUID(),
 }));
@@ -35,6 +41,10 @@ const ORG_ID = '2a3f1c52-4f43-4a3e-9f8e-0f2b8f3f1a77';
 
 beforeAll(() => {
   jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+});
+
+afterEach(() => {
+  tseStatus.isActive = () => false;
 });
 
 const superAdmin = {
@@ -53,16 +63,28 @@ const clubAdmin = {
   isSuperAdmin: false,
 } as User;
 
+interface OrgState {
+  country: string | null;
+  operatingMode: 'orders_only' | 'cashless' | 'full';
+  operatingModeLegacy: boolean;
+}
+
 /** Organisation, Verlauf und Admin-Protokoll im Speicher. */
 function setup(
-  role: OrganizationRole = OrganizationRole.ADMIN,
-  settings: Record<string, unknown> = {},
+  state: Partial<OrgState> = {},
+  options: { role?: OrganizationRole; selfHosted?: boolean } = {},
 ) {
   const stored = {
     id: ORG_ID,
     name: 'TSV Musterstadt e.V.',
     slug: 'tsv-musterstadt',
     billingAddress: null,
+    createdAt: new Date('2026-05-01T10:00:00Z'),
+    country: 'DE',
+    operatingMode: 'full',
+    operatingModeLegacy: true,
+    operatingModeSince: new Date('2026-05-01T10:00:00Z'),
+    ...state,
     settings: {
       currency: 'EUR',
       timezone: 'Europe/Berlin',
@@ -74,7 +96,6 @@ function setup(
         city: 'Musterstadt',
         country: 'DE',
       },
-      ...settings,
     },
   } as unknown as Organization;
   const history: Partial<OrganizationOperatingModeChange>[] = [];
@@ -82,12 +103,18 @@ function setup(
   const manager = {
     query: jest.fn((sql: string, params: unknown[]) => {
       if (sql.includes('FOR UPDATE')) {
-        return Promise.resolve([{ settings: stored.settings }]);
+        return Promise.resolve([
+          {
+            country: stored.country,
+            operating_mode: stored.operatingMode,
+            operating_mode_legacy: stored.operatingModeLegacy,
+            operating_mode_since: stored.operatingModeSince,
+          },
+        ]);
       }
-      stored.settings = {
-        ...stored.settings,
-        ...(JSON.parse(params[1] as string) as object),
-      };
+      stored.operatingMode = params[1] as Organization['operatingMode'];
+      stored.operatingModeLegacy = false;
+      stored.operatingModeSince = params[2] as Date;
       return Promise.resolve([]);
     }),
     insert: jest.fn((entity: unknown, row: Record<string, unknown>) => {
@@ -102,14 +129,22 @@ function setup(
     ),
     getRepository: () => ({
       find: jest.fn(() => Promise.resolve(history)),
+      findOne: jest.fn(() => Promise.resolve(structuredClone(stored))),
     }),
   };
   const organizationRepository = {
     findOne: jest.fn(() => Promise.resolve(structuredClone(stored))),
-    save: jest.fn((org: Organization) => Promise.resolve(org)),
+    save: jest.fn((org: Organization) => {
+      Object.assign(stored, org);
+      return Promise.resolve(org);
+    }),
   };
   const userOrganizationRepository = {
-    findOne: jest.fn(() => Promise.resolve({ role } as UserOrganization)),
+    findOne: jest.fn(() =>
+      Promise.resolve({
+        role: options.role ?? OrganizationRole.ADMIN,
+      } as UserOrganization),
+    ),
   };
   const none = undefined as never;
   const organizations = new OrganizationsService(
@@ -133,160 +168,290 @@ function setup(
         })[key],
     ),
   };
+  const gateway = { notifyOrganizationSettingsUpdated: jest.fn() };
   const service = new OperatingModeService(
-    organizationRepository as never,
     dataSource as never,
     organizations,
     config as never,
+    { isSelfHosted: options.selfHosted === true } as never,
+    gateway as never,
   );
-  return { service, organizations, stored, history, audit, manager };
+  return { service, organizations, stored, history, audit, manager, gateway };
 }
 
-describe('OperatingModeService.setMode (support only)', () => {
-  it('switches to order_only, keeps all other settings and logs history and audit', async () => {
-    const { service, stored, history, audit } = setup();
+async function responseOf(call: Promise<unknown>): Promise<unknown> {
+  return call.then(
+    () => null,
+    (e: { getResponse?: () => Record<string, unknown> }) => e.getResponse?.(),
+  );
+}
 
-    const state = await service.setMode(
-      ORG_ID,
-      'order_only',
-      '  Antrag des Vereins per E-Mail vom 01.11.2026  ',
-      superAdmin,
-      { ipAddress: '203.0.113.9', userAgent: 'Mozilla/5.0' },
-    );
-
-    expect(state.operatingMode).toBe('order_only');
-    expect(stored.settings.operatingMode).toBe('order_only');
-    expect(stored.settings.operatingModeSince).toBe(state.operatingModeSince);
-    expect(stored.settings.sumup).toEqual({
-      apiKey: 'sup_sk_secret',
-      merchantCode: 'M1',
+describe('OperatingModeService — switch by the club (admins)', () => {
+  it('DE legacy → cashless: clears legacy, logs history and audit, notifies the tills', async () => {
+    const t = setup();
+    const state = await t.service.setByMember(ORG_ID, 'cashless', clubAdmin, {
+      ipAddress: '203.0.113.7',
+      userAgent: 'jest',
     });
-    expect(history).toEqual([
-      expect.objectContaining({
-        organizationId: ORG_ID,
-        fromMode: 'pos',
-        toMode: 'order_only',
-        reason: 'Antrag des Vereins per E-Mail vom 01.11.2026',
-        changedByUserId: 'support-1',
-        changedByName: 'Sam Support (support@openeos.example)',
-        ipAddress: '203.0.113.9',
-      }),
-    ]);
-    expect(audit).toEqual([
-      expect.objectContaining({
-        adminUserId: 'support-1',
-        organizationId: ORG_ID,
-        action: AdminAction.SET_OPERATING_MODE,
-        reason: 'Antrag des Vereins per E-Mail vom 01.11.2026',
-        details: {
-          before: { operatingMode: 'pos' },
-          after: { operatingMode: 'order_only' },
-        },
-      }),
+
+    expect(state).toMatchObject({
+      operatingMode: 'cashless',
+      operatingModeLegacy: false,
+      cashAllowed: false,
+      pricesVisible: true,
+      certificateAvailable: true,
+    });
+    expect(t.stored).toMatchObject({
+      operatingMode: 'cashless',
+      operatingModeLegacy: false,
+    });
+    expect(t.history[0]).toMatchObject({
+      organizationId: ORG_ID,
+      fromMode: 'full_legacy',
+      toMode: 'cashless',
+      reason: null,
+      bySupport: false,
+      changedByUserId: 'user-1',
+      changedByName: 'Anna Admin (anna@tsv.example)',
+      ipAddress: '203.0.113.7',
+    });
+    expect(t.audit[0]).toMatchObject({
+      action: AdminAction.SET_OPERATING_MODE,
+      adminUserId: 'user-1',
+      organizationId: ORG_ID,
+      details: {
+        before: { operatingMode: 'full_legacy' },
+        after: { operatingMode: 'cashless' },
+        bySupport: false,
+      },
+    });
+    expect(t.gateway.notifyOrganizationSettingsUpdated).toHaveBeenCalledWith(
+      ORG_ID,
+    );
+  });
+
+  it('DE: back to full only with an active TSE (403 TSE_REQUIRED_FOR_CASH)', async () => {
+    const t = setup({ operatingMode: 'cashless', operatingModeLegacy: false });
+    expect(
+      await responseOf(t.service.setByMember(ORG_ID, 'full', clubAdmin)),
+    ).toMatchObject({
+      code: 'TSE_REQUIRED_FOR_CASH',
+      reason: 'OPERATING_MODE_FULL_REQUIRES_TSE',
+    });
+    expect(t.history).toHaveLength(0);
+    expect(t.stored.operatingMode).toBe('cashless');
+
+    tseStatus.isActive = () => true;
+    const state = await t.service.setByMember(ORG_ID, 'full', clubAdmin);
+    expect(state).toMatchObject({
+      operatingMode: 'full',
+      tseActive: true,
+      cashAllowed: true,
+    });
+  });
+
+  it('DE legacy: confirming full without TSE is not possible either', async () => {
+    const t = setup();
+    expect(
+      await responseOf(t.service.setByMember(ORG_ID, 'full', clubAdmin)),
+    ).toMatchObject({ code: 'TSE_REQUIRED_FOR_CASH' });
+    expect(t.stored.operatingModeLegacy).toBe(true);
+  });
+
+  it.each(['AT', 'CH', 'FR'])(
+    '%s legacy: confirming full clears legacy and is logged',
+    async (country) => {
+      const t = setup({ country });
+      const state = await t.service.setByMember(ORG_ID, 'full', clubAdmin);
+      expect(state).toMatchObject({
+        operatingMode: 'full',
+        operatingModeLegacy: false,
+        cashAllowed: true,
+        certificateAvailable: false,
+      });
+      expect(t.history[0]).toMatchObject({
+        fromMode: 'full_legacy',
+        toMode: 'full',
+      });
+    },
+  );
+
+  it('AT: all three modes are free to choose, also back to full', async () => {
+    const t = setup({ country: 'AT', operatingModeLegacy: false });
+    await t.service.setByMember(ORG_ID, 'orders_only', clubAdmin);
+    await t.service.setByMember(ORG_ID, 'cashless', clubAdmin);
+    await t.service.setByMember(ORG_ID, 'full', clubAdmin);
+    expect(t.history.map((h) => `${h.fromMode}>${h.toMode}`)).toEqual([
+      'cashless>full',
+      'orders_only>cashless',
+      'full>orders_only',
     ]);
   });
 
-  it('switching back is possible and logged as well', async () => {
-    const { service, history } = setup(OrganizationRole.ADMIN, {
-      operatingMode: 'order_only',
-    });
-    await service.setMode(
-      ORG_ID,
-      'pos',
-      'Verein will wieder kassieren',
-      superAdmin,
-    );
-    expect(history[0]).toMatchObject({ fromMode: 'order_only', toMode: 'pos' });
+  it('the same mode again (not legacy) is rejected and writes nothing', async () => {
+    const t = setup({ operatingMode: 'cashless', operatingModeLegacy: false });
+    expect(
+      await responseOf(t.service.setByMember(ORG_ID, 'cashless', clubAdmin)),
+    ).toMatchObject({ reason: 'OPERATING_MODE_UNCHANGED' });
+    expect(t.history).toHaveLength(0);
+    expect(t.audit).toHaveLength(0);
   });
 
-  it('rejects a switch to the current mode and writes nothing', async () => {
-    const { service, history, audit } = setup(OrganizationRole.ADMIN, {
-      operatingMode: 'order_only',
-    });
+  it('without a country no mode can be chosen (400 COUNTRY_REQUIRED)', async () => {
+    const t = setup({ country: null });
+    expect(
+      await responseOf(t.service.setByMember(ORG_ID, 'cashless', clubAdmin)),
+    ).toMatchObject({ reason: 'COUNTRY_REQUIRED' });
+    expect(t.history).toHaveLength(0);
+  });
+
+  it('only admins of the organization can switch', async () => {
+    const t = setup({}, { role: OrganizationRole.MEMBER });
     await expect(
-      service.setMode(ORG_ID, 'order_only', 'doppelt geklickt', superAdmin),
-    ).rejects.toMatchObject({
-      response: { reason: 'OPERATING_MODE_UNCHANGED' },
+      t.service.setByMember(ORG_ID, 'cashless', clubAdmin),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(t.history).toHaveLength(0);
+  });
+
+  it('members see options, history and who switched (support anonymised)', async () => {
+    const t = setup({ operatingModeLegacy: false, operatingMode: 'cashless' });
+    await t.service.setByMember(ORG_ID, 'orders_only', clubAdmin);
+    await t.service.adminSetMode(
+      ORG_ID,
+      'cashless',
+      'Antrag per E-Mail vom 02.11.2026',
+      superAdmin,
+    );
+    const view = await t.service.getForMember(ORG_ID, clubAdmin);
+    expect(view.options).toEqual([
+      { mode: 'orders_only', available: true, unavailableReason: null },
+      { mode: 'cashless', available: true, unavailableReason: null },
+      { mode: 'full', available: false, unavailableReason: 'tse_required' },
+    ]);
+    expect(view.history.map((h) => h.changedByName)).toEqual([
+      'OpenEOS-Support',
+      'Anna Admin (anna@tsv.example)',
+    ]);
+    expect(view.history[0]).toMatchObject({
+      bySupport: true,
+      reason: 'Antrag per E-Mail vom 02.11.2026',
     });
-    expect(history).toHaveLength(0);
-    expect(audit).toHaveLength(0);
   });
 });
 
-describe('Who can switch', () => {
-  it('the switch lives only in the super-admin controller (guarded, SaaS only)', () => {
+describe('OperatingModeService — switch by the support', () => {
+  it('stores the reason, the real name and the audit entry', async () => {
+    const t = setup({ country: 'AT', operatingModeLegacy: false });
+    await t.service.adminSetMode(
+      ORG_ID,
+      'orders_only',
+      '  Antrag des Vereins per E-Mail  ',
+      superAdmin,
+    );
+    expect(t.history[0]).toMatchObject({
+      fromMode: 'full',
+      toMode: 'orders_only',
+      reason: 'Antrag des Vereins per E-Mail',
+      bySupport: true,
+      changedByName: 'Sam Support (support@openeos.example)',
+    });
+    expect(t.audit[0]).toMatchObject({
+      action: AdminAction.SET_OPERATING_MODE,
+      adminUserId: 'support-1',
+      reason: 'Antrag des Vereins per E-Mail',
+    });
+  });
+
+  it('the support cannot enable cash in DE without TSE either', async () => {
+    const t = setup({ operatingMode: 'cashless', operatingModeLegacy: false });
+    expect(
+      await responseOf(
+        t.service.adminSetMode(ORG_ID, 'full', 'Bitte Bargeld', superAdmin),
+      ),
+    ).toMatchObject({ code: 'TSE_REQUIRED_FOR_CASH' });
+  });
+});
+
+describe('Routes', () => {
+  const routes = (controller: { prototype: object }) => {
+    const proto = controller.prototype as Record<string, unknown>;
+    return Object.getOwnPropertyNames(proto)
+      .map((name) => proto[name])
+      .filter((fn): fn is object => typeof fn === 'function')
+      .map((fn) => ({
+        path: Reflect.getMetadata(PATH_METADATA, fn) as string | undefined,
+        method: Reflect.getMetadata(METHOD_METADATA, fn) as number | undefined,
+        saasOnly: Reflect.getMetadata(SAAS_ONLY_KEY, fn) as boolean | undefined,
+      }))
+      .filter((r) => typeof r.path === 'string');
+  };
+
+  it('the club switches via PATCH /organizations/:id/operating-mode', () => {
+    const org = routes(OrganizationsController);
+    expect(
+      org.find((r) => r.path === ':id/operating-mode' && r.method === 4),
+    ).toBeDefined(); // PATCH
+    expect(
+      org.find(
+        (r) => r.path === ':id/operating-mode/certificate.pdf' && r.saasOnly,
+      ),
+    ).toBeDefined();
+  });
+
+  it('the support switches in the guarded admin controller (SaaS only)', () => {
     const guards = Reflect.getMetadata(
       GUARDS_METADATA,
       AdminController,
     ) as unknown[];
     expect(guards).toContain(SuperAdminGuard);
-
-    const handler = Object.getOwnPropertyDescriptor(
-      AdminController.prototype,
-      'setOperatingMode',
-    )?.value as object;
-    expect(Reflect.getMetadata(PATH_METADATA, handler)).toBe(
-      'organizations/:id/operating-mode',
-    );
-    expect(Reflect.getMetadata(METHOD_METADATA, handler)).toBe(4); // PATCH
-    expect(Reflect.getMetadata(SAAS_ONLY_KEY, handler)).toBe(true);
+    const admin = routes(AdminController);
+    expect(
+      admin.find(
+        (r) =>
+          r.path === 'organizations/:id/operating-mode' &&
+          r.method === 4 &&
+          r.saasOnly,
+      ),
+    ).toBeDefined();
   });
 
-  it('the organization API has no writing route for the mode', () => {
-    const proto = OrganizationsController.prototype as unknown as Record<
-      string,
-      unknown
-    >;
-    const writing = Object.getOwnPropertyNames(proto)
-      .map((name) => proto[name])
-      .filter(
-        (fn): fn is (...a: unknown[]) => unknown => typeof fn === 'function',
-      )
-      .filter((fn) => {
-        const path = Reflect.getMetadata(PATH_METADATA, fn) as
-          | string
-          | undefined;
-        const method = Reflect.getMetadata(METHOD_METADATA, fn) as
-          | number
-          | undefined;
-        return (
-          typeof path === 'string' &&
-          path.includes('operating-mode') &&
-          method !== undefined &&
-          method !== 0 // GET
-        );
-      });
-    expect(writing).toEqual([]);
+  it('the interim switches are gone', () => {
+    const paths = [
+      ...routes(OrganizationsController),
+      ...routes(AdminController),
+    ].map((r) => r.path ?? '');
+    for (const removed of ['payments/cashless', 'cash-policy']) {
+      expect(paths.filter((p) => p.includes(removed))).toEqual([]);
+    }
   });
 
-  it('the organization PATCH (and create) cannot set the mode', async () => {
-    const { organizations } = setup(OrganizationRole.ADMIN, {
-      operatingMode: 'order_only',
-      operatingModeSince: '2026-11-01T09:00:00.000Z',
-    });
-
-    const result = await organizations.update(
+  it('the organization PATCH cannot set mode or the interim fields', async () => {
+    const t = setup({ operatingMode: 'cashless', operatingModeLegacy: false });
+    const result = await t.organizations.update(
       ORG_ID,
       {
         settings: {
-          operatingMode: 'pos',
+          operatingMode: 'full',
           operatingModeSince: '2020-01-01T00:00:00.000Z',
+          payments: { cashless: false },
           vatExempt: false,
         },
       } as never,
       clubAdmin,
     );
-
-    expect(result.settings.operatingMode).toBe('order_only');
-    expect(result.settings.operatingModeSince).toBe('2026-11-01T09:00:00.000Z');
+    expect(result.operatingMode).toBe('cashless');
+    expect(result.settings).not.toHaveProperty('operatingMode');
+    expect(result.settings).not.toHaveProperty('payments');
     expect(result.settings.vatExempt).toBe(false);
   });
 
-  it('the generic super-admin edit keeps the mode as it is', async () => {
+  it('the generic super-admin edit cannot set the mode either', async () => {
     const org = {
       id: ORG_ID,
       name: 'TSV',
-      settings: { operatingMode: 'order_only', operatingModeSince: 'T1' },
+      country: 'DE',
+      operatingMode: 'cashless',
+      settings: { currency: 'EUR' },
     };
     const organizationRepository = {
       findOne: jest.fn(() => Promise.resolve(structuredClone(org))),
@@ -312,58 +477,72 @@ describe('Who can switch', () => {
     );
     const saved = await admin.updateOrganization(
       ORG_ID,
-      { settings: { currency: 'EUR', operatingMode: 'pos' } },
+      { settings: { currency: 'EUR', operatingMode: 'full' } },
       'support-1',
       '127.0.0.1',
     );
-    expect(saved.settings).toMatchObject({
-      currency: 'EUR',
-      operatingMode: 'order_only',
-      operatingModeSince: 'T1',
-    });
+    expect(saved.operatingMode).toBe('cashless');
+    expect(saved.settings).not.toHaveProperty('operatingMode');
   });
 });
 
 describe('Herstellerbescheinigung', () => {
-  it('is only available in order_only mode', async () => {
-    const { service } = setup();
-    await expect(
-      service.certificatePdf(ORG_ID, clubAdmin),
-    ).rejects.toMatchObject({
-      response: { reason: 'CERTIFICATE_REQUIRES_ORDER_ONLY' },
-    });
+  it.each([
+    ['DE full (legacy)', { country: 'DE' }],
+    ['DE full with TSE', { country: 'DE', operatingModeLegacy: false }],
+    [
+      'AT cashless',
+      { country: 'AT', operatingMode: 'cashless', operatingModeLegacy: false },
+    ],
+  ] as [string, Partial<OrgState>][])(
+    'not available for %s',
+    async (_label, state) => {
+      tseStatus.isActive = () => true;
+      const t = setup(state);
+      expect(
+        await responseOf(t.service.certificatePdf(ORG_ID, clubAdmin)),
+      ).toMatchObject({ reason: 'CERTIFICATE_NOT_AVAILABLE' });
+    },
+  );
+
+  it('not on self-hosted installations', async () => {
+    const t = setup(
+      { operatingMode: 'cashless', operatingModeLegacy: false },
+      { selfHosted: true },
+    );
+    expect(
+      await responseOf(t.service.certificatePdf(ORG_ID, clubAdmin)),
+    ).toMatchObject({ reason: 'CERTIFICATE_NOT_AVAILABLE' });
   });
 
   it('only for admins of the organization', async () => {
-    const { service } = setup(OrganizationRole.MEMBER, {
-      operatingMode: 'order_only',
-      operatingModeSince: '2026-11-01T09:00:00.000Z',
-    });
+    const t = setup(
+      { operatingMode: 'cashless', operatingModeLegacy: false },
+      { role: OrganizationRole.MEMBER },
+    );
     await expect(
-      service.certificatePdf(ORG_ID, clubAdmin),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+      t.service.certificatePdf(ORG_ID, clubAdmin),
+    ).rejects.toMatchObject({ status: 403 });
   });
 
-  it('renders a PDF for an admin after the switch', async () => {
-    const { service } = setup();
-    await service.setMode(
-      ORG_ID,
-      'order_only',
-      'Antrag vom 01.11.2026',
-      superAdmin,
-    );
+  it.each(['cashless', 'orders_only'] as const)(
+    'renders a PDF in DE for %s',
+    async (mode) => {
+      const t = setup();
+      await t.service.setByMember(ORG_ID, mode, clubAdmin);
+      const { pdf, filename } = await t.service.certificatePdf(
+        ORG_ID,
+        clubAdmin,
+      );
+      expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+      expect(filename).toMatch(
+        /^openeos-herstellerbescheinigung-tsv-musterstadt-\d{4}-\d{2}-\d{2}\.pdf$/,
+      );
+    },
+  );
 
-    const { pdf, filename } = await service.certificatePdf(ORG_ID, clubAdmin);
-
-    expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
-    expect(pdf.length).toBeGreaterThan(2000);
-    expect(filename).toMatch(
-      /^openeos-herstellerbescheinigung-tsv-musterstadt-\d{4}-\d{2}-\d{2}\.pdf$/,
-    );
-  });
-
-  it('states what the authorities need (content)', async () => {
-    const content = buildCertificateContent({
+  it('states what the authorities need (content)', () => {
+    const base = {
       organization: {
         id: ORG_ID,
         name: 'TSV Musterstadt e.V.',
@@ -374,65 +553,86 @@ describe('Herstellerbescheinigung', () => {
           country: 'DE',
         },
       },
-      since: new Date('2026-11-01T09:30:00.000Z'),
-      issuedAt: new Date('2026-11-02T08:00:00.000Z'),
+      country: 'DE',
+      tseActive: false,
+      since: new Date('2026-11-02T09:30:00Z'),
+      issuedAt: new Date('2026-11-02T10:00:00Z'),
       version: '1.8.0',
       operator: operatorFromEnv(
-        (key) =>
+        (k) =>
           ({
+            OPERATOR_NAME: 'LUXCODE by Lukas Lukic-Spitznagel',
             OPERATOR_ADDRESS: 'Beispielweg 2|54321 Beispielstadt',
-          })[key],
+          })[k],
       ),
       timeZone: 'Europe/Berlin',
       history: [
         {
-          at: new Date('2026-11-01T09:30:00.000Z'),
-          fromMode: 'pos',
-          toMode: 'order_only',
-          reason: 'Antrag des Vereins per E-Mail',
+          at: new Date('2026-11-02T09:00:00Z'),
+          fromMode: 'full_legacy',
+          toMode: 'cashless',
+          reason: 'Umstellung auf Betriebsarten (vorher: bargeldloser Modus)',
+          bySupport: true,
+        },
+        {
+          at: new Date('2026-11-02T09:30:00Z'),
+          fromMode: 'cashless',
+          toMode: 'orders_only',
+          reason: null,
+          bySupport: false,
         },
       ],
-    });
-    const text = JSON.stringify(content);
+    };
+    for (const mode of ['cashless', 'orders_only'] as const) {
+      const content = buildCertificateContent({ ...base, mode });
+      const text = JSON.stringify(content);
+      expect(content.title).toBe('Herstellerbescheinigung');
+      expect(text).toContain(
+        'Bargeld kann in dieser Organisation nicht erfasst werden; Bargeld ist ausschließlich mit aktiver zertifizierter TSE möglich.',
+      );
+      expect(text).toContain('Deutschland (DE)');
+      expect(text).toContain('keine aktive TSE');
+      expect(text).toContain('02.11.2026, 10:30 Uhr');
+      expect(content.history.heading).toBe('Verlauf der Betriebsart');
+      expect(content.history.rows).toEqual([
+        [
+          '02.11.2026, 10:00 Uhr',
+          '„Alle Funktionen (Bestand)“ zu „Bargeldlos“',
+          'Umstellung auf Betriebsarten (vorher: bargeldloser Modus) (OpenEOS-Support)',
+        ],
+        [
+          '02.11.2026, 10:30 Uhr',
+          '„Bargeldlos“ zu „Nur Bons“',
+          'Durch die Organisation',
+        ],
+      ]);
+      expect(content.operator.lines).toEqual([
+        'LUXCODE by Lukas Lukic-Spitznagel',
+        'Beispielweg 2',
+        '54321 Beispielstadt',
+        'hello@openeos.de',
+      ]);
+    }
+    expect(
+      JSON.stringify(buildCertificateContent({ ...base, mode: 'orders_only' })),
+    ).toContain('ohne Preise');
+  });
 
-    expect(content.title).toBe('Herstellerbescheinigung');
-    expect(content.organization.lines).toEqual([
-      'TSV Musterstadt e.V.',
-      'Sportplatzweg 1',
-      '12345 Musterstadt',
-    ]);
-    expect(content.operator.lines).toEqual([
-      'LUXCODE by Lukas Lukic-Spitznagel',
-      'Beispielweg 2',
-      '54321 Beispielstadt',
-      'hello@openeos.de',
-    ]);
-    expect(content.facts).toContainEqual(['Version', '1.8.0']);
-    expect(content.facts).toContainEqual([
-      'Gültig seit',
-      '01.11.2026, 10:30 Uhr',
-    ]);
-    expect(text).toContain('seit dem 01.11.2026, 10:30 Uhr');
-    expect(text).toContain('Kassen- und Zahlungsmodul');
-    expect(text).toContain(
-      'kann das Kassen- und Zahlungsmodul nicht selbst aktivieren',
+  it('renders the content as PDF', async () => {
+    const pdf = await renderCertificatePdf(
+      buildCertificateContent({
+        organization: { id: ORG_ID, name: 'TSV', address: null },
+        mode: 'cashless',
+        country: 'DE',
+        tseActive: false,
+        since: new Date(),
+        issuedAt: new Date(),
+        version: 'dev',
+        operator: operatorFromEnv(() => undefined),
+        timeZone: 'Europe/Berlin',
+        history: [],
+      }),
     );
-    expect(text).toContain('ausschließlich durch den Hersteller');
-    expect(text).toContain('offene Ladenkasse');
-    expect(text).toContain('Vorkasse im Online-Shop');
-    expect(text).toContain('Küche');
-    expect(text).toContain('maschinell erstellt');
-    expect(content.history.rows).toEqual([
-      [
-        '01.11.2026, 10:30 Uhr',
-        '„Kasse“ zu „Nur Bestellen“',
-        'Antrag des Vereins per E-Mail',
-      ],
-    ]);
-    // Keine Unterschrift, kein Bild einer Unterschrift.
-    expect(text).not.toMatch(/Unterschrift des/);
-
-    const pdf = await renderCertificatePdf(content);
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
   });
 

@@ -69,11 +69,11 @@ export const ErrorCodes = {
   INTEGRATION_DISABLED: 'INTEGRATION_DISABLED',
 
   // Payment Errors
-  // Bargeldloser Modus: Bargeld ist fuer die Organisation gesperrt.
+  // Betriebsart „Bargeldlos“: Bargeld ist fuer die Organisation gesperrt.
   CASH_PAYMENTS_DISABLED: 'CASH_PAYMENTS_DISABLED',
-  // Bargeld-Regel des Landes (DE ohne TSE): Bargeld gesperrt, kein Schalter.
-  CASH_NOT_ALLOWED_IN_COUNTRY: 'CASH_NOT_ALLOWED_IN_COUNTRY',
-  // Betriebsmodus „Nur Bestellen“: kein Kassenmodul, keine Zahlungen.
+  // Betriebsart „Alle Funktionen“ in Deutschland ohne aktive TSE.
+  TSE_REQUIRED_FOR_CASH: 'TSE_REQUIRED_FOR_CASH',
+  // Betriebsart „Nur Bons“ (orders_only): keine Preise, keine Zahlungen.
   ORDER_ONLY_MODE: 'ORDER_ONLY_MODE',
 
   // Stripe Errors
@@ -168,11 +168,11 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.INTEGRATION_DISABLED]: 'Integration ist nicht aktiviert',
 
   [ErrorCodes.CASH_PAYMENTS_DISABLED]:
-    'Bargeld ist im bargeldlosen Modus gesperrt',
-  [ErrorCodes.CASH_NOT_ALLOWED_IN_COUNTRY]:
-    'Bargeld ist in Deutschland ohne TSE in OpenEOS nicht möglich',
+    'Bargeld ist in der Betriebsart „Bargeldlos“ gesperrt',
+  [ErrorCodes.TSE_REQUIRED_FOR_CASH]:
+    'Bargeld geht in Deutschland nur mit einer aktiven Cloud-TSE',
   [ErrorCodes.ORDER_ONLY_MODE]:
-    'Im Modus „Nur Bestellen“ gibt es keine Zahlungen in OpenEOS',
+    'In der Betriebsart „Nur Bons“ gibt es keine Zahlungen in OpenEOS',
 
   [ErrorCodes.STRIPE_NOT_CONFIGURED]:
     'Online-Zahlung ist derzeit nicht verfügbar',
@@ -223,20 +223,15 @@ export const ErrorReasons = {
   API_TOKEN_WRONG_ORGANIZATION: 'API_TOKEN_WRONG_ORGANIZATION',
   CARD_READER_NOT_LINKED: 'CARD_READER_NOT_LINKED',
   CART_ITEM_NOT_FOUND: 'CART_ITEM_NOT_FOUND',
-  CASHLESS_TOGGLE_NOT_AVAILABLE: 'CASHLESS_TOGGLE_NOT_AVAILABLE',
   CASH_DRAWER_NOT_CONFIGURED: 'CASH_DRAWER_NOT_CONFIGURED',
-  CASH_POLICY_ALREADY_ACTIVE: 'CASH_POLICY_ALREADY_ACTIVE',
-  CASH_POLICY_SWITCH_REQUIRES_DE: 'CASH_POLICY_SWITCH_REQUIRES_DE',
-  CASH_POLICY_UNCHANGED: 'CASH_POLICY_UNCHANGED',
+  CERTIFICATE_NOT_AVAILABLE: 'CERTIFICATE_NOT_AVAILABLE',
   CATEGORY_HAS_PRODUCTS: 'CATEGORY_HAS_PRODUCTS',
   CATEGORY_IN_USE: 'CATEGORY_IN_USE',
   CATEGORY_NOT_FOUND: 'CATEGORY_NOT_FOUND',
-  CERTIFICATE_REQUIRES_CASH_POLICY: 'CERTIFICATE_REQUIRES_CASH_POLICY',
-  CERTIFICATE_REQUIRES_ORDER_ONLY: 'CERTIFICATE_REQUIRES_ORDER_ONLY',
-  CLOSE_WITHOUT_PAYMENT_NOT_AVAILABLE: 'CLOSE_WITHOUT_PAYMENT_NOT_AVAILABLE',
   CONTACT_MESSAGE_NOT_FOUND: 'CONTACT_MESSAGE_NOT_FOUND',
   COUNTRY_ALREADY_SET: 'COUNTRY_ALREADY_SET',
   COUNTRY_INVALID: 'COUNTRY_INVALID',
+  COUNTRY_REQUIRED: 'COUNTRY_REQUIRED',
   COUNTRY_UNCHANGED: 'COUNTRY_UNCHANGED',
   DEPOSIT_RETURN_AMOUNT_INVALID: 'DEPOSIT_RETURN_AMOUNT_INVALID',
   DEPOSIT_TYPE_NOT_FOUND: 'DEPOSIT_TYPE_NOT_FOUND',
@@ -309,6 +304,7 @@ export const ErrorReasons = {
   NO_OPEN_ORDER: 'NO_OPEN_ORDER',
   NO_PENDING_EMAIL_CHANGE: 'NO_PENDING_EMAIL_CHANGE',
   ONLINE_PAYMENT_COMING_SOON: 'ONLINE_PAYMENT_COMING_SOON',
+  OPERATING_MODE_FULL_REQUIRES_TSE: 'OPERATING_MODE_FULL_REQUIRES_TSE',
   OPERATING_MODE_UNCHANGED: 'OPERATING_MODE_UNCHANGED',
   ORDER_ACCESS_DENIED: 'ORDER_ACCESS_DENIED',
   ORDER_ALREADY_CANCELLED: 'ORDER_ALREADY_CANCELLED',

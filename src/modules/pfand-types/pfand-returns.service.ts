@@ -11,8 +11,8 @@ import { Event, EventStatus } from '../../database/entities/event.entity';
 import { Organization } from '../../database/entities/organization.entity';
 import {
   assertCashAllowed,
-  CASH_POLICY_SELECT,
-} from '../../common/utils/cash-policy.util';
+  OPERATING_MODE_SELECT,
+} from '../../common/utils/operating-mode.util';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import {
   PfandReturn,
@@ -57,10 +57,10 @@ export class PfandReturnsService {
   ): Promise<PfandReturn> {
     const organization = await this.pfandReturnRepository.manager.findOne(
       Organization,
-      { where: { id: organizationId }, select: CASH_POLICY_SELECT },
+      { where: { id: organizationId }, select: OPERATING_MODE_SELECT },
     );
-    // „Nur Bestellen“: keine Auszahlung aus einer Kasse.
-    assertPaymentsAllowed(organization?.settings);
+    // „Nur Bons“: keine Auszahlung aus einer Kasse.
+    assertPaymentsAllowed(organization);
     assertCashAllowed(organization);
 
     const typeIds = dto.lines.map((l) => l.pfandTypeId);

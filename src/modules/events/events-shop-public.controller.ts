@@ -1,4 +1,9 @@
 import {
+  OPERATING_MODE_SELECT,
+  getOperatingMode,
+  isOrdersOnly,
+} from '../../common/utils/operating-mode.util';
+import {
   Controller,
   Get,
   Param,
@@ -209,6 +214,11 @@ export class EventsShopPublicController {
           serviceFee,
           isOpenNow,
           testMode,
+          // Betriebsart „Nur Bons“: keine Online-Bestellungen (keine
+          // Vorkasse, keine Preise) — der Shop zeigt „Bestellungen nur vor
+          // Ort“ statt der Karte.
+          operatingMode: getOperatingMode(organization),
+          onlineOrderingAvailable: !isOrdersOnly(organization),
         },
         // Impressum und Datenschutz des Vereins (er verkauft) plus die
         // Plattform-Links von OpenEOS — nur diese Felder, nichts sonst aus
@@ -242,7 +252,18 @@ export class EventsShopPublicController {
   @Get(':eventId/products')
   @ApiOperation({ summary: 'List available products for the shop' })
   async getProducts(@Param('eventId', ParseUUIDPipe) eventId: string) {
-    await this.loadShopEvent(eventId);
+    const event = await this.loadShopEvent(eventId);
+    // „Nur Bons“: keine Online-Bestellung, keine Preise.
+    if (
+      isOrdersOnly(
+        await this.organizationRepository.findOne({
+          where: { id: event.organizationId },
+          select: OPERATING_MODE_SELECT,
+        }),
+      )
+    ) {
+      return { data: [] };
+    }
     const products = await this.productRepository.find({
       where: { eventId, isActive: true, isAvailable: true },
       order: { sortOrder: 'ASC', name: 'ASC' },

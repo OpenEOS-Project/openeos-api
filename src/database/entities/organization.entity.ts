@@ -1,4 +1,4 @@
-import { Entity, Column, OneToMany, Index, AfterLoad } from 'typeorm';
+import { Entity, Column, OneToMany, Index } from 'typeorm';
 import { SoftDeleteEntity } from './base.entity';
 import { UserOrganization } from './user-organization.entity';
 import { Event } from './event.entity';
@@ -9,12 +9,6 @@ import { Order } from './order.entity';
 import { QrCode } from './qr-code.entity';
 import { Invitation } from './invitation.entity';
 import { Invoice } from './invoice.entity';
-import {
-  cashPolicyReason,
-  resolveCashPolicy,
-  type CashPolicy,
-  type CashPolicyReason,
-} from '../../common/utils/cash-policy.util';
 
 /**
  * Rechtliche Angaben des Vereins fuer seine oeffentlichen Seiten (Shop,
@@ -83,26 +77,6 @@ export interface OrganizationSettings {
     counterPickup?: boolean;
   };
   /**
-   * Zahlungsarten der Organisation. `cashless: true` sperrt Bargeld an
-   * allen Einstiegen (siehe cashless-mode.util.ts) — ohne Bargeld braucht
-   * die Kasse keine TSE. Fehlt der Eintrag, ist Bargeld erlaubt.
-   */
-  payments?: {
-    cashless?: boolean;
-    /** Letzte Umschaltung (ISO); Verlauf in organization_cashless_changes. */
-    changedAt?: string;
-  };
-  /**
-   * Betriebsmodus: `pos` (Standard, Kasse) oder `order_only` („Nur
-   * Bestellen“, ohne Kassenmodul). Nur der Support schaltet um
-   * (PATCH /admin/organizations/:id/operating-mode); das Bearbeiten der
-   * Organisation laesst beide Felder unberuehrt. Siehe
-   * operating-mode.util.ts, Verlauf in organization_operating_mode_changes.
-   */
-  operatingMode?: 'pos' | 'order_only';
-  /** Letzte Umschaltung des Betriebsmodus (ISO). */
-  operatingModeSince?: string;
-  /**
    * Assistent-Funktionen (Speisekarten-Import, Icon-Vorschlaege). Opt-in
    * je Organisation durch einen Admin; das Einschalten steht im
    * Admin-Protokoll. Siehe ki-plan.md Abschnitt 6.2.
@@ -163,6 +137,8 @@ export interface OrganizationSettings {
     autoComplete?: { enabled: boolean };
   };
 }
+
+export type OperatingMode = 'orders_only' | 'cashless' | 'full';
 
 export interface BillingAddress {
   company?: string;
@@ -323,37 +299,46 @@ export class Organization extends SoftDeleteEntity {
    * `settings.address.country` ist nur eine Kopie. Pflicht fuer neue
    * Organisationen; Bestandsorganisationen ohne Land setzen es einmal
    * selbst. Danach aendert es nur der Support (mit Grund, protokolliert).
-   * Steuert die Bargeld-Regel (cash-policy.util.ts) und die Steuersaetze.
+   * Steuert, welche Betriebsarten waehlbar sind (in Deutschland Bargeld nur
+   * mit TSE, operating-mode.util.ts), und die Steuersaetze.
    */
   @Column({ type: 'varchar', length: 2, nullable: true })
   country: string | null;
 
   /**
-   * Bestandsschutz der Bargeld-Regel: Organisationen, die es vor der
-   * Einfuehrung (2026-11) schon gab, verhalten sich weiter wie bisher
-   * (Bargeld erlaubt, bargeldloser Schalter), egal in welchem Land. Der
-   * Verein kann einmalig auf die Regel „Deutschland ohne Bargeld“
-   * wechseln; zurueck nur ueber den Support.
+   * Betriebsart (operating-mode.util.ts): `orders_only` („Nur Bons“),
+   * `cashless` („Bargeldlos“) oder `full` („Alle Funktionen“). Wechselt nur
+   * ueber PATCH /organizations/:id/operating-mode (Admins des Vereins) bzw.
+   * den Admin-Endpunkt (Support, mit Grund); Verlauf in
+   * organization_operating_mode_changes.
    */
-  @Column({ name: 'cash_policy_legacy', type: 'boolean', default: false })
-  cashPolicyLegacy: boolean;
+  @Column({
+    name: 'operating_mode',
+    type: 'varchar',
+    length: 20,
+    default: 'full',
+  })
+  operatingMode: OperatingMode;
 
   /**
-   * Berechnet nach dem Laden (keine Spalten, save() ignoriert sie): die
-   * wirksame Bargeld-Regel fuer Oberflaeche und Kasse. Nur gesetzt, wenn
-   * Land und Bestandsschutz mitgeladen wurden.
+   * Bestand: Organisationen, die es vor den Betriebsarten (2026-11) schon
+   * gab, verhalten sich als `full` ohne TSE, auch in Deutschland, bis sie
+   * selbst eine Betriebsart waehlen. Jede Wahl hebt das auf.
    */
-  cashPolicy?: CashPolicy;
-  cashPolicyReason?: CashPolicyReason;
+  @Column({
+    name: 'operating_mode_legacy',
+    type: 'boolean',
+    default: false,
+  })
+  operatingModeLegacy: boolean;
 
-  @AfterLoad()
-  protected computeCashPolicy(): void {
-    if (this.country === undefined || this.cashPolicyLegacy === undefined) {
-      return;
-    }
-    this.cashPolicy = resolveCashPolicy(this);
-    this.cashPolicyReason = cashPolicyReason(this);
-  }
+  /** Letzter Wechsel der Betriebsart (oder Anlage der Organisation). */
+  @Column({
+    name: 'operating_mode_since',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  operatingModeSince: Date | null;
 
   // Relations
   @OneToMany(() => UserOrganization, (userOrg) => userOrg.organization)

@@ -472,10 +472,14 @@ function setupController(
     orderingMode?: 'immediate' | 'tab' | null;
     /** Kassiermodus der Organisation (Rückfall). */
     orgOrderingMode?: 'immediate' | 'tab';
-    /** Weitere Einstellungen der Organisation (bargeldlos, SumUp). */
+    /** Weitere Einstellungen der Organisation (SumUp). */
     orgSettings?: Record<string, unknown>;
-    /** Spalten der Organisation (Land, Bestandsschutz). */
-    org?: { country?: string | null; cashPolicyLegacy?: boolean };
+    /** Spalten der Organisation (Land, Betriebsart, Bestand). */
+    org?: {
+      country?: string | null;
+      operatingMode?: 'orders_only' | 'cashless' | 'full';
+      operatingModeLegacy?: boolean;
+    };
   } = {},
 ) {
   const db = new FakeDb();
@@ -497,7 +501,8 @@ function setupController(
   }
   Object.assign(db.organizations[0], {
     country: null,
-    cashPolicyLegacy: true,
+    operatingMode: 'full',
+    operatingModeLegacy: true,
     ...(options.org ?? {}),
   });
   if (options.orgSettings) {
@@ -1161,8 +1166,11 @@ describe('DeviceApiController.createOrder — SumUp im Testmodus', () => {
   });
 });
 
-describe('DeviceApiController.createOrder — bargeldloser Modus', () => {
-  const cashless = { payments: { cashless: true } };
+describe('DeviceApiController.createOrder — Betriebsart „Bargeldlos“', () => {
+  const cashless = {
+    operatingMode: 'cashless' as const,
+    operatingModeLegacy: false,
+  };
 
   it('rejects an order paid in cash before anything is created', async () => {
     const {
@@ -1172,7 +1180,7 @@ describe('DeviceApiController.createOrder — bargeldloser Modus', () => {
       paymentsBatchService,
       orderPrintService,
       response,
-    } = setupController({ orderingMode: 'immediate', orgSettings: cashless });
+    } = setupController({ orderingMode: 'immediate', org: cashless });
 
     const call = controller.createOrder(
       device,
@@ -1201,7 +1209,7 @@ describe('DeviceApiController.createOrder — bargeldloser Modus', () => {
     ['card with tip', { paymentMethod: PaymentMethod.CARD, tipAmount: 2 }],
   ])('books an order paid by %s', async (_label, payment) => {
     const { db, controller, device, paymentsBatchService, response } =
-      setupController({ orderingMode: 'immediate', orgSettings: cashless });
+      setupController({ orderingMode: 'immediate', org: cashless });
 
     const { data } = await controller.createOrder(
       device,
@@ -1247,7 +1255,7 @@ describe('DeviceApiController.createOrder — bargeldloser Modus', () => {
   it('still allows an unpaid round in tab mode (no payment, no cash)', async () => {
     const { db, controller, device, response } = setupController({
       orderingMode: 'tab',
-      orgSettings: cashless,
+      org: cashless,
     });
 
     await controller.createOrder(device, dto(), response() as never);
@@ -1256,8 +1264,11 @@ describe('DeviceApiController.createOrder — bargeldloser Modus', () => {
   });
 });
 
-describe('DeviceApiController.createOrder — Betriebsmodus „Nur Bestellen“', () => {
-  const orderOnly = { operatingMode: 'order_only' };
+describe('DeviceApiController.createOrder — Betriebsart „Nur Bons“', () => {
+  const orderOnly = {
+    operatingMode: 'orders_only' as const,
+    operatingModeLegacy: false,
+  };
 
   it.each([
     ['cash', { paymentMethod: PaymentMethod.CASH, amountReceived: 20 }],
@@ -1273,7 +1284,7 @@ describe('DeviceApiController.createOrder — Betriebsmodus „Nur Bestellen“'
         paymentsBatchService,
         orderPrintService,
         response,
-      } = setupController({ orgSettings: orderOnly });
+      } = setupController({ org: orderOnly });
 
       const call = controller.createOrder(
         device,
@@ -1294,7 +1305,7 @@ describe('DeviceApiController.createOrder — Betriebsmodus „Nur Bestellen“'
 
   it('rejects a tip on the order', async () => {
     const { db, controller, device, response } = setupController({
-      orgSettings: orderOnly,
+      org: orderOnly,
     });
     await expect(
       controller.createOrder(
@@ -1311,7 +1322,7 @@ describe('DeviceApiController.createOrder — Betriebsmodus „Nur Bestellen“'
       setupController({
         orderingMode: 'immediate',
         serviceMode: 'table',
-        orgSettings: orderOnly,
+        org: orderOnly,
       });
 
     const { data } = await controller.createOrder(
@@ -1331,7 +1342,7 @@ describe('DeviceApiController.createOrder — Betriebsmodus „Nur Bestellen“'
   it('a counter order without stations is handed over and completed at once', async () => {
     const { controller, device, response } = setupController({
       serviceMode: 'counter',
-      orgSettings: orderOnly,
+      org: orderOnly,
     });
 
     const { data } = await controller.createOrder(
@@ -1352,7 +1363,7 @@ describe('DeviceApiController.createOrder — Betriebsmodus „Nur Bestellen“'
   it('items without a station in a completed counter order do not stay open', async () => {
     const { db, controller, device, response } = setupController({
       serviceMode: 'counter',
-      orgSettings: orderOnly,
+      org: orderOnly,
     });
 
     await controller.createOrder(
@@ -1369,7 +1380,7 @@ describe('DeviceApiController.createOrder — Betriebsmodus „Nur Bestellen“'
   it('a table order stays open until „Abschließen“', async () => {
     const { controller, device, response } = setupController({
       serviceMode: 'table',
-      orgSettings: orderOnly,
+      org: orderOnly,
     });
 
     const { data } = await controller.createOrder(
@@ -1382,10 +1393,14 @@ describe('DeviceApiController.createOrder — Betriebsmodus „Nur Bestellen“'
   });
 });
 
-describe('DeviceApiController.createOrder — „Ohne Zahlung abschließen“ (DE ohne TSE)', () => {
-  const germany = { country: 'DE', cashPolicyLegacy: false };
+describe('DeviceApiController.createOrder — Alle Funktionen in Deutschland ohne TSE', () => {
+  const germany = {
+    country: 'DE',
+    operatingMode: 'full' as const,
+    operatingModeLegacy: false,
+  };
 
-  it('rejects cash for a new German organization before anything is created', async () => {
+  it('rejects cash before anything is created', async () => {
     const { db, controller, device, paymentsBatchService, response } =
       setupController({ orderingMode: 'immediate', org: germany });
     const call = controller.createOrder(
@@ -1395,71 +1410,37 @@ describe('DeviceApiController.createOrder — „Ohne Zahlung abschließen“ (D
     );
     await expect(call).rejects.toMatchObject({
       status: HttpStatus.FORBIDDEN,
-      response: { code: 'CASH_NOT_ALLOWED_IN_COUNTRY' },
+      response: { code: 'TSE_REQUIRED_FOR_CASH' },
     });
     expect(db.orders).toHaveLength(0);
     expect(paymentsBatchService.settle).not.toHaveBeenCalled();
   });
 
-  it('immediate: creates the order and completes it without any payment', async () => {
+  it('card still works', async () => {
     const { db, controller, device, paymentsBatchService, response } =
       setupController({ orderingMode: 'immediate', org: germany });
-    const { data } = await controller.createOrder(
+    await controller.createOrder(
       device,
-      dto({ closeWithoutPayment: {} }),
+      dto({ payment: { paymentMethod: PaymentMethod.CARD } }),
       response() as never,
     );
-    expect(paymentsBatchService.settle).not.toHaveBeenCalled();
-    expect(data).toMatchObject({
-      status: OrderStatus.COMPLETED,
-      paymentStatus: PaymentStatus.UNPAID,
-    });
     expect(db.orders).toHaveLength(1);
-    expect(db.orders[0].closedWithoutPaymentAt).toBeInstanceOf(Date);
-    expect(Number(db.orders[0].paidAmount ?? 0)).toBe(0);
-    expect(db.items.every((i) => i.status === OrderItemStatus.DELIVERED)).toBe(
-      true,
-    );
+    expect(paymentsBatchService.settle).toHaveBeenCalledTimes(1);
   });
 
-  it.each([
-    ['legacy DE', { country: 'DE', cashPolicyLegacy: true }],
-    ['AT', { country: 'AT', cashPolicyLegacy: false }],
-  ])(
-    '%s: not available (cash is recorded there), nothing created',
-    async (_label, org) => {
-      const { db, controller, device, response } = setupController({
-        orderingMode: 'immediate',
-        org,
-      });
-      const call = controller.createOrder(
+  it('the former close-without-payment field closes nothing: payment required', async () => {
+    const { db, controller, device, paymentsBatchService, response } =
+      setupController({ orderingMode: 'immediate', org: germany });
+    await expect(
+      controller.createOrder(
         device,
-        dto({ closeWithoutPayment: {} }),
+        dto({ closeWithoutPayment: {} } as never),
         response() as never,
-      );
-      await expect(call).rejects.toMatchObject({
-        response: { reason: 'CLOSE_WITHOUT_PAYMENT_NOT_AVAILABLE' },
-      });
-      expect(db.orders).toHaveLength(0);
-    },
-  );
-
-  it('never together with a payment', async () => {
-    const { db, controller, device, response } = setupController({
-      orderingMode: 'immediate',
-      org: germany,
+      ),
+    ).rejects.toMatchObject({
+      response: { reason: 'ORDER_PAYMENT_REQUIRED' },
     });
-    const call = controller.createOrder(
-      device,
-      dto({
-        closeWithoutPayment: {},
-        payment: { paymentMethod: PaymentMethod.CARD },
-      }),
-      response() as never,
-    );
-    await expect(call).rejects.toMatchObject({
-      status: HttpStatus.BAD_REQUEST,
-    });
+    expect(paymentsBatchService.settle).not.toHaveBeenCalled();
     expect(db.orders).toHaveLength(0);
   });
 });

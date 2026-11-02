@@ -4,7 +4,7 @@ import { COUNTRY_CODES } from '../../../common/constants/countries';
 import {
   COUNTRY_MESSAGE,
   toCountryCode,
-} from '../../organizations/dto/cash-policy.dto';
+} from '../../organizations/dto/operating-mode.dto';
 import {
   IsBoolean,
   IsEmail,

@@ -1,3 +1,4 @@
+import { isOrdersOnly } from '../../common/utils/operating-mode.util';
 import {
   Controller,
   Post,
@@ -85,6 +86,8 @@ export class OnlineOrdersController {
               name: session.organization.name,
             }
           : null,
+        // Betriebsart „Nur Bons“: keine Bestellung per QR-Code.
+        onlineOrderingAvailable: !isOrdersOnly(session.organization),
       },
     };
   }

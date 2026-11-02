@@ -248,9 +248,10 @@ export class DeviceTablesController {
   @Post('orders/complete')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Complete open orders without payment (order-only mode)',
+    summary:
+      'Complete open orders without payment (operating mode orders_only)',
     description:
-      'Nur im Betriebsmodus „Nur Bestellen“: „Abschließen“ statt „Kassieren“, z. B. für alle offenen Bestellungen eines Tisches oder eine abgeholte Thekenbestellung. Fertige Positionen gelten damit als ausgegeben. Solange eine Station noch arbeitet: 400 ORDER_ITEMS_IN_PRODUCTION. Im Kassenbetrieb: 400 ORDER_NOT_FULLY_PAID.',
+      'Nur in der Betriebsart `orders_only` („Nur Bons“): „Abgeholt“ (Theke) bzw. „Tisch abschließen“ statt „Kassieren“, z. B. für alle offenen Bestellungen eines Tisches oder eine abgeholte Thekenbestellung. Fertige Positionen gelten damit als ausgegeben. Solange eine Station noch arbeitet: 400 ORDER_ITEMS_IN_PRODUCTION. In den Betriebsarten `cashless` und `full`: 400 ORDER_NOT_FULLY_PAID.',
   })
   async completeOrders(
     @CurrentDevice() device: Device,

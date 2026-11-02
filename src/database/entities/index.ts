@@ -80,7 +80,6 @@ export * from './login-magic-link.entity';
 export * from './contact-request.entity';
 export * from './api-token.entity';
 export * from './event-billing-cancellation.entity';
-export * from './organization-cashless-change.entity';
 export * from './organization-cash-policy-change.entity';
 export * from './organization-operating-mode-change.entity';
 export * from './menu-import.entity';

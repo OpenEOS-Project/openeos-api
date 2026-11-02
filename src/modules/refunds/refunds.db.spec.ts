@@ -162,12 +162,15 @@ describeWithDb('RefundsService against Postgres', () => {
       settings.sumup = { apiKey: 'sup_sk_test', merchantCode: 'MCODE' };
       settings.integrations = { sumup: { enabled: true } };
     }
-    if (options.cashless) settings.payments = { cashless: true };
-    if (options.orderOnly) settings.operatingMode = 'order_only';
+    const operatingMode = options.orderOnly
+      ? 'orders_only'
+      : options.cashless
+        ? 'cashless'
+        : 'full';
     await q(
-      `INSERT INTO organizations (id, name, slug, support_pin, settings)
-       VALUES ($1, 'Verein', $2, '123456', $3)`,
-      [orgId, `verein-${orgId}`, JSON.stringify(settings)],
+      `INSERT INTO organizations (id, name, slug, support_pin, settings, country, operating_mode)
+       VALUES ($1, 'Verein', $2, '123456', $3, 'AT', $4)`,
+      [orgId, `verein-${orgId}`, JSON.stringify(settings), operatingMode],
     );
     const [event] = await q<{ id: string }>(
       `INSERT INTO events (organization_id, name, status)

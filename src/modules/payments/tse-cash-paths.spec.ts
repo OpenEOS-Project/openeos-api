@@ -17,13 +17,14 @@ import { OrderPrintService } from '../print-jobs/order-print.service';
 import { BatchPaymentDto } from './dto/batch-payment.dto';
 import { PaymentsBatchService } from './payments-batch.service';
 import { PaymentsService } from './payments.service';
+import { tseStatus } from '../../common/utils/tse.util';
 
 /**
- * Bargeld-Regel „Deutschland ohne Bargeld“ (cash-policy.util.ts): jeder
- * Einstieg, der Bargeld bucht oder auszahlt, antwortet bei einer neuen
- * deutschen Organisation mit 403 CASH_NOT_ALLOWED_IN_COUNTRY; Karte geht
- * weiter. Bestandsorganisationen und andere Laender wie bisher. Abschluss
- * ohne Zahlung und Land/Bescheinigung: cash-policy.db.spec.ts.
+ * Betriebsart „Alle Funktionen“ (`full`) in Deutschland: Bargeld nur mit
+ * aktiver Cloud-TSE (tse.util.ts). Ohne TSE antwortet jeder Einstieg, der
+ * Bargeld bucht oder auszahlt, mit 403 TSE_REQUIRED_FOR_CASH; Karte geht
+ * weiter. Bestand (`operatingModeLegacy`), aktive TSE und andere Laender
+ * wie bisher. Wechsel und Bescheinigung: operating-mode.db.spec.ts.
  */
 
 jest.mock('uuid', () => ({
@@ -37,13 +38,20 @@ beforeAll(() => {
   jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 });
 
-type Kind = 'de_new' | 'de_legacy' | 'at';
+type Kind = 'de_new' | 'de_legacy' | 'de_tse' | 'at';
+
+afterEach(() => {
+  tseStatus.isActive = () => false;
+});
 
 function organization(kind: Kind): Organization {
+  // Aktive TSE ueber die eine Stelle, die die TSE-Anbindung ersetzt.
+  if (kind === 'de_tse') tseStatus.isActive = () => true;
   return {
     id: ORG_ID,
     country: kind === 'at' ? 'AT' : 'DE',
-    cashPolicyLegacy: kind === 'de_legacy',
+    operatingMode: 'full',
+    operatingModeLegacy: kind === 'de_legacy',
     settings: {
       currency: 'EUR',
       integrations: { sumup: { enabled: true } },
@@ -55,7 +63,7 @@ function organization(kind: Kind): Organization {
 async function expectBlocked(call: Promise<unknown>): Promise<void> {
   await expect(call).rejects.toBeInstanceOf(ForbiddenException);
   await expect(call).rejects.toMatchObject({
-    response: { code: 'CASH_NOT_ALLOWED_IN_COUNTRY' },
+    response: { code: 'TSE_REQUIRED_FOR_CASH' },
   });
 }
 
@@ -83,7 +91,7 @@ function openOrder(): Order {
   } as unknown as Order;
 }
 
-describe('Deutschland ohne Bargeld — Kasse (DeviceApiController)', () => {
+describe('Alle Funktionen in Deutschland ohne TSE — Kasse (DeviceApiController)', () => {
   const device = {
     id: 'device-1',
     organizationId: ORG_ID,
@@ -249,7 +257,7 @@ describe('Deutschland ohne Bargeld — Kasse (DeviceApiController)', () => {
     expect(gatewayService.sendOpenCashDrawer).not.toHaveBeenCalled();
   });
 
-  it.each(['de_legacy', 'at'] as const)(
+  it.each(['de_legacy', 'de_tse', 'at'] as const)(
     '%s: cash, drawer and Pfand payout work as before',
     async (kind) => {
       const { controller, paymentRepository, gatewayService } = setup(kind);
@@ -282,19 +290,27 @@ describe('Deutschland ohne Bargeld — Kasse (DeviceApiController)', () => {
     expect(paymentRepository.save).not.toHaveBeenCalled();
   });
 
-  it('GET /device-api/organization: tells the till about the policy', async () => {
+  it('GET /device-api/organization: tells the till about the mode', async () => {
     const { controller } = setup('de_new');
     const { data } = await controller.getOrganization(device);
     expect(data).toMatchObject({
       country: 'DE',
-      cashPolicy: 'blocked_de_no_tse',
-      cashPolicyLegacy: false,
-      cashPolicyReason: 'de_no_tse',
+      operatingMode: 'full',
+      operatingModeLegacy: false,
+      tseActive: false,
+      cashAllowed: false,
+      pricesVisible: true,
     });
+  });
+
+  it('GET /device-api/organization: an active TSE allows cash', async () => {
+    const { controller } = setup('de_tse');
+    const { data } = await controller.getOrganization(device);
+    expect(data).toMatchObject({ tseActive: true, cashAllowed: true });
   });
 });
 
-describe('Deutschland ohne Bargeld — Sammelzahlung (PaymentsBatchService)', () => {
+describe('Alle Funktionen in Deutschland ohne TSE — Sammelzahlung (PaymentsBatchService)', () => {
   function batch(kind: Kind) {
     const manager = {
       findOne: jest.fn(() => Promise.resolve(organization(kind))),
@@ -321,7 +337,7 @@ describe('Deutschland ohne Bargeld — Sammelzahlung (PaymentsBatchService)', ()
     expect(manager.find).not.toHaveBeenCalled();
   });
 
-  it('loads country and legacy flag with the organization', async () => {
+  it('loads country, mode and legacy flag with the organization', async () => {
     const { manager, service } = batch('de_new');
     await service
       .payBatch(ORG_ID, 'device-1', {
@@ -336,12 +352,13 @@ describe('Deutschland ohne Bargeld — Sammelzahlung (PaymentsBatchService)', ()
     expect(entity).toBe(Organization);
     expect(options.select).toMatchObject({
       country: true,
-      cashPolicyLegacy: true,
+      operatingMode: true,
+      operatingModeLegacy: true,
     });
   });
 });
 
-describe('Deutschland ohne Bargeld — Verwaltung (PaymentsService)', () => {
+describe('Alle Funktionen in Deutschland ohne TSE — Verwaltung (PaymentsService)', () => {
   const user = { id: 'user-1' } as User;
 
   it('POST /organizations/:id/payments: rejects cash, accepts card', async () => {

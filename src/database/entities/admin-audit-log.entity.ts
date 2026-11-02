@@ -47,11 +47,11 @@ export enum AdminAction {
   API_TOKEN_REVOKED = 'api_token_revoked',
   /** Schreibender Aufruf eines Agenten-Tools (MCP), ki-plan.md Abschnitt 9. */
   AGENT_TOOL_CALL = 'agent_tool_call',
-  /** Betriebsmodus umgeschaltet (pos ↔ order_only), nur durch den Support. */
+  /** Betriebsart gewechselt (Admins des Vereins oder Support mit Grund). */
   SET_OPERATING_MODE = 'set_operating_mode',
   /** Land einer Organisation geaendert (nur Support, mit Grund). */
   SET_ORGANIZATION_COUNTRY = 'set_organization_country',
-  /** Bestandsschutz der Bargeld-Regel gesetzt/aufgehoben (nur Support). */
+  /** @deprecated Bargeld-Regel der Zwischenloesung (2026-11-01); nur noch Altdaten. */
   SET_CASH_POLICY = 'set_cash_policy',
 }
 

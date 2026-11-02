@@ -24,7 +24,10 @@ import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { SumUpApiService } from './sumup-api.service';
 import type { SumUpCredentials } from './interfaces/sumup.interfaces';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
-import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
+import {
+  OPERATING_MODE_SELECT,
+  assertPaymentsAllowed,
+} from '../../common/utils/operating-mode.util';
 
 @Injectable()
 export class SumUpService {
@@ -197,12 +200,12 @@ export class SumUpService {
     user: User,
   ): Promise<SumUp.Readers.CreateReaderCheckoutResponse> {
     await this.checkMembership(organizationId, user.id);
-    // „Nur Bestellen“: kein Kassieren am Lesegeraet (403 ORDER_ONLY_MODE).
+    // „Nur Bons“: kein Kassieren am Lesegeraet (403 ORDER_ONLY_MODE).
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
-      select: { id: true, settings: true },
+      select: OPERATING_MODE_SELECT,
     });
-    assertPaymentsAllowed(organization?.settings);
+    assertPaymentsAllowed(organization);
     // Testmodus: keine echte Kartenzahlung am Lesegeraet.
     const events = await this.eventRepository.find({
       where: {

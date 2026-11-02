@@ -10,16 +10,15 @@ import {
 import { Organization } from './organization.entity';
 
 /**
- * Verlauf von Land und Bargeld-Regel einer Organisation (siehe
- * cash-policy.util.ts). Nur anhaengen, nie aendern.
+ * Verlauf des Landes einer Organisation (Tabelle aus der Zwischenloesung
+ * „Bargeld-Regel je Land“, 2026-11-01). Nur anhaengen, nie aendern.
  *
- * - `country`: Land gesetzt (einmalig durch den Verein) oder geaendert
- *   (nur Support, mit Grund).
- * - `policy`: Bestandsschutz beendet (freiwilliger Wechsel des Vereins auf
- *   „Deutschland ohne Bargeld“) oder durch den Support zurueckgesetzt.
- *
- * Der Verlauf steht auf der Herstellerbescheinigung; Aenderungen durch den
- * Support stehen zusaetzlich im Admin-Protokoll.
+ * - `country`: Land gesetzt (beim Anlegen, einmalig durch den Verein) oder
+ *   geaendert (nur Support, mit Grund).
+ * - `policy`: nur Altdaten — Wechsel der frueheren Bargeld-Regel. Seit den
+ *   Betriebsarten (operating-mode.util.ts) entstehen keine neuen Zeilen
+ *   dieser Art; der Verlauf der Betriebsart steht in
+ *   organization_operating_mode_changes.
  */
 export type CashPolicyChangeKind = 'country' | 'policy';
 

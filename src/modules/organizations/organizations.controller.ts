@@ -33,7 +33,7 @@ import {
   CreateInvitationDto,
   BroadcastMessageDto,
   UpdateIntegrationDto,
-  UpdateCashlessDto,
+  SetOperatingModeDto,
   SetOrganizationCountryDto,
 } from './dto';
 import { SetPinDto } from '../devices/dto';
@@ -42,13 +42,9 @@ import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
-import {
-  getOperatingMode,
-  getOperatingModeSince,
-} from '../../common/utils/operating-mode.util';
+import { operatingModeView } from '../../common/utils/operating-mode.util';
 import { OperatingModeService } from './operating-mode/operating-mode.service';
-import { CashPolicyService } from './cash-policy/cash-policy.service';
-import { cashPolicyView } from '../../common/utils/cash-policy.util';
+import { CountryService } from './country/country.service';
 
 @ApiTags('Organizations')
 @ApiBearerAuth('JWT-auth')
@@ -59,7 +55,7 @@ export class OrganizationsController {
     private readonly gatewayService: GatewayService,
     private readonly devicesService: DevicesService,
     private readonly operatingModeService: OperatingModeService,
-    private readonly cashPolicyService: CashPolicyService,
+    private readonly countryService: CountryService,
   ) {}
 
   @Post()
@@ -98,12 +94,10 @@ export class OrganizationsController {
       data: {
         ...organization,
         ...usage,
-        // Betriebsmodus (nur lesbar; umschalten kann nur der Support)
-        operatingMode: getOperatingMode(organization.settings),
-        operatingModeSince: getOperatingModeSince(organization.settings),
-        // Land und Bargeld-Regel (cash-policy.util.ts): country,
-        // cashPolicy, cashPolicyLegacy, cashPolicyReason
-        ...cashPolicyView(organization),
+        // Land und Betriebsart (operating-mode.util.ts): country,
+        // operatingMode, operatingModeLegacy, operatingModeSince,
+        // tseActive, cashAllowed, pricesVisible
+        ...operatingModeView(organization),
       },
     };
   }
@@ -114,7 +108,7 @@ export class OrganizationsController {
     operationId: 'updateOrganization',
     summary: 'Organisation ändern',
     description:
-      'Ändert Name, Kontaktdaten oder Einstellungen (z. B. bargeldloser Modus). Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen.',
+      'Ändert Name, Kontaktdaten oder Einstellungen. Die Betriebsart und das Land ändern sich nur über ihre eigenen Endpunkte. Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen.',
   })
   @ApiParam({ name: 'id', description: 'ID der Organisation', format: 'uuid' })
   async update(
@@ -127,8 +121,7 @@ export class OrganizationsController {
       updateDto,
       user,
     );
-    // Kassen sofort umstellen (z. B. bargeldloser Modus), nicht erst beim
-    // naechsten Neuladen.
+    // Kassen sofort umstellen, nicht erst beim naechsten Neuladen.
     if (updateDto.settings) {
       this.gatewayService.notifyOrganizationSettingsUpdated(organization.id);
     }
@@ -155,47 +148,11 @@ export class OrganizationsController {
     return { data: organization };
   }
 
-  @Patch(':id/payments/cashless')
-  @ApiOperation({
-    summary: 'Switch cashless mode on or off (admins only, logged)',
-    description:
-      'Bargeldloser Modus: sperrt jede Barzahlung, Bar-Erstattung, Pfand-Auszahlung und die Kassenlade (403 CASH_PAYMENTS_DISABLED). Jede Umschaltung wird mit Zeitpunkt und Person protokolliert (GET :id/payments/cashless/history).',
-  })
-  async setCashlessMode(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateCashlessDto,
-    @CurrentUser() user: User,
-    @Req() request: Request,
-  ) {
-    const organization = await this.organizationsService.setCashlessMode(
-      id,
-      dto.cashless,
-      user,
-      {
-        ipAddress: request.ip ?? null,
-        userAgent: request.headers['user-agent'] ?? null,
-      },
-    );
-    this.gatewayService.notifyOrganizationSettingsUpdated(organization.id);
-    return { data: organization };
-  }
-
-  @Get(':id/payments/cashless/history')
-  @ApiOperation({ summary: 'Change log of the cashless mode (newest first)' })
-  async getCashlessHistory(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: User,
-  ) {
-    return {
-      data: await this.organizationsService.getCashlessHistory(id, user),
-    };
-  }
-
   @Get(':id/operating-mode')
   @ApiOperation({
-    summary: 'Operating mode with change log (read-only for the organization)',
+    summary: 'Operating mode with options and change log',
     description:
-      'Betriebsmodus `pos` oder `order_only` („Nur Bestellen“) mit Verlauf. Umschalten kann nur der OpenEOS-Support.',
+      'Betriebsart (`orders_only` „Nur Bons“, `cashless` „Bargeldlos“, `full` „Alle Funktionen“), Bestand (`operatingModeLegacy`), Land, TSE, abgeleitete Werte (`cashAllowed`, `pricesVisible`), wählbare Betriebsarten (`options`) und Verlauf.',
   })
   async getOperatingMode(
     @Param('id', ParseUUIDPipe) id: string,
@@ -204,12 +161,33 @@ export class OrganizationsController {
     return { data: await this.operatingModeService.getForMember(id, user) };
   }
 
+  @Patch(':id/operating-mode')
+  @ApiOperation({
+    summary: 'Switch the operating mode (admins, logged)',
+    description:
+      'Wechselt die Betriebsart. `full` geht in Deutschland nur mit aktiver Cloud-TSE (sonst 403 TSE_REQUIRED_FOR_CASH); ohne Land 400 COUNTRY_REQUIRED. Jeder Wechsel hebt den Bestand auf, steht im Verlauf und im Protokoll und geht sofort an die Kassen.',
+  })
+  async setOperatingMode(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetOperatingModeDto,
+    @CurrentUser() user: User,
+    @Req() request: Request,
+  ) {
+    await this.operatingModeService.setByMember(id, dto.operatingMode, user, {
+      ipAddress: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
+    return { data: await this.operatingModeService.getForMember(id, user) };
+  }
+
+  // Nur gehostet: in einer eigenen Installation ist der Verein selbst
+  // Betreiber und Hersteller-Angaben passen nicht.
   @SaasOnly()
   @Get(':id/operating-mode/certificate.pdf')
   @ApiOperation({
-    summary: 'Manufacturer certificate for the order-only mode (PDF, admins)',
+    summary: 'Manufacturer certificate for the operating mode (PDF, admins)',
     description:
-      'Herstellerbescheinigung für die Verfahrensdokumentation: das Kassen- und Zahlungsmodul ist deaktiviert und kann von der Organisation nicht selbst aktiviert werden. Nur im Modus `order_only`.',
+      'Herstellerbescheinigung für die Verfahrensdokumentation: Bargeld kann in dieser Organisation nicht erfasst werden; Bargeld ist ausschließlich mit aktiver zertifizierter TSE möglich. Nur in Deutschland in den Betriebsarten `orders_only` und `cashless`.',
   })
   async getOperatingModeCertificate(
     @Param('id', ParseUUIDPipe) id: string,
@@ -229,19 +207,6 @@ export class OrganizationsController {
     return new StreamableFile(pdf);
   }
 
-  @Get(':id/cash-policy')
-  @ApiOperation({
-    summary: 'Country and cash policy with change log',
-    description:
-      'Land (`country`), wirksame Bargeld-Regel (`cashPolicy`: `allowed` oder `blocked_de_no_tse`), Bestandsschutz (`cashPolicyLegacy`), Kurzgrund (`cashPolicyReason`) und Verlauf.',
-  })
-  async getCashPolicy(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: User,
-  ) {
-    return { data: await this.cashPolicyService.getForMember(id, user) };
-  }
-
   @Patch(':id/country')
   @ApiOperation({
     summary: 'Set the country once (admins, only while none is set)',
@@ -254,69 +219,11 @@ export class OrganizationsController {
     @CurrentUser() user: User,
     @Req() request: Request,
   ) {
-    const state = await this.cashPolicyService.setCountryOnce(
-      id,
-      dto.country,
-      user,
-      {
-        ipAddress: request.ip ?? null,
-        userAgent: request.headers['user-agent'] ?? null,
-      },
-    );
-    this.gatewayService.notifyOrganizationSettingsUpdated(id);
-    return { data: state };
-  }
-
-  // Nur gehostet: in einer eigenen Installation ist der Verein selbst
-  // Betreiber, eine Sperre durch den Hersteller (und der Weg zurueck ueber
-  // den Support) gibt es dort nicht.
-  @SaasOnly()
-  @Post(':id/cash-policy/switch')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary:
-      'Leave the legacy cash rules and switch to "Germany without cash" (admins, one-way)',
-    description:
-      'Nur Bestandsorganisationen mit Land DE. Danach ist Bargeld gesperrt (403 CASH_NOT_ALLOWED_IN_COUNTRY), ohne Schalter für den Verein; zurück nur über den OpenEOS-Support.',
-  })
-  async switchCashPolicy(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: User,
-    @Req() request: Request,
-  ) {
-    const state = await this.cashPolicyService.adoptCountryPolicy(id, user, {
+    await this.countryService.setCountryOnce(id, dto.country, user, {
       ipAddress: request.ip ?? null,
       userAgent: request.headers['user-agent'] ?? null,
     });
-    // Kassen sofort umstellen (Bargeld weg), nicht erst beim Neuladen.
-    this.gatewayService.notifyOrganizationSettingsUpdated(id);
-    return { data: state };
-  }
-
-  @SaasOnly()
-  @Get(':id/cash-policy/certificate.pdf')
-  @ApiOperation({
-    summary:
-      'Manufacturer certificate for "Germany without cash" (PDF, admins)',
-    description:
-      'Herstellerbescheinigung für die Verfahrensdokumentation: Bargeld kann in OpenEOS nicht erfasst und von der Organisation nicht aktiviert werden; Kartenzahlungen werden erfasst, Bargeld läuft über eine offene Ladenkasse außerhalb. Nur bei `cashPolicy = blocked_de_no_tse`.',
-  })
-  async getCashPolicyCertificate(
-    @Param('id', ParseUUIDPipe) id: string,
-    @CurrentUser() user: User,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<StreamableFile> {
-    const { pdf, filename } = await this.cashPolicyService.certificatePdf(
-      id,
-      user,
-    );
-    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${safeName}"`,
-      'Cache-Control': 'no-store',
-    });
-    return new StreamableFile(pdf);
+    return { data: await this.operatingModeService.getForMember(id, user) };
   }
 
   @Delete(':id')

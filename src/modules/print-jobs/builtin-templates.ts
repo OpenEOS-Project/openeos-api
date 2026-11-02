@@ -8,8 +8,64 @@
  */
 export const REFUND_RECEIPT_TEMPLATE = 'refund_receipt';
 export const CANCELLATION_TICKET_TEMPLATE = 'cancellation_ticket';
+export const ORDER_TICKET_TEMPLATE = 'order_ticket';
+
+/**
+ * Bestellbon wie die Vorlage `order_ticket.jinja2` des Drucker-Agenten,
+ * aber mit `hide_prices`: In der Betriebsart „Nur Bons“ (orders_only)
+ * druckt er keine Betraege, keine Summe und keine Zahlart. Weil der Agent
+ * Vorlagen vom Server vor seinen eigenen nimmt, braucht es dafuer keine
+ * neue Agent-Version. Kuechen- und Abholbon des Agenten enthalten keine
+ * Preise.
+ */
+const ORDER_TICKET_SOURCE = `{% set cols = 42 if paper_width|default(80) == 80 else 32 %}
+{% set sep = "=" * cols %}
+{% set line = "-" * cols %}
+{% set no_prices = hide_prices|default(false) %}
+{% if is_test %}
+<<CENTER>><<BOLD>><<BIG>>*** TESTMODUS ***<</BIG>><</BOLD>><</CENTER>>
+
+{% endif %}
+<<CENTER>><<BIG>>BESTELLUNG<</BIG>><</CENTER>>
+{{ sep }}
+<<CENTER>><<BIG>>#{{ daily_number|default(order_number|default("---")) }}<</BIG>><</CENTER>>
+{{ line }}
+{% if table_number is defined and table_number %}
+Tisch: {{ table_number }}
+{% endif %}
+{% if customer_name is defined and customer_name %}
+Kunde: {{ customer_name }}
+{% endif %}
+Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
+{{ sep }}
+{% for item in items|default([]) %}
+{% if no_prices %}
+{{ "%-3s"|format(item.quantity ~ "x") }} {{ item.name }}
+{% else %}
+{{ "%-3s"|format(item.quantity ~ "x") }} {{ item.name.ljust(cols - 14) }} {{ item.total|currency|rjust(10) }}
+{% endif %}
+{% if item.options is defined and item.options %}
+{% for opt in item.options %}
+     {{ opt }}
+{% endfor %}
+{% endif %}
+{% if item.notes %}
+     {{ item.notes }}
+{% endif %}
+{% endfor %}
+{{ sep }}
+{% if not no_prices %}
+<<BOLD>>{{ "GESAMT:".ljust(cols - 12) }}{{ total|default(0)|currency|rjust(12) }}<</BOLD>>
+{% if payment_method is defined %}
+{{ line }}
+Zahlungsart: {{ payment_method }}
+{% endif %}
+{% endif %}
+<<FEED:3>>
+<<CUT>>`;
 
 export const BUILTIN_PRINT_TEMPLATES: Record<string, string> = {
+  [ORDER_TICKET_TEMPLATE]: ORDER_TICKET_SOURCE,
   [REFUND_RECEIPT_TEMPLATE]: `{% set cols = 42 if paper_width|default(80) == 80 else 32 %}
 {% set sep = "=" * cols %}
 {% set line = "-" * cols %}

@@ -1,4 +1,8 @@
 import {
+  OPERATING_MODES,
+  type OperatingMode,
+} from '../../../common/utils/operating-mode.util';
+import {
   IsString,
   IsNumber,
   IsOptional,
@@ -242,19 +246,20 @@ export class UpdateSubscriptionConfigDto {
 }
 
 /**
- * Betriebsmodus einer Organisation umschalten (nur Support). Der Grund ist
- * Pflicht: er steht im Verlauf, im Admin-Protokoll und auf der
- * Herstellerbescheinigung der Organisation.
+ * Betriebsart einer Organisation wechseln (Support). Gleiche Regeln wie
+ * fuer den Verein (in Deutschland `full` nur mit aktiver TSE); der Grund
+ * ist Pflicht und steht im Verlauf, im Admin-Protokoll und auf der
+ * Herstellerbescheinigung.
  */
 export class SetOperatingModeDto {
-  @ApiProperty({ enum: ['pos', 'order_only'], example: 'order_only' })
-  @IsIn(['pos', 'order_only'])
-  mode: 'pos' | 'order_only';
+  @ApiProperty({ enum: OPERATING_MODES, example: 'cashless' })
+  @IsIn(OPERATING_MODES, { message: 'Bitte wähle eine Betriebsart.' })
+  mode: OperatingMode;
 
   @ApiProperty({
     example: 'Antrag des Vereins per E-Mail vom 01.11.2026',
     description:
-      'Anlass der Umschaltung (erscheint auf der Bescheinigung der Organisation)',
+      'Anlass des Wechsels (erscheint auf der Bescheinigung der Organisation)',
   })
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
@@ -278,29 +283,6 @@ export class SetOrganizationCountryAdminDto {
     example: 'Verein sitzt in Österreich, Antrag per E-Mail vom 01.11.2026',
     description: 'Anlass (Verlauf, Admin-Protokoll, Bescheinigung)',
   })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
-  @IsString()
-  @MinLength(5)
-  @MaxLength(500)
-  reason: string;
-}
-
-/**
- * Bestandsschutz der Bargeld-Regel setzen oder aufheben (nur Support).
- * `legacy: true` ist der Weg zurueck nach dem freiwilligen Wechsel.
- */
-export class SetCashPolicyAdminDto {
-  @ApiProperty({
-    example: true,
-    description:
-      'true: Bestandsschutz (Bargeld wie bisher), false: Regel des Landes',
-  })
-  @IsBoolean()
-  legacy: boolean;
-
-  @ApiProperty({ example: 'Wechsel versehentlich, Antrag vom 01.11.2026' })
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim() : value,
   )

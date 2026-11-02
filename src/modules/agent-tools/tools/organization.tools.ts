@@ -1,3 +1,4 @@
+import { operatingModeView } from '../../../common/utils/operating-mode.util';
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
@@ -25,7 +26,7 @@ const addressInput = z
     city: z.string().max(100),
     zip: z.string().max(20),
     // Kein Land: das legt die Organisation einmal in der Web-App fest
-    // (organizations.country, steuert die Bargeld-Regel).
+    // (organizations.country, bestimmt die waehlbaren Betriebsarten).
   })
   .partial()
   .strict();
@@ -108,6 +109,8 @@ export function compactOrganization(org: Organization) {
     pfand: s.pfand ?? null,
     onlineOrdering: s.onlineOrdering ?? null,
     assistantEnabled: s.assistant?.enabled === true,
+    // Betriebsart (nur lesbar; wechseln geht nur in der Web-App).
+    ...operatingModeView(org),
   };
 }
 
@@ -126,7 +129,7 @@ export class OrganizationTools {
     return defineTool({
       name: 'get_organization',
       description:
-        'The organization this token belongs to: name, currency, timezone, address, contact, receipt texts, POS defaults. No billing or payment credentials.',
+        'The organization this token belongs to: name, currency, timezone, address, contact, receipt texts, POS defaults, country and operating mode (operatingMode orders_only = „Nur Bons“ without prices or payments, cashless = „Bargeldlos“, full = „Alle Funktionen“; cashAllowed, pricesVisible). No billing or payment credentials.',
       inputSchema: z.object({}).strict(),
       scope: TokenScope.READ,
       mutating: false,

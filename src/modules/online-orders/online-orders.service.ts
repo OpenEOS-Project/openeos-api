@@ -1,3 +1,4 @@
+import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import {
   Injectable,
   NotFoundException,
@@ -238,6 +239,8 @@ export class OnlineOrdersService {
     addDto: AddCartItemDto,
   ): Promise<OnlineOrderSession> {
     const session = await this.getSession(sessionToken);
+    // Betriebsart „Nur Bons“: keine Bestellung per QR-Code (403).
+    assertPaymentsAllowed(session.organization);
 
     if (!session.eventId) {
       throw new NotFoundException({
@@ -352,6 +355,8 @@ export class OnlineOrdersService {
     submitDto: SubmitOrderDto,
   ): Promise<Order> {
     const session = await this.getSession(sessionToken);
+    // Betriebsart „Nur Bons“: keine Bestellung per QR-Code (403).
+    assertPaymentsAllowed(session.organization);
 
     if (session.cart.items.length === 0) {
       throw new BadRequestException({
@@ -511,6 +516,8 @@ export class OnlineOrdersService {
     payDto: CreateOnlinePaymentDto,
   ): Promise<{ data: unknown }> {
     const session = await this.getSession(sessionToken);
+    // Betriebsart „Nur Bons“: keine Bestellung per QR-Code (403).
+    assertPaymentsAllowed(session.organization);
 
     const order = await this.orderRepository.findOne({
       where: {

@@ -26,7 +26,8 @@ import {
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { EmailService } from '../email/email.service';
-import { recordInitialCountry } from '../organizations/cash-policy/cash-policy.writes';
+import { recordInitialCountry } from '../organizations/country/country.writes';
+import { initialOperatingMode } from '../../common/utils/operating-mode.util';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { TwoFactorService } from './two-factor.service';
 import {
@@ -202,9 +203,9 @@ export class AuthService {
           slug,
           supportPin,
           settings: {},
-          // Neue Organisation: es gilt die Bargeld-Regel ihres Landes.
+          // Neue Organisation: Betriebsart nach Land (DE: bargeldlos).
           country,
-          cashPolicyLegacy: false,
+          ...initialOperatingMode(country, this.deployment.isSelfHosted),
         });
         await queryRunner.manager.save(organization);
         await recordInitialCountry(

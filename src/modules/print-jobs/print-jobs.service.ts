@@ -24,6 +24,11 @@ import {
   createPaginatedResult,
 } from '../../common/dto/pagination.dto';
 import { CreatePrintJobDto, QueryPrintJobsDto } from './dto';
+import {
+  OPERATING_MODE_SELECT,
+  isOrdersOnly,
+} from '../../common/utils/operating-mode.util';
+import { Organization } from '../../database/entities/organization.entity';
 import { GatewayService } from '../gateway/gateway.service';
 
 /** Websocket payload a printer agent receives for one job. */
@@ -329,6 +334,15 @@ export class PrintJobsService {
       });
     }
 
+    // Betriebsart „Nur Bons“ (orders_only): keine Preise auf Bons.
+    // `hide_prices` geht an jede Vorlage; die mitgelieferten Vorlagen
+    // (builtin-templates.ts) lassen damit alle Betraege weg.
+    const organization = await this.printerRepository.manager.findOne(
+      Organization,
+      { where: { id: organizationId }, select: OPERATING_MODE_SELECT },
+    );
+    const hidePrices = isOrdersOnly(organization);
+
     const templateName = await this.resolveTemplateName(
       organizationId,
       templateId || null,
@@ -341,7 +355,11 @@ export class PrintJobsService {
       templateId: templateId || null,
       orderId: orderId || null,
       orderItemId: orderItemId || null,
-      payload: { copies, templateName, data: payload || {} },
+      payload: {
+        copies,
+        templateName,
+        data: { ...(payload || {}), hide_prices: hidePrices },
+      },
       status: PrintJobStatus.QUEUED,
       attempts: 0,
     });

@@ -94,7 +94,7 @@ export const validationSchema = Joi.object({
     .uri({ scheme: ['http', 'https'] })
     .allow(''),
 
-  // Hersteller auf der Bescheinigung „Nur Bestellen“ (Adresszeilen mit |).
+  // Hersteller auf der Herstellerbescheinigung (Adresszeilen mit |).
   OPERATOR_NAME: Joi.string().allow(''),
   OPERATOR_ADDRESS: Joi.string().allow(''),
   OPERATOR_EMAIL: Joi.string().allow(''),

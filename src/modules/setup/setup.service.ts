@@ -1,3 +1,4 @@
+import { initialOperatingMode } from '../../common/utils/operating-mode.util';
 import { randomInt } from 'crypto';
 import {
   Injectable,
@@ -176,10 +177,10 @@ export class SetupService {
         slug,
         supportPin,
         settings: {},
-        // Eigene Installation: der Verein betreibt den Server selbst — es
-        // bleibt beim bisherigen Verhalten (Bargeld erlaubt). Im gehosteten
-        // Betrieb fragt die Oberflaeche das Land danach einmal ab.
-        cashPolicyLegacy: this.deployment.isSelfHosted,
+        // Eigene Installation: `full` mit Bestand (der Verein betreibt den
+        // Server selbst). Im gehosteten Betrieb fragt die Oberflaeche das
+        // Land danach einmal ab.
+        ...initialOperatingMode(null, this.deployment.isSelfHosted),
       });
       await queryRunner.manager.save(organization);
 

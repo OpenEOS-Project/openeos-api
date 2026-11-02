@@ -425,7 +425,7 @@ const templates = {
   ),
 };
 const reports = {
-  getOperatingMode: jest.fn(() => Promise.resolve('pos')),
+  getOperatingMode: jest.fn(() => Promise.resolve('full')),
   getSalesReport: jest.fn(() =>
     Promise.resolve({
       totalRevenue: 1234.567,
@@ -1406,40 +1406,52 @@ describe('reports and orders', () => {
       'payments',
     ]);
   });
-  it('get_sales_report in order-only mode returns counts and orderValue, never revenue', async () => {
-    reports.getOperatingMode.mockResolvedValueOnce('order_only');
+  it('get_sales_report in orders_only returns counts only, no amounts', async () => {
+    reports.getOperatingMode.mockResolvedValueOnce('orders_only');
     const report = await r('get_sales_report', {
       eventId: EVENT,
-      sections: ['summary', 'products', 'categories', 'hourly', 'channels'],
+      sections: [
+        'summary',
+        'net',
+        'products',
+        'categories',
+        'hourly',
+        'payments',
+        'channels',
+      ],
     });
-    expect(report.operatingMode).toBe('order_only');
-    expect(report.note).toMatch(/not collected/);
+    expect(report.operatingMode).toBe('orders_only');
+    expect(report.note).toMatch(/counts only/);
     expect(report.summary).toEqual({
       orders: 10,
       itemsSold: 30,
       cancelledOrders: 1,
       cancellationRatePercent: 9.09,
-      orderValue: 1234.57,
-      averageOrderValue: 123.46,
     });
-    expect(report.products[0]).toMatchObject({ quantity: 20, orderValue: 90 });
-    expect(report.categories[0]).toMatchObject({
-      quantity: 20,
-      orderValue: 90,
-    });
+    expect(report.products[0]).toMatchObject({ quantity: 20 });
+    expect(report.categories[0]).toMatchObject({ quantity: 20 });
     expect(report.hourly).toEqual([
-      { date: '2026-07-10', hour: 18, orders: 5, orderValue: 50 },
+      { date: '2026-07-10', hour: 18, orders: 5 },
     ]);
-    expect(report.channels[0]).toEqual({
-      channel: 'pos',
-      orders: 10,
-      orderValue: 100,
-      averageOrderValue: 10,
-    });
-    // Keine Kennzahl heisst Umsatz (der Hinweistext erklaert es nur).
+    expect(report.channels[0]).toEqual({ channel: 'pos', orders: 10 });
+    // Keine Betraege, keine Abschnitte net/payments.
+    expect(report.net).toBeUndefined();
+    expect(report.payments).toBeUndefined();
     expect(JSON.stringify({ ...report, note: undefined })).not.toMatch(
-      /revenue|averageReceipt/i,
+      /revenue|averageReceipt|averagePrice|orderValue|total/i,
     );
+  });
+  it('list_orders and get_order hide amounts in orders_only', async () => {
+    reports.getOperatingMode.mockResolvedValue('orders_only');
+    const list = await r('list_orders', { eventId: EVENT, limit: 20 });
+    const one = await r('get_order', { orderId: ORDER });
+    reports.getOperatingMode.mockResolvedValue('full');
+    for (const order of [...list.items, one]) {
+      expect(order).not.toHaveProperty('total');
+      expect(order).not.toHaveProperty('subtotal');
+      expect(order).not.toHaveProperty('paymentMethods');
+    }
+    expect(JSON.stringify(one.items)).not.toMatch(/Price|deposit|taxRate/);
   });
   it('list_orders and get_order are anonymous', async () => {
     const list = await r('list_orders', {
