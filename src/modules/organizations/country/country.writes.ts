@@ -1,15 +1,11 @@
 import { EntityManager } from 'typeorm';
 import type { User } from '../../../database/entities/user.entity';
-import {
-  OrganizationCashPolicyChange,
-  type CashPolicyChangeKind,
-} from '../../../database/entities/organization-cash-policy-change.entity';
+import { OrganizationCashPolicyChange } from '../../../database/entities/organization-cash-policy-change.entity';
 
 /**
- * Schreibwege fuer Land und Bargeld-Regel, ohne Abhaengigkeit von
- * Services — damit OrganizationsService und AuthService sie beim Anlegen
- * einer Organisation nutzen koennen, ohne Kreisimport ueber
- * CashPolicyService.
+ * Schreibwege fuer das Land, ohne Abhaengigkeit von Services — damit
+ * OrganizationsService und AuthService sie beim Anlegen einer Organisation
+ * nutzen koennen, ohne Kreisimport ueber CountryService.
  */
 
 export interface ClientInfo {
@@ -17,7 +13,7 @@ export interface ClientInfo {
   userAgent?: string | null;
 }
 
-function actorName(user: User): string | null {
+export function actorName(user: User): string | null {
   const name = [user.firstName, user.lastName].filter(Boolean).join(' ');
   return (name ? `${name} (${user.email})` : user.email)?.slice(0, 255) ?? null;
 }
@@ -51,11 +47,10 @@ export async function writeCountry(
 }
 
 /** Verlaufseintrag (nur anhaengen). */
-export async function recordCashPolicyChange(
+export async function recordCountryChange(
   manager: EntityManager,
   entry: {
     organizationId: string;
-    kind: CashPolicyChangeKind;
     fromValue: string | null;
     toValue: string;
     reason?: string | null;
@@ -67,7 +62,7 @@ export async function recordCashPolicyChange(
 ): Promise<void> {
   await manager.insert(OrganizationCashPolicyChange, {
     organizationId: entry.organizationId,
-    kind: entry.kind,
+    kind: 'country',
     fromValue: entry.fromValue,
     toValue: entry.toValue,
     reason: entry.reason ?? null,
@@ -92,9 +87,8 @@ export async function recordInitialCountry(
   user: User | null,
 ): Promise<void> {
   await writeCountry(manager, organizationId, country);
-  await recordCashPolicyChange(manager, {
+  await recordCountryChange(manager, {
     organizationId,
-    kind: 'country',
     fromValue: null,
     toValue: country,
     reason: 'Beim Anlegen der Organisation',

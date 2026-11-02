@@ -92,7 +92,9 @@ function setup(orgSettings: Record<string, unknown> = {}) {
     notifyOrderUpdated: jest.fn(),
   };
   const organizationRepository = {
-    findOne: jest.fn(() => Promise.resolve({ id: ORG, settings: orgSettings })),
+    findOne: jest.fn(() =>
+      Promise.resolve({ id: ORG, settings: {}, ...orgSettings }),
+    ),
   };
   const none = undefined as never;
   const service = new OrdersService(
@@ -270,11 +272,11 @@ describe('OrdersService.deliverItemsForDevice', () => {
 });
 
 /**
- * Betriebsmodus „Nur Bestellen“: Ausgabe statt Zahlung schliesst ab —
+ * Betriebsart „Nur Bons“: Ausgabe statt Zahlung schliesst ab —
  * Theke automatisch, Tisch mit „Abschließen“.
  */
-describe('OrdersService — „Nur Bestellen“ (Abschluss ohne Zahlung)', () => {
-  const orderOnly = { operatingMode: 'order_only' };
+describe('OrdersService — „Nur Bons“ (Abschluss ohne Zahlung)', () => {
+  const orderOnly = { operatingMode: 'orders_only' };
 
   it('counter: handing over the last station item completes the unpaid order', async () => {
     const t = setup(orderOnly);
@@ -359,8 +361,16 @@ describe('OrdersService — „Nur Bestellen“ (Abschluss ohne Zahlung)', () =>
     expect(t.item('i1').status).toBe(OrderItemStatus.READY);
   });
 
-  it('cash register mode: completing without payment stays impossible', async () => {
-    const t = setup();
+  it.each([
+    ['full (AT)', { country: 'AT', operatingMode: 'full' }],
+    [
+      'full (DE, legacy)',
+      { country: 'DE', operatingMode: 'full', operatingModeLegacy: true },
+    ],
+    ['full (DE, no TSE)', { country: 'DE', operatingMode: 'full' }],
+    ['cashless (DE)', { country: 'DE', operatingMode: 'cashless' }],
+  ])('%s: completing without payment stays impossible', async (_label, org) => {
+    const t = setup(org);
     t.seed([order('o1')], [item('i1', 'o1', OrderItemStatus.READY)]);
     await expect(
       t.service.completeOrdersForDevice(ORG, ['o1']),

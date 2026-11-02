@@ -496,12 +496,13 @@ describe('PaymentsBatchService.payBatch', () => {
   });
 });
 
-describe('PaymentsBatchService.payBatch — bargeldloser Modus', () => {
+describe('PaymentsBatchService.payBatch — Betriebsart „Bargeldlos“', () => {
   function cashlessSetup(extra: Record<string, unknown> = {}) {
     const ctx = setup();
     ctx.db.organization = {
       id: ORG,
-      settings: { vatExempt: false, payments: { cashless: true }, ...extra },
+      operatingMode: 'cashless',
+      settings: { vatExempt: false, ...extra },
     };
     ctx.db.orders.push(order('o1'), order('o2'));
     ctx.db.items.push(item('i1', 'o1'), item('i2', 'o2'));

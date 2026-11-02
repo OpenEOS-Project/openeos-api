@@ -9,7 +9,7 @@ import {
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { COUNTRY_CODES } from '../../../common/constants/countries';
-import { COUNTRY_MESSAGE, toCountryCode } from './cash-policy.dto';
+import { COUNTRY_MESSAGE, toCountryCode } from './operating-mode.dto';
 
 export class CreateOrganizationDto {
   @ApiProperty({

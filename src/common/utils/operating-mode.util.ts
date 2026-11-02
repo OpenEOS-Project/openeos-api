@@ -3,34 +3,36 @@ import { OrderFulfillmentType } from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { PaymentMethod } from '../../database/entities/payment.entity';
 import { ErrorCodes, ErrorReasons } from '../constants/error-codes';
+import { hasActiveTse } from './tse.util';
 
 /**
- * Betriebsmodus der Organisation (`settings.operatingMode`).
+ * Betriebsart der Organisation (betriebsarten-spec.md, Entscheidung vom
+ * 2026-11-02). Eine Einstellung, drei Werte:
  *
- * - `pos` (Standard): Kasse mit Bestellannahme, Zahlung, Erstattung,
- *   Kassenlade und Pfand-Auszahlung.
- * - `order_only` („Nur Bestellen“): OpenEOS nimmt Bestellungen auf und
- *   steuert Kueche, Stationen und Ausgabe, kennt aber kein Kassenmodul.
- *   Kassiert wird ausserhalb (offene Ladenkasse).
+ * | Wert          | UI                | Geld in OpenEOS                              |
+ * |---------------|-------------------|----------------------------------------------|
+ * | `orders_only` | „Nur Bons“        | keine Preise, keine Zahlungen                |
+ * | `cashless`    | „Bargeldlos“      | Karte (SumUp) und Online, nie Bargeld        |
+ * | `full`        | „Alle Funktionen“ | Bargeld, Karte, Online; DE nur mit Cloud-TSE |
  *
- * Hintergrund (BMF-Antwort 2026-10): Ein Bestellsystem ohne Kassenmodul
- * faellt nicht unter § 146a AO — aber nur, wenn der Verein das Modul nicht
- * selbst einschalten kann. Deshalb schaltet ausschliesslich der Support
- * (Super-Admin) um, jede Umschaltung steht mit Grund im Protokoll
- * (`organization_operating_mode_changes` und Admin-Protokoll), und die
- * Organisation kann eine Herstellerbescheinigung als PDF abrufen.
+ * Gespeichert in `organizations.operating_mode`, dazu
+ * `operating_mode_legacy`: Organisationen, die es vor der Einfuehrung gab,
+ * verhalten sich als `full` ohne TSE (auch in Deutschland), bis sie selbst
+ * eine Betriebsart waehlen. Jede Wahl hebt den Bestand auf; zurueck zu
+ * `full` geht es in Deutschland dann nur mit aktiver TSE.
  *
- * Durchgesetzt wird der Modus im Server: jeder Einstieg, der eine Zahlung
- * bucht oder abrechnet, ruft `assertPaymentsAllowed` auf und antwortet im
- * Modus `order_only` mit 403 `ORDER_ONLY_MODE`.
- *
- * Ausgenommen ist die Vorauszahlung der Gaeste online (Online-Shop und
- * QR-Bestellung ueber PayPal/SumUp Online): Sie laeuft nicht ueber die
- * Kasse vor Ort und ist nie Bargeld. Erstattet werden kann im Modus
- * `order_only` nur auf solche Online-Zahlungen.
+ * In Deutschland ist Bargeld ohne TSE nie moeglich — deshalb darf der
+ * Verein selbst zwischen den Betriebsarten wechseln (BMF: Bargeld darf ohne
+ * TSE nicht vom Verein aktivierbar sein). Der Server prueft das bei jeder
+ * Barzahlung (`assertCashAllowed`), nicht nur beim Umschalten: faellt die
+ * TSE weg, ist Bargeld in `full` sofort gesperrt (403
+ * TSE_REQUIRED_FOR_CASH).
  */
-export const OPERATING_MODES = ['pos', 'order_only'] as const;
+export const OPERATING_MODES = ['orders_only', 'cashless', 'full'] as const;
 export type OperatingMode = (typeof OPERATING_MODES)[number];
+
+/** Verlaufswert fuer „Alle Funktionen (Bestand)“. */
+export const LEGACY_FULL = 'full_legacy';
 
 export function isOperatingMode(value: unknown): value is OperatingMode {
   return (
@@ -39,61 +41,254 @@ export function isOperatingMode(value: unknown): value is OperatingMode {
   );
 }
 
-/** Nur ein ausdrueckliches `order_only` zaehlt; alles andere ist `pos`. */
-export function getOperatingMode(
-  settings: object | null | undefined,
-): OperatingMode {
-  const mode = (settings as { operatingMode?: unknown } | null)?.operatingMode;
-  return mode === 'order_only' ? 'order_only' : 'pos';
-}
-
-export function isOrderOnlyMode(settings: object | null | undefined): boolean {
-  return getOperatingMode(settings) === 'order_only';
-}
-
-/** Zeitpunkt der letzten Umschaltung (ISO) oder null. */
-export function getOperatingModeSince(
-  settings: object | null | undefined,
-): string | null {
-  const since = (settings as { operatingModeSince?: unknown } | null)
-    ?.operatingModeSince;
-  return typeof since === 'string' && since ? since : null;
+/** Was die Regeln von einer Organisation brauchen. */
+export interface OperatingModeOrg {
+  id?: string;
+  country?: string | null;
+  operatingMode?: string | null;
+  operatingModeLegacy?: boolean | null;
+  operatingModeSince?: Date | string | null;
 }
 
 /**
- * Entfernt Betriebsmodus und Zeitstempel aus eingehenden Einstellungen
- * (Organisation anlegen/bearbeiten, Admin-Bearbeitung). Umschalten geht
- * nur ueber den protokollierten Support-Endpunkt.
+ * Spalten, die jede Abfrage fuer die Pruefungen hier laden muss. Fehlt eine
+ * (z. B. `select: { id, settings }`), saehe eine deutsche Organisation wie
+ * eine ohne Land und jede wie `full` aus. `settings` kommt mit, weil die
+ * Zahlungswege daneben die Integrationen pruefen.
  */
-export function stripOperatingMode<T extends object | null | undefined>(
-  settings: T,
-): T {
-  if (settings && typeof settings === 'object') {
-    delete (settings as Record<string, unknown>).operatingMode;
-    delete (settings as Record<string, unknown>).operatingModeSince;
+export const OPERATING_MODE_SELECT = {
+  id: true,
+  settings: true,
+  country: true,
+  operatingMode: true,
+  operatingModeLegacy: true,
+  operatingModeSince: true,
+} as const;
+
+/** Unbekannt oder nicht geladen: `full` (wie jede Bestandsorganisation). */
+export function getOperatingMode(
+  org: OperatingModeOrg | null | undefined,
+): OperatingMode {
+  const mode = org?.operatingMode;
+  return isOperatingMode(mode) ? mode : 'full';
+}
+
+export function isOrdersOnly(
+  org: OperatingModeOrg | null | undefined,
+): boolean {
+  return getOperatingMode(org) === 'orders_only';
+}
+
+function countryOf(org: OperatingModeOrg | null | undefined): string {
+  return (org?.country ?? '').toUpperCase();
+}
+
+/** Bargeld in OpenEOS moeglich? (abgeleitet, nie gespeichert) */
+export function isCashAllowed(
+  org: OperatingModeOrg | null | undefined,
+): boolean {
+  if (getOperatingMode(org) !== 'full') return false;
+  if (countryOf(org) !== 'DE') return true;
+  return org?.operatingModeLegacy === true || hasActiveTse(org);
+}
+
+/** Preise und Betraege an Kasse, Bons, Kundendisplay und Berichten? */
+export function arePricesVisible(
+  org: OperatingModeOrg | null | undefined,
+): boolean {
+  return !isOrdersOnly(org);
+}
+
+export type ModeUnavailableReason = 'tse_required' | 'country_required';
+
+/**
+ * Darf die Organisation in diese Betriebsart wechseln? `null` = ja. Ohne
+ * Land keine Wahl (die Regeln haengen am Land); `full` in Deutschland nur
+ * mit aktiver TSE.
+ */
+export function modeUnavailableReason(
+  org: OperatingModeOrg | null | undefined,
+  mode: OperatingMode,
+): ModeUnavailableReason | null {
+  if (!countryOf(org)) return 'country_required';
+  if (mode === 'full' && countryOf(org) === 'DE' && !hasActiveTse(org)) {
+    return 'tse_required';
   }
-  return settings;
+  return null;
+}
+
+/** Felder fuer Antworten an Oberflaeche und Kasse. */
+export interface OperatingModeView {
+  country: string | null;
+  operatingMode: OperatingMode;
+  operatingModeLegacy: boolean;
+  operatingModeSince: string | null;
+  tseActive: boolean;
+  cashAllowed: boolean;
+  pricesVisible: boolean;
+}
+
+export function operatingModeView(
+  org: OperatingModeOrg | null | undefined,
+): OperatingModeView {
+  const since = org?.operatingModeSince;
+  return {
+    country: org?.country ?? null,
+    operatingMode: getOperatingMode(org),
+    operatingModeLegacy: org?.operatingModeLegacy === true,
+    operatingModeSince:
+      since instanceof Date
+        ? since.toISOString()
+        : typeof since === 'string' && since
+          ? since
+          : null,
+    tseActive: hasActiveTse(org),
+    cashAllowed: isCashAllowed(org),
+    pricesVisible: arePricesVisible(org),
+  };
+}
+
+/**
+ * Betriebsart einer neuen Organisation: in Deutschland `cashless` (ohne TSE
+ * ist `full` dort nicht waehlbar), sonst `full`. Eigene Installation
+ * (Selbstbetrieb): `full` mit Bestand — der Verein betreibt den Server
+ * selbst, eine Sperre durch den Hersteller gibt es dort nicht.
+ */
+export function initialOperatingMode(
+  country: string | null | undefined,
+  selfHosted: boolean,
+): {
+  operatingMode: OperatingMode;
+  operatingModeLegacy: boolean;
+  operatingModeSince: Date;
+} {
+  const operatingModeSince = new Date();
+  if (selfHosted) {
+    return {
+      operatingMode: 'full',
+      operatingModeLegacy: true,
+      operatingModeSince,
+    };
+  }
+  const de = (country ?? '').toUpperCase() === 'DE';
+  return {
+    operatingMode: de ? 'cashless' : 'full',
+    operatingModeLegacy: false,
+    operatingModeSince,
+  };
+}
+
+/** Herstellerbescheinigung: Deutschland, Betriebsart ohne Bargeld. */
+export function isCertificateAvailable(
+  org: OperatingModeOrg | null | undefined,
+): boolean {
+  return countryOf(org) === 'DE' && getOperatingMode(org) !== 'full';
 }
 
 export function orderOnlyModeError(): ForbiddenException {
   return new ForbiddenException({
     code: ErrorCodes.ORDER_ONLY_MODE,
     message:
-      'Deine Organisation nutzt OpenEOS im Modus „Nur Bestellen“. Zahlungen, Erstattungen, Trinkgeld, Kassenlade und Pfand-Auszahlung gibt es darin nicht – kassiert wird außerhalb von OpenEOS.',
+      'Deine Organisation nutzt OpenEOS in der Betriebsart „Nur Bons“. Preise, Zahlungen, Erstattungen, Trinkgeld, Rabatte, Pfand und Kassenlade gibt es darin nicht – kassiert wird außerhalb von OpenEOS.',
   });
 }
 
-/** Weist jeden Zahlungsvorgang im Modus `order_only` mit 403 ab. */
+export function cashDisabledError(): ForbiddenException {
+  return new ForbiddenException({
+    code: ErrorCodes.CASH_PAYMENTS_DISABLED,
+    message:
+      'Deine Organisation arbeitet in der Betriebsart „Bargeldlos“. Bargeld kann über OpenEOS nicht erfasst oder ausgezahlt werden.',
+  });
+}
+
+export function tseRequiredError(reason?: string): ForbiddenException {
+  return new ForbiddenException({
+    code: ErrorCodes.TSE_REQUIRED_FOR_CASH,
+    ...(reason ? { reason } : {}),
+    message:
+      'Bargeld geht in Deutschland nur mit einer aktiven Cloud-TSE. Deine Organisation hat keine aktive TSE – Karte und Online-Zahlung gehen weiter.',
+  });
+}
+
+/**
+ * Weist jeden Zahlungsvorgang (Zahlung, Erstattung, Trinkgeld, Rabatt,
+ * Pfand-Auszahlung, Kassenlade, Shop- und QR-Bestellung) in der
+ * Betriebsart `orders_only` mit 403 ORDER_ONLY_MODE ab.
+ */
 export function assertPaymentsAllowed(
-  settings: object | null | undefined,
+  org: OperatingModeOrg | null | undefined,
 ): void {
-  if (isOrderOnlyMode(settings)) throw orderOnlyModeError();
+  if (isOrdersOnly(org)) throw orderOnlyModeError();
+}
+
+/**
+ * Weist Bargeld ab, wo es nicht erlaubt ist:
+ * - `orders_only`: 403 ORDER_ONLY_MODE (gar keine Zahlung),
+ * - `cashless`: 403 CASH_PAYMENTS_DISABLED,
+ * - `full` in Deutschland ohne aktive TSE (ausser Bestand): 403
+ *   TSE_REQUIRED_FOR_CASH.
+ *
+ * Mit Zahlart: nur `cash` wird abgewiesen, Karte, SumUp und Online laufen
+ * weiter. Ohne Zahlart (`undefined`) ist der Vorgang selbst ein reiner
+ * Bargeldvorgang (Pfand-Auszahlung, Kassenlade, Bar-Erstattung).
+ */
+export function assertCashAllowed(
+  org: OperatingModeOrg | null | undefined,
+  paymentMethod?: string | null,
+): void {
+  // `PaymentMethod.CASH` als Text: unbekannte Werte sind kein Bargeld.
+  if (paymentMethod !== undefined && paymentMethod !== 'cash') return;
+  const mode = getOperatingMode(org);
+  if (mode === 'orders_only') throw orderOnlyModeError();
+  if (mode === 'cashless') throw cashDisabledError();
+  if (!isCashAllowed(org)) throw tseRequiredError();
+}
+
+/**
+ * `settings.address.country` ist nur eine Kopie von `organizations.country`.
+ * Was beim Bearbeiten der Einstellungen dort ankommt, wird durch die Spalte
+ * ersetzt (bzw. entfernt, solange kein Land gesetzt ist) — das Land aendert
+ * sich nur ueber die eigenen, protokollierten Wege.
+ */
+export function keepCountryMirror(
+  incoming: Record<string, unknown> | null | undefined,
+  country: string | null | undefined,
+): void {
+  const address = incoming?.address;
+  if (!address || typeof address !== 'object') return;
+  const target = address as Record<string, unknown>;
+  if (country) target.country = country;
+  else delete target.country;
+}
+
+/**
+ * Entfernt Felder der frueheren Zwischenloesungen aus eingehenden
+ * Einstellungen (Organisation anlegen/bearbeiten, Admin-Bearbeitung): die
+ * Betriebsart steht in eigenen Spalten und wechselt nur ueber den
+ * protokollierten Endpunkt.
+ */
+export function stripModeSettings<T extends object | null | undefined>(
+  settings: T,
+): T {
+  if (settings && typeof settings === 'object') {
+    const s = settings as Record<string, unknown>;
+    delete s.operatingMode;
+    delete s.operatingModeSince;
+    const payments = s.payments;
+    if (payments && typeof payments === 'object') {
+      const p = payments as Record<string, unknown>;
+      delete p.cashless;
+      delete p.changedAt;
+      if (Object.keys(p).length === 0) delete s.payments;
+    }
+  }
+  return settings;
 }
 
 /**
  * Online-Vorauszahlung des Gastes (Shop, QR-Bestellung). Nur darauf darf
- * im Modus `order_only` erstattet werden — zurueck an den Online-Anbieter,
- * nie aus einer Kasse.
+ * in der Betriebsart `orders_only` noch erstattet werden — fuer Zahlungen
+ * aus der Zeit vor dem Wechsel, zurueck an den Online-Anbieter.
  */
 export function isOnlinePrepaymentMethod(
   method: PaymentMethod | string | null | undefined,
@@ -114,8 +309,8 @@ function activeItems<T extends ItemLike>(items: T[]): T[] {
 
 /**
  * Positionen, an denen eine Station noch arbeitet (offen oder in
- * Zubereitung). Solange es die gibt, laesst sich eine Bestellung im Modus
- * `order_only` nicht abschliessen — die Kueche wuerde sie sonst verlieren.
+ * Zubereitung). Solange es die gibt, laesst sich eine Bestellung in der Betriebsart
+ * `orders_only` nicht abschliessen — die Kueche wuerde sie sonst verlieren.
  */
 export function itemsStillInProduction<T extends ItemLike>(items: T[]): T[] {
   return activeItems(items).filter(
@@ -127,12 +322,12 @@ export function itemsStillInProduction<T extends ItemLike>(items: T[]): T[] {
 }
 
 /**
- * Abschluss ohne Zahlung im Modus `order_only`.
+ * Abschluss ohne Zahlung in der Betriebsart `orders_only`.
  *
  * - Theke/Abholung/Mitnahme: abgeschlossen, sobald alles ausgegeben ist —
  *   ohne Station also gleich beim Anlegen, mit Station, wenn die letzte
  *   Stationsposition ausgegeben (`delivered`) ist. Das entspricht dem
- *   Zeitpunkt, an dem im Kassenbetrieb bezahlt und abgeschlossen wird.
+ *   Zeitpunkt, an dem im Betrieb mit Zahlung bezahlt und abgeschlossen wird.
  * - Tischbetrieb: nie automatisch. Der Tisch bleibt offen, bis die
  *   Bedienung „Abschließen“ tippt (statt „Kassieren“) — so sieht sie,
  *   welche Bestellungen an dem Tisch noch laufen.
@@ -150,7 +345,7 @@ export function shouldAutoCompleteOrderOnly(
 }
 
 /**
- * Abschluss im Modus `order_only`: was jetzt noch nicht ausgegeben ist,
+ * Abschluss in der Betriebsart `orders_only`: was jetzt noch nicht ausgegeben ist,
  * gilt als ausgegeben (`delivered`) — Positionen ohne Station (z. B.
  * Getraenke, die gleich mitgegeben werden) und fertige Stationspositionen.
  * Sonst stuenden in einer abgeschlossenen Bestellung Positionen auf „offen“.

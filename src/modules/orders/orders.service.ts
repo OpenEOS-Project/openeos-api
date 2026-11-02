@@ -62,17 +62,13 @@ import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { GatewayService } from '../gateway/gateway.service';
 import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 import { saveOrderWithNumbers } from './order-numbering';
+import { workflowDoneForClose } from './close-without-payment';
 import {
-  assertCloseWithoutPaymentAllowed,
-  closeOrdersWithoutPayment,
-  workflowDoneForClose,
-} from './close-without-payment';
-import { CASH_POLICY_SELECT } from '../../common/utils/cash-policy.util';
-import {
+  OPERATING_MODE_SELECT,
   assertOrderOnlyCompletable,
   handOverOnCompletion,
   assertPaymentsAllowed,
-  isOrderOnlyMode,
+  isOrdersOnly,
   shouldAutoCompleteOrderOnly,
 } from '../../common/utils/operating-mode.util';
 
@@ -217,10 +213,10 @@ export class OrdersService {
       await this.recalculateOrderTotals(order.id);
     }
 
-    // „Nur Bestellen“: wie an der Kasse — Theken-/Abholbestellungen ohne
+    // „Nur Bons“: wie an der Kasse — Theken-/Abholbestellungen ohne
     // Stationsarbeit sind mit dem Anlegen ausgegeben und abgeschlossen,
     // alles andere schliesst die Ausgabe bzw. „Abschließen“.
-    if (isOrderOnlyMode(await this.organizationSettings(organizationId))) {
+    if (isOrdersOnly(await this.modeOrganization(organizationId))) {
       await this.autoCompleteOrderOnly(order.id, order.fulfillmentType);
     }
 
@@ -325,7 +321,7 @@ export class OrdersService {
     const methodsOf = new Map(methods.map((m) => [m.order_id, m.methods]));
     const orderOnly =
       items.length > 0 &&
-      isOrderOnlyMode(await this.organizationSettings(organizationId));
+      isOrdersOnly(await this.modeOrganization(organizationId));
     const withStatus = items.map((order) =>
       Object.assign(order, {
         displayStatus: displayStatusOf(order, { orderOnly }),
@@ -451,9 +447,9 @@ export class OrdersService {
       });
     }
 
-    // „Nur Bestellen“: kein Trinkgeld (gehoert zur Zahlung).
+    // „Nur Bons“: kein Trinkgeld (gehoert zur Zahlung).
     if (Number(updateDto.tipAmount || 0) > 0) {
-      assertPaymentsAllowed(await this.organizationSettings(organizationId));
+      assertPaymentsAllowed(await this.modeOrganization(organizationId));
     }
 
     Object.assign(order, updateDto);
@@ -824,11 +820,9 @@ export class OrdersService {
       activeItems.length > 0 &&
       activeItems.every((i) => i.status === OrderItemStatus.DELIVERED);
 
-    const orderOnly = isOrderOnlyMode(
-      await this.organizationSettings(organizationId),
-    );
+    const orderOnly = isOrdersOnly(await this.modeOrganization(organizationId));
     if (orderOnly) {
-      // „Nur Bestellen“: Ausgabe statt Zahlung schliesst die Bestellung ab
+      // „Nur Bons“: Ausgabe statt Zahlung schliesst die Bestellung ab
       // (Theke/Abholung; Tische schliesst die Bedienung selbst).
       if (
         updatedOrder.status !== OrderStatus.COMPLETED &&
@@ -883,9 +877,7 @@ export class OrdersService {
   ): Promise<DeliverItemsResult> {
     const ids = Array.from(new Set(itemIds));
     const now = new Date();
-    const orderOnly = isOrderOnlyMode(
-      await this.organizationSettings(organizationId),
-    );
+    const orderOnly = isOrdersOnly(await this.modeOrganization(organizationId));
 
     const outcome = await this.orderRepository.manager.transaction(
       async (manager) => {
@@ -959,7 +951,7 @@ export class OrdersService {
           const previous = order.status;
           order.status = orderStatusFromItems(order.items, order.status);
           // Wie markItemDelivered: alles ausgegeben und bezahlt → fertig.
-          // „Nur Bestellen“: ausgegeben genuegt (nicht am Tisch).
+          // „Nur Bons“: ausgegeben genuegt (nicht am Tisch).
           // „Ohne Zahlung abgeschlossen“: wie bezahlt, sobald keine Station
           // mehr arbeitet.
           const closedOutside =
@@ -1050,12 +1042,14 @@ export class OrdersService {
   }
 
   /**
-   * „Abschließen“ an der Kasse im Modus „Nur Bestellen“ (statt
-   * „Kassieren“): eine oder mehrere offene Bestellungen, z. B. alle eines
-   * Tisches oder eine abgeholte Thekenbestellung. Alles oder nichts.
+   * „Abgeholt“ (Theke) bzw. „Tisch abschließen“ an der Kasse in der
+   * Betriebsart „Nur Bons“ (statt „Kassieren“): eine oder mehrere offene
+   * Bestellungen, z. B. alle eines Tisches oder eine abgeholte
+   * Thekenbestellung. Alles oder nichts.
    *
-   * - Nur im Modus `order_only` (sonst 400 ORDER_NOT_FULLY_PAID: im
-   *   Kassenbetrieb schliesst die Zahlung ab).
+   * - Nur in der Betriebsart `orders_only` (sonst 400 ORDER_NOT_FULLY_PAID:
+   *   sonst schliesst die Zahlung ab; ein Abschluss ohne Zahlung gibt es in
+   *   `cashless` und `full` nicht).
    * - Abgeschlossene werden uebersprungen, stornierte → 400.
    * - Solange eine Station an einer Position arbeitet → 400
    *   ORDER_ITEMS_IN_PRODUCTION.
@@ -1066,18 +1060,13 @@ export class OrdersService {
     orderIds: string[],
   ): Promise<{ orders: { id: string; status: OrderStatus }[] }> {
     const ids = Array.from(new Set(orderIds));
-    const organization = await this.cashPolicyOrganization(organizationId);
-    if (!isOrderOnlyMode(organization?.settings)) {
-      // „Deutschland ohne Bargeld“: bar ausserhalb kassiert → ohne Zahlung
-      // abschliessen (close-without-payment.ts).
-      if (organization && this.closesWithoutPayment(organization)) {
-        return this.closeWithoutPaymentForDevice(organizationId, ids);
-      }
+    const organization = await this.modeOrganization(organizationId);
+    if (!isOrdersOnly(organization)) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.ORDER_NOT_FULLY_PAID,
         message:
-          'Bestellungen werden im Kassenbetrieb mit der Zahlung abgeschlossen.',
+          'Bestellungen werden in dieser Betriebsart mit der Zahlung abgeschlossen.',
       });
     }
     const now = new Date();
@@ -1149,7 +1138,7 @@ export class OrdersService {
   }
 
   /**
-   * Neue Bestellung im Modus `order_only` abschliessen, wenn an keiner
+   * Neue Bestellung im Betriebsart `orders_only` abschliessen, wenn an keiner
    * Station etwas zu tun ist (`shouldAutoCompleteOrderOnly`). Die
    * Positionen ohne Station gelten dann als ausgegeben.
    */
@@ -1168,73 +1157,14 @@ export class OrdersService {
     );
   }
 
-  /** Bargeld-Regel erlaubt „Ohne Zahlung abschließen“? */
-  private closesWithoutPayment(organization: Organization): boolean {
-    try {
-      assertCloseWithoutPaymentAllowed(organization);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * „Ohne Zahlung abschließen“ an der Kasse (Bargeld-Regel DE ohne TSE):
-   * Bestellungen gelten als ausserhalb bezahlt, ohne Zahlung in OpenEOS.
-   * Abgeschlossen sind sie, sobald keine Station mehr daran arbeitet.
-   */
-  async closeWithoutPaymentForDevice(
-    organizationId: string,
-    orderIds: string[],
-  ): Promise<{ orders: { id: string; status: OrderStatus }[] }> {
-    assertCloseWithoutPaymentAllowed(
-      await this.cashPolicyOrganization(organizationId),
-    );
-    const now = new Date();
-    const changed = await this.orderRepository.manager.transaction((manager) =>
-      closeOrdersWithoutPayment(manager, organizationId, orderIds, now),
-    );
-    for (const order of changed) {
-      this.gatewayService.notifyOrderUpdated(
-        organizationId,
-        order.eventId,
-        order.id,
-        {
-          status: order.status,
-          completedAt: order.completedAt,
-          closedWithoutPaymentAt: order.closedWithoutPaymentAt,
-        },
-      );
-    }
-    if (changed.length) {
-      this.logger.log(
-        `Device closed ${changed.length} order(s) without payment (cash outside OpenEOS)`,
-      );
-    }
-    return {
-      orders: changed.map((o) => ({ id: o.id, status: o.status })),
-    };
-  }
-
-  /** Organisation mit allem, was die Bargeld-Regel braucht. */
-  private async cashPolicyOrganization(
+  /** Organisation mit allem, was die Betriebsart braucht. */
+  private async modeOrganization(
     organizationId: string,
   ): Promise<Organization | null> {
     return this.organizationRepository.findOne({
       where: { id: organizationId },
-      select: CASH_POLICY_SELECT,
+      select: OPERATING_MODE_SELECT,
     });
-  }
-
-  /** Einstellungen der Organisation (fuer den Betriebsmodus). */
-  private async organizationSettings(
-    organizationId: string,
-  ): Promise<Organization['settings'] | undefined> {
-    const organization = await this.organizationRepository.findOne({
-      where: { id: organizationId },
-      select: { id: true, settings: true },
-    });
-    return organization?.settings;
   }
 
   async callOrder(
@@ -1276,32 +1206,15 @@ export class OrdersService {
       });
     }
 
-    // „Nur Bestellen“: abschliessen ohne Zahlung, aber nicht, solange eine
+    // „Nur Bons“: abschliessen ohne Zahlung, aber nicht, solange eine
     // Station noch daran arbeitet.
     const now = new Date();
-    const organization = await this.cashPolicyOrganization(organizationId);
-    if (isOrderOnlyMode(organization?.settings)) {
+    const organization = await this.modeOrganization(organizationId);
+    if (isOrdersOnly(organization)) {
       assertOrderOnlyCompletable(order.items ?? []);
-      // Wie „Abschließen“ an der Kasse: nichts bleibt auf „offen“.
+      // Wie „Abgeholt“/„Tisch abschließen“ an der Kasse: nichts bleibt offen.
       const handedOver = handOverOnCompletion(order.items ?? [], now);
       if (handedOver.length) await this.orderItemRepository.save(handedOver);
-    } else if (
-      order.paymentStatus !== PaymentStatus.PAID &&
-      !order.closedWithoutPaymentAt &&
-      organization &&
-      this.closesWithoutPayment(organization)
-    ) {
-      // „Deutschland ohne Bargeld“: bar ausserhalb kassiert. Abschliessen
-      // nur, wenn keine Station mehr arbeitet (sonst ginge die Bestellung
-      // der Kueche verloren).
-      assertOrderOnlyCompletable(order.items ?? []);
-      await this.orderRepository.manager.transaction((manager) =>
-        closeOrdersWithoutPayment(manager, organizationId, [order.id], now),
-      );
-      this.logger.log(
-        `Order closed without payment: ${order.orderNumber} (cash outside OpenEOS)`,
-      );
-      return this.findOne(organizationId, orderId, user);
     } else if (
       order.paymentStatus !== PaymentStatus.PAID &&
       !order.closedWithoutPaymentAt
@@ -1441,11 +1354,15 @@ export class OrdersService {
     }
   }
 
-  /** Whether deposits apply to this order, per the org's fulfillment-type policy. */
+  /**
+   * Whether deposits apply to this order, per the org's fulfillment-type
+   * policy. Betriebsart „Nur Bons“: nie (keine Betraege).
+   */
   private async shouldChargePfand(order: Order): Promise<boolean> {
     const organization = await this.organizationRepository.findOne({
       where: { id: order.organizationId },
     });
+    if (isOrdersOnly(organization)) return false;
     return isPfandChargedForFulfillment(
       order.fulfillmentType,
       organization?.settings,

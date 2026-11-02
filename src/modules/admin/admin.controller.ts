@@ -30,15 +30,13 @@ import {
   UpdateNotificationSettingsDto,
   SetOperatingModeDto,
   SetOrganizationCountryAdminDto,
-  SetCashPolicyAdminDto,
 } from './dto';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../database/entities';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 import { OperatingModeService } from '../organizations/operating-mode/operating-mode.service';
-import { CashPolicyService } from '../organizations/cash-policy/cash-policy.service';
-import { GatewayService } from '../gateway/gateway.service';
+import { CountryService } from '../organizations/country/country.service';
 
 @ApiTags('Admin')
 @ApiBearerAuth('JWT-auth')
@@ -50,8 +48,7 @@ export class AdminController {
     private readonly printersService: PrintersService,
     private readonly platformSettingsService: PlatformSettingsService,
     private readonly operatingModeService: OperatingModeService,
-    private readonly gatewayService: GatewayService,
-    private readonly cashPolicyService: CashPolicyService,
+    private readonly countryService: CountryService,
   ) {}
 
   private getClientInfo(req: Request): { ip: string; userAgent?: string } {
@@ -105,17 +102,15 @@ export class AdminController {
   }
 
   /**
-   * Betriebsmodus „Nur Bestellen“ ein- oder ausschalten. Nur hier — die
-   * Organisation selbst kann das Kassenmodul nicht wieder einschalten. Nur
-   * im gehosteten Betrieb: in einer eigenen Installation ist der Verein
-   * selbst Betreiber, eine Herstellerbescheinigung waere dort falsch.
+   * Betriebsart wechseln (Support, mit Grund). Gleiche Regeln wie fuer den
+   * Verein: in Deutschland `full` nur mit aktiver TSE.
    */
   @SaasOnly()
   @Patch('organizations/:id/operating-mode')
   @ApiOperation({
-    summary: 'Switch the operating mode (pos / order_only), logged with reason',
+    summary: 'Switch the operating mode, logged with reason',
     description:
-      'Nur Support (Super-Admin). Im Modus `order_only` sperrt der Server jede Zahlung, Erstattung, Trinkgeld, Kassenlade und Pfand-Auszahlung (403 ORDER_ONLY_MODE). Jede Umschaltung steht mit Zeitpunkt, Person und Grund im Verlauf und im Admin-Protokoll.',
+      'Nur Support (Super-Admin). Betriebsart `orders_only`, `cashless` oder `full` (in Deutschland nur mit aktiver Cloud-TSE, sonst 403 TSE_REQUIRED_FOR_CASH). Steht mit Zeitpunkt, Person und Grund im Verlauf und im Admin-Protokoll.',
   })
   async setOperatingMode(
     @Param('id', ParseUUIDPipe) id: string,
@@ -124,27 +119,28 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const state = await this.operatingModeService.setMode(
+    const state = await this.operatingModeService.adminSetMode(
       id,
       dto.mode,
       dto.reason,
       user,
       { ipAddress: ip, userAgent: userAgent ?? null },
     );
-    // Kassen sofort umstellen, nicht erst beim naechsten Neuladen.
-    this.gatewayService.notifyOrganizationSettingsUpdated(id);
     return { data: state };
   }
 
   @SaasOnly()
   @Get('organizations/:id/operating-mode/history')
-  @ApiOperation({ summary: 'Operating mode change log (newest first)' })
+  @ApiOperation({
+    summary: 'Operating mode and country change log (newest first)',
+  })
   async getOperatingModeHistory(@Param('id', ParseUUIDPipe) id: string) {
-    const [state, history] = await Promise.all([
+    const [state, history, countryHistory] = await Promise.all([
       this.operatingModeService.stateOf(id),
       this.operatingModeService.history(id),
+      this.countryService.history(id),
     ]);
-    return { data: { ...state, history } };
+    return { data: { state, history, countryHistory } };
   }
 
   /**
@@ -156,7 +152,7 @@ export class AdminController {
   @ApiOperation({
     summary: 'Change the country of an organization (logged with reason)',
     description:
-      'Nur Support (Super-Admin). Das Land steuert die Bargeld-Regel (DE ohne TSE: kein Bargeld) und die Steuersätze. Steht mit Grund im Verlauf, im Admin-Protokoll und auf der Bescheinigung.',
+      'Nur Support (Super-Admin). Das Land bestimmt die wählbaren Betriebsarten (Deutschland: Bargeld nur mit Cloud-TSE) und die Steuersätze. Steht mit Grund im Verlauf und im Admin-Protokoll.',
   })
   async setOrganizationCountry(
     @Param('id', ParseUUIDPipe) id: string,
@@ -165,56 +161,14 @@ export class AdminController {
     @Req() req: unknown,
   ) {
     const { ip, userAgent } = this.getClientInfo(req as Request);
-    const state = await this.cashPolicyService.adminSetCountry(
+    await this.countryService.adminSetCountry(
       id,
       dto.country,
       dto.reason,
       user,
       { ipAddress: ip, userAgent: userAgent ?? null },
     );
-    this.gatewayService.notifyOrganizationSettingsUpdated(id);
-    return { data: state };
-  }
-
-  /**
-   * Bestandsschutz der Bargeld-Regel setzen/aufheben — der Weg zurueck,
-   * nachdem ein Verein freiwillig auf „Deutschland ohne Bargeld“
-   * gewechselt hat.
-   */
-  @SaasOnly()
-  @Patch('organizations/:id/cash-policy')
-  @ApiOperation({
-    summary: 'Set or clear the legacy cash rules (logged with reason)',
-    description:
-      'Nur Support (Super-Admin). `legacy: true` = Verhalten wie vor der Länderregel (Bargeld erlaubt), `legacy: false` = Regel des Landes.',
-  })
-  async setCashPolicy(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: SetCashPolicyAdminDto,
-    @CurrentUser() user: User,
-    @Req() req: unknown,
-  ) {
-    const { ip, userAgent } = this.getClientInfo(req as Request);
-    const state = await this.cashPolicyService.adminSetLegacy(
-      id,
-      dto.legacy,
-      dto.reason,
-      user,
-      { ipAddress: ip, userAgent: userAgent ?? null },
-    );
-    this.gatewayService.notifyOrganizationSettingsUpdated(id);
-    return { data: state };
-  }
-
-  @SaasOnly()
-  @Get('organizations/:id/cash-policy/history')
-  @ApiOperation({ summary: 'Country and cash policy change log' })
-  async getCashPolicyHistory(@Param('id', ParseUUIDPipe) id: string) {
-    const [state, history] = await Promise.all([
-      this.cashPolicyService.stateOf(id),
-      this.cashPolicyService.history(id),
-    ]);
-    return { data: { ...state, history } };
+    return { data: await this.operatingModeService.stateOf(id) };
   }
 
   @SaasOnly()

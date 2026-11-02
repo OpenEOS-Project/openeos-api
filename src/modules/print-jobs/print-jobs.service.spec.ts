@@ -16,7 +16,7 @@ const AGENT_DEVICE = 'agent-1';
  * jobs in memory so retry() and the reconnect replay can read back exactly
  * what createFromWorkflow()/create() persisted.
  */
-function setup() {
+function setup(operatingMode: 'orders_only' | 'cashless' | 'full' = 'full') {
   const jobs = new Map<string, PrintJob>();
   let seq = 0;
 
@@ -35,6 +35,11 @@ function setup() {
     update: jest.fn(() => Promise.resolve()),
   };
   const printerRepository = {
+    manager: {
+      findOne: jest.fn(() =>
+        Promise.resolve({ id: ORG, country: 'DE', operatingMode }),
+      ),
+    },
     findOne: jest.fn(() =>
       Promise.resolve({
         id: PRINTER,
@@ -87,6 +92,37 @@ const kitchenPayload = {
   items: [{ name: 'Bratwurst', quantity: 2, notes: null, options: [] }],
 };
 
+describe('PrintJobsService — Betriebsart „Nur Bons“', () => {
+  it.each([
+    ['orders_only', true],
+    ['cashless', false],
+    ['full', false],
+  ] as const)(
+    '%s: every workflow job carries hide_prices = %s',
+    async (mode, hidden) => {
+      const { service, sentEvent } = setup(mode);
+      const job = await service.createFromWorkflow(
+        ORG,
+        PRINTER,
+        null,
+        'order-1',
+        1,
+        kitchenPayload,
+        null,
+        'order_ticket',
+      );
+      await Promise.resolve();
+      expect(sentEvent().payload).toEqual({
+        ...kitchenPayload,
+        hide_prices: hidden,
+      });
+      expect((job.payload.data as { hide_prices: boolean }).hide_prices).toBe(
+        hidden,
+      );
+    },
+  );
+});
+
 describe('PrintJobsService template resolution', () => {
   it('dispatches a workflow kitchen ticket with the workflow default template', async () => {
     const { service, sentEvent } = setup();
@@ -108,7 +144,7 @@ describe('PrintJobsService template resolution', () => {
       printerId: PRINTER,
       templateName: 'kitchen_ticket',
       copies: 1,
-      payload: kitchenPayload,
+      payload: { ...kitchenPayload, hide_prices: false },
     });
     // Persisted so later deliveries can reproduce the same event.
     expect(job.payload.templateName).toBe('kitchen_ticket');
@@ -191,7 +227,7 @@ describe('PrintJobsService template resolution', () => {
       printerId: PRINTER,
       templateName: 'receipt',
       copies: 2,
-      payload: receiptPayload,
+      payload: { ...receiptPayload, hide_prices: false },
     });
 
     const stored = jobs.get(job.id) as PrintJob;

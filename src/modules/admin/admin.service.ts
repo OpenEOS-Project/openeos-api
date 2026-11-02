@@ -85,8 +85,10 @@ import {
   UpdateSubscriptionConfigDto,
 } from './dto';
 import { endOfDay } from '../../common/utils/date-range.util';
-import { stripOperatingMode } from '../../common/utils/operating-mode.util';
-import { keepCountryMirror } from '../../common/utils/cash-policy.util';
+import {
+  keepCountryMirror,
+  stripModeSettings,
+} from '../../common/utils/operating-mode.util';
 
 @Injectable()
 export class AdminService {
@@ -174,29 +176,13 @@ export class AdminService {
     const org = await this.getOrganization(orgId);
     const before = { ...org };
 
-    // Der Betriebsmodus laeuft nur ueber setOperatingMode (mit Grund und
-    // Verlauf); eine Bearbeitung hier laesst ihn stehen, wie er ist.
+    // Die Betriebsart laeuft nur ueber PATCH …/operating-mode (mit Grund
+    // und Verlauf), das Land nur ueber PATCH …/country; die Kopie des
+    // Landes in den Einstellungen folgt der Spalte.
     if (updateDto.settings) {
-      const current = (org.settings ?? {}) as unknown as Record<
-        string,
-        unknown
-      >;
-      const incoming = stripOperatingMode({ ...updateDto.settings });
-      // Land nur ueber PATCH …/country (mit Grund); die Kopie in den
-      // Einstellungen folgt der Spalte.
+      const incoming = stripModeSettings({ ...updateDto.settings });
       keepCountryMirror(incoming, org.country);
-      updateDto = {
-        ...updateDto,
-        settings: {
-          ...incoming,
-          ...(current.operatingMode !== undefined
-            ? { operatingMode: current.operatingMode }
-            : {}),
-          ...(current.operatingModeSince !== undefined
-            ? { operatingModeSince: current.operatingModeSince }
-            : {}),
-        },
-      };
+      updateDto = { ...updateDto, settings: incoming };
     }
 
     Object.assign(org, updateDto);

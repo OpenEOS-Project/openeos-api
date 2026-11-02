@@ -33,8 +33,8 @@ import { GatewayService } from '../gateway/gateway.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import {
   assertCashAllowed,
-  CASH_POLICY_SELECT,
-} from '../../common/utils/cash-policy.util';
+  OPERATING_MODE_SELECT,
+} from '../../common/utils/operating-mode.util';
 import { closedWithoutPaymentError } from '../orders/close-without-payment';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { OrderPrintService } from '../print-jobs/order-print.service';
@@ -181,13 +181,13 @@ export class PaymentsBatchService {
     const batchId = randomUUID();
     const organization = await manager.findOne(Organization, {
       where: { id: organizationId },
-      select: CASH_POLICY_SELECT,
+      select: OPERATING_MODE_SELECT,
     });
     // SumUp nur bei eingeschalteter Integration; fremdes Kartengeraet geht
     // immer, Bargeld nicht im bargeldlosen Modus (Trinkgeld und erhaltenes
     // Bargeld haengen an derselben Zahlart).
-    // „Nur Bestellen“: keine Zahlung an der Kasse (403 ORDER_ONLY_MODE).
-    assertPaymentsAllowed(organization?.settings);
+    // „Nur Bons“: keine Zahlung an der Kasse (403 ORDER_ONLY_MODE).
+    assertPaymentsAllowed(organization);
     if (provider === PaymentProvider.SUMUP) {
       assertIntegrationEnabled(organization?.settings, 'sumup');
     }

@@ -18,7 +18,7 @@ import { allocateRefundFor } from '../refunds/refund-calc';
 import { PaymentsService } from './payments.service';
 
 /**
- * Bargeldloser Modus (`settings.payments.cashless`): jeder Einstieg, der
+ * Betriebsart „Bargeldlos“ (`operatingMode = cashless`): jeder Einstieg, der
  * Bargeld bucht oder auszahlt, antwortet mit 403 CASH_PAYMENTS_DISABLED;
  * Karte, SumUp und Online laufen weiter — auch geteilt und mit Trinkgeld.
  * Sammelzahlung und Bestellung mit Zahlung: payments-batch.spec.ts und
@@ -36,13 +36,16 @@ beforeAll(() => {
   jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 });
 
+/** `cashless` oder `full` (Oesterreich, ohne TSE frei waehlbar). */
 function organization(cashless: boolean): Organization {
   return {
     id: ORG_ID,
+    country: 'AT',
+    operatingMode: cashless ? 'cashless' : 'full',
+    operatingModeLegacy: false,
     settings: {
       currency: 'EUR',
       integrations: { sumup: { enabled: true } },
-      ...(cashless ? { payments: { cashless: true } } : {}),
     },
   } as unknown as Organization;
 }
@@ -78,7 +81,7 @@ function openOrder(): Order {
   } as unknown as Order;
 }
 
-describe('Bargeldloser Modus — Kasse (DeviceApiController)', () => {
+describe('Betriebsart „Bargeldlos“ — Kasse (DeviceApiController)', () => {
   const device = {
     id: 'device-1',
     organizationId: ORG_ID,
@@ -263,7 +266,7 @@ describe('Bargeldloser Modus — Kasse (DeviceApiController)', () => {
     expect(gatewayService.sendOpenCashDrawer).not.toHaveBeenCalled();
   });
 
-  it('cash mode (default): cash payment, Pfand payout and drawer work as before', async () => {
+  it('full mode: cash payment, Pfand payout and drawer work as before', async () => {
     const {
       controller,
       paymentRepository,
@@ -288,7 +291,7 @@ describe('Bargeldloser Modus — Kasse (DeviceApiController)', () => {
   });
 });
 
-describe('Bargeldloser Modus — Verwaltung (PaymentsService)', () => {
+describe('Betriebsart „Bargeldlos“ — Verwaltung (PaymentsService)', () => {
   const user = { id: 'user-1' } as User;
 
   function setup(cashless: boolean) {
@@ -383,7 +386,7 @@ describe('Bargeldloser Modus — Verwaltung (PaymentsService)', () => {
     expect(paymentRepository.save).toHaveBeenCalledTimes(2);
   });
 
-  it('cash mode (default): cash still works', async () => {
+  it('full mode: cash still works', async () => {
     const { service, paymentRepository } = setup(false);
 
     await service.create(
@@ -395,7 +398,7 @@ describe('Bargeldloser Modus — Verwaltung (PaymentsService)', () => {
   });
 });
 
-describe('Bargeldloser Modus — Erstattung (allocateRefundFor)', () => {
+describe('Betriebsart „Bargeldlos“ — Erstattung (allocateRefundFor)', () => {
   const at = (minutes: number) => new Date(Date.UTC(2026, 9, 14, 18, minutes));
   const cash = {
     id: 'cash',

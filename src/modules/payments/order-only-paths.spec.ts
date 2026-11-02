@@ -21,7 +21,7 @@ import { PaymentsBatchService } from './payments-batch.service';
 import { PaymentsService } from './payments.service';
 
 /**
- * Betriebsmodus „Nur Bestellen“ (`settings.operatingMode = 'order_only'`):
+ * Betriebsart „Nur Bons“ (`operatingMode = orders_only`):
  * jeder Einstieg, der eine Zahlung bucht oder abrechnet, antwortet mit 403
  * ORDER_ONLY_MODE — unabhaengig von der Zahlart (bar, Karte, SumUp).
  * Bestellung mit Zahlung/Trinkgeld: device-orders.spec.ts; Abschluss ohne
@@ -39,14 +39,17 @@ beforeAll(() => {
   jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 });
 
+/** `orders_only` oder `full` (Schweiz, ohne TSE frei waehlbar). */
 function organization(orderOnly: boolean): Organization {
   return {
     id: ORG_ID,
+    country: 'CH',
+    operatingMode: orderOnly ? 'orders_only' : 'full',
+    operatingModeLegacy: false,
     settings: {
       currency: 'EUR',
       integrations: { sumup: { enabled: true } },
       sumup: { apiKey: 'sup_sk_test', merchantCode: 'M1' },
-      ...(orderOnly ? { operatingMode: 'order_only' } : {}),
     },
   } as unknown as Organization;
 }
@@ -88,7 +91,7 @@ const METHODS = [
   [PaymentMethod.SUMUP_TERMINAL],
 ] as const;
 
-describe('„Nur Bestellen“ — Kasse (DeviceApiController)', () => {
+describe('„Nur Bons“ — Kasse (DeviceApiController)', () => {
   const device = {
     id: 'device-1',
     organizationId: ORG_ID,
@@ -270,7 +273,7 @@ describe('„Nur Bestellen“ — Kasse (DeviceApiController)', () => {
     expect(refundsService.createRefund).not.toHaveBeenCalled();
   });
 
-  it('cash register mode (default): payments and the drawer work as before', async () => {
+  it('full mode: payments and the drawer work as before', async () => {
     const { controller, paymentRepository, gatewayService } = setup(false);
     await controller.createPayment(device, {
       orderId: 'order-1',
@@ -283,7 +286,7 @@ describe('„Nur Bestellen“ — Kasse (DeviceApiController)', () => {
   });
 });
 
-describe('„Nur Bestellen“ — Sammelzahlung (PaymentsBatchService)', () => {
+describe('„Nur Bons“ — Sammelzahlung (PaymentsBatchService)', () => {
   it.each(METHODS)(
     'POST /device-api/payments/batch: rejects %s before locking orders',
     async (paymentMethod) => {
@@ -310,7 +313,7 @@ describe('„Nur Bestellen“ — Sammelzahlung (PaymentsBatchService)', () => {
   );
 });
 
-describe('„Nur Bestellen“ — Verwaltung', () => {
+describe('„Nur Bons“ — Verwaltung', () => {
   const user = { id: 'user-1' } as User;
 
   function paymentsService() {

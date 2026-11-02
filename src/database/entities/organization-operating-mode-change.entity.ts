@@ -11,16 +11,17 @@ import { Organization } from './organization.entity';
 import { User } from './user.entity';
 
 /**
- * Protokoll des Betriebsmodus (`settings.operatingMode`, `pos` oder
- * `order_only`).
+ * Verlauf der Betriebsart (operating-mode.util.ts): jeder Wechsel mit
+ * Zeitpunkt, Person, altem und neuem Wert. Werte: `orders_only`,
+ * `cashless`, `full` und `full_legacy` („Alle Funktionen (Bestand)“).
  *
- * Ein Bestellsystem ohne Kassenmodul ist nur dann frei von der TSE-Pflicht,
- * wenn der Verein das Kassenmodul nicht selbst einschalten kann. Deshalb
- * schaltet nur der Support (Super-Admin) um, immer mit Grund — und jede
- * Umschaltung steht hier mit Zeitpunkt, Person, Grund und altem/neuem
- * Modus. Die Herstellerbescheinigung druckt diesen Verlauf ab. Nur
- * anhaengen, nie aendern; der Name bleibt als Kopie, auch wenn das Konto
- * spaeter geloescht wird.
+ * Wechseln koennen die Admins des Vereins selbst (ohne Grund) und der
+ * Support (`by_support`, immer mit Grund). Zeilen aus der Zeit vor den
+ * Betriebsarten (Support-Schalter „Nur Bestellen“) wurden bei der Migration
+ * auf die neuen Werte umgeschrieben; die Umstellung selbst steht als
+ * eigene Zeile mit `by_support = true` darin. Die Herstellerbescheinigung
+ * druckt diesen Verlauf ab. Nur anhaengen, nie aendern; der Name bleibt als
+ * Kopie, auch wenn das Konto spaeter geloescht wird.
  */
 @Entity('organization_operating_mode_changes')
 @Index(['organizationId', 'createdAt'])
@@ -40,9 +41,13 @@ export class OrganizationOperatingModeChange {
   @Column({ name: 'to_mode', type: 'varchar', length: 20 })
   toMode: string;
 
-  /** Anlass, z. B. „Antrag des Vereins per E-Mail vom 01.11.2026“. */
-  @Column({ type: 'text' })
-  reason: string;
+  /** Anlass (Pflicht beim Support), z. B. „Antrag per E-Mail vom 01.11.2026“. */
+  @Column({ type: 'text', nullable: true })
+  reason: string | null;
+
+  /** Durch den OpenEOS-Support (Super-Admin) bzw. die Migration. */
+  @Column({ name: 'by_support', type: 'boolean', default: false })
+  bySupport: boolean;
 
   @Column({ name: 'changed_by_user_id', type: 'uuid', nullable: true })
   changedByUserId: string | null;

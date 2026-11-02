@@ -31,7 +31,7 @@ export class AcknowledgeTableDto {
   eventId?: string;
 }
 
-/** „Abschließen“ im Modus „Nur Bestellen“ (statt „Kassieren“). */
+/** „Abgeholt“ / „Tisch abschließen“ in der Betriebsart „Nur Bons“ (statt „Kassieren“). */
 export class CompleteOrdersDto {
   @ApiProperty({
     type: [String],

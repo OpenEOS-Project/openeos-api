@@ -2,51 +2,187 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { PaymentMethod } from '../../database/entities/payment.entity';
 import {
+  OPERATING_MODES,
+  assertCashAllowed,
   assertOrderOnlyCompletable,
   assertPaymentsAllowed,
+  arePricesVisible,
   getOperatingMode,
-  getOperatingModeSince,
   handOverOnCompletion,
+  initialOperatingMode,
+  isCashAllowed,
+  isCertificateAvailable,
   isOnlinePrepaymentMethod,
-  isOrderOnlyMode,
   itemsStillInProduction,
+  keepCountryMirror,
+  modeUnavailableReason,
+  operatingModeView,
   shouldAutoCompleteOrderOnly,
-  stripOperatingMode,
+  stripModeSettings,
+  type OperatingMode,
 } from './operating-mode.util';
+import { hasActiveTse, tseStatus } from './tse.util';
 
 const item = (
   status: OrderItemStatus,
   productionStationId: string | null = null,
 ) => ({ status, productionStationId, productName: 'Pommes' });
 
-describe('operating mode helper', () => {
-  it('is `pos` unless settings.operatingMode is exactly order_only', () => {
-    expect(getOperatingMode(undefined)).toBe('pos');
-    expect(getOperatingMode({})).toBe('pos');
-    expect(getOperatingMode({ operatingMode: 'ORDER_ONLY' })).toBe('pos');
-    expect(getOperatingMode({ operatingMode: true })).toBe('pos');
-    expect(getOperatingMode({ operatingMode: 'order_only' })).toBe(
-      'order_only',
+function codeOf(fn: () => void): string | null {
+  try {
+    fn();
+    return null;
+  } catch (e) {
+    expect(e).toBeInstanceOf(ForbiddenException);
+    return ((e as ForbiddenException).getResponse() as { code: string }).code;
+  }
+}
+
+afterEach(() => {
+  tseStatus.isActive = () => false;
+});
+
+/*
+ * Matrix der Betriebsarten (betriebsarten-spec.md): Land × Betriebsart ×
+ * Bestand × TSE. Erwartet: Bargeld, Zahlungen, Preise, Fehlercode einer
+ * Barzahlung und waehlbare Betriebsarten.
+ */
+const COUNTRIES = ['DE', 'AT', 'CH', 'FR'] as const;
+type Case = {
+  country: (typeof COUNTRIES)[number];
+  mode: OperatingMode;
+  legacy: boolean;
+  tse: boolean;
+};
+const cases: Case[] = [];
+for (const country of COUNTRIES)
+  for (const mode of OPERATING_MODES)
+    for (const legacy of [false, true])
+      for (const tse of [false, true])
+        cases.push({ country, mode, legacy, tse });
+
+function expected(c: Case) {
+  const cash = c.mode === 'full' && (c.country !== 'DE' || c.legacy || c.tse);
+  const cashError =
+    c.mode === 'orders_only'
+      ? 'ORDER_ONLY_MODE'
+      : c.mode === 'cashless'
+        ? 'CASH_PAYMENTS_DISABLED'
+        : cash
+          ? null
+          : 'TSE_REQUIRED_FOR_CASH';
+  return {
+    cash,
+    cashError,
+    payments: c.mode !== 'orders_only',
+    prices: c.mode !== 'orders_only',
+    fullSelectable: c.country !== 'DE' || c.tse,
+    certificate: c.country === 'DE' && c.mode !== 'full',
+  };
+}
+
+describe('operating mode matrix (country × mode × legacy × TSE)', () => {
+  it.each(cases)('%o', (c) => {
+    tseStatus.isActive = () => c.tse;
+    const org = {
+      id: 'org-1',
+      country: c.country,
+      operatingMode: c.mode,
+      operatingModeLegacy: c.legacy,
+    };
+    const want = expected(c);
+
+    expect(hasActiveTse(org)).toBe(c.tse);
+    expect(isCashAllowed(org)).toBe(want.cash);
+    expect(arePricesVisible(org)).toBe(want.prices);
+    expect(codeOf(() => assertCashAllowed(org, PaymentMethod.CASH))).toBe(
+      want.cashError,
     );
-    expect(isOrderOnlyMode({ operatingMode: 'order_only' })).toBe(true);
-    expect(
-      getOperatingModeSince({ operatingModeSince: '2026-11-01T10:00:00Z' }),
-    ).toBe('2026-11-01T10:00:00Z');
-    expect(getOperatingModeSince({})).toBeNull();
+    // Reiner Bargeldvorgang (Kassenlade, Pfand-Auszahlung) wie Barzahlung.
+    expect(codeOf(() => assertCashAllowed(org))).toBe(want.cashError);
+    // Karte: nur in orders_only gesperrt (dort per assertPaymentsAllowed).
+    expect(codeOf(() => assertCashAllowed(org, PaymentMethod.CARD))).toBeNull();
+    expect(codeOf(() => assertPaymentsAllowed(org))).toBe(
+      want.payments ? null : 'ORDER_ONLY_MODE',
+    );
+    expect(modeUnavailableReason(org, 'orders_only')).toBeNull();
+    expect(modeUnavailableReason(org, 'cashless')).toBeNull();
+    expect(modeUnavailableReason(org, 'full')).toBe(
+      want.fullSelectable ? null : 'tse_required',
+    );
+    expect(isCertificateAvailable(org)).toBe(want.certificate);
+    expect(operatingModeView(org)).toMatchObject({
+      country: c.country,
+      operatingMode: c.mode,
+      operatingModeLegacy: c.legacy,
+      tseActive: c.tse,
+      cashAllowed: want.cash,
+      pricesVisible: want.prices,
+    });
+  });
+});
+
+describe('operating mode helper', () => {
+  it('unknown or missing values count as full (legacy organizations)', () => {
+    expect(getOperatingMode(undefined)).toBe('full');
+    expect(getOperatingMode({})).toBe('full');
+    expect(getOperatingMode({ operatingMode: 'order_only' })).toBe('full');
+    expect(getOperatingMode({ operatingMode: 'ORDERS_ONLY' })).toBe('full');
+    expect(getOperatingMode({ operatingMode: 'orders_only' })).toBe(
+      'orders_only',
+    );
   });
 
-  it('rejects every payment with 403 ORDER_ONLY_MODE in order_only, nothing in pos', () => {
-    expect(() => assertPaymentsAllowed({})).not.toThrow();
+  it('without a country no mode can be chosen, cash follows the mode', () => {
+    const org = { operatingMode: 'full', operatingModeLegacy: true };
+    expect(modeUnavailableReason(org, 'cashless')).toBe('country_required');
+    expect(modeUnavailableReason(org, 'full')).toBe('country_required');
+    expect(isCashAllowed(org)).toBe(true);
+    expect(isCashAllowed({ operatingMode: 'cashless' })).toBe(false);
+  });
+
+  it('the TSE stub is false by default and needs an organization', () => {
+    expect(hasActiveTse({ id: 'org-1', country: 'DE' })).toBe(false);
+    tseStatus.isActive = () => true;
+    expect(hasActiveTse(null)).toBe(false);
+    expect(hasActiveTse({ id: 'org-1' })).toBe(true);
+  });
+
+  it('new organizations: DE starts cashless, others full, self-hosted full with legacy', () => {
+    expect(initialOperatingMode('DE', false)).toMatchObject({
+      operatingMode: 'cashless',
+      operatingModeLegacy: false,
+    });
+    expect(initialOperatingMode('de', false).operatingMode).toBe('cashless');
+    for (const country of ['AT', 'CH', 'FR', null]) {
+      expect(initialOperatingMode(country, false)).toMatchObject({
+        operatingMode: 'full',
+        operatingModeLegacy: false,
+      });
+    }
+    expect(initialOperatingMode('DE', true)).toMatchObject({
+      operatingMode: 'full',
+      operatingModeLegacy: true,
+    });
+  });
+
+  it('cash errors say what to do', () => {
     let error: unknown;
     try {
-      assertPaymentsAllowed({ operatingMode: 'order_only' });
+      assertCashAllowed(
+        { country: 'DE', operatingMode: 'full', operatingModeLegacy: false },
+        PaymentMethod.CASH,
+      );
     } catch (e) {
       error = e;
     }
-    expect(error).toBeInstanceOf(ForbiddenException);
-    expect((error as ForbiddenException).getResponse()).toMatchObject({
-      code: 'ORDER_ONLY_MODE',
-    });
+    expect((error as ForbiddenException).getStatus()).toBe(403);
+    const response = (error as ForbiddenException).getResponse() as {
+      code: string;
+      message: string;
+    };
+    expect(response.code).toBe('TSE_REQUIRED_FOR_CASH');
+    expect(response.message).toContain('Cloud-TSE');
   });
 
   it('only PayPal and SumUp Online count as online prepayment', () => {
@@ -62,14 +198,26 @@ describe('operating mode helper', () => {
     }
   });
 
-  it('strips mode and timestamp from incoming settings', () => {
+  it('strips the interim mode fields from incoming settings', () => {
     const settings = {
       vatExempt: true,
       operatingMode: 'order_only',
       operatingModeSince: 'x',
+      payments: { cashless: true, changedAt: 'y' },
     };
-    expect(stripOperatingMode(settings)).toEqual({ vatExempt: true });
-    expect(stripOperatingMode(undefined)).toBeUndefined();
+    expect(stripModeSettings(settings)).toEqual({ vatExempt: true });
+    expect(
+      stripModeSettings({ payments: { cashless: false, other: 1 } }),
+    ).toEqual({ payments: { other: 1 } });
+    expect(stripModeSettings(undefined)).toBeUndefined();
+  });
+
+  it('keeps settings.address.country a copy of the column', () => {
+    const incoming = { address: { city: 'Wien', country: 'DE' } };
+    keepCountryMirror(incoming, 'AT');
+    expect(incoming.address.country).toBe('AT');
+    keepCountryMirror(incoming, null);
+    expect(incoming.address).toEqual({ city: 'Wien' });
   });
 });
 

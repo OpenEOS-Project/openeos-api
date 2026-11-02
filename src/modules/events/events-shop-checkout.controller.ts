@@ -1,4 +1,8 @@
 import {
+  OPERATING_MODE_SELECT,
+  assertPaymentsAllowed,
+} from '../../common/utils/operating-mode.util';
+import {
   Controller,
   Post,
   Get,
@@ -166,6 +170,13 @@ export class EventsShopCheckoutController {
     @Body() body: CreateCheckoutBody,
   ) {
     const event = await this.loadShopEvent(eventId);
+    // Betriebsart „Nur Bons“: keine Online-Bestellung mit Vorkasse.
+    assertPaymentsAllowed(
+      await this.organizationRepository.findOne({
+        where: { id: event.organizationId },
+        select: OPERATING_MODE_SELECT,
+      }),
+    );
     await this.assertShopOpen(event);
 
     if (event.status === EventStatus.TEST) {

@@ -60,13 +60,11 @@ import { SumUpApiService } from '../sumup/sumup-api.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import {
   assertCashAllowed,
-  CASH_POLICY_SELECT,
-  cashPolicyView,
-} from '../../common/utils/cash-policy.util';
-import {
   assertPaymentsAllowed,
   handOverOnCompletion,
-  isOrderOnlyMode,
+  isOrdersOnly,
+  OPERATING_MODE_SELECT,
+  operatingModeView,
   shouldAutoCompleteOrderOnly,
 } from '../../common/utils/operating-mode.util';
 import { PrintersService } from '../printers/printers.service';
@@ -96,11 +94,7 @@ import {
   type SettledBatch,
 } from '../payments/payments-batch.service';
 import { saveOrderWithNumbers } from '../orders/order-numbering';
-import {
-  assertCloseWithoutPaymentAllowed,
-  closedWithoutPaymentError,
-  closeOrdersWithoutPayment,
-} from '../orders/close-without-payment';
+import { closedWithoutPaymentError } from '../orders/close-without-payment';
 import {
   createDeviceTableLookup,
   isClientRequestConflict,
@@ -209,9 +203,11 @@ export class DeviceApiController {
         id: organization.id,
         name: organization.name,
         settings: organization.settings,
-        // Bargeld-Regel des Landes: bei `blocked_de_no_tse` kein Bargeld,
-        // stattdessen „Ohne Zahlung abschließen“ (cash-policy.util.ts).
-        ...cashPolicyView(organization),
+        // Betriebsart (operating-mode.util.ts): country, operatingMode,
+        // operatingModeLegacy, operatingModeSince, tseActive, cashAllowed,
+        // pricesVisible. Die Kasse richtet Preise, Zahlarten und Abschluss
+        // danach; der Server prueft jede Zahlung trotzdem selbst.
+        ...operatingModeView(organization),
       },
     };
   }
@@ -223,6 +219,8 @@ export class DeviceApiController {
   })
   async getDiscountVouchers(@CurrentDevice() device: Device) {
     const organizationId = requireOrganization(device);
+    // „Nur Bons“: keine Rabatte und Gutscheine.
+    if (await this.isOrdersOnlyOrg(organizationId)) return { data: [] };
     const vouchers =
       await this.discountVouchersService.findActiveForOrg(organizationId);
     return { data: vouchers };
@@ -234,6 +232,8 @@ export class DeviceApiController {
   })
   async getPfandTypes(@CurrentDevice() device: Device) {
     const organizationId = requireOrganization(device);
+    // „Nur Bons“: kein Pfand.
+    if (await this.isOrdersOnlyOrg(organizationId)) return { data: [] };
     const pfandTypes =
       await this.pfandTypesService.findActiveForOrg(organizationId);
     return { data: pfandTypes };
@@ -630,30 +630,10 @@ export class DeviceApiController {
       }
     }
 
-    // „Nur Bestellen“: Bestellungen ja, aber ohne Zahlung und Trinkgeld
-    // (403 ORDER_ONLY_MODE), bevor irgendetwas angelegt wird.
+    // „Nur Bons“: Bestellungen ja, aber ohne Zahlung, Trinkgeld und
+    // Rabatt (403 ORDER_ONLY_MODE), bevor irgendetwas angelegt wird.
     if (createDto.payment || Number(createDto.tipAmount || 0) > 0) {
       await this.assertPaymentsAllowedFor(organizationId);
-    }
-
-    // „Ohne Zahlung abschließen“ nur bei der Bargeld-Regel „Deutschland
-    // ohne Bargeld“ und nie zusammen mit einer Zahlung.
-    if (createDto.closeWithoutPayment) {
-      if (createDto.payment || Number(createDto.tipAmount || 0) > 0) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          reason: ErrorReasons.CLOSE_WITHOUT_PAYMENT_NOT_AVAILABLE,
-          message:
-            '„Ohne Zahlung abschließen“ geht nicht zusammen mit einer Zahlung oder Trinkgeld.',
-        });
-      }
-      await this.assertPaymentsAllowedFor(organizationId);
-      assertCloseWithoutPaymentAllowed(
-        await this.organizationRepository.findOne({
-          where: { id: organizationId },
-          select: CASH_POLICY_SELECT,
-        }),
-      );
     }
 
     // Testmodus: keine echte SumUp-Kartenzahlung; Bar und manuelle Karte
@@ -723,10 +703,13 @@ export class DeviceApiController {
           const organization = await manager.findOne(Organization, {
             where: { id: organizationId },
           });
-          const chargePfand = isPfandChargedForFulfillment(
-            order.fulfillmentType,
-            organization?.settings,
-          );
+          // „Nur Bons“: kein Pfand (keine Betraege).
+          const chargePfand =
+            !isOrdersOnly(organization) &&
+            isPfandChargedForFulfillment(
+              order.fulfillmentType,
+              organization?.settings,
+            );
 
           const stockChanges: Product[] = [];
           if (createDto.items && createDto.items.length > 0) {
@@ -781,38 +764,11 @@ export class DeviceApiController {
             return { order: paidOrder, stockChanges, settled };
           }
 
-          // „Ohne Zahlung abschließen“: bar ausserhalb kassiert. Die neue
-          // Bestellung und die mitgeschickten offenen gelten als erledigt,
-          // ohne Zahlung (close-without-payment.ts).
-          if (createDto.closeWithoutPayment) {
-            const others = createDto.closeWithoutPayment.orderIds ?? [];
-            const closed = await closeOrdersWithoutPayment(
-              manager,
-              organizationId,
-              [
-                ...others.filter((id) => id !== completeOrder.id),
-                completeOrder.id,
-              ],
-              new Date(),
-            );
-            const own = closed.find((o) => o.id === completeOrder.id);
-            if (own) {
-              completeOrder.status = own.status;
-              completeOrder.completedAt = own.completedAt;
-              completeOrder.closedWithoutPaymentAt = own.closedWithoutPaymentAt;
-              const fresh = await manager.find(OrderItem, {
-                where: { orderId: completeOrder.id },
-              });
-              completeOrder.items = fresh;
-            }
-            return { order: completeOrder, stockChanges, settled: null };
-          }
-
-          // „Nur Bestellen“: keine Zahlung, kein „Sofort kassieren“. Theken-
+          // „Nur Bons“: keine Zahlung, kein „Sofort kassieren“. Theken-
           // bestellungen ohne Station sind mit dem Anlegen ausgegeben und
           // damit abgeschlossen; alles andere schliesst die Ausgabe bzw.
           // „Abschließen“ (siehe operating-mode.util.ts).
-          if (isOrderOnlyMode(organization?.settings)) {
+          if (isOrdersOnly(organization)) {
             if (
               shouldAutoCompleteOrderOnly(
                 completeOrder.fulfillmentType,
@@ -979,20 +935,6 @@ export class DeviceApiController {
       (existing.paymentStatus === PaymentStatus.UNPAID ||
         existing.paymentStatus === PaymentStatus.PARTLY_PAID) &&
       !existing.closedWithoutPaymentAt;
-    if (createDto.closeWithoutPayment && open) {
-      const organizationId = requireOrganization(device);
-      const others = createDto.closeWithoutPayment.orderIds ?? [];
-      await this.ordersService.closeWithoutPaymentForDevice(organizationId, [
-        ...others.filter((id) => id !== existing.id),
-        existing.id,
-      ]);
-      return (
-        (await this.orderRepository.findOne({
-          where: { id: existing.id },
-          relations: ['items'],
-        })) ?? existing
-      );
-    }
     if (!createDto.payment || !open) return existing;
 
     const organizationId = requireOrganization(device);
@@ -1650,7 +1592,7 @@ export class DeviceApiController {
     @Body() body: CreateRefundDto,
   ) {
     const organizationId = requireOrganization(device);
-    // „Nur Bestellen“: die Kasse vor Ort erstattet nie (auch nicht online).
+    // „Nur Bons“: die Kasse vor Ort erstattet nie (auch nicht online).
     await this.assertPaymentsAllowedFor(organizationId);
     const actor = await this.refundsService.resolveDeviceActor(device, body);
     const outcome = await this.refundsService.createRefund(
@@ -1735,6 +1677,8 @@ export class DeviceApiController {
         source: order.source,
       });
     } else {
+      // „Nur Bons“: keine Kassenbons (keine Preise).
+      await this.assertPaymentsAllowedFor(organizationId);
       // Receipt: find the last payment for this order
       const lastPayment = await this.paymentRepository.findOne({
         where: { orderId: order.id },
@@ -2027,15 +1971,15 @@ export class DeviceApiController {
    *
    * - SumUp nur bei eingeschaltetem SumUp. `card` ist ein fremdes
    *   Kartengeraet ohne Anbindung und bleibt immer moeglich.
-   * - Bargeld nicht bei Landessperre oder im bargeldlosen Modus
-   *   (`assertCashAllowed`). Ohne
-   *   Zahlart gilt der Vorgang als reiner Bargeldvorgang (Kassenlade).
+   * - Bargeld nur, wo die Betriebsart es erlaubt (`assertCashAllowed`:
+   *   nicht in `cashless`, in Deutschland nur mit TSE). Ohne Zahlart gilt
+   *   der Vorgang als reiner Bargeldvorgang (Kassenlade).
    */
   private async assertPaymentMethodAllowed(
     organizationId: string,
     method?: PaymentMethod,
   ): Promise<void> {
-    // „Nur Bestellen“ zuerst: dort gibt es gar keine Zahlart (und keine
+    // „Nur Bons“ zuerst: dort gibt es gar keine Zahlart (und keine
     // Kassenlade) — 403 ORDER_ONLY_MODE statt einer Zahlart-Meldung.
     await this.assertPaymentsAllowedFor(organizationId);
     const sumup =
@@ -2045,21 +1989,31 @@ export class DeviceApiController {
     if (!sumup && !cash) return;
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
-      select: CASH_POLICY_SELECT,
+      select: OPERATING_MODE_SELECT,
     });
     if (sumup) assertIntegrationEnabled(organization?.settings, 'sumup');
     assertCashAllowed(organization, method);
   }
 
-  /** 403 ORDER_ONLY_MODE, wenn die Organisation „Nur Bestellen“ nutzt. */
+  /** Betriebsart „Nur Bons“ (orders_only)? */
+  private async isOrdersOnlyOrg(organizationId: string): Promise<boolean> {
+    return isOrdersOnly(
+      await this.organizationRepository.findOne({
+        where: { id: organizationId },
+        select: OPERATING_MODE_SELECT,
+      }),
+    );
+  }
+
+  /** 403 ORDER_ONLY_MODE, wenn die Organisation „Nur Bons“ nutzt. */
   private async assertPaymentsAllowedFor(
     organizationId: string,
   ): Promise<void> {
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
-      select: { id: true, settings: true },
+      select: OPERATING_MODE_SELECT,
     });
-    assertPaymentsAllowed(organization?.settings);
+    assertPaymentsAllowed(organization);
   }
 
   /** Testmodus der Organisation: kein SumUp-Checkout am Lesegeraet. */

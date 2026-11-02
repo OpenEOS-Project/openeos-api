@@ -1,3 +1,4 @@
+import { operatingModeView } from '../../common/utils/operating-mode.util';
 import { Organization, User } from '../../database/entities';
 
 /**
@@ -93,7 +94,8 @@ export function redigiereAdminOrganisation(
        derselben Liste mitzuliefern, aus der sich der Support bedient,
        nimmt ihr genau diesen Zweck. */
     supportPin: undefined as unknown as string,
-    // Kopie ohne Prototyp: der AfterLoad-Hook des Entitys fehlt hier, die
-    // berechneten Felder (cashPolicy) sind schon gesetzt.
+    // Betriebsart samt abgeleiteten Werten (cashAllowed, pricesVisible,
+    // tseActive) fuer die Organisationsliste.
+    ...operatingModeView(organization),
   } as Organization;
 }

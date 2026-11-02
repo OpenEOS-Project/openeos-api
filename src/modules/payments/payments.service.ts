@@ -32,8 +32,8 @@ import { OrderPrintService } from '../print-jobs/order-print.service';
 import { cashReceivedMetadata } from '../print-jobs/receipt-tax.util';
 import {
   assertCashAllowed,
-  CASH_POLICY_SELECT,
-} from '../../common/utils/cash-policy.util';
+  OPERATING_MODE_SELECT,
+} from '../../common/utils/operating-mode.util';
 import { closedWithoutPaymentError } from '../orders/close-without-payment';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
@@ -419,15 +419,15 @@ export class PaymentsService {
    * Anbindung und bleibt immer moeglich), Bargeld nicht im bargeldlosen
    * Modus.
    */
-  /** „Nur Bestellen“: keine Zahlung, auch nicht aus der Verwaltung. */
+  /** „Nur Bons“: keine Zahlung, auch nicht aus der Verwaltung. */
   private async assertPaymentsAllowedFor(
     organizationId: string,
   ): Promise<void> {
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
-      select: { id: true, settings: true },
+      select: OPERATING_MODE_SELECT,
     });
-    assertPaymentsAllowed(organization?.settings);
+    assertPaymentsAllowed(organization);
   }
 
   private async assertPaymentMethodAllowed(
@@ -439,7 +439,7 @@ export class PaymentsService {
     if (!sumup && !cash) return;
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
-      select: CASH_POLICY_SELECT,
+      select: OPERATING_MODE_SELECT,
     });
     if (sumup) assertIntegrationEnabled(organization?.settings, 'sumup');
     assertCashAllowed(organization, method);

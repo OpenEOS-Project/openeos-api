@@ -24,7 +24,7 @@ import {
 } from '../tool-helpers';
 
 const ORDER_ONLY_NOTE =
-  'Order-only mode (Nur Bestellen): OpenEOS takes orders but collects no money. There is no revenue; orderValue is the sum of the order prices, not collected by OpenEOS (Bestellwert, nicht kassiert). Payments only contain online prepayments from the shop.';
+  'Operating mode orders_only (Nur Bons): OpenEOS takes orders but shows no prices and collects no money. There is no revenue and there are no amounts — report counts only (orders, items, quantities).';
 
 const SECTIONS = [
   'summary',
@@ -38,23 +38,29 @@ const SECTIONS = [
 
 /* Bestellungen ohne alles, was auf einen Gast zeigt: kein Name, keine
    Telefonnummer, keine Notizen, kein Kassierer. */
-function compactItem(item: OrderItem) {
+function compactItem(item: OrderItem, hidePrices = false) {
   return {
     productName: item.productName,
     categoryName: item.categoryName ?? null,
     quantity: item.quantity,
-    unitPrice: money(item.unitPrice),
-    totalPrice: money(item.totalPrice),
-    taxRate: Number(item.taxRate ?? 0),
-    deposit: money(item.depositAmount),
+    ...(hidePrices
+      ? {}
+      : {
+          unitPrice: money(item.unitPrice),
+          totalPrice: money(item.totalPrice),
+          taxRate: Number(item.taxRate ?? 0),
+          deposit: money(item.depositAmount),
+        }),
     status: item.status,
     options: (item.options?.selected ?? []).map((o) => o.option),
   };
 }
 
+/* „Nur Bons“ (orders_only): keine Betraege, nur Mengen. */
 function compactOrder(
   order: Order & { displayStatus?: string; paymentMethods?: string[] },
   withItems: boolean,
+  hidePrices = false,
 ) {
   return {
     id: order.id,
@@ -70,16 +76,20 @@ function compactOrder(
     isTest: order.isTest,
     eventId: order.eventId ?? null,
     tableNumber: order.tableNumber ?? null,
-    subtotal: money(order.subtotal),
-    pfandTotal: money(order.pfandTotal),
-    tipAmount: money(order.tipAmount),
-    discountAmount: money(order.discountAmount),
-    refundedAmount: money(order.refundedAmount),
-    total: money(order.total),
-    paymentMethods: order.paymentMethods ?? [],
+    ...(hidePrices
+      ? {}
+      : {
+          subtotal: money(order.subtotal),
+          pfandTotal: money(order.pfandTotal),
+          tipAmount: money(order.tipAmount),
+          discountAmount: money(order.discountAmount),
+          refundedAmount: money(order.refundedAmount),
+          total: money(order.total),
+          paymentMethods: order.paymentMethods ?? [],
+        }),
     itemCount: order.items?.length ?? undefined,
     ...(withItems && order.items
-      ? { items: order.items.map(compactItem) }
+      ? { items: order.items.map((i) => compactItem(i, hidePrices)) }
       : {}),
   };
 }
@@ -100,7 +110,7 @@ export class ReportTools {
       name: 'get_sales_report',
       description:
         'Sales figures (EUR) for an event and/or date range: summary (revenue, orders, average receipt, Pfand, cancellations), net (items revenue, refunds, tips, net), by product, by category, by hour (only hours with orders), by payment method, by channel. Pick sections to keep the answer small. Needs the reports permission. ' +
-        'If the answer has operatingMode "order_only" (Nur Bestellen), OpenEOS only takes orders and does not collect money: there is no revenue — use the counts (orders, items, quantities) and treat orderValue as the sum of the order prices, not collected by OpenEOS (German: „Bestellwert (nicht kassiert)“). Payments then only contain online prepayments from the shop.',
+        'If the answer has operatingMode "orders_only" (Nur Bons), OpenEOS only takes orders, shows no prices and collects no money: the answer contains counts only (orders, items, quantities) and no amounts, net or payments sections — never talk about revenue (Umsatz).',
       inputSchema: z
         .object({
           eventId: uuid.optional(),
@@ -122,16 +132,19 @@ export class ReportTools {
         } as QueryReportsDto;
         const wants = new Set(input.sections);
         const org = ctx.organizationId;
-        /* „Nur Bestellen“: OpenEOS kassiert nicht. Die Berichte rechnen
-           gleich, aber ein Betrag heisst hier `orderValue` (Bestellwert,
-           nicht kassiert) statt `revenue` — sonst liest ein Modell die
-           Summe als Umsatz. */
+        /* „Nur Bons“ (orders_only): OpenEOS kassiert nicht und zeigt keine
+           Preise — die Antwort enthaelt nur Mengen, keine Betraege und
+           keine Abschnitte `net`/`payments`. */
         const orderOnly =
-          (await this.reports.getOperatingMode(org)) === 'order_only';
+          (await this.reports.getOperatingMode(org)) === 'orders_only';
+        if (orderOnly) {
+          wants.delete('net');
+          wants.delete('payments');
+        }
         const out: Record<string, unknown> = orderOnly
           ? {
               filter: query,
-              operatingMode: 'order_only',
+              operatingMode: 'orders_only',
               note: ORDER_ONLY_NOTE,
             }
           : { filter: query };
@@ -143,8 +156,6 @@ export class ReportTools {
                 itemsSold: s.totalItemsSold,
                 cancelledOrders: s.cancelledOrders,
                 cancellationRatePercent: money(s.cancellationRate),
-                orderValue: money(s.totalRevenue),
-                averageOrderValue: money(s.averageOrderValue),
               }
             : {
                 revenue: money(s.totalRevenue),
@@ -160,22 +171,16 @@ export class ReportTools {
         }
         if (wants.has('net')) {
           const n = await this.reports.getNetSalesSummary(org, query, ctx.user);
-          out.net = orderOnly
-            ? {
-                itemsOrderValue: money(n.itemsRevenue),
-                unassignedRefunds: money(n.unassignedRefunds),
-                orderValue: money(n.netRevenue),
-              }
-            : {
-                itemsRevenue: money(n.itemsRevenue),
-                unassignedRefunds: money(n.unassignedRefunds),
-                tips: money(n.tips),
-                netRevenue: money(n.netRevenue),
-              };
+          out.net = {
+            itemsRevenue: money(n.itemsRevenue),
+            unassignedRefunds: money(n.unassignedRefunds),
+            tips: money(n.tips),
+            netRevenue: money(n.netRevenue),
+          };
         }
-        /** Betrag einer Zeile: Umsatz bzw. Bestellwert (nicht kassiert). */
+        /** Betrag einer Zeile: Umsatz, in „Nur Bons“ gar keiner. */
         const amount = (value: number) =>
-          orderOnly ? { orderValue: money(value) } : { revenue: money(value) };
+          orderOnly ? {} : { revenue: money(value) };
         if (wants.has('products')) {
           const rows = await this.reports.getProductsReport(
             org,
@@ -188,7 +193,7 @@ export class ReportTools {
             category: r.categoryName ?? null,
             quantity: r.quantitySold,
             ...amount(r.revenue),
-            averagePrice: money(r.averagePrice),
+            ...(orderOnly ? {} : { averagePrice: money(r.averagePrice) }),
           }));
         }
         if (wants.has('categories')) {
@@ -238,9 +243,7 @@ export class ReportTools {
             channel: r.channel,
             orders: r.orders,
             ...amount(r.revenue),
-            ...(orderOnly
-              ? { averageOrderValue: money(r.avgReceipt) }
-              : { averageReceipt: money(r.avgReceipt) }),
+            ...(orderOnly ? {} : { averageReceipt: money(r.avgReceipt) }),
           }));
         }
         return out;
@@ -252,7 +255,7 @@ export class ReportTools {
     return defineTool({
       name: 'list_orders',
       description:
-        'Orders (newest first), anonymised: number, time, status, totals in EUR, payment methods, table; includeItems adds line items. No guest or cashier data. offset should be a multiple of limit.',
+        'Orders (newest first), anonymised: number, time, status, totals in EUR, payment methods, table; includeItems adds line items. No guest or cashier data. offset should be a multiple of limit. In operating mode orders_only (Nur Bons) there are no amounts.',
       inputSchema: z
         .object({
           eventId: uuid.optional(),
@@ -283,9 +286,14 @@ export class ReportTools {
           limit,
           100,
         );
+        const hidePrices =
+          (await this.reports.getOperatingMode(ctx.organizationId)) ===
+          'orders_only';
         return {
           ...page,
-          items: page.items.map((o) => compactOrder(o, includeItems)),
+          items: page.items.map((o) =>
+            compactOrder(o, includeItems, hidePrices),
+          ),
         };
       },
     });
@@ -307,6 +315,8 @@ export class ReportTools {
             ctx.user,
           ),
           true,
+          (await this.reports.getOperatingMode(ctx.organizationId)) ===
+            'orders_only',
         ),
     });
   }

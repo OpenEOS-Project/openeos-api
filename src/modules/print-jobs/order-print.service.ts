@@ -1,3 +1,7 @@
+import {
+  OPERATING_MODE_SELECT,
+  isOrdersOnly,
+} from '../../common/utils/operating-mode.util';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -83,6 +87,38 @@ export class OrderPrintService {
       select: ['id', 'status'],
     });
     return event?.status === EventStatus.TEST;
+  }
+
+  /** Betriebsart „Nur Bons“: Bons ohne Preise, keine Kassenbons. */
+  private async hidesPrices(organizationId: string): Promise<boolean> {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: OPERATING_MODE_SELECT,
+    });
+    return isOrdersOnly(organization);
+  }
+
+  /** Aktive Positionen fuer den Bestellbon (Menge, Name, Betrag, Notiz). */
+  private async ticketItems(
+    order: Order | null,
+    orderId: string,
+  ): Promise<Record<string, unknown>[]> {
+    const items =
+      order?.items && order.items.length
+        ? order.items
+        : await this.orderItemRepository.find({
+            where: { orderId },
+            order: { createdAt: 'ASC' },
+          });
+    return items
+      .filter((it) => it.status !== OrderItemStatus.CANCELLED)
+      .map((it) => ({
+        quantity: it.quantity,
+        name: it.productName,
+        total: it.totalPrice,
+        notes: it.notes ?? null,
+        options: this.formatOptions(it),
+      }));
   }
 
   private async deviceHasDefaultPrinter(deviceId: string): Promise<boolean> {
@@ -201,6 +237,8 @@ export class OrderPrintService {
             {
               ...this.buildOrderPayload(data.order),
               organization: await this.buildOrgPayload(organizationId),
+              // Positionen fuer die Liste des Bestellbons (wie beim Kassenbon).
+              items: await this.ticketItems(data.order, data.orderId),
               total: data.total,
               source: data.source,
               is_test: isTest,
@@ -448,6 +486,10 @@ export class OrderPrintService {
       const orderDeviceId: string | null =
         data.order?.createdByDeviceId ?? null;
       const isTest = await this.isTestEvent(data.order?.eventId ?? null);
+
+      // Betriebsart „Nur Bons“: keine Kassenbons (keine Preise, keine
+      // Zahlungen; Online-Zahlungen aus der Zeit davor eingeschlossen).
+      if (await this.hidesPrices(organizationId)) return;
 
       // Receipt printing on payment.
       const receipt = orderFlow.receiptPrinting;

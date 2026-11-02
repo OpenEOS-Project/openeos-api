@@ -283,10 +283,11 @@ export function allocateRefund(
 }
 
 /**
- * Wie `allocateRefund`, im bargeldlosen Modus aber nur auf unbare Zahlungen
- * (Karte, SumUp, online). `cashBlocked`: der Betrag liesse sich nur mit
- * einer Barzahlung erstatten — die Erstattung wird dann abgewiesen
- * (CASH_PAYMENTS_DISABLED), statt Geld aus der Kasse zu geben.
+ * Wie `allocateRefund`, ohne Bargeld (Betriebsart `cashless`, `orders_only`
+ * oder Deutschland ohne TSE) aber nur auf unbare Zahlungen (Karte, SumUp,
+ * online). `cashBlocked`: der Betrag liesse sich nur mit einer Barzahlung
+ * erstatten — die Erstattung wird dann abgewiesen, statt Geld aus der
+ * Kasse zu geben.
  */
 export function allocateRefundFor(
   payments: RefundablePayment[],
@@ -340,7 +341,7 @@ export function displayStatusSql(alias: string): string {
       AND ${alias}.closed_without_payment_at IS NULL
       AND NOT EXISTS (SELECT 1 FROM organizations dso
         WHERE dso.id = ${alias}.organization_id
-          AND dso.settings->>'operatingMode' = 'order_only') THEN 'unpaid'
+          AND dso.operating_mode = 'orders_only') THEN 'unpaid'
     WHEN ${alias}.status = 'completed' THEN 'completed'
     WHEN ${alias}.status = 'ready' THEN 'ready'
     ELSE 'in_kitchen'
@@ -364,7 +365,7 @@ export function displayStatusOf(
   if (order.status === 'cancelled') return 'cancelled';
   if (refunded > 0 && refunded >= cents(order.paidAmount)) return 'refunded';
   if (refunded > 0) return 'partly_refunded';
-  // „Nur Bestellen“: kassiert wird ausserhalb — „offen“ gibt es nicht.
+  // „Nur Bons“: kassiert wird ausserhalb — „offen“ gibt es nicht.
   if (
     !options.orderOnly &&
     !order.closedWithoutPaymentAt &&

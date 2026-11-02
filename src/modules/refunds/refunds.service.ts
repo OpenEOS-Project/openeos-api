@@ -49,12 +49,10 @@ import { GatewayService } from '../gateway/gateway.service';
 import { isIntegrationEnabled } from '../integrations/integration-catalog';
 import {
   assertCashAllowed,
-  CASH_POLICY_SELECT,
-  isCashBlocked,
-} from '../../common/utils/cash-policy.util';
-import {
+  OPERATING_MODE_SELECT,
+  isCashAllowed,
   isOnlinePrepaymentMethod,
-  isOrderOnlyMode,
+  isOrdersOnly,
   orderOnlyModeError,
 } from '../../common/utils/operating-mode.util';
 import {
@@ -760,9 +758,10 @@ export class RefundsService {
       return { order, refunds: [], cancelled, reason };
     }
 
-    // Auf Zahlungen verteilen. „Nur Bestellen“: nur zurueck auf eine
-    // Online-Vorauszahlung des Gastes (Shop/QR), nie aus einer Kasse.
-    const orderOnly = isOrderOnlyMode(organization?.settings);
+    // Auf Zahlungen verteilen. „Nur Bons“: nur zurueck auf eine
+    // Online-Vorauszahlung des Gastes (Shop/QR, aus der Zeit vor dem
+    // Wechsel), nie aus einer Kasse.
+    const orderOnly = isOrdersOnly(organization);
     const settledPayments = payments.filter(
       (p) =>
         p.status === PaymentTransactionStatus.CAPTURED ||
@@ -780,7 +779,7 @@ export class RefundsService {
         createdAt: new Date(p.createdAt),
         isCash: p.paymentMethod === PaymentMethod.CASH,
       }));
-    // Bargeld gesperrt (Landesregel DE ohne TSE oder bargeldloser Modus):
+    // Bargeld gesperrt (Betriebsart ohne Bargeld oder DE ohne TSE):
     // nichts bar auszahlen. Erstattet wird nur auf
     // unbare Zahlungen (Karte, SumUp, online) — reichen die nicht, wird
     // abgewiesen statt den Rest aus der Kasse zu geben.
@@ -788,7 +787,7 @@ export class RefundsService {
       refundable,
       refundCents,
       dto.paymentId,
-      isCashBlocked(organization),
+      !isCashAllowed(organization),
     );
     if (cashBlocked) {
       assertCashAllowed(organization, PaymentMethod.CASH);
@@ -1161,7 +1160,7 @@ export class RefundsService {
     order.items = items;
     const organization = await manager.findOne(Organization, {
       where: { id: organizationId },
-      select: CASH_POLICY_SELECT,
+      select: OPERATING_MODE_SELECT,
     });
     const event = order.eventId
       ? await manager.findOne(Event, {
