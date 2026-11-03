@@ -203,7 +203,7 @@ export class TseController {
     @CurrentUser() user: User,
   ) {
     await this.units.assertAdmin(id, user);
-    const views = await this.signing.forOrder(orderId);
+    const views = await this.signing.forOrder(orderId, id);
     return { data: views };
   }
 }

@@ -116,7 +116,11 @@ import {
   CreateRefundDto,
   ReprintDto,
 } from '../refunds/dto/refund.dto';
-import { BUILTIN_PRINT_TEMPLATES } from '../print-jobs/builtin-templates';
+import {
+  BUILTIN_PRINT_TEMPLATES,
+  TSE_RECEIPT_TEMPLATES,
+  withTseBlock,
+} from '../print-jobs/builtin-templates';
 
 /**
  * Helper to ensure device has an organization.
@@ -369,8 +373,16 @@ export class DeviceApiController {
       }
       // else: skip — agent falls back to its built-in template for this type.
     }
-    // Gegenbeleg und Storno-Bon: mitgelieferte Vorlage, solange die
-    // Organisation keine eigene hat (aeltere Agenten kennen sie noch nicht).
+    // Eigene Bons bekommen die TSE-Angaben angehaengt: bei aktiver TSE
+    // Pflicht und nicht abwaehlbar (ohne `tse` im Auftrag druckt der Block
+    // nichts).
+    for (const name of TSE_RECEIPT_TEMPLATES) {
+      if (templateMap[name])
+        templateMap[name] = withTseBlock(templateMap[name]);
+    }
+    // Kassenbeleg (mit TSE-Block), Gegenbeleg und Storno-Bon: mitgelieferte
+    // Vorlage, solange die Organisation keine eigene hat (aeltere Agenten
+    // kennen sie bzw. den TSE-Block noch nicht).
     for (const [name, source] of Object.entries(BUILTIN_PRINT_TEMPLATES)) {
       if (!templateMap[name]) templateMap[name] = source;
     }

@@ -678,9 +678,12 @@ export class TseSigningService {
   }
 
   /** Alle Vorgaenge einer Bestellung (Bestellung, Belege, Gegenbelege). */
-  async forOrder(orderId: string): Promise<TseReceiptView[]> {
+  async forOrder(
+    orderId: string,
+    organizationId: string,
+  ): Promise<TseReceiptView[]> {
     const txs = await this.txRepository.find({
-      where: { orderId },
+      where: { orderId, organizationId },
       order: { createdAt: 'ASC' },
     });
     return this.viewsFor(txs.filter((t) => t.kind !== 'abort'));

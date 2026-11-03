@@ -322,7 +322,11 @@ export class ReportTools {
         );
         // Cloud-TSE (nur lesend): Belege und Bestellvorgaenge ohne
         // Signaturwerte, ohne Geraete- oder Personendaten.
-        const tse = (await this.tseSigning?.forOrder(input.orderId)) ?? [];
+        const tse =
+          (await this.tseSigning?.forOrder(
+            input.orderId,
+            ctx.organizationId,
+          )) ?? [];
         return {
           ...order,
           tse: tse.map((t) => ({
