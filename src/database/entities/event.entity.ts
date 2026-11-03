@@ -251,6 +251,28 @@ export class Event extends SoftDeleteEntity {
   billedDays: number | null;
 
   /**
+   * Gehoert die Cloud-TSE zu dieser Freischaltung? `true` bei „Alle
+   * Funktionen“ in Deutschland bzw. Bestand mit „Ja“ im Bezahldialog,
+   * `false` bei Bestand mit „Nein“, `null` wenn die Frage nicht anfaellt.
+   * Waehrend einer offenen Zahlungsseite die dort gegebene Antwort.
+   */
+  @Column({ name: 'tse_included', type: 'boolean', nullable: true })
+  tseIncluded: boolean | null;
+
+  /**
+   * TSE-Zuschlag dieser Freischaltung (`TSE_EVENT_SURCHARGE_EUR`, je
+   * Veranstaltung). Steckt in `priceCharged`; `null` ohne Zuschlag.
+   */
+  @Column({
+    name: 'tse_surcharge',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    nullable: true,
+  })
+  tseSurcharge: number | null;
+
+  /**
    * Kauf auf Rechnung ueber Stripe Invoicing: die Rechnung zur
    * Freischaltung. Stripe stellt sie aus, verschickt sie und meldet den
    * Zahlungseingang per Webhook; hier liegt nur der Spiegel fuer Listen und

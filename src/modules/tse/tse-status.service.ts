@@ -7,6 +7,7 @@ import { TseTransaction } from '../../database/entities/tse-transaction.entity';
 import type { TseUnit } from '../../database/entities/tse-unit.entity';
 import type { User } from '../../database/entities/user.entity';
 import { isIntegrationEnabled } from '../integrations/integration-catalog';
+import { tseAutoEnabledInfo } from './tse-auto-activation.service';
 import { TseConfig } from './tse.config';
 import { TseExportService } from './tse-export.service';
 import { TseOutageService } from './tse-outage.service';
@@ -196,6 +197,10 @@ export class TseStatusService {
     return {
       available: this.config.enabled,
       integrationEnabled: isIntegrationEnabled(organization.settings, 'tse'),
+      /* Automatisch eingeschaltet (beim Kauf einer Veranstaltung bzw. beim
+         Wechsel auf „Alle Funktionen“): `{ source, eventId, eventName, path,
+         at }`, sonst null. Ein Umschalten von Hand loescht die Angabe. */
+      integrationEnabledAuto: tseAutoEnabledInfo(organization.settings),
       lifecycle: this.config.lifecycle,
       country: organization.country ?? null,
       eligibility: eligibilityView,

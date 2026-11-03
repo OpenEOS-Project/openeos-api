@@ -107,6 +107,8 @@ export const validationSchema = Joi.object({
   // 0 ist ausgeschlossen, siehe normalizeBusinessDayStartHour.
   BUSINESS_DAY_START_HOUR: Joi.number().integer().min(1).max(23).default(6),
   FIRST_EVENT_DISCOUNT_PERCENT: Joi.number().min(0).max(100).default(20),
+  // Cloud-TSE-Zuschlag je Veranstaltung (DE mit TSE); 0 = inklusive.
+  TSE_EVENT_SURCHARGE_EUR: Joi.number().min(0).default(0),
   TEST_EVENT_MAX_ORDERS: Joi.number().default(25),
   OPENREGISTER_API_KEY: Joi.string().allow('').default(''),
 

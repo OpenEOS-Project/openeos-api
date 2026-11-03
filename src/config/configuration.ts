@@ -127,6 +127,13 @@ export default () => ({
     firstEventDiscountPercent: parseFloat(
       process.env.FIRST_EVENT_DISCOUNT_PERCENT || '20',
     ),
+    // Cloud-TSE-Zuschlag je Veranstaltung (nicht je Tag) fuer Freischaltungen
+    // in Deutschland mit Cloud-TSE. 0 = inklusive: dann erscheint nirgends
+    // eine eigene Position.
+    tseEventSurchargeEur: Math.max(
+      0,
+      parseFloat(process.env.TSE_EVENT_SURCHARGE_EUR || '0') || 0,
+    ),
     // Im Self-Hosted-Betrieb gibt es keinen Testmodus-Deckel: die Begrenzung
     // existiert nur, um die bezahlte Freischaltung durchzusetzen, und die gibt
     // es dort nicht. Hier statt an den drei Pruefstellen zu entscheiden — alle

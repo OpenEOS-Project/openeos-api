@@ -472,6 +472,7 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `UPLOAD_DIR` | Upload-Verzeichnis — muss dem Container-Nutzer (uid 1001) gehören, siehe „Uploads“ | ./uploads |
 | `EVENT_PRICE_EUR` | Preis pro abgerechnetem Veranstaltungstag | 25 |
 | `BUSINESS_DAY_START_HOUR` | Tageswechsel der Abrechnung (Stunde 1–23, Ortszeit der Organisation). Ein Veranstaltungstag läuft von 6 bis 6 Uhr; ein Ende bis einschließlich 6:00 zählt zum Vortag (Sa 20 Uhr – So 2 Uhr = 1 Tag). Bereits bezahlte Veranstaltungen behalten ihre Tage. | 6 |
+| `TSE_EVENT_SURCHARGE_EUR` | Cloud-TSE-Zuschlag je Veranstaltung (nicht je Tag) für Freischaltungen in Deutschland mit Cloud-TSE. 0 = derzeit inklusive (keine eigene Position); größer 0: Position „Cloud-TSE“ in Checkout, Rechnung und Preisvorschau, wird bei kostenloser Stornierung mit erstattet | 0 |
 | `STRIPE_INVOICE_DAYS_UNTIL_DUE` | Zahlungsziel der Stripe-Rechnung beim Kauf auf Rechnung in Tagen (je Organisation überschreibbar) | 14 |
 | `DATABASE_MIGRATIONS_RUN` | Migrationen beim Start ausführen (eine Instanz) | false (Vorlage `docker-compose.prod.yml`: true) |
 | `SHUTDOWN_TIMEOUT_MS` | So lange dürfen offene Anfragen nach SIGTERM noch laufen | 20000 |
@@ -589,7 +590,18 @@ Integration `tse` wie SumUp (Plan und API-Vertrag:
   einer bezahlten Veranstaltung und frühestens im Monat ihres Beginns —
   automatisch stündlich ab 5 Uhr am ersten Geschäftstag des Fests, oder
   vom Admin mit `POST /organizations/:id/tse`. Super-Admins können mit
-  Begründung übersteuern. `TSE_LIFECYCLE=per_event` deaktiviert nach dem
+  Begründung übersteuern.
+- **All inclusive**: Schaltet eine deutsche Organisation in „Alle
+  Funktionen“ eine Veranstaltung frei (Stripe-Zahlung, Rechnung oder
+  erlassen), schaltet der Server die Integration `tse` selbst ein
+  (Protokoll „automatisch beim Kauf“, `settings.integrations.tse.auto`) und
+  die Automatik legt die TSE am ersten Veranstaltungstag an — sofort, wenn
+  die Veranstaltung schon läuft. Bestandsorganisationen (Bargeld ohne TSE)
+  fragt der Bezahldialog (`withTse`); „Ja“ stellt auf „Alle Funktionen“
+  um. „Alle Funktionen“ ist in Deutschland ohne aktive TSE wählbar, sobald
+  eine bezahlte Veranstaltung ansteht (die TSE folgt automatisch, Bargeld
+  erst mit aktiver TSE). Preis: derzeit inklusive
+  (`TSE_EVENT_SURCHARGE_EUR=0`). `TSE_LIFECYCLE=per_event` deaktiviert nach dem
   letzten Fest des Monats.
 - **Exporte**: Täglich 06:15 (Berlin) holt der Server alle Exporte (auch
   Swissbits automatische Nachtexporte) als TAR mit SHA-256 nach

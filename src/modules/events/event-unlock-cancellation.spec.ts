@@ -402,6 +402,69 @@ describe('EventUnlockCancellationService', () => {
     });
   });
 
+  describe('Cloud-TSE surcharge (TSE_EVENT_SURCHARGE_EUR)', () => {
+    // 25 € Veranstaltung + 5 € Cloud-TSE = 30 € bezahlt.
+    const withSurcharge = (overrides: Partial<Event> = {}) =>
+      paidEvent({
+        priceCharged: 30,
+        tseIncluded: true,
+        tseSurcharge: 5,
+        ...overrides,
+      });
+
+    it('refunds the whole payment incl. the surcharge (credit note on the checkout invoice)', async () => {
+      const { service, stripe, saved, event } = setup({
+        event: withSurcharge(),
+        session: {
+          invoice: {
+            id: 'in_1',
+            status: 'paid',
+            amount_paid: 3000,
+          } as Stripe.Invoice,
+        },
+      });
+      await service.cancelForOrganization(ORG, EVENT_ID, admin, IN_TIME);
+      expect(stripe.createCreditNoteWithRefund).toHaveBeenCalledWith(
+        containing({ invoiceId: 'in_1', amountInCents: 3000 }),
+      );
+      expect(saved[0]).toMatchObject({ amount: 30, kind: 'cancellation' });
+      expect(event).toMatchObject({
+        billingStatus: 'none',
+        priceCharged: null,
+        tseIncluded: null,
+        tseSurcharge: null,
+      });
+    });
+
+    it('refunds the whole payment incl. the surcharge without an invoice', async () => {
+      const { service, stripe, saved } = setup({
+        event: withSurcharge(),
+        session: { invoice: null },
+      });
+      await service.cancelForOrganization(ORG, EVENT_ID, admin, IN_TIME);
+      // Ohne Betrag erstattet Stripe die ganze Zahlung (Veranstaltung + TSE).
+      expect(stripe.createRefund).toHaveBeenCalledWith(
+        containing({ paymentIntentId: 'pi_1', amountInCents: undefined }),
+      );
+      expect(saved[0]).toMatchObject({ amount: 30 });
+    });
+
+    it('voids an open Stripe invoice incl. the Cloud-TSE line', async () => {
+      const { service, stripe, saved, event } = setup({
+        event: withSurcharge({
+          billingStatus: 'invoice',
+          stripeCheckoutSessionId: null,
+          stripeInvoiceId: 'in_inv',
+        } as Partial<Event>),
+        invoice: { status: 'open', amount_due: 3000 },
+      });
+      await service.cancelForOrganization(ORG, EVENT_ID, admin, IN_TIME);
+      expect(stripe.voidInvoice).toHaveBeenCalled();
+      expect(saved[0]).toMatchObject({ amount: 30, invoiceVoided: true });
+      expect(event.tseSurcharge).toBeNull();
+    });
+  });
+
   it('only admins may cancel', async () => {
     const { service, organizations } = setup();
     await service.cancelForOrganization(ORG, EVENT_ID, admin, IN_TIME);

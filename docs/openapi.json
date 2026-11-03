@@ -8784,6 +8784,7 @@
     },
     "/api/organizations/{organizationId}/events/{eventId}/checkout": {
       "post": {
+        "description": "Deutschland mit Cloud-TSE (`tse.offer` in GET …/billing): bei „Alle Funktionen“ gehört die TSE immer dazu, Bestandsorganisationen antworten mit `withTse`. Nach der Zahlung schaltet der Server die Integration `tse` automatisch ein; die TSE wird am ersten Veranstaltungstag angelegt (sofort, wenn die Veranstaltung schon läuft). Mit `TSE_EVENT_SURCHARGE_EUR` > 0 kommt eine Position „Cloud-TSE“ je Veranstaltung dazu.",
         "operationId": "eventBilling_createCheckout",
         "parameters": [
           {
@@ -8803,6 +8804,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventCheckoutDto"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": ""
@@ -12601,6 +12612,7 @@
     },
     "/api/admin/events/{id}/waive": {
       "post": {
+        "description": "Wie ein Kauf: in Deutschland mit „Alle Funktionen“ schaltet der Server danach die Cloud-TSE ein; Bestandsorganisationen nur mit `withTse: true` (sonst gilt die Antwort einer früheren Zahlungsseite).",
         "operationId": "adminEvents_waive",
         "parameters": [
           {
@@ -12612,6 +12624,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaiveEventDto"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": ""
@@ -12622,6 +12644,7 @@
             "JWT-auth": []
           }
         ],
+        "summary": "Freischaltung erlassen (Support)",
         "tags": [
           "Admin"
         ]
@@ -20624,6 +20647,10 @@
           },
           "billingAddress": {
             "$ref": "#/components/schemas/OrderInvoiceBillingAddressDto"
+          },
+          "withTse": {
+            "type": "boolean",
+            "description": "Nur Bestandsorganisationen in Deutschland (Bargeld ohne TSE): Antwort auf „Mit Cloud-TSE (Bargeld rechtssicher)?“. `true` stellt beim Freischalten auf „Alle Funktionen“ um, schaltet die Integration `tse` ein und die TSE wird automatisch angelegt; `false` oder fehlend: alles bleibt, wie es ist. Bei „Alle Funktionen“ in Deutschland gehört die TSE immer dazu, sonst wird der Wert ignoriert."
           }
         },
         "required": [
@@ -20631,6 +20658,15 @@
           "billingEmail",
           "billingAddress"
         ]
+      },
+      "CreateEventCheckoutDto": {
+        "type": "object",
+        "properties": {
+          "withTse": {
+            "type": "boolean",
+            "description": "Nur Bestandsorganisationen in Deutschland (Bargeld ohne TSE): Antwort auf „Mit Cloud-TSE (Bargeld rechtssicher)?“. `true` stellt beim Freischalten auf „Alle Funktionen“ um, schaltet die Integration `tse` ein und die TSE wird automatisch angelegt; `false` oder fehlend: alles bleibt, wie es ist. Bei „Alle Funktionen“ in Deutschland gehört die TSE immer dazu, sonst wird der Wert ignoriert."
+          }
+        }
       },
       "CreateCategoryDto": {
         "type": "object",
@@ -21648,6 +21684,15 @@
         "required": [
           "reason"
         ]
+      },
+      "WaiveEventDto": {
+        "type": "object",
+        "properties": {
+          "withTse": {
+            "type": "boolean",
+            "description": "Nur Bestandsorganisationen in Deutschland (Bargeld ohne TSE): Antwort auf „Mit Cloud-TSE (Bargeld rechtssicher)?“. `true` stellt beim Freischalten auf „Alle Funktionen“ um, schaltet die Integration `tse` ein und die TSE wird automatisch angelegt; `false` oder fehlend: alles bleibt, wie es ist. Bei „Alle Funktionen“ in Deutschland gehört die TSE immer dazu, sonst wird der Wert ignoriert."
+          }
+        }
       },
       "CreateInventoryCountDto": {
         "type": "object",

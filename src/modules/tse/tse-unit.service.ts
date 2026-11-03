@@ -736,7 +736,15 @@ export class TseUnitService {
     });
   }
 
-  async autoCreate(now = new Date()): Promise<string[]> {
+  /**
+   * `organizationId`: nur diese Organisation — fuer die sofortige Anlage
+   * nach einem Kauf, wenn die Veranstaltung schon laeuft
+   * (TseAutoActivationService). Sonst alle.
+   */
+  async autoCreate(
+    now = new Date(),
+    organizationId: string | null = null,
+  ): Promise<string[]> {
     const horizon = autoCreateHorizon(now);
     const selfHosted = this.deployment.isSelfHosted;
     const rows = rowsOf<{ organization_id: string; event_id: string }>(
@@ -758,6 +766,7 @@ export class TseUnitService {
           AND (SELECT count(*) FROM tse_units u
                 WHERE u.organization_id = o.id AND u.state = 'failed'
                   AND u.failed_at > now() - interval '1 day') < $5
+          AND ($6::uuid IS NULL OR o.id = $6::uuid)
         ORDER BY o.id, e.start_date ASC`,
         [
           horizon,
@@ -765,6 +774,7 @@ export class TseUnitService {
           selfHosted,
           [...EVENT_UNLOCKED_BILLING_STATUSES],
           MAX_FAILED_AUTO_PER_DAY,
+          organizationId,
         ],
       ),
     );

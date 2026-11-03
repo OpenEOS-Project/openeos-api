@@ -313,8 +313,15 @@ export class StripeService {
     cancelUrl: string;
     metadata: Record<string, string>;
     idempotencyKey: string;
+    /** Weitere Positionen, z. B. der Cloud-TSE-Zuschlag je Veranstaltung. */
+    extraLines?: {
+      name: string;
+      description?: string;
+      amountInCents: number;
+    }[];
   }): Promise<{ id: string; url: string }> {
     const client = this.requireClient();
+    const currency = params.currency.toLowerCase();
 
     const session = await client.checkout.sessions.create(
       {
@@ -324,7 +331,7 @@ export class StripeService {
           {
             quantity: 1,
             price_data: {
-              currency: params.currency.toLowerCase(),
+              currency,
               unit_amount: params.amountInCents,
               product_data: {
                 name: params.productName,
@@ -332,6 +339,17 @@ export class StripeService {
               },
             },
           },
+          ...(params.extraLines ?? []).map((line) => ({
+            quantity: 1,
+            price_data: {
+              currency,
+              unit_amount: line.amountInCents,
+              product_data: {
+                name: line.name,
+                ...(line.description ? { description: line.description } : {}),
+              },
+            },
+          })),
         ],
         // Ohne Rechnung bliebe dem Verein nur die Kartenabrechnung als Beleg.
         invoice_creation: { enabled: true },

@@ -15,13 +15,14 @@ import {
   ApiOperation,
   ApiBearerAuth,
   ApiQuery,
+  ApiBody,
 } from '@nestjs/swagger';
 import { EventBillingService } from './event-billing.service';
 import {
   EventUnlockCancellationService,
   toCancellationSummary,
 } from './event-unlock-cancellation.service';
-import { OrderInvoiceDto } from './dto';
+import { CreateEventCheckoutDto, OrderInvoiceDto } from './dto';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
@@ -100,16 +101,24 @@ export class EventBillingController {
   @Post('events/:eventId/checkout')
   @ApiOperation({
     summary: 'Stripe-Zahlungsseite für die Freischaltung anlegen',
+    description:
+      'Deutschland mit Cloud-TSE (`tse.offer` in GET …/billing): bei „Alle Funktionen“ gehört die TSE immer dazu, ' +
+      'Bestandsorganisationen antworten mit `withTse`. Nach der Zahlung schaltet der Server die Integration `tse` ' +
+      'automatisch ein; die TSE wird am ersten Veranstaltungstag angelegt (sofort, wenn die Veranstaltung schon läuft). ' +
+      'Mit `TSE_EVENT_SURCHARGE_EUR` > 0 kommt eine Position „Cloud-TSE“ je Veranstaltung dazu.',
   })
+  @ApiBody({ type: CreateEventCheckoutDto, required: false })
   async createCheckout(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Body() dto: CreateEventCheckoutDto,
     @CurrentUser() user: User,
   ) {
     const data = await this.eventBillingService.createStripeCheckout(
       organizationId,
       eventId,
       user,
+      { withTse: dto?.withTse },
     );
     return { data };
   }
