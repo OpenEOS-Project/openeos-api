@@ -23,6 +23,7 @@ import {
 import type { Response, Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { OrganizationLimitsService } from '../../common/services/organization-limits.service';
+import { OrganizationViewService } from '../organizations/organization-view.service';
 import { AuthService, SessionClient } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
 import {
@@ -89,6 +90,7 @@ export class AuthController {
     private readonly twoFactorService: TwoFactorService,
     private readonly configService: ConfigService,
     private readonly limits: OrganizationLimitsService,
+    private readonly organizationView: OrganizationViewService,
   ) {}
 
   @Public()
@@ -109,7 +111,9 @@ export class AuthController {
     const result = await this.authService.register(registerDto);
 
     return {
-      user: this.sanitizeUser(result.user),
+      user: this.sanitizeUser(
+        await this.organizationView.forMemberships(result.user),
+      ),
       requiresEmailVerification: result.requiresEmailVerification,
       magicLinkSent: result.magicLinkSent,
       // Ohne Passwort fuehrt der zugesandte Link direkt hinein; die
@@ -222,7 +226,9 @@ export class AuthController {
     this.setAccessTokenCookie(response, result.accessToken);
 
     return {
-      user: this.sanitizeUser(result.user),
+      user: this.sanitizeUser(
+        await this.organizationView.forMemberships(result.user),
+      ),
       accessToken: result.accessToken,
     };
   }
@@ -411,7 +417,9 @@ export class AuthController {
     this.setAccessTokenCookie(response, result.accessToken);
 
     return {
-      user: this.sanitizeUser(result.user),
+      user: this.sanitizeUser(
+        await this.organizationView.forMemberships(result.user),
+      ),
       accessToken: result.accessToken,
     };
   }
@@ -483,7 +491,9 @@ export class AuthController {
        aus, bevor die API 403 ORGANIZATION_LIMIT_REACHED antworten muesste. */
     return {
       user: {
-        ...this.sanitizeUser(fullUser),
+        ...this.sanitizeUser(
+          await this.organizationView.forMemberships(fullUser),
+        ),
         organizationLimit: this.limits.effectiveOrganizationLimit(fullUser),
         organizationCount: fullUser.userOrganizations?.length ?? 0,
       },
@@ -662,7 +672,9 @@ export class AuthController {
     this.setAccessTokenCookie(response, result.accessToken);
 
     return {
-      user: this.sanitizeUser(result.user),
+      user: this.sanitizeUser(
+        await this.organizationView.forMemberships(result.user),
+      ),
       accessToken: result.accessToken,
     };
   }

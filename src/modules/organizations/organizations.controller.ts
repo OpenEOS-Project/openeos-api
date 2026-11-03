@@ -13,7 +13,6 @@ import {
   Req,
   Res,
   StreamableFile,
-  Optional,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import {
@@ -25,7 +24,6 @@ import {
 } from '@nestjs/swagger';
 import { OrganizationsService } from './organizations.service';
 import { GatewayService } from '../gateway/gateway.service';
-import { TseStatusService } from '../tse/tse-status.service';
 import { DevicesService } from '../devices/devices.service';
 import {
   CreateOrganizationDto,
@@ -44,9 +42,9 @@ import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
-import { operatingModeView } from '../../common/utils/operating-mode.util';
 import { OperatingModeService } from './operating-mode/operating-mode.service';
 import { CountryService } from './country/country.service';
+import { OrganizationViewService } from './organization-view.service';
 
 @ApiTags('Organizations')
 @ApiBearerAuth('JWT-auth')
@@ -58,8 +56,7 @@ export class OrganizationsController {
     private readonly devicesService: DevicesService,
     private readonly operatingModeService: OperatingModeService,
     private readonly countryService: CountryService,
-    @Optional()
-    private readonly tseStatus?: TseStatusService,
+    private readonly organizationView: OrganizationViewService,
   ) {}
 
   @Post()
@@ -71,12 +68,13 @@ export class OrganizationsController {
       createDto,
       user,
     );
-    return { data: organization };
+    return { data: await this.organizationView.view(organization) };
   }
 
   @Get()
   async findAll(@CurrentUser() user: User, @Query() pagination: PaginationDto) {
-    return this.organizationsService.findAll(user, pagination);
+    const page = await this.organizationsService.findAll(user, pagination);
+    return { ...page, data: await this.organizationView.views(page.data) };
   }
 
   @ApiTokenAccess(TokenScope.READ)
@@ -94,18 +92,10 @@ export class OrganizationsController {
   ) {
     const organization = await this.organizationsService.findOne(id, user);
     const usage = await this.organizationsService.memberUsage(organization);
+    // Abgeleitete Felder (Betriebsart, tseActive, cashAllowed,
+    // pricesVisible, tse) wie jede Organisations-Antwort, dazu die Plaetze.
     return {
-      data: {
-        ...organization,
-        ...usage,
-        // Land und Betriebsart (operating-mode.util.ts): country,
-        // operatingMode, operatingModeLegacy, operatingModeSince,
-        // tseActive, cashAllowed, pricesVisible
-        ...operatingModeView(organization),
-        // Cloud-TSE: { available, integrationEnabled, active, state,
-        // serialNumber, clientId } (tse-swissbit-plan.md §8)
-        tse: (await this.tseStatus?.summary(organization)) ?? null,
-      },
+      data: { ...(await this.organizationView.view(organization)), ...usage },
     };
   }
 
@@ -132,7 +122,7 @@ export class OrganizationsController {
     if (updateDto.settings) {
       this.gatewayService.notifyOrganizationSettingsUpdated(organization.id);
     }
-    return { data: organization };
+    return { data: await this.organizationView.view(organization) };
   }
 
   // PATCH wie alle anderen Aenderungen: die CORS-Konfiguration kennt kein PUT,
@@ -161,7 +151,7 @@ export class OrganizationsController {
       },
     );
     this.gatewayService.notifyOrganizationSettingsUpdated(organization.id);
-    return { data: organization };
+    return { data: await this.organizationView.view(organization) };
   }
 
   @Get(':id/operating-mode')

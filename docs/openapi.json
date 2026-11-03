@@ -1125,6 +1125,404 @@
         ]
       }
     },
+    "/api/organizations/{id}/tse": {
+      "get": {
+        "description": "Zustand der Cloud-TSE: Integration, Voraussetzungen (`eligibility`: bezahlte Veranstaltung, Monat), TSE (`unit`), Live-Status von Swissbit (Speicher, Signaturen im Monat, Produkt, Zertifikat; 60 s zwischengespeichert), offener Ausfall, Zähler der letzten 30 Tage, Exporte und Verlauf aller TSEs.",
+        "operationId": "tse_getStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Cloud-TSE status (admins)",
+        "tags": [
+          "Cloud-TSE"
+        ]
+      },
+      "post": {
+        "description": "Legt die Cloud-TSE an (nur Deutschland, Integration `tse` eingeschaltet, bezahlte Veranstaltung, frühestens im Monat ihres Beginns). Idempotent: eine laufende TSE kommt zurück. Die Anlage läuft im Hintergrund weiter (`state`: `creating` → `active`). Fehler: 503 TSE_NOT_AVAILABLE, 400 TSE_COUNTRY_NOT_SUPPORTED, 403 INTEGRATION_DISABLED, 409 TSE_REQUIRES_PAID_EVENT, 409 TSE_TOO_EARLY (`params.availableFrom`). Super-Admins können mit `override` + `reason` übersteuern.",
+        "operationId": "tse_create",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Create the Cloud-TSE (admins, asynchronous)",
+        "tags": [
+          "Cloud-TSE"
+        ]
+      }
+    },
+    "/api/organizations/{id}/tse/deactivate": {
+      "post": {
+        "description": "Nimmt die TSE endgültig außer Betrieb (Swissbit `disableSecureElement`). Braucht `confirm: true` (sonst 400 TSE_DEACTIVATION_CONFIRM_REQUIRED). Der abschließende Export wird automatisch abgeholt; die Integration wird ausgeschaltet. Danach ist Bargeld in Deutschland gesperrt.",
+        "operationId": "tse_deactivate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeactivateTseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Deactivate the Cloud-TSE permanently (admins, confirm required)",
+        "tags": [
+          "Cloud-TSE"
+        ]
+      }
+    },
+    "/api/organizations/{id}/tse/exports": {
+      "get": {
+        "description": "TAR-Exporte (TR-03153) im Archiv von OpenEOS: Zeitraum, Größe, SHA-256, Status (`pending`, `downloaded`, `failed`), Auslöser.",
+        "operationId": "tse_listExports",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List TSE exports (admins)",
+        "tags": [
+          "Cloud-TSE"
+        ]
+      },
+      "post": {
+        "description": "Startet einen Export der aktiven TSE im Hintergrund und holt ihn ab. Die Liste zeigt den Fortschritt.",
+        "operationId": "tse_requestExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Export now (admins)",
+        "tags": [
+          "Cloud-TSE"
+        ]
+      }
+    },
+    "/api/organizations/{id}/tse/exports/{exportId}/download": {
+      "get": {
+        "description": "Liefert das TAR. Header `X-Checksum-SHA256` mit der Prüfsumme.",
+        "operationId": "tse_downloadExport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "exportId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Download a TSE export (admins)",
+        "tags": [
+          "Cloud-TSE"
+        ]
+      }
+    },
+    "/api/organizations/{id}/tse/transactions": {
+      "get": {
+        "description": "Abgesicherte Vorgänge (neueste zuerst), Filter `status`.",
+        "operationId": "tse_transactions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "signed",
+                "training",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 200,
+              "default": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Signed and failed TSE transactions (admins)",
+        "tags": [
+          "Cloud-TSE"
+        ]
+      }
+    },
+    "/api/organizations/{id}/tse/outages": {
+      "get": {
+        "description": "Ausfallprotokoll (AEAO zu § 146a Nr. 1.14): Beginn, Ende, Grund, Anzahl.",
+        "operationId": "tse_outages",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "TSE outage log (admins)",
+        "tags": [
+          "Cloud-TSE"
+        ]
+      }
+    },
+    "/api/organizations/{id}/tse/orders/{orderId}": {
+      "get": {
+        "description": "Alle TSE-Vorgänge einer Bestellung (Bestellung, Kassenbelege, Gegenbelege) mit QR-Code-Inhalt — für Nachdruck und digitalen Beleg.",
+        "operationId": "tse_forOrder",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "TSE data of an order (admins)",
+        "tags": [
+          "Cloud-TSE"
+        ]
+      }
+    },
+    "/api/admin/tse/units": {
+      "get": {
+        "description": "Alle TSEs aller Organisationen mit Zustand, Auslöser (`manual`, `auto`, `super_admin`), auslösender Veranstaltung, Anlage-/Aktiv-/Deaktivierungszeit und aktiven Monaten.",
+        "operationId": "tseAdmin_units",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "All Cloud-TSE units (super admin)",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
+    "/api/admin/tse/usage": {
+      "get": {
+        "description": "Nutzungsbericht der Swissbit Billing API für den Credit Token der Plattform: angelegte, aktive (berechnete) und deaktivierte TSEs des Monats, je TSE mit Organisation.",
+        "operationId": "tseAdmin_usage",
+        "parameters": [
+          {
+            "name": "year",
+            "required": false,
+            "in": "query",
+            "description": "Jahr (Standard: aktueller Monat)",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "month",
+            "required": false,
+            "in": "query",
+            "description": "Monat 1–12",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Swissbit usage report for a month (super admin)",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
     "/api/users/me": {
       "patch": {
         "description": "Update the current user profile",
@@ -3825,6 +4223,40 @@
           }
         },
         "summary": "Bestellung im Detail: Positionen mit Status, Zahlungen, Erstattungen, Verlauf",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/orders/{orderId}/tse": {
+      "get": {
+        "description": "Alle TSE-Vorgänge der Bestellung in zeitlicher Reihenfolge — Bestellvorgang, Kassenbelege (auch Teil- und Sammelzahlungen), Gegenbelege der Erstattungen — je mit `kind`, `status`, Signatur, QR-Code-Inhalt (`qrCode`, DSFinV-K Anhang I) und Bezug (`paymentId`, `refundId`). Nur Bestellungen der Organisation des Geräts (sonst 404). Leer ohne Cloud-TSE. Liest nur gespeicherte Daten, signiert nichts.",
+        "operationId": "deviceApi_getOrderTse",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "TSE-Daten einer Bestellung (Kasse)",
         "tags": [
           "Device API"
         ]
@@ -6597,404 +7029,6 @@
         ],
         "tags": [
           "SumUp"
-        ]
-      }
-    },
-    "/api/organizations/{id}/tse": {
-      "get": {
-        "description": "Zustand der Cloud-TSE: Integration, Voraussetzungen (`eligibility`: bezahlte Veranstaltung, Monat), TSE (`unit`), Live-Status von Swissbit (Speicher, Signaturen im Monat, Produkt, Zertifikat; 60 s zwischengespeichert), offener Ausfall, Zähler der letzten 30 Tage, Exporte und Verlauf aller TSEs.",
-        "operationId": "tse_getStatus",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "ID der Organisation",
-            "schema": {
-              "format": "uuid",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Cloud-TSE status (admins)",
-        "tags": [
-          "Cloud-TSE"
-        ]
-      },
-      "post": {
-        "description": "Legt die Cloud-TSE an (nur Deutschland, Integration `tse` eingeschaltet, bezahlte Veranstaltung, frühestens im Monat ihres Beginns). Idempotent: eine laufende TSE kommt zurück. Die Anlage läuft im Hintergrund weiter (`state`: `creating` → `active`). Fehler: 503 TSE_NOT_AVAILABLE, 400 TSE_COUNTRY_NOT_SUPPORTED, 403 INTEGRATION_DISABLED, 409 TSE_REQUIRES_PAID_EVENT, 409 TSE_TOO_EARLY (`params.availableFrom`). Super-Admins können mit `override` + `reason` übersteuern.",
-        "operationId": "tse_create",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateTseDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Create the Cloud-TSE (admins, asynchronous)",
-        "tags": [
-          "Cloud-TSE"
-        ]
-      }
-    },
-    "/api/organizations/{id}/tse/deactivate": {
-      "post": {
-        "description": "Nimmt die TSE endgültig außer Betrieb (Swissbit `disableSecureElement`). Braucht `confirm: true` (sonst 400 TSE_DEACTIVATION_CONFIRM_REQUIRED). Der abschließende Export wird automatisch abgeholt; die Integration wird ausgeschaltet. Danach ist Bargeld in Deutschland gesperrt.",
-        "operationId": "tse_deactivate",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeactivateTseDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Deactivate the Cloud-TSE permanently (admins, confirm required)",
-        "tags": [
-          "Cloud-TSE"
-        ]
-      }
-    },
-    "/api/organizations/{id}/tse/exports": {
-      "get": {
-        "description": "TAR-Exporte (TR-03153) im Archiv von OpenEOS: Zeitraum, Größe, SHA-256, Status (`pending`, `downloaded`, `failed`), Auslöser.",
-        "operationId": "tse_listExports",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "List TSE exports (admins)",
-        "tags": [
-          "Cloud-TSE"
-        ]
-      },
-      "post": {
-        "description": "Startet einen Export der aktiven TSE im Hintergrund und holt ihn ab. Die Liste zeigt den Fortschritt.",
-        "operationId": "tse_requestExport",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Export now (admins)",
-        "tags": [
-          "Cloud-TSE"
-        ]
-      }
-    },
-    "/api/organizations/{id}/tse/exports/{exportId}/download": {
-      "get": {
-        "description": "Liefert das TAR. Header `X-Checksum-SHA256` mit der Prüfsumme.",
-        "operationId": "tse_downloadExport",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "exportId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Download a TSE export (admins)",
-        "tags": [
-          "Cloud-TSE"
-        ]
-      }
-    },
-    "/api/organizations/{id}/tse/transactions": {
-      "get": {
-        "description": "Abgesicherte Vorgänge (neueste zuerst), Filter `status`.",
-        "operationId": "tse_transactions",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "pending",
-                "signed",
-                "training",
-                "failed"
-              ]
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "maximum": 200,
-              "default": 50,
-              "type": "number"
-            }
-          },
-          {
-            "name": "offset",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "default": 0,
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Signed and failed TSE transactions (admins)",
-        "tags": [
-          "Cloud-TSE"
-        ]
-      }
-    },
-    "/api/organizations/{id}/tse/outages": {
-      "get": {
-        "description": "Ausfallprotokoll (AEAO zu § 146a Nr. 1.14): Beginn, Ende, Grund, Anzahl.",
-        "operationId": "tse_outages",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "TSE outage log (admins)",
-        "tags": [
-          "Cloud-TSE"
-        ]
-      }
-    },
-    "/api/organizations/{id}/tse/orders/{orderId}": {
-      "get": {
-        "description": "Alle TSE-Vorgänge einer Bestellung (Bestellung, Kassenbelege, Gegenbelege) mit QR-Code-Inhalt — für Nachdruck und digitalen Beleg.",
-        "operationId": "tse_forOrder",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "orderId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "TSE data of an order (admins)",
-        "tags": [
-          "Cloud-TSE"
-        ]
-      }
-    },
-    "/api/admin/tse/units": {
-      "get": {
-        "description": "Alle TSEs aller Organisationen mit Zustand, Auslöser (`manual`, `auto`, `super_admin`), auslösender Veranstaltung, Anlage-/Aktiv-/Deaktivierungszeit und aktiven Monaten.",
-        "operationId": "tseAdmin_units",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "All Cloud-TSE units (super admin)",
-        "tags": [
-          "Admin"
-        ]
-      }
-    },
-    "/api/admin/tse/usage": {
-      "get": {
-        "description": "Nutzungsbericht der Swissbit Billing API für den Credit Token der Plattform: angelegte, aktive (berechnete) und deaktivierte TSEs des Monats, je TSE mit Organisation.",
-        "operationId": "tseAdmin_usage",
-        "parameters": [
-          {
-            "name": "year",
-            "required": false,
-            "in": "query",
-            "description": "Jahr (Standard: aktueller Monat)",
-            "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "month",
-            "required": false,
-            "in": "query",
-            "description": "Monat 1–12",
-            "schema": {
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Swissbit usage report for a month (super admin)",
-        "tags": [
-          "Admin"
         ]
       }
     },
@@ -17660,6 +17694,32 @@
           "createdAt"
         ]
       },
+      "CreateTseDto": {
+        "type": "object",
+        "properties": {
+          "override": {
+            "type": "boolean",
+            "description": "Nur Super-Admins: Bedingungen (bezahlte Veranstaltung, Monat) übergehen. Braucht `reason`."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Begründung der Ausnahme (Protokoll)"
+          }
+        }
+      },
+      "DeactivateTseDto": {
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+            "description": "Muss `true` sein: das Deaktivieren ist endgültig."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Grund (Protokoll, Verfahrensdokumentation)"
+          }
+        }
+      },
       "UpdateProfileDto": {
         "type": "object",
         "properties": {
@@ -19492,32 +19552,6 @@
           "amount",
           "currency"
         ]
-      },
-      "CreateTseDto": {
-        "type": "object",
-        "properties": {
-          "override": {
-            "type": "boolean",
-            "description": "Nur Super-Admins: Bedingungen (bezahlte Veranstaltung, Monat) übergehen. Braucht `reason`."
-          },
-          "reason": {
-            "type": "string",
-            "description": "Begründung der Ausnahme (Protokoll)"
-          }
-        }
-      },
-      "DeactivateTseDto": {
-        "type": "object",
-        "properties": {
-          "confirm": {
-            "type": "boolean",
-            "description": "Muss `true` sein: das Deaktivieren ist endgültig."
-          },
-          "reason": {
-            "type": "string",
-            "description": "Grund (Protokoll, Verfahrensdokumentation)"
-          }
-        }
       },
       "CreateDiscountVoucherDto": {
         "type": "object",

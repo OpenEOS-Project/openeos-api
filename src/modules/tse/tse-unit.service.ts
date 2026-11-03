@@ -201,6 +201,28 @@ export class TseUnitService {
     });
   }
 
+  /**
+   * Neueste TSE je Organisation in einer Abfrage (Organisationslisten beim
+   * Anmelden). Organisationen ohne TSE fehlen in der Map.
+   */
+  async findLatestFor(
+    organizationIds: readonly string[],
+  ): Promise<Map<string, TseUnit>> {
+    const latest = new Map<string, TseUnit>();
+    const ids = [...new Set(organizationIds)];
+    if (ids.length === 0) return latest;
+    const units = await this.unitRepository.find({
+      where: { organizationId: In(ids) },
+      order: { createdAt: 'DESC' },
+    });
+    for (const unit of units) {
+      if (!latest.has(unit.organizationId)) {
+        latest.set(unit.organizationId, unit);
+      }
+    }
+    return latest;
+  }
+
   history(organizationId: string): Promise<TseUnit[]> {
     return this.unitRepository.find({
       where: { organizationId },

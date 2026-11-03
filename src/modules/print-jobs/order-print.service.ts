@@ -18,21 +18,11 @@ import { PrintRoutingService } from './print-routing.service';
 import { buildReceiptTax, cashChange } from './receipt-tax.util';
 import type { Refund } from '../../database/entities/refund.entity';
 import { tsePrintBlock, type TseReceiptView } from '../tse/tse-view';
+import { organizationPrintBlock, paymentMethodLabel } from './receipt-labels';
 import {
   CANCELLATION_TICKET_TEMPLATE,
   REFUND_RECEIPT_TEMPLATE,
 } from './builtin-templates';
-
-/** Rueckgabeweg auf dem Gegenbeleg (Bon ist deutsch wie der Kassenbon). */
-const PAYMENT_LABELS: Record<string, string> = {
-  cash: 'Bar',
-  card: 'Karte (Terminal)',
-  sumup_terminal: 'Karte (SumUp)',
-  sumup_online: 'SumUp online',
-  paypal: 'PayPal',
-  google_pay: 'Google Pay',
-  apple_pay: 'Apple Pay',
-};
 
 const REASON_LABELS: Record<string, string> = {
   wrong_order: 'Falsch bestellt',
@@ -169,13 +159,7 @@ export class OrderPrintService {
       select: ['id', 'name', 'settings'],
     });
     if (!org) return undefined;
-    return {
-      name: org.name,
-      address: org.settings?.address
-        ? `${org.settings.address.street}, ${org.settings.address.zip} ${org.settings.address.city}`
-        : undefined,
-      phone: org.settings?.contact?.phone,
-    };
+    return organizationPrintBlock(org);
   }
 
   async handleOrderCreated(
@@ -516,15 +500,7 @@ export class OrderPrintService {
             where: { id: organizationId },
             select: ['id', 'name', 'settings'],
           });
-          const orgPayload = org
-            ? {
-                name: org.name,
-                address: org.settings?.address
-                  ? `${org.settings.address.street}, ${org.settings.address.zip} ${org.settings.address.city}`
-                  : undefined,
-                phone: org.settings?.contact?.phone,
-              }
-            : undefined;
+          const orgPayload = org ? organizationPrintBlock(org) : undefined;
           // The receipt's items_list iterates a top-level `items` array
           // (item.quantity/name/total/...). Without it the receipt prints no
           // products. Load + map the order items just like the kitchen path.
@@ -570,6 +546,8 @@ export class OrderPrintService {
                 data.amountReceived,
               ),
               payment_method: data.paymentMethod,
+              // Anzeigename („Bar“, „Karte (SumUp)“ …) statt des Rohwerts.
+              payment_label: paymentMethodLabel(data.paymentMethod),
               paymentId: data.paymentId,
               amount: data.amount,
               isFullyPaid: data.isFullyPaid,
@@ -646,8 +624,7 @@ export class OrderPrintService {
           tax_amount: Number(refund.taxTotal) || 0,
           total: Number(refund.amount),
           payment_method: refund.paymentMethod,
-          payment_label:
-            PAYMENT_LABELS[refund.paymentMethod] ?? refund.paymentMethod,
+          payment_label: paymentMethodLabel(refund.paymentMethod),
           refund_status: refund.status,
           provider_reference: refund.providerReference,
           reason: refundReasonLabel(refund.reasonCode, refund.reasonText),

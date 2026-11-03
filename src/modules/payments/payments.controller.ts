@@ -12,7 +12,7 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { BadRequestException } from '@nestjs/common';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
-import { RefundsService } from '../refunds/refunds.service';
+import { RefundsService, type RefundWithTse } from '../refunds/refunds.service';
 import { PaymentsService } from './payments.service';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
@@ -114,12 +114,31 @@ export class PaymentsController {
         message: 'Zahlung wurde bereits erstattet',
       });
     }
-    await this.refundsService.createRefund(actor, payment.orderId, {
-      mode: 'amount',
-      amount: refundable,
+    const outcome = await this.refundsService.createRefund(
+      actor,
+      payment.orderId,
+      {
+        mode: 'amount',
+        amount: refundable,
+        paymentId,
+        reasonCode: 'other',
+      },
+    );
+    const updated = await this.paymentsService.findOne(
+      organizationId,
       paymentId,
-      reasonCode: 'other',
+      user,
+    );
+    // Gegenbeleg(e) mit TSE-Daten wie bei `POST orders/:orderId/refunds`.
+    return Object.assign(updated, {
+      refunds: outcome.refunds.map((r: RefundWithTse) => ({
+        id: r.id,
+        refundNumber: r.refundNumber,
+        amount: Number(r.amount),
+        paymentMethod: r.paymentMethod,
+        status: r.status,
+        tse: r.tse ?? null,
+      })),
     });
-    return this.paymentsService.findOne(organizationId, paymentId, user);
   }
 }

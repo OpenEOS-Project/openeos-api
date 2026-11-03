@@ -26,6 +26,27 @@ export interface TseSummary {
   clientId: string | null;
 }
 
+/**
+ * Kurzfassung aus der neuesten TSE der Organisation (auch deaktiviert oder
+ * gescheitert, damit die Oberflaeche den letzten Stand zeigt). `active` nur
+ * mit eingeschalteter Integration — wie `hasActiveTse`.
+ */
+export function tseSummaryOf(
+  organization: Pick<Organization, 'settings'>,
+  latest: TseUnit | null,
+  available: boolean,
+): TseSummary {
+  const integrationEnabled = isIntegrationEnabled(organization.settings, 'tse');
+  return {
+    available,
+    integrationEnabled,
+    active: integrationEnabled && latest?.state === 'active',
+    state: latest?.state ?? null,
+    serialNumber: latest?.serialNumber ?? null,
+    clientId: latest?.clientId ?? null,
+  };
+}
+
 export function unitView(unit: TseUnit) {
   const iso = (d: Date | null | undefined) =>
     d ? new Date(d).toISOString() : null;
@@ -79,22 +100,33 @@ export class TseStatusService {
   async summary(
     organization: Pick<Organization, 'id' | 'settings'>,
   ): Promise<TseSummary> {
-    const integrationEnabled = isIntegrationEnabled(
-      organization.settings,
-      'tse',
-    );
     const latest = await this.units.findLatest(organization.id);
-    const live =
-      latest && ['creating', 'active'].includes(latest.state) ? latest : null;
-    const shown = live ?? latest;
-    return {
-      available: this.config.enabled,
-      integrationEnabled,
-      active: integrationEnabled && shown?.state === 'active',
-      state: shown?.state ?? null,
-      serialNumber: shown?.serialNumber ?? null,
-      clientId: shown?.clientId ?? null,
-    };
+    return tseSummaryOf(organization, latest, this.config.enabled);
+  }
+
+  /**
+   * `summary` fuer mehrere Organisationen mit einer Abfrage (Liste beim
+   * Anmelden, `GET /organizations`). Schluessel ist die Organisations-ID.
+   */
+  async summaries(
+    organizations: ReadonlyArray<Pick<Organization, 'id' | 'settings'>>,
+  ): Promise<Map<string, TseSummary>> {
+    const result = new Map<string, TseSummary>();
+    if (organizations.length === 0) return result;
+    const latest = await this.units.findLatestFor(
+      organizations.map((o) => o.id),
+    );
+    for (const organization of organizations) {
+      result.set(
+        organization.id,
+        tseSummaryOf(
+          organization,
+          latest.get(organization.id) ?? null,
+          this.config.enabled,
+        ),
+      );
+    }
+    return result;
   }
 
   /** `GET /device-api/status` → `tse`. `null` ohne Integration und TSE. */
