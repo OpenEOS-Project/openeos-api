@@ -23,6 +23,7 @@ describe('builtin print templates and the Cloud-TSE block', () => {
   it('prints every field the contract requires (§8.6)', () => {
     for (const field of [
       'tse.client_id',
+      'tse.bon_number',
       'tse.serial_number',
       'tse.transaction_number',
       'tse.signature_counter',
@@ -40,6 +41,27 @@ describe('builtin print templates and the Cloud-TSE block', () => {
     expect(TSE_PRINT_BLOCK).toContain('<<QRCODE:{{ tse.qr_code }}>>');
     // Jinja bekommt "\n" als Escape, keinen echten Zeilenumbruch.
     expect(TSE_PRINT_BLOCK).toContain('wordwrap(tse_cols, true, "\\n")');
+  });
+
+  it('prints the Beleg-Nr. with and without TSE signature', () => {
+    expect(TSE_PRINT_BLOCK.match(/^Beleg-Nr\.: /gm) ?? []).toHaveLength(0);
+    expect(
+      TSE_PRINT_BLOCK.match(/\("Beleg-Nr\.: " ~ tse\.bon_number\)/g),
+    ).toHaveLength(2);
+  });
+
+  it('derives the line width from the printer columns or paper width', () => {
+    for (const source of Object.values(BUILTIN_PRINT_TEMPLATES)) {
+      expect(source).toContain(
+        '{% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}',
+      );
+      // Feste Spaltenbreiten (ljust(cols - 14) + rjust(10)) ergaben 43
+      // Zeichen auf 42-Zeichen-Druckern.
+      expect(source).not.toMatch(/ljust\(cols - \d+\)/);
+    }
+    expect(TSE_PRINT_BLOCK).toContain(
+      'columns|default(42 if paper_width|default(80) == 80 else 32, true)|int',
+    );
   });
 
   it('adds the block to a custom receipt before feed and cut', () => {

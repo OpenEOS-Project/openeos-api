@@ -5,6 +5,11 @@
  * Version selbst mit; bis dahin liefert sie `GET /device-api/templates` aus
  * (der Agent holt die Vorlagen beim Start und speichert sie), sofern die
  * Organisation keine eigene Vorlage dieses Typs hat.
+ *
+ * Die Vorlagen sind Byte fuer Byte gleich den gleichnamigen
+ * `src/templates/*.jinja2` des Agenten. Die Zeilenbreite `cols` kommt aus
+ * `columns` (Zeichen pro Zeile des Druckers, vom Agenten gesetzt) oder aus
+ * `paper_width` (80 mm = 42, 58 mm = 32); keine Zeile wird breiter.
  */
 export const RECEIPT_TEMPLATE = 'receipt';
 export const REFUND_RECEIPT_TEMPLATE = 'refund_receipt';
@@ -13,18 +18,20 @@ export const ORDER_TICKET_TEMPLATE = 'order_ticket';
 
 /**
  * Bestellbon wie die Vorlage `order_ticket.jinja2` des Drucker-Agenten,
- * aber mit `hide_prices`: In der Betriebsart „Nur Bons“ (orders_only)
- * druckt er keine Betraege, keine Summe und keine Zahlart. Weil der Agent
- * Vorlagen vom Server vor seinen eigenen nimmt, braucht es dafuer keine
- * neue Agent-Version. Kuechen- und Abholbon des Agenten enthalten keine
- * Preise.
+ * mit `hide_prices`: In der Betriebsart „Nur Bons“ (orders_only) druckt er
+ * keine Betraege, keine Summe und keine Zahlart. Weil der Agent Vorlagen
+ * vom Server vor seinen eigenen nimmt, gilt das auch fuer aeltere Agenten.
+ * Kuechen- und Abholbon des Agenten enthalten keine Preise.
  */
-const ORDER_TICKET_SOURCE = `{% set cols = 42 if paper_width|default(80) == 80 else 32 %}
+const ORDER_TICKET_SOURCE = `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
+   Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
+{% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}
 {% set sep = "=" * cols %}
 {% set line = "-" * cols %}
+{% macro row(label, value) %}{{ label }}{{ value|rjust(cols - label|length) }}{% endmacro %}
 {% set no_prices = hide_prices|default(false) %}
 {% if is_test %}
-<<CENTER>><<BOLD>><<BIG>>*** TESTMODUS ***<</BIG>><</BOLD>><</CENTER>>
+<<CENTER>><<BOLD>><<BIG>>** TESTMODUS **<</BIG>><</BOLD>><</CENTER>>
 
 {% endif %}
 <<CENTER>><<BIG>>BESTELLUNG<</BIG>><</CENTER>>
@@ -32,43 +39,51 @@ const ORDER_TICKET_SOURCE = `{% set cols = 42 if paper_width|default(80) == 80 e
 <<CENTER>><<BIG>>#{{ daily_number|default(order_number|default("---")) }}<</BIG>><</CENTER>>
 {{ line }}
 {% if table_number is defined and table_number %}
-Tisch: {{ table_number }}
+{{ ("Tisch: " ~ table_number)|wordwrap(cols, true, "\\n") }}
 {% endif %}
 {% if customer_name is defined and customer_name %}
-Kunde: {{ customer_name }}
+{{ ("Kunde: " ~ customer_name)|wordwrap(cols, true, "\\n") }}
 {% endif %}
 Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 {{ sep }}
 {% for item in items|default([]) %}
+{% set qty = "%-3s"|format(item.quantity ~ "x") %}
+{% set amount = "" if no_prices else item.total|currency %}
+{% set name_width = cols - qty|length - amount|length - (1 if no_prices else 2) %}
+{% set name_lines = (item.name|wordwrap(name_width, true, "\\n")).split("\\n") %}
 {% if no_prices %}
-{{ "%-3s"|format(item.quantity ~ "x") }} {{ item.name }}
+{{ qty }} {{ name_lines[0] }}
 {% else %}
-{{ "%-3s"|format(item.quantity ~ "x") }} {{ item.name.ljust(cols - 14) }} {{ item.total|currency|rjust(10) }}
+{{ qty }} {{ name_lines[0].ljust(name_width) }} {{ amount }}
 {% endif %}
+{% for rest in name_lines[1:] %}
+{{ " " * (qty|length + 1) }}{{ rest }}
+{% endfor %}
 {% if item.options is defined and item.options %}
 {% for opt in item.options %}
-     {{ opt }}
+     {{ opt|wordwrap(cols - 5, true, "\\n     ") }}
 {% endfor %}
 {% endif %}
 {% if item.notes %}
-     {{ item.notes }}
+     {{ item.notes|wordwrap(cols - 5, true, "\\n     ") }}
 {% endif %}
 {% endfor %}
 {{ sep }}
 {% if not no_prices %}
-<<BOLD>>{{ "GESAMT:".ljust(cols - 12) }}{{ total|default(0)|currency|rjust(12) }}<</BOLD>>
+<<BOLD>>{{ row("GESAMT:", total|default(0)|currency) }}<</BOLD>>
 {% if payment_method is defined %}
 {{ line }}
-Zahlungsart: {{ payment_label|default(payment_method) }}
+{{ ("Zahlungsart: " ~ payment_label|default(payment_method))|wordwrap(cols, true, "\\n") }}
 {% endif %}
 {% endif %}
 <<FEED:3>>
-<<CUT>>`;
+<<CUT>>
+`;
 
 /**
  * TSE-Angaben auf Kassenbeleg und Gegenbeleg (tse-swissbit-plan.md §8.6,
  * AEAO zu § 146a Nr. 2.2, DSFinV-K Anhang I): Kassen-ID (Client-ID),
- * TSE-Seriennummer und Signatur ungekuerzt (umbrochen), Transaktionsnummer,
+ * Beleg-Nr., TSE-Seriennummer und Signatur ungekuerzt (umbrochen), Transaktionsnummer,
  * Signaturzaehler, Start/Ende in UTC wie geliefert, QR-Code (V0). Ohne
  * Signatur nur „TSE ausgefallen“, bei Training der Trainingsvermerk. Ohne
  * `tse` im Auftrag druckt der Block nichts.
@@ -79,21 +94,21 @@ Zahlungsart: {{ payment_label|default(payment_method) }}
  * werden kann ({@link withTseBlock}).
  */
 export const TSE_PRINT_BLOCK = `{# TSE-Angaben nach AEAO zu § 146a Nr. 2.2 und DSFinV-K Anhang I (Vertrag:
-   tse-swissbit-plan.md §8.6): Kassen-ID (Client-ID), TSE-Seriennummer und
-   Signatur ungekuerzt (umbrochen), Transaktionsnummer, Signaturzaehler,
-   Start/Ende in UTC wie von der TSE geliefert, QR-Code (V0). Ohne Signatur
-   nur der Ausfallvermerk, bei Trainingsbuchungen der Trainingsvermerk.
-   Eigenstaendig (braucht weder \`cols\` noch \`line\`), damit die API den
-   Block auch an eigene Vorlagen haengen kann. #}
+   tse-swissbit-plan.md §8.6): Kassen-ID (Client-ID), Beleg-Nr.,
+   TSE-Seriennummer und Signatur ungekuerzt (umbrochen), Transaktionsnummer,
+   Signaturzaehler, Start/Ende in UTC wie von der TSE geliefert, QR-Code
+   (V0). Ohne Signatur nur der Ausfallvermerk, bei Trainingsbuchungen der
+   Trainingsvermerk. Eigenstaendig (braucht weder \`cols\` noch \`line\`), damit
+   die API den Block auch an eigene Vorlagen haengen kann. #}
 {% if tse is defined and tse %}
-{% set tse_cols = cols if cols is defined else (42 if paper_width|default(80) == 80 else 32) %}
+{% set tse_cols = cols if cols is defined else columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}
 {{ "-" * tse_cols }}
 {% if tse.failed %}
 <<CENTER>><<BOLD>>TSE ausgefallen<</BOLD>><</CENTER>>
 <<CENTER>>Beleg ohne Signatur<</CENTER>>
-Kassen-ID: {{ tse.client_id }}
+{{ ("Kassen-ID: " ~ tse.client_id)|wordwrap(tse_cols, true, "\\n") }}
 {% if tse.bon_number %}
-Beleg-Nr.: {{ tse.bon_number }}
+{{ ("Beleg-Nr.: " ~ tse.bon_number)|wordwrap(tse_cols, true, "\\n") }}
 {% endif %}
 {% if tse.serial_number %}
 TSE-Seriennummer:
@@ -103,18 +118,18 @@ TSE-Seriennummer:
 {% if tse.training %}
 <<CENTER>><<BOLD>>TRAININGSBUCHUNG - KEIN VERKAUF<</BOLD>><</CENTER>>
 {% endif %}
-Kassen-ID: {{ tse.client_id }}
+{{ ("Kassen-ID: " ~ tse.client_id)|wordwrap(tse_cols, true, "\\n") }}
 {% if tse.bon_number %}
-Beleg-Nr.: {{ tse.bon_number }}
+{{ ("Beleg-Nr.: " ~ tse.bon_number)|wordwrap(tse_cols, true, "\\n") }}
 {% endif %}
 TSE-Seriennummer:
 {{ tse.serial_number|wordwrap(tse_cols, true, "\\n") }}
-TSE-Transaktion: {{ tse.transaction_number }}
-Signaturzaehler: {{ tse.signature_counter }}
-Start: {{ tse.start_time }}
-Ende:  {{ tse.finish_time }}
-Algorithmus: {{ tse.signature_algorithm }}
-Zeitformat: {{ tse.log_time_format }}
+{{ ("TSE-Transaktion: " ~ tse.transaction_number)|wordwrap(tse_cols, true, "\\n") }}
+{{ ("Signaturzaehler: " ~ tse.signature_counter)|wordwrap(tse_cols, true, "\\n") }}
+{{ ("Start: " ~ tse.start_time)|wordwrap(tse_cols, true, "\\n") }}
+{{ ("Ende:  " ~ tse.finish_time)|wordwrap(tse_cols, true, "\\n") }}
+{{ ("Algorithmus: " ~ tse.signature_algorithm)|wordwrap(tse_cols, true, "\\n") }}
+{{ ("Zeitformat: " ~ tse.log_time_format)|wordwrap(tse_cols, true, "\\n") }}
 Signatur:
 {{ tse.signature|wordwrap(tse_cols, true, "\\n") }}
 {% if tse.qr_code %}
@@ -131,58 +146,70 @@ Signatur:
  * eigenen.
  */
 const RECEIPT_SOURCE =
-  `{% set cols = 42 if paper_width|default(80) == 80 else 32 %}
+  `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
+   Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
+{% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}
 {% set sep = "=" * cols %}
 {% set line = "-" * cols %}
+{% macro row(label, value) %}{{ label }}{{ value|rjust(cols - label|length) }}{% endmacro %}
 {% if is_test %}
-<<CENTER>><<BOLD>><<BIG>>*** TESTMODUS ***<</BIG>><</BOLD>><</CENTER>>
+<<CENTER>><<BOLD>><<BIG>>** TESTMODUS **<</BIG>><</BOLD>><</CENTER>>
 
 {% endif %}
-<<CENTER>><<BIG>>{{ organization.name|default("OpenEOS") }}<</BIG>><</CENTER>>
+<<CENTER>><<BIG>>{{ organization.name|default("OpenEOS")|wordwrap(cols // 2, true, "\\n") }}<</BIG>><</CENTER>>
 {% if organization.address is defined and organization.address %}
-<<CENTER>>{{ organization.address }}<</CENTER>>
+<<CENTER>>{{ organization.address|wordwrap(cols, true, "\\n") }}<</CENTER>>
 {% endif %}
 {% if organization.phone is defined and organization.phone %}
-<<CENTER>>Tel: {{ organization.phone }}<</CENTER>>
+<<CENTER>>{{ ("Tel: " ~ organization.phone)|wordwrap(cols, true, "\\n") }}<</CENTER>>
 {% endif %}
 <<CENTER>>{{ sep }}<</CENTER>>
 {% if event_name is defined %}
-<<CENTER>>{{ event_name }}<</CENTER>>
+<<CENTER>>{{ event_name|wordwrap(cols, true, "\\n") }}<</CENTER>>
 <<CENTER>>{{ line }}<</CENTER>>
 {% endif %}
-<<BOLD>>Bestellung #{{ order_number|default("---") }}<</BOLD>>
+<<BOLD>>{{ ("Bestellung #" ~ order_number|default("---"))|wordwrap(cols, true, "\\n") }}<</BOLD>>
 Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 {% if table_number is defined and table_number %}
-Tisch: {{ table_number }}
+{{ ("Tisch: " ~ table_number)|wordwrap(cols, true, "\\n") }}
 {% endif %}
 {% if customer_name is defined and customer_name %}
-Kunde: {{ customer_name }}
+{{ ("Kunde: " ~ customer_name)|wordwrap(cols, true, "\\n") }}
 {% endif %}
 {{ line }}
+{# Betrag rechtsbuendig am Zeilenende, der Name nimmt den Rest und bricht
+   in Folgezeilen um statt den Betrag zu verschieben. #}
 {% for item in items|default([]) %}
-{{ "%-3s"|format(item.quantity ~ "x") }} {{ item.name.ljust(cols - 14) }} {{ item.total|currency|rjust(10) }}
+{% set qty = "%-3s"|format(item.quantity ~ "x") %}
+{% set amount = item.total|currency %}
+{% set name_width = cols - qty|length - amount|length - 2 %}
+{% set name_lines = (item.name|wordwrap(name_width, true, "\\n")).split("\\n") %}
+{{ qty }} {{ name_lines[0].ljust(name_width) }} {{ amount }}
+{% for rest in name_lines[1:] %}
+{{ " " * (qty|length + 1) }}{{ rest }}
+{% endfor %}
 {% if item.notes %}
-     Hinweis: {{ item.notes }}
+     {{ ("Hinweis: " ~ item.notes)|wordwrap(cols - 5, true, "\\n     ") }}
 {% endif %}
 {% endfor %}
 {{ sep }}
 {% if subtotal is defined %}
-{{ "Zwischensumme:".ljust(cols - 12) }}{{ subtotal|currency|rjust(12) }}
+{{ row("Zwischensumme:", subtotal|currency) }}
 {% endif %}
 {# Preise sind brutto: ausgewiesen wird die enthaltene MwSt, je Satz eine
    Zeile. Bei gemischten Saetzen schickt die API keinen \`tax_rate\` — die alte
    Einzelzeile haette dann pauschal "19%" neben die Gesamtsumme geschrieben. #}
 {% if tax_lines is defined and tax_lines %}
 {% for tl in tax_lines %}
-{{ ("enth. MwSt " ~ (tl.rate|int if tl.rate == tl.rate|int else tl.rate) ~ "%:").ljust(cols - 12) }}{{ tl.tax|currency|rjust(12) }}
+{{ row("enth. MwSt " ~ (tl.rate|int if tl.rate == tl.rate|int else tl.rate) ~ "%:", tl.tax|currency) }}
 {% endfor %}
 {% elif tax_amount is defined %}
-{{ ("enth. MwSt " ~ tax_rate|default("19") ~ "%:").ljust(cols - 12) }}{{ tax_amount|currency|rjust(12) }}
+{{ row("enth. MwSt " ~ tax_rate|default("19") ~ "%:", tax_amount|currency) }}
 {% endif %}
-<<BOLD>>{{ "GESAMT:".ljust(cols - 12) }}{{ total|default(0)|currency|rjust(12) }}<</BOLD>>
+<<BOLD>>{{ row("GESAMT:", total|default(0)|currency) }}<</BOLD>>
 {{ line }}
 {% if payment_method is defined %}
-Zahlungsart: {{ payment_label|default(payment_method) }}
+{{ ("Zahlungsart: " ~ payment_label|default(payment_method))|wordwrap(cols, true, "\\n") }}
 {% if paid_amount is defined %}
 Bezahlt: {{ paid_amount|currency }}
 {% endif %}
@@ -204,19 +231,22 @@ Rueckgeld: {{ change|currency }}
 
 /** Gegenbeleg wie `refund_receipt.jinja2` des Drucker-Agenten, mit TSE-Block. */
 const REFUND_RECEIPT_SOURCE =
-  `{% set cols = 42 if paper_width|default(80) == 80 else 32 %}
+  `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
+   Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
+{% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}
 {% set sep = "=" * cols %}
 {% set line = "-" * cols %}
+{% macro row(label, value) %}{{ label }}{{ value|rjust(cols - label|length) }}{% endmacro %}
 {% if is_test %}
-<<CENTER>><<BOLD>><<BIG>>*** TESTMODUS ***<</BIG>><</BOLD>><</CENTER>>
+<<CENTER>><<BOLD>><<BIG>>** TESTMODUS **<</BIG>><</BOLD>><</CENTER>>
 
 {% endif %}
-<<CENTER>><<BIG>>{{ organization.name|default("OpenEOS") }}<</BIG>><</CENTER>>
+<<CENTER>><<BIG>>{{ organization.name|default("OpenEOS")|wordwrap(cols // 2, true, "\\n") }}<</BIG>><</CENTER>>
 {% if organization.address is defined and organization.address %}
-<<CENTER>>{{ organization.address }}<</CENTER>>
+<<CENTER>>{{ organization.address|wordwrap(cols, true, "\\n") }}<</CENTER>>
 {% endif %}
 {% if organization.phone is defined and organization.phone %}
-<<CENTER>>Tel: {{ organization.phone }}<</CENTER>>
+<<CENTER>>{{ ("Tel: " ~ organization.phone)|wordwrap(cols, true, "\\n") }}<</CENTER>>
 {% endif %}
 <<CENTER>>{{ sep }}<</CENTER>>
 <<CENTER>><<BOLD>><<BIG>>{{ "STORNO" if refund_kind|default("refund") == "cancellation" else "ERSTATTUNG" }}<</BIG>><</BOLD>><</CENTER>>
@@ -225,49 +255,56 @@ const REFUND_RECEIPT_SOURCE =
 <<CENTER>><<BOLD>>-- NACHDRUCK --<</BOLD>><</CENTER>>
 {% endif %}
 {{ line }}
-<<BOLD>>Beleg {{ refund_number|default("---") }}<</BOLD>>
+<<BOLD>>{{ ("Beleg " ~ refund_number|default("---"))|wordwrap(cols, true, "\\n") }}<</BOLD>>
 Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
-Zu Bestellung #{{ order_number|default("---") }}{% if daily_number is defined and daily_number %} (Nr. {{ daily_number }}){% endif %}
-
+{{ ("Zu Bestellung #" ~ order_number|default("---") ~ ((" (Nr. " ~ daily_number ~ ")") if daily_number is defined and daily_number else ""))|wordwrap(cols, true, "\\n") }}
 {% if original_created_at is defined and original_created_at %}
 vom {{ original_created_at|strftime("%d.%m.%Y %H:%M") }}
 {% endif %}
 {% if table_number is defined and table_number %}
-Tisch: {{ table_number }}
+{{ ("Tisch: " ~ table_number)|wordwrap(cols, true, "\\n") }}
 {% endif %}
 {{ line }}
+{# Wie auf dem Kassenbeleg: Betrag rechtsbuendig, der Name bricht um. #}
 {% for item in items|default([]) %}
-{{ "%-4s"|format("-" ~ item.quantity ~ "x") }}{{ item.name.ljust(cols - 15)[:cols - 15] }} {{ item.total|currency|rjust(10) }}
+{% set qty = "%-3s"|format("-" ~ item.quantity ~ "x") %}
+{% set amount = item.total|currency %}
+{% set name_width = cols - qty|length - amount|length - 2 %}
+{% set name_lines = (item.name|wordwrap(name_width, true, "\\n")).split("\\n") %}
+{{ qty }} {{ name_lines[0].ljust(name_width) }} {{ amount }}
+{% for rest in name_lines[1:] %}
+{{ " " * (qty|length + 1) }}{{ rest }}
+{% endfor %}
 {% endfor %}
 {% if pfand_amount is defined and pfand_amount %}
-{{ "Pfand:".ljust(cols - 12) }}{{ pfand_amount|currency|rjust(12) }}
+{{ row("Pfand:", pfand_amount|currency) }}
 {% endif %}
 {% if tip_amount is defined and tip_amount %}
-{{ "Trinkgeld:".ljust(cols - 12) }}{{ tip_amount|currency|rjust(12) }}
+{{ row("Trinkgeld:", tip_amount|currency) }}
 {% endif %}
 {{ sep }}
 {% if tax_lines is defined and tax_lines %}
 {% for tl in tax_lines %}
-{{ ("enth. MwSt " ~ (tl.rate|int if tl.rate == tl.rate|int else tl.rate) ~ "%:").ljust(cols - 12) }}{{ tl.tax|currency|rjust(12) }}
+{{ row("enth. MwSt " ~ (tl.rate|int if tl.rate == tl.rate|int else tl.rate) ~ "%:", tl.tax|currency) }}
 {% endfor %}
 {% endif %}
-<<BOLD>>{{ "ERSTATTET:".ljust(cols - 12) }}{{ total|default(0)|currency|rjust(12) }}<</BOLD>>
+<<BOLD>>{{ row("ERSTATTET:", total|default(0)|currency) }}<</BOLD>>
 {{ line }}
-Rueckgabe: {{ payment_label|default(payment_method) }}
+{{ ("Rueckgabe: " ~ payment_label|default(payment_method))|wordwrap(cols, true, "\\n") }}
 {% if refund_status is defined and refund_status == "manual" %}
 (manuell erstattet)
 {% endif %}
 {% if provider_reference is defined and provider_reference %}
-Transaktion: {{ provider_reference }}
+{{ ("Transaktion: " ~ provider_reference)|wordwrap(cols, true, "\\n") }}
 {% endif %}
 {% if reason is defined and reason %}
-Grund: {{ reason }}
+{{ ("Grund: " ~ reason)|wordwrap(cols, true, "\\n") }}
 {% endif %}
 {% if actor_name is defined and actor_name %}
-Bediener: {{ actor_name }}
+{{ ("Bediener: " ~ actor_name)|wordwrap(cols, true, "\\n") }}
 {% endif %}
 {% if device_name is defined and device_name %}
-Kasse: {{ device_name }}
+{{ ("Kasse: " ~ device_name)|wordwrap(cols, true, "\\n") }}
 {% endif %}
 ` +
   TSE_PRINT_BLOCK +
@@ -329,11 +366,13 @@ export const BUILTIN_PRINT_TEMPLATES: Record<string, string> = {
   [ORDER_TICKET_TEMPLATE]: ORDER_TICKET_SOURCE,
   [REFUND_RECEIPT_TEMPLATE]: REFUND_RECEIPT_SOURCE,
   [RECEIPT_TEMPLATE]: RECEIPT_SOURCE,
-  [CANCELLATION_TICKET_TEMPLATE]: `{% set cols = 42 if paper_width|default(80) == 80 else 32 %}
+  [CANCELLATION_TICKET_TEMPLATE]: `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
+   Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
+{% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}
 {% set sep = "=" * cols %}
 {% set box = "#" * cols %}
 {% if is_test %}
-<<CENTER>><<BOLD>><<BIG>>*** TESTMODUS ***<</BIG>><</BOLD>><</CENTER>>
+<<CENTER>><<BOLD>><<BIG>>** TESTMODUS **<</BIG>><</BOLD>><</CENTER>>
 
 {% endif %}
 {{ box }}
@@ -343,25 +382,25 @@ export const BUILTIN_PRINT_TEMPLATES: Record<string, string> = {
 
 <<CENTER>><<BIG>>#{{ daily_number|default(order_number|default("---")) }}<</BIG>><</CENTER>>
 {% if table_number is defined and table_number %}
-<<CENTER>><<BOLD>>TISCH {{ table_number }}<</BOLD>><</CENTER>>
+<<CENTER>><<BOLD>>{{ ("TISCH " ~ table_number)|wordwrap(cols, true, "\\n") }}<</BOLD>><</CENTER>>
 {% endif %}
 {% if station_name is defined and station_name %}
-<<CENTER>>Station: {{ station_name }}<</CENTER>>
+<<CENTER>>{{ ("Station: " ~ station_name)|wordwrap(cols, true, "\\n") }}<</CENTER>>
 {% endif %}
 {{ sep }}
 <<LEFT>>
 {% for item in items|default([]) %}
-<<BOLD>><<BIG>>-{{ item.quantity }}x {{ item.name }}<</BIG>><</BOLD>>
+<<BOLD>><<BIG>>{{ ("-" ~ item.quantity ~ "x " ~ item.name)|wordwrap(cols // 2, true, "\\n") }}<</BIG>><</BOLD>>
 {% if item.options is defined and item.options %}
 {% for opt in item.options %}
-    {{ opt }}
+    {{ opt|wordwrap(cols - 4, true, "\\n    ") }}
 {% endfor %}
 {% endif %}
 
 {% endfor %}
 {{ sep }}
 {% if reason is defined and reason %}
-Grund: {{ reason }}
+{{ ("Grund: " ~ reason)|wordwrap(cols, true, "\\n") }}
 {% endif %}
 {% if created_at is defined and created_at %}
 Storniert: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
