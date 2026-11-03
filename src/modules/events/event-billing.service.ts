@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
@@ -31,6 +32,12 @@ import { StripeService } from '../stripe/stripe.service';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { OrderInvoiceDto } from './dto/event-billing.dto';
+import { TSE_SURCHARGE_LINE } from '../../common/constants/billing-text';
+import {
+  TseAutoActivationService,
+  type TseCheckoutOffer,
+  type UnlockPath,
+} from '../tse/tse-auto-activation.service';
 import { BillingAuditService } from './billing-audit.service';
 import { AdminAction } from '../../database/entities/admin-audit-log.entity';
 import {
@@ -69,12 +76,42 @@ export interface EventPrice {
   finalPrice: number;
 }
 
+/**
+ * Cloud-TSE beim Freischalten (Deutschland): ob sie dazugehoert
+ * (`included`), ob der Dialog fragt (`optional`, Bestand) oder ob es keine
+ * gibt (`null`), dazu der Zuschlag je Veranstaltung (`TSE_EVENT_SURCHARGE_EUR`,
+ * 0 = inklusive, keine eigene Position) und fehlende Stammdaten.
+ */
+export interface EventTseTerms {
+  offer: TseCheckoutOffer;
+  surcharge: number;
+  missing: string[];
+  /**
+   * Freigeschaltete Veranstaltung: ob die TSE dazugehoert (`tse_included`).
+   * Sonst `null`.
+   */
+  included: boolean | null;
+  /** Freigeschaltete Veranstaltung: der berechnete Zuschlag (sonst `null`). */
+  surchargeCharged: number | null;
+}
+
+const NO_TSE: EventTseTerms = {
+  offer: null,
+  surcharge: 0,
+  missing: [],
+  included: null,
+  surchargeCharged: null,
+};
+
 /** Preisvorschau samt der Grenze, bis zu der sich kostenlos testen laesst. */
 export interface EventPricePreview extends EventPrice {
   testEventMaxOrders: number;
+  tse: EventTseTerms;
 }
 
 export interface EventBillingInfo extends EventPrice {
+  /** Cloud-TSE zur Freischaltung (Deutschland), siehe EventTseTerms. */
+  tse: EventTseTerms;
   /** Ob die Online-Zahlung ueberhaupt zur Verfuegung steht. */
   onlinePaymentAvailable: boolean;
   billingMode: string;
@@ -155,7 +192,70 @@ export class EventBillingService {
     private readonly cancellationService: EventUnlockCancellationService,
     private readonly billingAudit: BillingAuditService,
     private readonly invoiceService: StripeInvoiceService,
+    /* Optional, damit Tests ohne TSE-Modul auskommen; in der Anwendung
+       immer vorhanden (EventsModule importiert TseModule). */
+    @Optional()
+    private readonly tseAuto?: TseAutoActivationService,
   ) {}
+
+  /** Cloud-TSE-Angaben fuer Dialog und Vorschau. */
+  private tseTerms(organization: Organization, event?: Event): EventTseTerms {
+    if (!this.tseAuto) return NO_TSE;
+    const terms = this.tseAuto.checkoutTerms(organization);
+    const unlocked =
+      !!event && EVENT_PAID_BILLING_STATUSES.includes(event.billingStatus);
+    return {
+      ...terms,
+      included: unlocked ? (event.tseIncluded ?? null) : null,
+      surchargeCharged:
+        unlocked &&
+        event.tseSurcharge !== null &&
+        event.tseSurcharge !== undefined
+          ? Number(event.tseSurcharge)
+          : null,
+    };
+  }
+
+  /**
+   * Gehoert die TSE zu dieser Freischaltung, und was kostet sie? Bei
+   * „Alle Funktionen“ (DE) immer, im Bestand nach der Antwort `withTse`.
+   */
+  private tseChoice(
+    organization: Organization,
+    withTse: boolean | null | undefined,
+  ): { included: boolean | null; surcharge: number } {
+    if (!this.tseAuto) return { included: null, surcharge: 0 };
+    const included = this.tseAuto.inclusionFor(organization, withTse);
+    return { included, surcharge: this.tseAuto.surchargeFor(included) };
+  }
+
+  /**
+   * Nach dem Freischalten: Cloud-TSE automatisch einschalten (DE, „Alle
+   * Funktionen“ oder Bestand mit „Ja“). Darf die Freischaltung nie
+   * zurueckdrehen — Fehler werden nur protokolliert.
+   */
+  private async followUpTse(
+    event: Event,
+    path: UnlockPath,
+    withTse: boolean | null | undefined,
+    actorUserId: string | null,
+  ): Promise<void> {
+    if (!this.tseAuto) return;
+    try {
+      await this.tseAuto.onEventUnlocked({
+        organizationId: event.organizationId,
+        eventId: event.id,
+        eventName: event.name,
+        path,
+        withTse,
+        actorUserId,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Cloud-TSE nach Freischaltung von Event ${event.id} nicht eingeschaltet: ${(error as Error).message}`,
+      );
+    }
+  }
 
   private async getOrganization(organizationId: string): Promise<Organization> {
     const organization = await this.organizationRepository.findOne({
@@ -350,6 +450,7 @@ export class EventBillingService {
         'billing.testEventMaxOrders',
         25,
       ),
+      tse: this.tseTerms(organization),
     };
   }
 
@@ -364,9 +465,12 @@ export class EventBillingService {
       return price;
     }
     const days = event.billedDays ?? price.days;
+    /* priceCharged ist der ganze Betrag; ein TSE-Zuschlag steht daneben
+       (tse.surchargeCharged) und gehoert nicht zum Veranstaltungspreis. */
+    const surcharge = Number(event.tseSurcharge ?? 0);
     const finalPrice =
       event.priceCharged !== null && event.priceCharged !== undefined
-        ? Number(event.priceCharged)
+        ? Math.round((Number(event.priceCharged) - surcharge) * 100) / 100
         : price.finalPrice;
     return {
       ...price,
@@ -396,6 +500,7 @@ export class EventBillingService {
 
     return {
       ...price,
+      tse: this.tseTerms(organization, event),
       onlinePaymentAvailable: this.stripeService.isConfigured,
       billingMode: organization.billingMode,
       billingStatus: event.billingStatus,
@@ -454,7 +559,11 @@ export class EventBillingService {
     }
 
     const price = await this.resolvePrice(organization, event);
-    const { finalPrice, days } = price;
+    const { days } = price;
+    const tse = this.tseChoice(organization, dto.withTse);
+    // Was die Rechnung insgesamt verlangt: Veranstaltung + TSE-Zuschlag.
+    const finalPrice =
+      Math.round((price.finalPrice + tse.surcharge) * 100) / 100;
 
     organization.billingEmail = dto.billingEmail;
     organization.billingAddress = {
@@ -476,6 +585,7 @@ export class EventBillingService {
           organization,
           price,
           billingEmail: dto.billingEmail,
+          tseSurcharge: tse.surcharge,
         })
       : null;
     if (issued && issued.customerId !== organization.stripeCustomerId) {
@@ -487,6 +597,8 @@ export class EventBillingService {
     // Server-side computed — never trust a client-supplied price.
     event.priceCharged = finalPrice;
     event.billedDays = days;
+    event.tseIncluded = tse.included;
+    event.tseSurcharge = tse.surcharge > 0 ? tse.surcharge : null;
     // Wann bestellt wurde — die Stornofrist und die Anzeige haengen daran.
     event.paidAt = new Date();
     // Fuer die Stornofrist: der Beginn, wie er beim Bestellen stand.
@@ -519,6 +631,7 @@ export class EventBillingService {
           currency: organization.settings?.currency || 'EUR',
           days,
           dueAt: issued.snapshot.invoiceDueAt?.toISOString() ?? null,
+          ...(tse.surcharge > 0 ? { tseSurcharge: tse.surcharge } : {}),
         },
       });
       // Best effort: Stripes eigene Rechnungsmail geht unabhaengig davon raus.
@@ -562,6 +675,8 @@ export class EventBillingService {
         `Failed to send admin event-ordered notification: ${(error as Error).message}`,
       );
     }
+
+    await this.followUpTse(event, 'invoice', dto.withTse, user.id);
 
     return event;
   }
@@ -618,6 +733,7 @@ export class EventBillingService {
     organizationId: string,
     eventId: string,
     user: User,
+    options: { withTse?: boolean } = {},
   ): Promise<{ checkoutUrl: string }> {
     await this.organizationsService.checkRole(
       organizationId,
@@ -638,6 +754,7 @@ export class EventBillingService {
 
     const price = await this.resolvePrice(organization, event);
     const currency = organization.settings?.currency || 'EUR';
+    const tse = this.tseChoice(organization, options.withTse);
 
     const customerId = await this.stripeService.ensureCustomer({
       existingCustomerId: organization.stripeCustomerId,
@@ -677,21 +794,46 @@ export class EventBillingService {
         eventId: event.id,
         organizationId: organization.id,
         days: String(price.days),
+        /* Die Antwort zur Cloud-TSE und der Zuschlag reisen mit: verbucht
+           wird, was auf dieser Zahlungsseite gewaehlt und bezahlt wurde. */
+        ...(tse.included !== null ? { withTse: String(tse.included) } : {}),
+        ...(tse.surcharge > 0 ? { tseSurcharge: String(tse.surcharge) } : {}),
       },
+      // Eine Position je Veranstaltung (nicht je Tag), ohne Nachlass.
+      extraLines:
+        tse.surcharge > 0
+          ? [
+              {
+                name: TSE_SURCHARGE_LINE,
+                description: `Bargeld rechtssicher · ${event.name}`,
+                amountInCents: Math.round(tse.surcharge * 100),
+              },
+            ]
+          : undefined,
       // Derselbe Preis fuer dieselbe Veranstaltung ergibt dieselbe Sitzung.
       // Aendert sich der Preis, weil die Veranstaltung laenger wurde, ist es
       // bewusst eine neue.
       // Die Tage stehen mit im Schluessel, weil sie in der Beschreibung
       // stehen — gleicher Schluessel mit anderen Angaben lehnt Stripe ab.
-      idempotencyKey: `event-checkout:${event.id}:${price.finalPrice}:${price.days}d`,
+      // Die Antwort zur TSE steht mit drin (andere Metadaten, andere
+      // Sitzung); ohne TSE-Frage bleibt der Schluessel wie bisher.
+      idempotencyKey:
+        `event-checkout:${event.id}:${price.finalPrice}:${price.days}d` +
+        (tse.included !== null
+          ? `:tse${tse.included ? 1 : 0}:${tse.surcharge}`
+          : ''),
     });
 
     event.billingStatus = 'pending';
     event.stripeCheckoutSessionId = session.id;
+    event.tseIncluded = tse.included;
+    event.tseSurcharge = tse.surcharge > 0 ? tse.surcharge : null;
     await this.eventRepository.save(event);
 
     this.logger.log(
-      `Stripe checkout ${session.id} created for event ${event.id} (${price.finalPrice} ${currency})`,
+      `Stripe checkout ${session.id} created for event ${event.id} (${price.finalPrice} ${currency}` +
+        (tse.surcharge > 0 ? ` + TSE ${tse.surcharge}` : '') +
+        ')',
     );
 
     return { checkoutUrl: session.url };
@@ -764,6 +906,15 @@ export class EventBillingService {
       event,
       organization,
     );
+    const withTse =
+      session.metadata?.withTse === 'true'
+        ? true
+        : session.metadata?.withTse === 'false'
+          ? false
+          : null;
+    const tseZuschlag = Number(session.metadata?.tseSurcharge ?? 0);
+    const tseSurcharge =
+      Number.isFinite(tseZuschlag) && tseZuschlag > 0 ? tseZuschlag : null;
 
     /* Bedingtes Update statt Lesen-und-dann-Schreiben: der Webhook und die
        Rueckkehr aus dem Checkout treffen regelmaessig in derselben Sekunde
@@ -782,6 +933,8 @@ export class EventBillingService {
         priceCharged: betrag,
         billedDays: tage,
         unlockedStartDate: event.startDate,
+        tseIncluded: withTse,
+        tseSurcharge,
       },
     );
 
@@ -815,6 +968,8 @@ export class EventBillingService {
     event.priceCharged = betrag;
     event.billedDays = tage;
     event.unlockedStartDate = event.startDate;
+    event.tseIncluded = withTse;
+    event.tseSurcharge = tseSurcharge;
 
     this.logger.log(
       `Event ${event.id} bezahlt über Stripe (${event.priceCharged})`,
@@ -837,6 +992,36 @@ export class EventBillingService {
       );
     }
 
+    // Kein Benutzer: bezahlt hat Stripe (Webhook bzw. Rueckkehr).
+    await this.followUpTse(event, 'checkout', withTse, null);
+
+    return event;
+  }
+
+  /**
+   * Erlassene Freischaltung (Support): danach wie bei einem Kauf die
+   * Cloud-TSE einschalten. Die Antwort einer Bestandsorganisation kommt
+   * vom Support oder aus einer frueheren Zahlungsseite (`tse_included`).
+   */
+  async afterWaive(
+    event: Event,
+    withTse: boolean | undefined,
+    actorUserId: string | null,
+  ): Promise<Event> {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: event.organizationId },
+    });
+    if (!organization) return event;
+    const answer = withTse ?? event.tseIncluded ?? null;
+    const tse = this.tseChoice(organization, answer);
+    event.tseIncluded = tse.included;
+    // Erlassen kostet nichts — auch keinen Zuschlag.
+    event.tseSurcharge = null;
+    await this.eventRepository.update(
+      { id: event.id },
+      { tseIncluded: tse.included, tseSurcharge: null },
+    );
+    await this.followUpTse(event, 'waived', answer, actorUserId);
     return event;
   }
 

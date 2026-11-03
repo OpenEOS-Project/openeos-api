@@ -133,6 +133,25 @@ describe('operating mode helper', () => {
     );
   });
 
+  it('DE full without TSE: selectable when the Cloud-TSE follows a paid event', () => {
+    const org = { id: 'org-1', country: 'DE', operatingMode: 'cashless' };
+    expect(modeUnavailableReason(org, 'full')).toBe('tse_required');
+    expect(modeUnavailableReason(org, 'full', { available: true })).toBe(
+      'paid_event_required',
+    );
+    expect(
+      modeUnavailableReason(org, 'full', { available: true, follows: true }),
+    ).toBeNull();
+    // Gewaehlt, aber ohne aktive TSE: noch kein Bargeld.
+    expect(
+      isCashAllowed({
+        ...org,
+        operatingMode: 'full',
+        operatingModeLegacy: false,
+      }),
+    ).toBe(false);
+  });
+
   it('without a country no mode can be chosen, cash follows the mode', () => {
     const org = { operatingMode: 'full', operatingModeLegacy: true };
     expect(modeUnavailableReason(org, 'cashless')).toBe('country_required');

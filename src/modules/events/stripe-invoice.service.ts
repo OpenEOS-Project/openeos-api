@@ -32,7 +32,10 @@ import { GatewayService } from '../gateway/gateway.service';
 import { AuditActor, BillingAuditService } from './billing-audit.service';
 import type { EventPrice } from './event-billing.service';
 
-import { VAT_EXEMPT_NOTE } from '../../common/constants/billing-text';
+import {
+  TSE_SURCHARGE_LINE,
+  VAT_EXEMPT_NOTE,
+} from '../../common/constants/billing-text';
 
 export { VAT_EXEMPT_NOTE };
 
@@ -208,8 +211,11 @@ export class StripeInvoiceService {
     organization: Organization;
     price: EventPrice;
     billingEmail: string;
+    /** Cloud-TSE-Zuschlag je Veranstaltung; 0 = keine eigene Position. */
+    tseSurcharge?: number;
   }): Promise<{ customerId: string; snapshot: InvoiceSnapshot }> {
     const { event, organization, price } = params;
+    const tseSurcharge = params.tseSurcharge ?? 0;
     const currency = organization.settings?.currency || 'EUR';
     const timeZone = organization.settings?.timezone || DEFAULT_TIMEZONE;
     const address = organization.billingAddress;
@@ -258,6 +264,14 @@ export class StripeInvoiceService {
         amountInCents: discountCents,
       });
     }
+    // Eine Position je Veranstaltung (nicht je Tag), ohne Nachlass.
+    if (tseSurcharge > 0) {
+      lines.push({
+        description: TSE_SURCHARGE_LINE,
+        amountInCents: Math.round(tseSurcharge * 100),
+      });
+    }
+    const total = Math.round((price.finalPrice + tseSurcharge) * 100) / 100;
 
     /* Der Schluessel enthaelt die Zahl der bisherigen Stornierungen: wer
        storniert und am selben Tag zum selben Preis neu bestellt, bekommt
@@ -278,11 +292,14 @@ export class StripeInvoiceService {
         days: String(price.days),
         kind: 'event_unlock',
       },
-      idempotencyKey: `event-invoice:${event.id}:${cancellations}:${price.finalPrice}:${price.days}d`,
+      // Ohne Zuschlag derselbe Schluessel wie bisher.
+      idempotencyKey:
+        `event-invoice:${event.id}:${cancellations}:${price.finalPrice}:${price.days}d` +
+        (tseSurcharge > 0 ? `:tse${tseSurcharge}` : ''),
     });
 
     this.logger.log(
-      `Stripe-Rechnung ${invoice.id} (${invoice.number ?? 'ohne Nummer'}) für Event ${event.id} ausgestellt: ${price.finalPrice} ${currency}`,
+      `Stripe-Rechnung ${invoice.id} (${invoice.number ?? 'ohne Nummer'}) für Event ${event.id} ausgestellt: ${total} ${currency}`,
     );
 
     return { customerId, snapshot: snapshotOf(invoice) };
@@ -759,6 +776,8 @@ export class StripeInvoiceService {
     event.paidAt = null;
     event.priceCharged = null;
     event.billedDays = null;
+    event.tseIncluded = null;
+    event.tseSurcharge = null;
     event.stripeCheckoutSessionId = null;
     event.unlockedStartDate = null;
     event.invoicedAt = null;

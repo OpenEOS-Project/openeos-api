@@ -14,6 +14,7 @@ import {
 } from '../../database/entities';
 import { SwissbitClientProvider } from './swissbit/swissbit-client.provider';
 import { TseAdminController } from './tse-admin.controller';
+import { TseAutoActivationService } from './tse-auto-activation.service';
 import { TseConfig } from './tse.config';
 import { TseController } from './tse.controller';
 import { TseCryptoService } from './tse-crypto.service';
@@ -59,7 +60,14 @@ import { TseUnitService } from './tse-unit.service';
     TseExportService,
     TseReconcileService,
     TseStatusService,
+    TseAutoActivationService,
   ],
-  exports: [TseSigningService, TseStatusService, TseUnitService, TseConfig],
+  exports: [
+    TseSigningService,
+    TseStatusService,
+    TseUnitService,
+    TseConfig,
+    TseAutoActivationService,
+  ],
 })
 export class TseModule {}

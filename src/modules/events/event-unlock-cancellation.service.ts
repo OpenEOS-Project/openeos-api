@@ -721,6 +721,9 @@ export class EventUnlockCancellationService {
           event.paidAt = null;
           event.priceCharged = null;
           event.billedDays = null;
+          // Der TSE-Zuschlag steckt in priceCharged und ist mit erstattet.
+          event.tseIncluded = null;
+          event.tseSurcharge = null;
           event.stripeCheckoutSessionId = null;
           event.unlockedStartDate = null;
           event.invoicedAt = null;

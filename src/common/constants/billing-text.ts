@@ -10,3 +10,9 @@
  */
 export const VAT_EXEMPT_NOTE =
   'Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.';
+
+/**
+ * Position fuer den Cloud-TSE-Zuschlag (`TSE_EVENT_SURCHARGE_EUR`) auf der
+ * Zahlungsseite und der Rechnung — eine je Veranstaltung, nicht je Tag.
+ */
+export const TSE_SURCHARGE_LINE = 'Cloud-TSE';

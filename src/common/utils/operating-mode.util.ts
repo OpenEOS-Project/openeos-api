@@ -104,20 +104,38 @@ export function arePricesVisible(
   return !isOrdersOnly(org);
 }
 
-export type ModeUnavailableReason = 'tse_required' | 'country_required';
+export type ModeUnavailableReason =
+  | 'tse_required'
+  | 'paid_event_required'
+  | 'country_required';
+
+/**
+ * Was die Cloud-TSE fuer die Wahl von `full` in Deutschland beitraegt:
+ * - `available`: der Server bietet die Cloud-TSE an,
+ * - `follows`: dazu steht eine bezahlte Veranstaltung an — die TSE wird
+ *   dann automatisch eingerichtet (TseAutoActivationService), `full` ist
+ *   schon vorher waehlbar (Bargeld erst mit aktiver TSE).
+ */
+export interface TseModeContext {
+  available?: boolean;
+  follows?: boolean;
+}
 
 /**
  * Darf die Organisation in diese Betriebsart wechseln? `null` = ja. Ohne
  * Land keine Wahl (die Regeln haengen am Land); `full` in Deutschland nur
- * mit aktiver TSE.
+ * mit aktiver TSE — oder wenn sie mit einer bezahlten Veranstaltung
+ * automatisch folgt (`paid_event_required`, solange keine ansteht).
  */
 export function modeUnavailableReason(
   org: OperatingModeOrg | null | undefined,
   mode: OperatingMode,
+  tse: TseModeContext = {},
 ): ModeUnavailableReason | null {
   if (!countryOf(org)) return 'country_required';
   if (mode === 'full' && countryOf(org) === 'DE' && !hasActiveTse(org)) {
-    return 'tse_required';
+    if (tse.follows) return null;
+    return tse.available ? 'paid_event_required' : 'tse_required';
   }
   return null;
 }

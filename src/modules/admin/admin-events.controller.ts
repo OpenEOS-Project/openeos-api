@@ -14,7 +14,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiBody } from '@nestjs/swagger';
 import { AdminEventsService } from './admin-events.service';
 import {
   QueryAdminEventsDto,
@@ -30,6 +30,8 @@ import {
   toCancellationSummary,
 } from '../events/event-unlock-cancellation.service';
 import { StripeInvoiceService } from '../events/stripe-invoice.service';
+import { EventBillingService } from '../events/event-billing.service';
+import { WaiveEventDto } from '../events/dto/event-billing.dto';
 import type { AuditActor } from '../events/billing-audit.service';
 
 function actorOf(user: User, req: Request): AuditActor {
@@ -51,6 +53,7 @@ export class AdminEventsController {
     private readonly adminEventsService: AdminEventsService,
     private readonly cancellationService: EventUnlockCancellationService,
     private readonly invoiceService: StripeInvoiceService,
+    private readonly eventBillingService: EventBillingService,
   ) {}
 
   @Get()
@@ -174,8 +177,24 @@ export class AdminEventsController {
   }
 
   @Post(':id/waive')
-  async waive(@Param('id') id: string) {
+  @ApiOperation({
+    summary: 'Freischaltung erlassen (Support)',
+    description:
+      'Wie ein Kauf: in Deutschland mit „Alle Funktionen“ schaltet der Server danach die Cloud-TSE ein; ' +
+      'Bestandsorganisationen nur mit `withTse: true` (sonst gilt die Antwort einer früheren Zahlungsseite).',
+  })
+  @ApiBody({ type: WaiveEventDto, required: false })
+  async waive(
+    @Param('id') id: string,
+    @Body() dto: WaiveEventDto,
+    @CurrentUser() user: User,
+  ) {
     const event = await this.adminEventsService.waive(id);
+    await this.eventBillingService.afterWaive(
+      event,
+      dto?.withTse,
+      user?.id ?? null,
+    );
     return { data: event };
   }
 }

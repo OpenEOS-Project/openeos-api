@@ -18,6 +18,7 @@ import { SumUpModule } from '../sumup/sumup.module';
 import { StripeModule } from '../stripe/stripe.module';
 import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { TseModule } from '../tse/tse.module';
 import {
   Event,
   Organization,
@@ -54,6 +55,8 @@ import {
     StripeModule,
     PrintJobsModule,
     OrganizationsModule,
+    // Cloud-TSE „All inclusive“: nach dem Freischalten automatisch einschalten.
+    TseModule,
   ],
   controllers: [
     EventsController,

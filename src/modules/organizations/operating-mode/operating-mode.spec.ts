@@ -72,7 +72,12 @@ interface OrgState {
 /** Organisation, Verlauf und Admin-Protokoll im Speicher. */
 function setup(
   state: Partial<OrgState> = {},
-  options: { role?: OrganizationRole; selfHosted?: boolean } = {},
+  options: {
+    role?: OrganizationRole;
+    selfHosted?: boolean;
+    /** Cloud-TSE auf dem Server; `paidEvent`: eine bezahlte Veranstaltung steht an. */
+    tse?: { paidEvent: boolean };
+  } = {},
 ) {
   const stored = {
     id: ORG_ID,
@@ -169,14 +174,42 @@ function setup(
     ),
   };
   const gateway = { notifyOrganizationSettingsUpdated: jest.fn() };
+  const plan = {
+    eventId: 'event-1',
+    eventName: 'Weihnachtsmarkt',
+    eventStartDate: '2026-12-12T15:00:00.000Z',
+    scheduledFor: '2026-12-12',
+    missing: [],
+  };
+  const tseAuto = options.tse
+    ? {
+        available: true,
+        planFor: jest.fn(() =>
+          Promise.resolve(options.tse?.paidEvent ? plan : null),
+        ),
+        onModeSwitchedToFull: jest.fn(() =>
+          Promise.resolve({ tseFollows: true, plan }),
+        ),
+      }
+    : undefined;
   const service = new OperatingModeService(
     dataSource as never,
     organizations,
     config as never,
     { isSelfHosted: options.selfHosted === true } as never,
     gateway as never,
+    tseAuto as never,
   );
-  return { service, organizations, stored, history, audit, manager, gateway };
+  return {
+    service,
+    organizations,
+    stored,
+    history,
+    audit,
+    manager,
+    gateway,
+    tseAuto,
+  };
 }
 
 async function responseOf(call: Promise<unknown>): Promise<unknown> {
@@ -248,6 +281,68 @@ describe('OperatingModeService — switch by the club (admins)', () => {
       tseActive: true,
       cashAllowed: true,
     });
+  });
+
+  it('DE: full without TSE is allowed with a paid event — the Cloud-TSE follows automatically', async () => {
+    const t = setup(
+      { operatingMode: 'cashless', operatingModeLegacy: false },
+      { tse: { paidEvent: true } },
+    );
+    const before = await t.service.getForMember(ORG_ID, clubAdmin);
+    expect(before.options.find((o) => o.mode === 'full')).toEqual({
+      mode: 'full',
+      available: true,
+      unavailableReason: null,
+    });
+    expect(before.tseSetup).toMatchObject({ scheduledFor: '2026-12-12' });
+
+    const state = await t.service.setByMember(ORG_ID, 'full', clubAdmin);
+    expect(state).toMatchObject({
+      operatingMode: 'full',
+      operatingModeLegacy: false,
+      tseActive: false,
+      // Bargeld erst mit aktiver TSE.
+      cashAllowed: false,
+      tseSetup: { scheduledFor: '2026-12-12', eventName: 'Weihnachtsmarkt' },
+    });
+    expect(t.tseAuto?.onModeSwitchedToFull).toHaveBeenCalledWith(
+      ORG_ID,
+      clubAdmin.id,
+    );
+  });
+
+  it('DE: without a paid event full stays disabled (paid_event_required)', async () => {
+    const t = setup(
+      { operatingMode: 'cashless', operatingModeLegacy: false },
+      { tse: { paidEvent: false } },
+    );
+    const before = await t.service.getForMember(ORG_ID, clubAdmin);
+    expect(before.options.find((o) => o.mode === 'full')).toMatchObject({
+      available: false,
+      unavailableReason: 'paid_event_required',
+    });
+    expect(before.tseSetup).toBeNull();
+    expect(
+      await responseOf(t.service.setByMember(ORG_ID, 'full', clubAdmin)),
+    ).toMatchObject({
+      code: 'TSE_REQUIRED_FOR_CASH',
+      reason: 'OPERATING_MODE_FULL_REQUIRES_TSE',
+    });
+    expect(t.tseAuto?.onModeSwitchedToFull).not.toHaveBeenCalled();
+  });
+
+  it('DE legacy: confirming full with a paid event ends the legacy status', async () => {
+    const t = setup({}, { tse: { paidEvent: true } });
+    const state = await t.service.setByMember(ORG_ID, 'full', clubAdmin);
+    expect(state).toMatchObject({
+      operatingMode: 'full',
+      operatingModeLegacy: false,
+    });
+    expect(t.history[0]).toMatchObject({
+      fromMode: 'full_legacy',
+      toMode: 'full',
+    });
+    expect(t.tseAuto?.onModeSwitchedToFull).toHaveBeenCalled();
   });
 
   it('DE legacy: confirming full without TSE is not possible either', async () => {

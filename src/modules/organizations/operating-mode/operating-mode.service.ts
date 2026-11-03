@@ -1,8 +1,10 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
@@ -29,8 +31,13 @@ import {
   type OperatingMode,
   type OperatingModeOrg,
   type OperatingModeView,
+  type TseModeContext,
   OPERATING_MODE_SELECT,
 } from '../../../common/utils/operating-mode.util';
+import {
+  TseAutoActivationService,
+  type TseSetupPlan,
+} from '../../tse/tse-auto-activation.service';
 import { hasActiveTse } from '../../../common/utils/tse.util';
 import { DeploymentService } from '../../../common/services/deployment.service';
 import { GatewayService } from '../../gateway/gateway.service';
@@ -64,6 +71,12 @@ export interface OperatingModeOption {
 export interface OperatingModeState extends OperatingModeView {
   options: OperatingModeOption[];
   certificateAvailable: boolean;
+  /**
+   * Deutschland ohne aktive TSE, bezahlte Veranstaltung steht an: wann die
+   * Cloud-TSE automatisch eingerichtet wird (fuer „Alle Funktionen“). Sonst
+   * `null`.
+   */
+  tseSetup: TseSetupPlan | null;
 }
 
 interface LockedRow {
@@ -106,18 +119,48 @@ export class OperatingModeService {
     private readonly configService: ConfigService,
     private readonly deployment: DeploymentService,
     private readonly gatewayService: GatewayService,
+    /* Optional, damit Tests ohne TSE-Modul auskommen; in der Anwendung
+       immer vorhanden (OrganizationsModule importiert TseModule). */
+    @Optional()
+    private readonly tseAuto?: TseAutoActivationService,
   ) {}
 
+  /**
+   * Plan der automatischen TSE (Deutschland, keine aktive TSE, bezahlte
+   * Veranstaltung) — davon haengt ab, ob „Alle Funktionen“ waehlbar ist.
+   */
+  private async tsePlan(
+    org: OperatingModeOrg | null | undefined,
+  ): Promise<TseSetupPlan | null> {
+    if (!this.tseAuto || !org?.id) return null;
+    if ((org.country ?? '').toUpperCase() !== 'DE' || hasActiveTse(org)) {
+      return null;
+    }
+    return this.tseAuto.planFor({
+      id: org.id,
+      settings: (org.settings ?? null) as Organization['settings'],
+    });
+  }
+
+  private tseContext(plan: TseSetupPlan | null): TseModeContext {
+    return { available: this.tseAuto?.available ?? false, follows: !!plan };
+  }
+
   /** Zustand samt waehlbaren Betriebsarten. */
-  stateFor(org: OperatingModeOrg | null | undefined): OperatingModeState {
+  stateFor(
+    org: OperatingModeOrg | null | undefined,
+    plan: TseSetupPlan | null = null,
+  ): OperatingModeState {
+    const tse = this.tseContext(plan);
     return {
       ...operatingModeView(org),
       options: OPERATING_MODES.map((mode) => {
-        const reason = modeUnavailableReason(org, mode);
+        const reason = modeUnavailableReason(org, mode, tse);
         return { mode, available: reason === null, unavailableReason: reason };
       }),
       certificateAvailable:
         !this.deployment.isSelfHosted && isCertificateAvailable(org),
+      tseSetup: plan,
     };
   }
 
@@ -149,7 +192,7 @@ export class OperatingModeService {
       user,
     );
     return {
-      ...this.stateFor(organization),
+      ...this.stateFor(organization, await this.tsePlan(organization)),
       // Wer im Support umgeschaltet hat, bleibt intern (Admin-Verlauf).
       history: (await this.history(organization.id)).map((h) => ({
         ...h,
@@ -206,10 +249,26 @@ export class OperatingModeService {
     supportReason: string | null,
   ): Promise<OperatingModeState> {
     const bySupport = supportReason !== null;
+    /* Ob „Alle Funktionen“ in Deutschland ohne TSE geht, haengt an einer
+       bezahlten Veranstaltung — vor der Sperre nachgesehen (Lesen genuegt:
+       die TSE folgt ohnehin nur mit einer bezahlten Veranstaltung). */
+    const planBefore =
+      mode === 'full' && this.tseAuto
+        ? await this.tsePlan(
+            await this.dataSource.getRepository(Organization).findOne({
+              where: { id: organizationId },
+              select: OPERATING_MODE_SELECT,
+            }),
+          )
+        : null;
     const state = await this.dataSource.transaction(async (manager) => {
       const row = await this.lock(manager, organizationId);
       const before = rowToOrg(organizationId, row);
-      const unavailable = modeUnavailableReason(before, mode);
+      const unavailable = modeUnavailableReason(
+        before,
+        mode,
+        this.tseContext(planBefore),
+      );
       if (unavailable === 'country_required') {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
@@ -220,6 +279,14 @@ export class OperatingModeService {
       }
       if (unavailable === 'tse_required') {
         throw tseRequiredError(ErrorReasons.OPERATING_MODE_FULL_REQUIRES_TSE);
+      }
+      if (unavailable === 'paid_event_required') {
+        throw new ForbiddenException({
+          code: ErrorCodes.TSE_REQUIRED_FOR_CASH,
+          reason: ErrorReasons.OPERATING_MODE_FULL_REQUIRES_TSE,
+          message:
+            '„Alle Funktionen“ mit Bargeld geht in Deutschland nur mit Cloud-TSE. OpenEOS richtet sie automatisch ein, sobald du eine Veranstaltung freigeschaltet hast – schalte zuerst eine Veranstaltung frei.',
+        });
       }
       const from = getOperatingMode(before);
       const legacy = before.operatingModeLegacy === true;
@@ -274,15 +341,35 @@ export class OperatingModeService {
       this.logger.log(
         `Operating mode of organization ${organizationId} switched ${fromValue} -> ${mode} by ${bySupport ? 'super admin' : 'user'} ${actor.id}`,
       );
-      return this.stateFor({
-        ...before,
-        operatingMode: mode,
-        operatingModeLegacy: false,
-        operatingModeSince: changedAt,
-      });
+      return this.stateFor(
+        {
+          ...before,
+          operatingMode: mode,
+          operatingModeLegacy: false,
+          operatingModeSince: changedAt,
+        },
+        planBefore,
+      );
     });
     // Kassen laden Organisation und Betriebsart sofort neu.
     this.gatewayService.notifyOrganizationSettingsUpdated(organizationId);
+    /* „Alle Funktionen“ in Deutschland mit bezahlter Veranstaltung: die
+       Cloud-TSE folgt automatisch (Integration an, Anlage am ersten
+       Veranstaltungstag bzw. sofort). Ein Fehler hier macht den Wechsel
+       nicht rueckgaengig. */
+    if (mode === 'full' && planBefore && this.tseAuto) {
+      try {
+        const result = await this.tseAuto.onModeSwitchedToFull(
+          organizationId,
+          actor.id,
+        );
+        return { ...state, tseSetup: result.plan ?? state.tseSetup };
+      } catch (error) {
+        this.logger.error(
+          `Cloud-TSE after switch to full not enabled for ${organizationId}: ${(error as Error).message}`,
+        );
+      }
+    }
     return state;
   }
 
@@ -323,7 +410,7 @@ export class OperatingModeService {
         message: 'Organisation nicht gefunden',
       });
     }
-    return this.stateFor(organization);
+    return this.stateFor(organization, await this.tsePlan(organization));
   }
 
   /**

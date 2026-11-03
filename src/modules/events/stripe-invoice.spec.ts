@@ -456,6 +456,53 @@ describe('StripeInvoiceService.issue', () => {
     // Nach zwei Stornierungen: ein neuer Schluessel, keine stornierte Rechnung zurueck.
     expect(call.idempotencyKey).toBe(`event-invoice:${EVENT_ID}:2:50:2d`);
   });
+
+  it('adds one "Cloud-TSE" line per event for a surcharge > 0 (not discounted)', async () => {
+    const { service, stripe } = setup();
+    await service.issue({
+      event: invoicedEvent({ stripeInvoiceId: null }),
+      organization: organization(),
+      price,
+      billingEmail: 'kasse@example.org',
+      tseSurcharge: 4.5,
+    });
+    const call = (
+      stripe.createAndSendInvoice.mock.calls as unknown[][]
+    )[0][0] as {
+      lines: { description: string; amountInCents: number }[];
+      idempotencyKey: string;
+    };
+    // Veranstaltung (2 Tage), Nachlass, Cloud-TSE — einmal, nicht je Tag.
+    expect(call.lines).toHaveLength(3);
+    expect(call.lines[2]).toEqual({
+      description: 'Cloud-TSE',
+      amountInCents: 450,
+    });
+    const total = call.lines.reduce((sum, l) => sum + l.amountInCents, 0);
+    expect(total).toBe(4450);
+    expect(call.idempotencyKey).toBe(
+      `event-invoice:${EVENT_ID}:0:40:2d:tse4.5`,
+    );
+  });
+
+  it('has no Cloud-TSE line while the surcharge is 0 (inklusive)', async () => {
+    const { service, stripe } = setup();
+    await service.issue({
+      event: invoicedEvent({ stripeInvoiceId: null }),
+      organization: organization(),
+      price,
+      billingEmail: 'kasse@example.org',
+      tseSurcharge: 0,
+    });
+    const call = (
+      stripe.createAndSendInvoice.mock.calls as unknown[][]
+    )[0][0] as {
+      lines: { description: string }[];
+      idempotencyKey: string;
+    };
+    expect(call.lines.map((l) => l.description)).not.toContain('Cloud-TSE');
+    expect(call.idempotencyKey).toBe(`event-invoice:${EVENT_ID}:0:40:2d`);
+  });
 });
 
 describe('EventBillingService.orderInvoice with Stripe Invoicing', () => {
