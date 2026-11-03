@@ -207,11 +207,14 @@ export class CashPointClosingService {
       await m.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
         `dsfinvk:${organizationId}`,
       ]);
+      // Laufende TSE-Vorgaenge abwarten (der Abgleich setzt haengende nach
+      // 2 Minuten auf `failed`); was laenger haengt, geht als Ausfall mit.
       const pending = rowsOf<{ n: number }>(
         await m.query(
           `SELECT count(*)::int AS n FROM tse_transactions
           WHERE organization_id = $1 AND cash_point_closing_id IS NULL
-            AND status = 'pending' AND created_at < $2`,
+            AND status = 'pending' AND created_at < $2
+            AND created_at > now() - interval '15 minutes'`,
           [organizationId, periodTo],
         ),
       );
