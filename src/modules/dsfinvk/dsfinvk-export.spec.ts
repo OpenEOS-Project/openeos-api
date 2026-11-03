@@ -511,6 +511,14 @@ describe('DSFinV-K export (own validator)', () => {
     expect(rowsOf(zip, 'cashpointclosing.csv')[0].Z_SE_BARZAHLUNGEN).toBe(
       '88,50',
     );
+    const totals = buildClosing(
+      closingInput(1, Z1, txs, { settings: VAT_EXEMPT }),
+    ).totals;
+    expect(totals).toMatchObject({
+      grossCents: 8850,
+      salesGrossCents: 1000,
+      cashCents: 8850,
+    });
     expect(rowsOf(zip, 'transactions_tse.csv')[0].TSE_VORGANGSDATEN).toBe(
       'Beleg^0.00_0.00_0.00_0.00_150.00^150.00:Bar',
     );

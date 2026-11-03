@@ -477,6 +477,27 @@ describeWithDb('DSFinV-K closings against Postgres', () => {
     expect(result.stats.transactions).toBe(4);
   });
 
+  it('Kassenbuch: per-device rows and a separate row for bookings without device', async () => {
+    const w = await world();
+    await cashbook.create(
+      w.orgId,
+      { type: 'opening_balance', amount: 100 },
+      { deviceId: w.deviceId },
+    );
+    await cashbook.create(
+      w.orgId,
+      { type: 'deposit', amount: 30 },
+      { userId: admin.id },
+    );
+    const day = await cashbook.day(w.orgId, undefined, null);
+    expect(day.total.expected).toBe(130);
+    const byDevice = new Map(
+      day.devices.map((d) => [d.deviceId, d.summary.expected]),
+    );
+    expect(byDevice.get(w.deviceId)).toBe(100);
+    expect(byDevice.get(null)).toBe(30);
+  });
+
   it('refuses the cash book where cash is not allowed', async () => {
     const w = await world();
     await sql(
