@@ -1173,6 +1173,9 @@ export function buildClosing(input: DsfinvkClosingInput): BuiltClosing {
 
   const totals: ClosingTotals = {
     grossCents: gross,
+    salesGrossCents: gvRows
+      .filter((g) => ['Umsatz', 'Rabatt', 'Aufschlag'].includes(g.gvTyp))
+      .reduce((sum, g) => sum + g.gross, 0),
     paymentsCents: paymentsTotal,
     cashCents: cashTotal,
     byBusinessCase: gvRows.map((g) => ({

@@ -84,6 +84,11 @@ export interface CashbookDay {
 }
 
 const euros = (cents: number) => Math.round(cents) / 100;
+
+/** Ganze Kasse (alle Geraete und Buchungen ohne Geraet). */
+export const ALL_DEVICES = '*';
+/** `ALL_DEVICES`, eine Geraete-ID oder `null` = nur Buchungen ohne Geraet (Verwaltung). */
+type DeviceFilter = string | null;
 const toCents = (value: unknown) => Math.round(Number(value ?? 0) * 100);
 
 /**
@@ -170,7 +175,7 @@ export class CashbookService {
         await this.summary(
           organizationId,
           businessDate,
-          scope === 'device' ? deviceId : null,
+          scope === 'device' && deviceId ? deviceId : ALL_DEVICES,
         )
       ).expectedCents;
       amountCents = value - expectedCents;
@@ -213,7 +218,7 @@ export class CashbookService {
     const summary = await this.summary(
       organizationId,
       businessDate,
-      scope === 'device' ? deviceId : null,
+      scope === 'device' && deviceId ? deviceId : ALL_DEVICES,
     );
     const [view] = await this.views([entry]);
     return { entry: view, tse, summary: summary.view };
@@ -246,7 +251,11 @@ export class CashbookService {
       },
       order: { createdAt: 'ASC' },
     });
-    const total = await this.summary(organizationId, date, deviceId ?? null);
+    const total = await this.summary(
+      organizationId,
+      date,
+      deviceId ?? ALL_DEVICES,
+    );
     const devices: CashbookDay['devices'] = [];
     if (!deviceId) {
       for (const id of await this.devicesWithCash(organizationId, date)) {
@@ -305,15 +314,17 @@ export class CashbookService {
   async summary(
     organizationId: string,
     businessDate: string,
-    deviceId: string | null,
+    deviceId: DeviceFilter,
   ): Promise<{ expectedCents: number; view: CashSummary }> {
     const { from, to } = businessDayRange(businessDate);
     const params: unknown[] = [organizationId, from, to];
+    const byDevice = deviceId !== ALL_DEVICES && deviceId !== null;
     const device = (column: string) => {
-      if (!deviceId) return '';
+      if (deviceId === ALL_DEVICES) return '';
+      if (deviceId === null) return ` AND ${column} IS NULL`;
       return ` AND ${column} = $4`;
     };
-    if (deviceId) params.push(deviceId);
+    if (byDevice) params.push(deviceId);
     const [sales] = rowsOf<{ v: string }>(
       await this.dataSource.query(
         `SELECT COALESCE(SUM(p.amount), 0) AS v FROM payments p JOIN orders o ON o.id = p.order_id
@@ -338,7 +349,7 @@ export class CashbookService {
       ),
     );
     const entryParams: unknown[] = [organizationId, businessDate];
-    if (deviceId) entryParams.push(deviceId);
+    if (byDevice) entryParams.push(deviceId);
     const entries = rowsOf<{
       type: CashbookType;
       amount: string;
@@ -347,7 +358,13 @@ export class CashbookService {
     }>(
       await this.dataSource.query(
         `SELECT type, amount, counted_amount, created_at FROM cashbook_entries
-        WHERE organization_id = $1 AND business_date = $2${deviceId ? ' AND device_id = $3' : ''}
+        WHERE organization_id = $1 AND business_date = $2${
+          deviceId === ALL_DEVICES
+            ? ''
+            : deviceId === null
+              ? ' AND device_id IS NULL'
+              : ' AND device_id = $3'
+        }
         ORDER BY created_at`,
         entryParams,
       ),

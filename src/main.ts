@@ -122,6 +122,8 @@ async function bootstrap() {
       'X-Request-Id',
       'Accept-Language',
     ],
+    // Downloads (DSFinV-K, TSE-Exporte): Dateiname und Pruefsumme lesbar.
+    exposedHeaders: ['Content-Disposition', 'X-Checksum-SHA256'],
   });
 
   // Global Exception Filter
