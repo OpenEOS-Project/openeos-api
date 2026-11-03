@@ -981,6 +981,35 @@ export class EmailService {
     });
   }
 
+  /**
+   * Hinweis an die Admins einer Organisation zur Cloud-TSE (Ausfall,
+   * gescheiterte Anlage, aktiviert, deaktiviert). Text kommt vom
+   * TSE-Modul; hier nur der Rahmen.
+   */
+  async sendTseNoticeEmail(options: {
+    to: string;
+    subject: string;
+    intro: string;
+    rows: [string, string][];
+    todo: { title: string; text: string } | null;
+  }): Promise<boolean> {
+    const html = rahmen({
+      kontext: 'Cloud-TSE',
+      titel: `OpenEOS — ${options.subject}`,
+      preheader: options.intro,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift(options.subject),
+        absatz(options.intro),
+        datenblock('Details', options.rows),
+        options.todo ? hinweis(options.todo.title, options.todo.text) : null,
+        knopf(`${this.appUrl}/integrations/tse`, 'Cloud-TSE ansehen'),
+      ),
+    });
+    return this.sendEmail({ to: options.to, subject: options.subject, html });
+  }
+
   /** Hinweis an den Betreiber: eine Storno-Erstattung ist gescheitert. */
   async sendAdminEventRefundFailedNotification(options: {
     to: string;

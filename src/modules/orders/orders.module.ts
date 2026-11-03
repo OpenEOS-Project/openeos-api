@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { TseModule } from '../tse/tse.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
@@ -31,6 +32,7 @@ import { RefundsModule } from '../refunds/refunds.module';
     PrintJobsModule,
     forwardRef(() => GatewayModule),
     RefundsModule,
+    TseModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

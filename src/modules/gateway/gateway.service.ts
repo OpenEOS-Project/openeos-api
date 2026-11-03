@@ -417,6 +417,18 @@ export class GatewayService {
    * /device-api/organization` neu. Bewusst ohne Inhalt: die Einstellungen
    * enthalten Zugangsdaten, und jede Kasse holt sie ohnehin selbst.
    */
+  /** Cloud-TSE: Zustand (aktiv/gestoert) fuer Kassen und Verwaltung. */
+  notifyTseStatusChanged(
+    organizationId: string,
+    data: { state: string; outage: boolean; reason?: string | null },
+  ) {
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.TSE_STATUS_CHANGED,
+      { organizationId, ...data },
+    );
+  }
+
   notifyOrganizationSettingsUpdated(organizationId: string) {
     this.logger.debug(
       `Emitting organizationSettingsUpdated for organization ${organizationId}`,

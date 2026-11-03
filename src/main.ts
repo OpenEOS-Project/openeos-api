@@ -73,12 +73,19 @@ async function bootstrap() {
   // Hochgeladene Speisekarten (Assistent) liegen im selben Verzeichnis,
   // sind aber nicht oeffentlich: sie gehoeren der Organisation und leben
   // nur bis zur Auswertung. Der Pfad wird vor dem statischen Handler gesperrt.
-  app.use(
-    '/uploads/menu-imports',
-    (_req: unknown, res: { status: (code: number) => { end: () => void } }) => {
-      res.status(404).end();
-    },
-  );
+  // Ebenso die TAR-Exporte der Cloud-TSE (Standard TSE_EXPORT_DIR =
+  // UPLOAD_DIR/tse-exports): nur ueber den Admin-Endpunkt abrufbar.
+  for (const privatePath of ['/uploads/menu-imports', '/uploads/tse-exports']) {
+    app.use(
+      privatePath,
+      (
+        _req: unknown,
+        res: { status: (code: number) => { end: () => void } },
+      ) => {
+        res.status(404).end();
+      },
+    );
+  }
   app.useStaticAssets(join(process.cwd(), uploadDir.replace(/^\.\//, '')), {
     prefix: '/uploads/',
   });

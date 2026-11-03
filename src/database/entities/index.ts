@@ -31,6 +31,12 @@ export * from './discount-voucher.entity';
 export * from './pfand-type.entity';
 export * from './pfand-return.entity';
 
+// Cloud-TSE (tse-swissbit-plan.md)
+export * from './tse-unit.entity';
+export * from './tse-transaction.entity';
+export * from './tse-outage.entity';
+export * from './tse-export.entity';
+
 // Tables
 export * from './table-area.entity';
 export * from './dining-table.entity';

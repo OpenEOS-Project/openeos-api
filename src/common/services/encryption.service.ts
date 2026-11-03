@@ -2,13 +2,44 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 
+const IV_LENGTH = 16; // 128 bits
+const AUTH_TAG_LENGTH = 16; // 128 bits
+
+/** AES-256-Schluessel aus einem beliebig langen Geheimnis (SHA-256). */
+export function deriveEncryptionKey(secret: string): Buffer {
+  return crypto.createHash('sha256').update(secret).digest();
+}
+
+/**
+ * AES-256-GCM. Ergebnis: Base64 aus IV + AuthTag + Chiffrat. Auch fuer
+ * eigene Schluessel anderer Module (z. B. TSE_ENCRYPTION_KEY).
+ */
+export function encryptWithKey(key: Buffer, plaintext: string): string {
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([
+    cipher.update(plaintext, 'utf8'),
+    cipher.final(),
+  ]);
+  return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString('base64');
+}
+
+export function decryptWithKey(key: Buffer, encryptedData: string): string {
+  const combined = Buffer.from(encryptedData, 'base64');
+  const iv = combined.subarray(0, IV_LENGTH);
+  const authTag = combined.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
+  const ciphertext = combined.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final(),
+  ]).toString('utf8');
+}
+
 @Injectable()
 export class EncryptionService {
   private readonly logger = new Logger(EncryptionService.name);
-  private readonly algorithm = 'aes-256-gcm';
-  private readonly keyLength = 32; // 256 bits
-  private readonly ivLength = 16; // 128 bits
-  private readonly authTagLength = 16; // 128 bits
   private readonly key: Buffer;
 
   constructor(private readonly configService: ConfigService) {
@@ -32,7 +63,7 @@ export class EncryptionService {
     }
 
     // Derive a proper key from the provided secret using SHA-256
-    this.key = crypto.createHash('sha256').update(encryptionKey).digest();
+    this.key = deriveEncryptionKey(encryptionKey);
   }
 
   /**
@@ -40,45 +71,14 @@ export class EncryptionService {
    * Returns a base64-encoded string containing: IV + AuthTag + Ciphertext
    */
   encrypt(plaintext: string): string {
-    const iv = crypto.randomBytes(this.ivLength);
-    const cipher = crypto.createCipheriv(this.algorithm, this.key, iv);
-
-    let encrypted = cipher.update(plaintext, 'utf8', 'base64');
-    encrypted += cipher.final('base64');
-
-    const authTag = cipher.getAuthTag();
-
-    // Combine IV + AuthTag + Ciphertext
-    const combined = Buffer.concat([
-      iv,
-      authTag,
-      Buffer.from(encrypted, 'base64'),
-    ]);
-
-    return combined.toString('base64');
+    return encryptWithKey(this.key, plaintext);
   }
 
   /**
    * Decrypts a base64-encoded encrypted string
    */
   decrypt(encryptedData: string): string {
-    const combined = Buffer.from(encryptedData, 'base64');
-
-    // Extract IV, AuthTag, and Ciphertext
-    const iv = combined.subarray(0, this.ivLength);
-    const authTag = combined.subarray(
-      this.ivLength,
-      this.ivLength + this.authTagLength,
-    );
-    const ciphertext = combined.subarray(this.ivLength + this.authTagLength);
-
-    const decipher = crypto.createDecipheriv(this.algorithm, this.key, iv);
-    decipher.setAuthTag(authTag);
-
-    let decrypted = decipher.update(ciphertext);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
-
-    return decrypted.toString('utf8');
+    return decryptWithKey(this.key, encryptedData);
   }
 
   /**

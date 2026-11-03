@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
   forwardRef,
+  Optional,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
@@ -38,6 +39,8 @@ import {
 import { closedWithoutPaymentError } from '../orders/close-without-payment';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { TseSigningService } from '../tse/tse-signing.service';
+import type { TseReceiptView } from '../tse/tse-view';
 import {
   cashReceivedMetadata,
   orderTaxTotal,
@@ -120,9 +123,13 @@ function mergeReason(
   return `${existing}; ${next}`.slice(0, 255);
 }
 
+/** Zahlung mit TSE-Daten ihres Kassenbelegs (null ohne aktive TSE). */
+export type PaymentWithTse = Payment & { tse?: TseReceiptView | null };
+
 export interface BatchPaymentResult {
   orders: Order[];
-  payments: Payment[];
+  /** Je Zahlung `tse` (Kassenbeleg) nach `afterCommit`. */
+  payments: PaymentWithTse[];
   totalPaid: number;
   change: number;
 }
@@ -132,6 +139,8 @@ export interface SettledBatch extends BatchPaymentResult {
   adjusted: Map<string, Record<string, unknown>>;
   /** Ohne Zahlung bezahlt (Rabatt deckt alles). */
   settledWithoutPayment: string[];
+  /** Belege ueber 0,00 fuer `settledWithoutPayment` (nach `afterCommit`). */
+  zeroReceipts?: TseReceiptView[];
 }
 
 @Injectable()
@@ -144,6 +153,8 @@ export class PaymentsBatchService {
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
     private readonly orderPrintService: OrderPrintService,
+    @Optional()
+    private readonly tseSigning?: TseSigningService,
   ) {}
 
   async payBatch(
@@ -155,7 +166,7 @@ export class PaymentsBatchService {
       this.settle(manager, organizationId, deviceId, dto),
     );
 
-    this.afterCommit(organizationId, outcome);
+    await this.afterCommit(organizationId, outcome);
 
     return {
       orders: outcome.orders,
@@ -428,9 +439,38 @@ export class PaymentsBatchService {
     } satisfies SettledBatch;
   }
 
-  /** Echtzeit-Events und Bondruck erst nach dem Commit. */
-  afterCommit(organizationId: string, outcome: SettledBatch) {
+  /**
+   * Nach dem Commit: zuerst die Kassenbelege ueber die Cloud-TSE
+   * signieren (falls aktiv; parallel, mit Zeitbudget, nie blockierend),
+   * dann Echtzeit-Events und Bondruck mit den TSE-Daten. Die Zahlungen im
+   * Ergebnis bekommen `tse` (Vertrag: tse-swissbit-plan.md §8).
+   */
+  async afterCommit(
+    organizationId: string,
+    outcome: SettledBatch,
+    actor: { deviceId?: string | null } = {},
+  ): Promise<void> {
     const orderById = new Map(outcome.orders.map((o) => [o.id, o]));
+
+    const tseSigning = this.tseSigning;
+    const [signed, zeroReceipts] = tseSigning
+      ? await Promise.all([
+          tseSigning.signPayments(outcome.payments.map((p) => p.id)),
+          Promise.all(
+            outcome.settledWithoutPayment.map((orderId) =>
+              tseSigning.signZeroReceipt(orderId, {
+                terminal: actor.deviceId ?? null,
+              }),
+            ),
+          ),
+        ])
+      : [new Map<string, TseReceiptView>(), [] as Array<TseReceiptView | null>];
+    for (const payment of outcome.payments) {
+      payment.tse = signed.get(payment.id) ?? null;
+    }
+    outcome.zeroReceipts = zeroReceipts.filter(
+      (view): view is TseReceiptView => view !== null,
+    );
 
     for (const [orderId, changes] of outcome.adjusted) {
       const order = orderById.get(orderId);
@@ -477,6 +517,7 @@ export class PaymentsBatchService {
           isFullyPaid: order.paymentStatus === PaymentStatus.PAID,
           order,
           amountReceived: payment.metadata?.amountReceived,
+          tse: signed.get(payment.id) ?? null,
         })
         .catch((err) =>
           this.logger.error(

@@ -6,6 +6,7 @@ import {
   Logger,
   Inject,
   forwardRef,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -46,6 +47,7 @@ import {
   CancelOrderDto,
   SelectedOptionDto,
 } from './dto';
+import { TseSigningService } from '../tse/tse-signing.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { Refund } from '../../database/entities/refund.entity';
@@ -135,6 +137,8 @@ export class OrdersService {
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
     private readonly configService: ConfigService,
+    @Optional()
+    private readonly tseSigning?: TseSigningService,
   ) {}
 
   async create(
@@ -221,6 +225,10 @@ export class OrdersService {
     }
 
     this.logger.log(`Order created: ${order.orderNumber} (${order.id})`);
+
+    // Cloud-TSE: Tischbestellung als Bestellvorgang (Bestellung-V1). Nicht
+    // blockierend; ohne aktive TSE passiert nichts.
+    void this.tseSigning?.signOrderCreated(order.id, { userId: user.id });
 
     // Trigger auto-printing asynchronously
     const createdOrder = await this.findOne(organizationId, order.id, user);
@@ -519,11 +527,17 @@ export class OrdersService {
     }
 
     const chargePfand = await this.shouldChargePfand(order);
-    await this.addItemToOrder(order, itemDto, user, chargePfand);
+    const added = await this.addItemToOrder(order, itemDto, user, chargePfand);
     await this.recalculateOrderTotals(order.id);
     await this.updateOrderStatus(order.id);
 
     this.logger.log(`Item added to order: ${order.orderNumber}`);
+    // Cloud-TSE: Aenderung einer abgesicherten Bestellung (Bestellung-V1).
+    void this.tseSigning?.signOrderChange(
+      order.id,
+      [{ item: added, quantity: added.quantity }],
+      { userId: user.id },
+    );
 
     return this.findOne(organizationId, orderId, user);
   }
@@ -569,8 +583,10 @@ export class OrdersService {
     }
 
     // Handle quantity change
+    let tseQuantityDiff = 0;
     if (updateDto.quantity && updateDto.quantity !== item.quantity) {
       const quantityDiff = updateDto.quantity - item.quantity;
+      tseQuantityDiff = quantityDiff;
 
       // Update stock
       if (item.product?.trackInventory) {
@@ -647,6 +663,13 @@ export class OrdersService {
     await this.recalculateOrderTotals(order.id);
 
     this.logger.log(`Item updated in order: ${order.orderNumber}`);
+    if (tseQuantityDiff !== 0) {
+      void this.tseSigning?.signOrderChange(
+        order.id,
+        [{ item, quantity: tseQuantityDiff }],
+        { userId: user.id },
+      );
+    }
 
     return this.findOne(organizationId, orderId, user);
   }
@@ -693,11 +716,22 @@ export class OrdersService {
     // Restore stock
     await this.restoreStockForItem(item, user.id);
 
+    const removed = {
+      productName: item.productName,
+      unitPrice: item.unitPrice,
+      optionsPrice: item.optionsPrice,
+      quantity: item.quantity,
+    };
     await this.orderItemRepository.remove(item);
     await this.recalculateOrderTotals(order.id);
     await this.updateOrderStatus(order.id);
 
     this.logger.log(`Item removed from order: ${order.orderNumber}`);
+    void this.tseSigning?.signOrderChange(
+      order.id,
+      [{ item: removed, quantity: -removed.quantity }],
+      { userId: user.id },
+    );
 
     return this.findOne(organizationId, orderId, user);
   }

@@ -64,6 +64,7 @@ import { DeployGuardModule } from './modules/deploy-guard/deploy-guard.module';
 import { AiModule } from './modules/ai';
 import { AssistantModule } from './modules/assistant';
 import { McpModule } from './modules/mcp';
+import { TseModule } from './modules/tse';
 
 @Module({
   imports: [
@@ -201,6 +202,7 @@ import { McpModule } from './modules/mcp';
     AssistantModule,
     // MCP-Server fuer KI-Agenten (/mcp, Auth per API-Token)
     McpModule,
+    TseModule,
   ],
   controllers: [],
   providers: [
