@@ -1048,12 +1048,20 @@ export class TseUnitService {
     } catch (e) {
       error = errorCodeOf(e);
     }
-    if (value?.certificate && !unit.certificate) {
-      // Aeltere TSEs: Zertifikat fuer die DSFinV-K nachtragen.
-      unit.certificate = value.certificate;
-      void this.unitRepository
-        .update(unit.id, { certificate: value.certificate })
-        .catch(() => undefined);
+    // Fehlende Angaben fuer die DSFinV-K (Stamm_TSE) nachtragen, z. B.
+    // bei TSEs, die vor dem Speichern des Zertifikats angelegt wurden.
+    const backfill: Partial<
+      Pick<TseUnit, 'certificate' | 'publicKey' | 'signatureAlgorithm'>
+    > = {};
+    if (value?.certificate && !unit.certificate)
+      backfill.certificate = value.certificate;
+    if (value?.publicKey && !unit.publicKey)
+      backfill.publicKey = value.publicKey;
+    if (value?.signatureAlgorithm && !unit.signatureAlgorithm)
+      backfill.signatureAlgorithm = value.signatureAlgorithm;
+    if (Object.keys(backfill).length > 0) {
+      Object.assign(unit, backfill);
+      void this.unitRepository.update(unit.id, backfill).catch(() => undefined);
     }
     const fetchedAt = Date.now();
     this.liveCache.set(unit.id, { value, error, fetchedAt });
