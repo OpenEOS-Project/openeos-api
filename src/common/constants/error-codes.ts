@@ -96,6 +96,32 @@ export const ErrorCodes = {
   // Das Upload-Verzeichnis gehoert nicht dem Container-Nutzer (EACCES),
   // ist schreibgeschuetzt oder voll — 503, Betreiber muss eingreifen
   UPLOAD_DIR_NOT_WRITABLE: 'UPLOAD_DIR_NOT_WRITABLE',
+
+  // Cloud-TSE (tse-swissbit-plan.md §8). Der Verkauf wirft nie TSE-Fehler;
+  // diese Codes kommen nur aus Einrichtung, Status und Verwaltung.
+  // Auf diesem Server ist keine Cloud-TSE eingerichtet (TSE_PROVIDER=none) — 503
+  TSE_NOT_AVAILABLE: 'TSE_NOT_AVAILABLE',
+  // Cloud-TSE nur fuer Organisationen in Deutschland — 400
+  TSE_COUNTRY_NOT_SUPPORTED: 'TSE_COUNTRY_NOT_SUPPORTED',
+  // Anlage nur mit bezahlter, laufender oder kommender Veranstaltung — 409
+  TSE_REQUIRES_PAID_EVENT: 'TSE_REQUIRES_PAID_EVENT',
+  // Anlage erst ab dem Monat der Veranstaltung (params.availableFrom) — 409
+  TSE_TOO_EARLY: 'TSE_TOO_EARLY',
+  // Super-Admin-Uebersteuerung ohne Begruendung — 400
+  TSE_OVERRIDE_REASON_REQUIRED: 'TSE_OVERRIDE_REASON_REQUIRED',
+  // Keine TSE fuer die Organisation — 404
+  TSE_NOT_FOUND: 'TSE_NOT_FOUND',
+  // Vorgang braucht eine aktive TSE — 409
+  TSE_NOT_ACTIVE: 'TSE_NOT_ACTIVE',
+  // Deaktivieren ist endgueltig und braucht `confirm: true` — 400
+  TSE_DEACTIVATION_CONFIRM_REQUIRED: 'TSE_DEACTIVATION_CONFIRM_REQUIRED',
+  // Integration ausschalten geht nur ohne aktive TSE — 409
+  TSE_ACTIVE_DEACTIVATE_FIRST: 'TSE_ACTIVE_DEACTIVATE_FIRST',
+  // Swissbit hat nicht oder mit Fehler geantwortet — 502
+  TSE_PROVIDER_ERROR: 'TSE_PROVIDER_ERROR',
+  TSE_EXPORT_NOT_FOUND: 'TSE_EXPORT_NOT_FOUND',
+  // Export noch nicht heruntergeladen oder Datei fehlt — 409
+  TSE_EXPORT_NOT_READY: 'TSE_EXPORT_NOT_READY',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -193,6 +219,27 @@ export const ErrorMessages: Record<ErrorCode, string> = {
     'Der Assistent ist gerade nicht erreichbar — bitte versuch es später noch einmal',
   [ErrorCodes.UPLOAD_DIR_NOT_WRITABLE]:
     'Der Upload-Ordner auf dem Server ist nicht beschreibbar – bitte den Betreiber informieren.',
+  [ErrorCodes.TSE_NOT_AVAILABLE]:
+    'Auf diesem Server ist keine Cloud-TSE eingerichtet',
+  [ErrorCodes.TSE_COUNTRY_NOT_SUPPORTED]:
+    'Die Cloud-TSE gibt es nur für Organisationen in Deutschland',
+  [ErrorCodes.TSE_REQUIRES_PAID_EVENT]:
+    'Eine Cloud-TSE wird erst mit einer bezahlten Veranstaltung angelegt',
+  [ErrorCodes.TSE_TOO_EARLY]:
+    'Die Cloud-TSE kann erst ab dem Monat deiner Veranstaltung angelegt werden',
+  [ErrorCodes.TSE_OVERRIDE_REASON_REQUIRED]:
+    'Bitte gib einen Grund für die Ausnahme an',
+  [ErrorCodes.TSE_NOT_FOUND]: 'Für diese Organisation gibt es keine Cloud-TSE',
+  [ErrorCodes.TSE_NOT_ACTIVE]: 'Die Cloud-TSE ist nicht aktiv',
+  [ErrorCodes.TSE_DEACTIVATION_CONFIRM_REQUIRED]:
+    'Das Deaktivieren der Cloud-TSE ist endgültig – bitte bestätige es ausdrücklich',
+  [ErrorCodes.TSE_ACTIVE_DEACTIVATE_FIRST]:
+    'Die Cloud-TSE ist noch aktiv. Deaktiviere sie zuerst ausdrücklich, dann kannst du die Integration ausschalten',
+  [ErrorCodes.TSE_PROVIDER_ERROR]:
+    'Die Cloud-TSE hat gerade nicht geantwortet – bitte versuch es später noch einmal',
+  [ErrorCodes.TSE_EXPORT_NOT_FOUND]: 'Export nicht gefunden',
+  [ErrorCodes.TSE_EXPORT_NOT_READY]:
+    'Der Export ist noch nicht abgeholt – bitte versuch es später noch einmal',
 };
 
 /**

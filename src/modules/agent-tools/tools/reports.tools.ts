@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { z } from 'zod';
 
 import {
@@ -10,6 +10,7 @@ import {
 } from '../../../database/entities';
 import { TokenScope } from '../../api-tokens/api-scopes';
 import type { QueryOrdersDto } from '../../orders/dto';
+import { TseSigningService } from '../../tse/tse-signing.service';
 import { OrdersService } from '../../orders/orders.service';
 import type { QueryReportsDto } from '../../reports/dto';
 import { ReportsService } from '../../reports/reports.service';
@@ -99,6 +100,7 @@ export class ReportTools {
   constructor(
     private readonly reports: ReportsService,
     private readonly orders: OrdersService,
+    @Optional() private readonly tseSigning?: TseSigningService,
   ) {}
 
   tools(): AgentTool[] {
@@ -303,12 +305,12 @@ export class ReportTools {
     return defineTool({
       name: 'get_order',
       description:
-        'One order with line items, anonymised (no guest or cashier data).',
+        'One order with line items, anonymised (no guest or cashier data), plus its Cloud-TSE records (kind, status, transaction number, signature counter, times; read-only).',
       inputSchema: z.object({ orderId: uuid }).strict(),
       scope: TokenScope.READ,
       mutating: false,
-      handler: async (ctx, input) =>
-        compactOrder(
+      handler: async (ctx, input) => {
+        const order = compactOrder(
           await this.orders.findOne(
             ctx.organizationId,
             input.orderId,
@@ -317,7 +319,25 @@ export class ReportTools {
           true,
           (await this.reports.getOperatingMode(ctx.organizationId)) ===
             'orders_only',
-        ),
+        );
+        // Cloud-TSE (nur lesend): Belege und Bestellvorgaenge ohne
+        // Signaturwerte, ohne Geraete- oder Personendaten.
+        const tse = (await this.tseSigning?.forOrder(input.orderId)) ?? [];
+        return {
+          ...order,
+          tse: tse.map((t) => ({
+            kind: t.kind,
+            status: t.status,
+            training: t.training,
+            processType: t.processType,
+            serialNumber: t.serialNumber,
+            transactionNumber: t.transactionNumber,
+            signatureCounter: t.signatureCounter,
+            startTime: t.startTime,
+            finishTime: t.finishTime,
+          })),
+        };
+      },
     });
   }
 }

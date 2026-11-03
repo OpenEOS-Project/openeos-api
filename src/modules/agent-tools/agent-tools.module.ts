@@ -1,4 +1,5 @@
 import { Module, OnModuleInit } from '@nestjs/common';
+import { TseModule } from '../tse/tse.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AdminAuditLog } from '../../database/entities';
@@ -41,6 +42,7 @@ import {
   imports: [
     TypeOrmModule.forFeature([AdminAuditLog]),
     OrganizationsModule,
+    TseModule,
     GatewayModule,
     EventsModule,
     CategoriesModule,

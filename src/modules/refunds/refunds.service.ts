@@ -7,11 +7,14 @@ import {
   Logger,
   NotFoundException,
   forwardRef,
+  Optional,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { DataSource, Repository, type EntityManager } from 'typeorm';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { TseSigningService } from '../tse/tse-signing.service';
+import type { TseReceiptView } from '../tse/tse-view';
 import {
   Device,
   Event,
@@ -216,6 +219,8 @@ export class RefundsService {
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
     private readonly orderHistoryService: OrderHistoryService,
+    @Optional()
+    private readonly tseSigning?: TseSigningService,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -1527,6 +1532,14 @@ export class RefundsService {
         );
       }
     }
+    // Cloud-TSE: war die Bestellung als Bestellvorgang abgesichert
+    // (Tischbetrieb), wird der Storno als Bestellung-V1 mit negativen
+    // Mengen signiert. Nicht blockierend.
+    void this.tseSigning?.signOrderChange(
+      order.id,
+      cancelled.lines.map((l) => ({ item: l.item, quantity: -l.quantity })),
+      { terminal: actor.deviceId, userId: actor.userId },
+    );
     // Storno-Bon nur fuer Positionen, die schon in der Kueche lagen.
     const kitchenLines = cancelled.lines.filter(
       (l) => l.previousStatus !== OrderItemStatus.DELIVERED,
@@ -1555,7 +1568,17 @@ export class RefundsService {
         this.logger.warn(`Failed to open cash drawer: ${String(e)}`);
       }
     }
-    for (const refund of outcome.refunds) {
+    // Cloud-TSE: je Erstattung ein Gegenbeleg (Kassenbeleg mit negativen
+    // Betraegen, Verweis auf den Ursprungsbeleg) — vor dem Druck.
+    const signed = await Promise.all(
+      outcome.refunds.map(
+        (refund) =>
+          this.tseSigning?.signRefund(refund) ?? Promise.resolve(null),
+      ),
+    );
+    for (const [index, refund] of outcome.refunds.entries()) {
+      const tse = signed[index];
+      (refund as RefundWithTse).tse = tse;
       const printed = await this.orderPrintService.printRefundReceipt(
         actor.organizationId,
         {
@@ -1563,12 +1586,16 @@ export class RefundsService {
           order: outcome.order,
           deviceId: actor.deviceId,
           deviceName: actor.deviceName,
+          tse,
         },
       );
       (refund as Refund & { printed?: boolean }).printed = printed;
     }
   }
 }
+
+/** Erstattung mit TSE-Daten ihres Gegenbelegs (null ohne aktive TSE). */
+export type RefundWithTse = Refund & { tse?: TseReceiptView | null };
 
 function isSumUpTerminal(payment: Payment): boolean {
   return (

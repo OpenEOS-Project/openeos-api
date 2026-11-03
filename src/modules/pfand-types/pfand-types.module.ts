@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { TseModule } from '../tse/tse.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PfandTypesController } from './pfand-types.controller';
 import { PfandTypesService } from './pfand-types.service';
@@ -14,6 +15,7 @@ import { GatewayModule } from '../gateway/gateway.module';
   imports: [
     TypeOrmModule.forFeature([PfandType, PfandReturn, UserOrganization]),
     forwardRef(() => GatewayModule),
+    TseModule,
   ],
   controllers: [PfandTypesController],
   providers: [PfandTypesService, PfandReturnsService],

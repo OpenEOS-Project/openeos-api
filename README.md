@@ -487,6 +487,15 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `AI_MAX_UPLOAD_MB` | Maximale Dateigröße je hochgeladener Speisekarte | 10 |
 | `ORGANIZATIONS_PER_USER_LIMIT` | Höchstzahl Organisationen, in denen ein Benutzer Mitglied sein darf (Anlegen und Einladung annehmen); 0 = unbegrenzt | 5 |
 | `MEMBERS_PER_ORGANIZATION_LIMIT` | Höchstzahl Mitglieder je Organisation, aktive Mitglieder plus offene Einladungen; 0 = unbegrenzt | 10 |
+| `TSE_PROVIDER` | Cloud-TSE: `none` oder `swissbit` (siehe „Cloud-TSE“) | none |
+| `TSE_LIFECYCLE` | `persistent` (TSE bleibt aktiv) oder `per_event` (nach dem letzten bezahlten Fest des Monats Abschlussexport + Deaktivierung) | persistent |
+| `SWISSBIT_BASE_URL` | Swissbit Cloud-TSE 2 (Dev: `https://dev.web-tse.de`) | https://web-tse.de |
+| `SWISSBIT_VENDOR_CLIENT` / `SWISSBIT_VENDOR_SECRET` | Vendor-Zugang (Billing API: Credit Token anlegen, Nutzungsbericht, Notfall-Deaktivierung) | – |
+| `SWISSBIT_CREDIT_CLIENT_ID` / `SWISSBIT_CREDIT_CLIENT_SECRET` | Credit Token der Plattform, legt TSEs an (`pnpm tse:create-credit-token`) | – |
+| `SWISSBIT_PRODUCT_TYPE` | Produkttyp aus `validProductTypes` des Credit Tokens (z. B. 850007 = M) | – |
+| `TSE_ENCRYPTION_KEY` | Schlüssel für die Access Tokens der TSEs (leer: `TWO_FACTOR_ENCRYPTION_KEY`) — sichern! | – |
+| `TSE_EXPORT_DIR` | Ablage der TAR-Exporte (nicht öffentlich) | `UPLOAD_DIR/tse-exports` |
+| `TSE_TX_TIMEOUT_MS` / `TSE_SIGN_BUDGET_MS` / `TSE_ADMIN_TIMEOUT_MS` | Zeitlimit je Transaktionsaufruf / Gesamtbudget je Vorgang / Verwaltung | 5000 / 8000 / 15000 |
 
 Siehe `.env.example` für alle verfügbaren Variablen.
 
@@ -555,6 +564,56 @@ Modell-IDs stehen in der Konfiguration (`AI_MODEL_EXTRACT`, `AI_MODEL_CLASSIFY`)
 **Sicherheit.** Speisekarten sind fremder Inhalt: Das Modell liefert ausschließlich strukturierte Ausgabe gegen ein festes Schema, Text wird als `<untrusted>`-Daten übergeben, die Antwort wird vor dem Speichern Zeile für Zeile mit class-validator geprüft und nur als Vorschlag gespeichert — angelegt wird erst, was ein Mensch in der Vorschau bestätigt. Dateiinhalte und Schlüssel erscheinen nie im Log.
 
 **Icon-Vorschläge.** `POST /api/organizations/:orgId/assistant/icon-suggestions { names[] }`. Stufe 1 ohne Modell: Namen und Suchbegriffe der Icons aus `@openeos/pos-icons` (schlanker Index im Repo, `pnpm icons:sync` nach einem Paket-Update). Stufe 2 nur für unklare Namen und nur mit freiem Kontingent: das Klassifikationsmodell wählt aus den zehn besten Kandidaten — oder ausdrücklich keines. Jeder Vorschlag trägt `source` (`lexical`: Treffer im Index, Score bis 1; `model`: Modellwahl, Score 0,6/0,5 je Sicherheit); ein leeres `suggestions`-Array heißt „kein passendes Icon“. Die Web-App sollte nur `lexical`-Treffer automatisch vorauswählen.
+
+## Cloud-TSE (Swissbit)
+
+Kassensicherung nach § 146a AO über die Swissbit Cloud-TSE 2 — als
+Integration `tse` wie SumUp (Plan und API-Vertrag:
+`tse-swissbit-plan.md` §8 im Projektordner).
+
+- **Je Organisation eine TSE mit genau einem Client** (`OEOS-<12 Hex der
+  Org-ID>`). Kassen-Geräte sind Terminals dieser einen Kasse; das Gerät
+  steht in `tse_transactions.terminal`.
+- **Signiert wird serverseitig nach dem Speichern, vor dem Bon**: jede
+  Zahlung (`Kassenbeleg-V1`), jede Erstattung (negativ, mit Verweis),
+  jede Pfand-Auszahlung, Tischbestellungen (`Bestellung-V1`). Testmodus
+  mit aktiver TSE = Trainingsbuchung (`AVTraining`). Online-Vorkasse
+  (Shop, QR mit PayPal) wird nicht signiert.
+- **Ausfall**: Der Verkauf läuft immer weiter. Der Vorgang wird `failed`,
+  der Bon trägt „TSE ausgefallen“, ein Ausfall wird protokolliert
+  (`tse_outages`) und die Admins bekommen eine Mail. Kein Nachsignieren;
+  hängende Transaktionen schließt der Abgleich (alle 5 Minuten) mit
+  `AVBelegabbruch`.
+- **Kosten**: Eine TSE kostet ab dem Anlegen Aktivierung + volle Monate
+  bis zur endgültigen Deaktivierung. Angelegt wird sie deshalb nur mit
+  einer bezahlten Veranstaltung und frühestens im Monat ihres Beginns —
+  automatisch stündlich ab 5 Uhr am ersten Geschäftstag des Fests, oder
+  vom Admin mit `POST /organizations/:id/tse`. Super-Admins können mit
+  Begründung übersteuern. `TSE_LIFECYCLE=per_event` deaktiviert nach dem
+  letzten Fest des Monats.
+- **Exporte**: Täglich 06:15 (Berlin) holt der Server alle Exporte (auch
+  Swissbits automatische Nachtexporte) als TAR mit SHA-256 nach
+  `TSE_EXPORT_DIR/<org>/<seriennummer>/<zeitraum>.tar` und löscht sie erst
+  danach bei Swissbit (sonst nimmt Swissbit keine neuen Exporte an).
+  Der Ordner wird nicht unter `/uploads` ausgeliefert. **Aufbewahrung 10
+  Jahre** — den Ordner ins Backup aufnehmen.
+
+Einrichtung:
+
+1. Vendor-Zugang von Swissbit in `SWISSBIT_VENDOR_CLIENT`/`SECRET`.
+2. Einmal einen Credit Token anlegen und die ausgegebenen Zeilen in die
+   `.env` übernehmen (das Secret zeigt Swissbit nur einmal):
+   `pnpm -s tse:create-credit-token > swissbit-credit.env`
+   (Optionen `--remaining-tses N`, `--product-types 850007,850006`).
+   Im Produktions-Container ohne Dev-Abhängigkeiten:
+   `node dist/scripts/tse-create-credit-token.js > swissbit-credit.env`.
+3. `SWISSBIT_PRODUCT_TYPE` aus den ausgegebenen `validProductTypes`
+   wählen, `TSE_PROVIDER=swissbit`, `TSE_ENCRYPTION_KEY` setzen und sichern.
+
+Test gegen die Swissbit-Entwicklungsumgebung (nie in CI; nutzt den
+Zustand in `~/.config/openeos/swissbit-dev-state.json` und legt höchstens
+dann eine TSE an, wenn keine mehr existiert):
+`SWISSBIT_INTEGRATION=1 pnpm test -- swissbit.integration`.
 
 ## MCP (KI-Agenten)
 

@@ -13,6 +13,7 @@ import {
   Req,
   Res,
   StreamableFile,
+  Optional,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import {
@@ -24,6 +25,7 @@ import {
 } from '@nestjs/swagger';
 import { OrganizationsService } from './organizations.service';
 import { GatewayService } from '../gateway/gateway.service';
+import { TseStatusService } from '../tse/tse-status.service';
 import { DevicesService } from '../devices/devices.service';
 import {
   CreateOrganizationDto,
@@ -56,6 +58,8 @@ export class OrganizationsController {
     private readonly devicesService: DevicesService,
     private readonly operatingModeService: OperatingModeService,
     private readonly countryService: CountryService,
+    @Optional()
+    private readonly tseStatus?: TseStatusService,
   ) {}
 
   @Post()
@@ -98,6 +102,9 @@ export class OrganizationsController {
         // operatingMode, operatingModeLegacy, operatingModeSince,
         // tseActive, cashAllowed, pricesVisible
         ...operatingModeView(organization),
+        // Cloud-TSE: { available, integrationEnabled, active, state,
+        // serialNumber, clientId } (tse-swissbit-plan.md §8)
+        tse: (await this.tseStatus?.summary(organization)) ?? null,
       },
     };
   }
@@ -131,18 +138,27 @@ export class OrganizationsController {
   // PATCH wie alle anderen Aenderungen: die CORS-Konfiguration kennt kein PUT,
   // und ein Browser-Aufruf scheiterte schon an der Vorabfrage.
   @Patch(':id/integrations/:integrationId')
-  @ApiOperation({ summary: 'Enable or disable an integration (admins only)' })
+  @ApiOperation({
+    summary: 'Enable or disable an integration (admins only)',
+    description:
+      'Integrationen: `sumup`, `tse` (Cloud-TSE, nur Deutschland; Ausschalten mit aktiver TSE: 409 TSE_ACTIVE_DEACTIVATE_FIRST — erst ausdrücklich deaktivieren).',
+  })
   async setIntegration(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('integrationId') integrationId: string,
     @Body() updateDto: UpdateIntegrationDto,
     @CurrentUser() user: User,
+    @Req() request: Request,
   ) {
     const organization = await this.organizationsService.setIntegrationEnabled(
       id,
       integrationId,
       updateDto.enabled,
       user,
+      {
+        ipAddress: request.ip ?? null,
+        userAgent: request.headers['user-agent'] ?? null,
+      },
     );
     this.gatewayService.notifyOrganizationSettingsUpdated(organization.id);
     return { data: organization };

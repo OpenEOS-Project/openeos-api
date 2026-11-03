@@ -5,6 +5,7 @@ import {
   ConflictException,
   ForbiddenException,
   Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, IsNull } from 'typeorm';
@@ -44,6 +45,11 @@ import {
 import { recordInitialCountry } from './country/country.writes';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { ConfigService } from '@nestjs/config';
+import { TseConfig } from '../tse/tse.config';
+import {
+  AdminAction,
+  AdminAuditLog,
+} from '../../database/entities/admin-audit-log.entity';
 import { DeploymentService } from '../../common/services/deployment.service';
 import { OrganizationLimitsService } from '../../common/services/organization-limits.service';
 import { restoreMaskedCredentials } from '../../common/utils/response-redaction.util';
@@ -371,6 +377,7 @@ export class OrganizationsService {
     integrationId: string,
     enabled: boolean,
     user: User,
+    meta: { ipAddress?: string | null; userAgent?: string | null } = {},
   ): Promise<Organization> {
     const organization = await this.findOne(id, user);
     await this.checkRole(organization.id, user, OrganizationRole.ADMIN);
@@ -380,6 +387,9 @@ export class OrganizationsService {
         code: ErrorCodes.INTEGRATION_NOT_FOUND,
         message: 'Integration nicht gefunden',
       });
+    }
+    if (integrationId === 'tse') {
+      await this.assertTseIntegrationChange(organization, enabled);
     }
 
     const entry = enabled
@@ -405,8 +415,73 @@ export class OrganizationsService {
     this.logger.log(
       `Integration ${integrationId} ${enabled ? 'enabled' : 'disabled'} for organization ${organization.id}`,
     );
+    if (integrationId === 'tse') {
+      // Einschalten heisst „der Verein will eine Cloud-TSE“ (Kosten ab
+      // Anlage) — deshalb im Protokoll wie die Assistent-Funktionen.
+      await this.dataSource
+        .getRepository(AdminAuditLog)
+        .save(
+          this.dataSource.getRepository(AdminAuditLog).create({
+            adminUserId: user.id,
+            organizationId: organization.id,
+            action: enabled
+              ? AdminAction.TSE_INTEGRATION_ENABLED
+              : AdminAction.TSE_INTEGRATION_DISABLED,
+            resourceType: 'organization',
+            resourceId: organization.id,
+            details: { integration: 'tse', enabled },
+            ipAddress: (meta.ipAddress || '0.0.0.0').slice(0, 45),
+            userAgent: meta.userAgent?.slice(0, 500) ?? null,
+          }),
+        )
+        .catch((error: Error) =>
+          this.logger.error(
+            `Audit for tse integration not written: ${error.message}`,
+          ),
+        );
+    }
 
     return this.findOne(organization.id, user);
+  }
+
+  /**
+   * Cloud-TSE als Integration: nur in Deutschland und nur, wenn der Server
+   * eine TSE anbieten kann. Ausschalten mit laufender TSE geht nicht — die
+   * Deaktivierung ist endgueltig und braucht ihren eigenen, ausdruecklich
+   * bestaetigten Schritt (POST /organizations/:id/tse/deactivate).
+   */
+  private async assertTseIntegrationChange(
+    organization: Organization,
+    enabled: boolean,
+  ): Promise<void> {
+    if (enabled) {
+      if ((organization.country ?? '').toUpperCase() !== 'DE') {
+        throw new BadRequestException({
+          code: ErrorCodes.TSE_COUNTRY_NOT_SUPPORTED,
+          message:
+            'Die Cloud-TSE gibt es nur für Organisationen in Deutschland',
+        });
+      }
+      if (!new TseConfig(this.configService).enabled) {
+        throw new ServiceUnavailableException({
+          code: ErrorCodes.TSE_NOT_AVAILABLE,
+          message: 'Auf diesem Server ist keine Cloud-TSE eingerichtet',
+        });
+      }
+      return;
+    }
+    const live: unknown = await this.dataSource.query(
+      `SELECT 1 FROM tse_units
+        WHERE organization_id = $1 AND state IN ('creating', 'active') LIMIT 1`,
+      [organization.id],
+    );
+    if (Array.isArray(live) && live.length > 0) {
+      throw new ConflictException({
+        code: ErrorCodes.TSE_ACTIVE_DEACTIVATE_FIRST,
+        message:
+          'Die Cloud-TSE ist noch aktiv. Deaktiviere sie zuerst ausdrücklich (endgültig), dann kannst du die Integration ausschalten.',
+      });
+    }
   }
 
   async remove(id: string, user: User): Promise<void> {

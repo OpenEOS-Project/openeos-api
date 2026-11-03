@@ -14,6 +14,7 @@ import {
   ForbiddenException,
   GoneException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -58,6 +59,9 @@ import { SelectedOptionDto } from '../orders/dto';
 import { CreatePaymentDto } from '../payments/dto';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
+import { TseSigningService } from '../tse/tse-signing.service';
+import { TseStatusService } from '../tse/tse-status.service';
+import type { TseReceiptView } from '../tse/tse-view';
 import {
   assertCashAllowed,
   assertPaymentsAllowed,
@@ -179,6 +183,10 @@ export class DeviceApiController {
     private readonly refundsService: RefundsService,
     private readonly orderHistoryService: OrderHistoryService,
     private readonly printerAgentsService: PrinterAgentsService,
+    @Optional()
+    private readonly tseSigning?: TseSigningService,
+    @Optional()
+    private readonly tseStatus?: TseStatusService,
   ) {}
 
   @Get('organization')
@@ -208,6 +216,9 @@ export class DeviceApiController {
         // pricesVisible. Die Kasse richtet Preise, Zahlarten und Abschluss
         // danach; der Server prueft jede Zahlung trotzdem selbst.
         ...operatingModeView(organization),
+        // Cloud-TSE: { available, integrationEnabled, active, state,
+        // serialNumber, clientId } (tse-swissbit-plan.md §8).
+        tse: (await this.tseStatus?.summary(organization)) ?? null,
       },
     };
   }
@@ -655,6 +666,8 @@ export class DeviceApiController {
       order: Order;
       stockChanges: Product[];
       settled: SettledBatch | null;
+      /** Summe 0 ohne Zahlung als bezahlt markiert (Beleg ueber 0,00). */
+      zeroPaid?: boolean;
     };
     try {
       created = await this.orderRepository.manager.transaction(
@@ -797,7 +810,12 @@ export class DeviceApiController {
             completeOrder.paymentStatus = PaymentStatus.PAID;
             completeOrder.paidAmount = 0;
             await manager.save(completeOrder);
-            return { order: completeOrder, stockChanges, settled: null };
+            return {
+              order: completeOrder,
+              stockChanges,
+              settled: null,
+              zeroPaid: true,
+            };
           }
 
           // „Sofort kassieren“: keine unbezahlte Bestellung aus der Kasse —
@@ -861,6 +879,18 @@ export class DeviceApiController {
       `Device order created: ${completeOrder.orderNumber} (${completeOrder.id}) by device ${device.name}`,
     );
 
+    // Cloud-TSE: Bestellvorgang (Tisch ohne sofortige Zahlung) bzw. Beleg
+    // ueber 0,00 — laeuft parallel zum Kuechenbon, die Antwort wartet.
+    const orderSigning: Promise<TseReceiptView | null> = created.settled
+      ? Promise.resolve(null)
+      : created.zeroPaid
+        ? (this.tseSigning?.signZeroReceipt(completeOrder.id, {
+            terminal: device.id,
+          }) ?? Promise.resolve(null))
+        : (this.tseSigning?.signOrderCreated(completeOrder.id, {
+            terminal: device.id,
+          }) ?? Promise.resolve(null));
+
     // Print station tickets and notify admin order list
     if (completeOrder.items && completeOrder.items.length > 0) {
       // Kitchen/station ticket printing is handled centrally by
@@ -912,12 +942,21 @@ export class DeviceApiController {
         );
     }
 
-    // Zahlungsereignisse und Kassenbon nach dem Küchenbon.
+    // Zahlungsereignisse und Kassenbon nach dem Küchenbon; die Kassenbelege
+    // werden vorher signiert (TSE), der Bon traegt die Signatur.
     if (created.settled) {
-      this.paymentsBatchService.afterCommit(organizationId, created.settled);
+      await this.paymentsBatchService.afterCommit(
+        organizationId,
+        created.settled,
+        { deviceId: device.id },
+      );
     }
 
-    return { data: completeOrder };
+    return {
+      data: Object.assign(completeOrder, {
+        tseTransactions: collectTseViews(await orderSigning, created.settled),
+      }),
+    };
   }
 
   /**
@@ -945,8 +984,13 @@ export class DeviceApiController {
         orderIds: [...others.filter((id) => id !== existing.id), existing.id],
       }),
     );
-    this.paymentsBatchService.afterCommit(organizationId, settled);
-    return settled.orders.find((o) => o.id === existing.id) ?? existing;
+    await this.paymentsBatchService.afterCommit(organizationId, settled, {
+      deviceId: device.id,
+    });
+    const order = settled.orders.find((o) => o.id === existing.id) ?? existing;
+    return Object.assign(order, {
+      tseTransactions: collectTseViews(null, settled),
+    });
   }
 
   @Post('payments')
@@ -1053,6 +1097,10 @@ export class DeviceApiController {
     // NOT re-open it here on confirm — that would pop the drawer again after
     // they already closed it.
 
+    // Cloud-TSE: Kassenbeleg signieren, bevor der Bon entsteht (wirft nie;
+    // bei Ausfall traegt der Bon den Vermerk).
+    const tse = (await this.tseSigning?.signPayment(payment.id)) ?? null;
+
     // Auto-print receipt on payment_received trigger (with device fallback).
     this.orderPrintService
       .handlePaymentReceived(organizationId, {
@@ -1064,6 +1112,7 @@ export class DeviceApiController {
         isFullyPaid,
         order,
         amountReceived: payment.metadata?.amountReceived,
+        tse,
       })
       .catch((err) =>
         this.logger.error(
@@ -1071,7 +1120,7 @@ export class DeviceApiController {
         ),
       );
 
-    return { data: payment };
+    return { data: Object.assign(payment, { tse }) };
   }
 
   @Post('payments/split')
@@ -1216,6 +1265,9 @@ export class DeviceApiController {
       `Device split payment created: ${payment.id} for order ${order.orderNumber}`,
     );
 
+    // Cloud-TSE: Kassenbeleg der Teilzahlung (bezahlte Positionen).
+    const tse = (await this.tseSigning?.signPayment(payment.id)) ?? null;
+
     // Kassenbon wie bei der Einzelzahlung (fehlte bei Split-Zahlungen).
     this.orderPrintService
       .handlePaymentReceived(organizationId, {
@@ -1227,6 +1279,7 @@ export class DeviceApiController {
         isFullyPaid,
         order,
         amountReceived: payment.metadata?.amountReceived,
+        tse,
       })
       .catch((err) =>
         this.logger.error(
@@ -1251,7 +1304,7 @@ export class DeviceApiController {
       }
     }
 
-    return { data: payment };
+    return { data: Object.assign(payment, { tse }) };
   }
 
   // Cash Drawer
@@ -1612,6 +1665,7 @@ export class DeviceApiController {
           paymentMethod: r.paymentMethod,
           status: r.status,
           printed: (r as typeof r & { printed?: boolean }).printed ?? false,
+          tse: (r as typeof r & { tse?: unknown }).tse ?? null,
         })),
         order: await this.orderHistoryService.detail(organizationId, orderId),
       },
@@ -1694,6 +1748,8 @@ export class DeviceApiController {
       }
 
       await this.orderPrintService.handlePaymentReceived(organizationId, {
+        // Nachdruck: gespeicherte TSE-Daten, keine neue Transaktion.
+        tse: (await this.tseSigning?.forPayment(lastPayment.id)) ?? null,
         orderId: order.id,
         orderNumber: order.orderNumber,
         paymentId: lastPayment.id,
@@ -2056,4 +2112,22 @@ export class DeviceApiController {
         return PaymentProvider.CASH;
     }
   }
+}
+
+/**
+ * TSE-Vorgaenge einer Kassen-Anfrage fuer die Antwort (`tseTransactions`):
+ * Bestellvorgang bzw. 0,00-Beleg, Kassenbelege der Zahlungen, 0,00-Belege
+ * der Sammelzahlung. Leer ohne aktive TSE.
+ */
+function collectTseViews(
+  orderView: TseReceiptView | null,
+  settled: SettledBatch | null,
+): TseReceiptView[] {
+  const views: TseReceiptView[] = [];
+  if (orderView) views.push(orderView);
+  for (const payment of settled?.payments ?? []) {
+    if (payment.tse) views.push(payment.tse);
+  }
+  views.push(...(settled?.zeroReceipts ?? []));
+  return views;
 }

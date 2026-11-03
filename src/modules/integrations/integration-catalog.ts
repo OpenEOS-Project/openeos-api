@@ -7,10 +7,16 @@ import { ErrorCodes } from '../../common/constants/error-codes';
  * Bewusst eine feste Liste statt freier Schluessel: der Schalter landet in
  * den frei formbaren Einstellungen (`settings.integrations.<id>`), und ohne
  * Liste koennte jeder Admin dort beliebige Eintraege anlegen. Eine neue
- * Integration (etwa Stripe oder die TSE) kommt hier dazu und wird an ihren
- * Endpunkten mit `assertIntegrationEnabled` abgesichert.
+ * Integration (etwa Stripe) kommt hier dazu und wird an ihren Endpunkten
+ * mit `assertIntegrationEnabled` abgesichert.
+ *
+ * - `sumup`: Kartenzahlung.
+ * - `tse`: Cloud-TSE (Kassensicherung, tse-swissbit-plan.md §8). Einschalten
+ *   heisst „der Verein will eine Cloud-TSE“; angelegt wird sie erst mit
+ *   einer bezahlten Veranstaltung (TseUnitService). Ausschalten geht nur
+ *   ohne aktive TSE (409 TSE_ACTIVE_DEACTIVATE_FIRST).
  */
-export const INTEGRATION_IDS = ['sumup'] as const;
+export const INTEGRATION_IDS = ['sumup', 'tse'] as const;
 
 export type IntegrationId = (typeof INTEGRATION_IDS)[number];
 

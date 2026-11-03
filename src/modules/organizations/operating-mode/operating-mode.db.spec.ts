@@ -81,12 +81,16 @@ describeWithDb('Operating modes: migration of the interim states', () => {
     ds = dataSource(url.toString());
     await ds.initialize();
 
-    // Zurueck auf den Stand vor den Betriebsarten (Zwischenloesungen).
-    const last = await ds.query<{ name: string }[]>(
-      `SELECT name FROM migrations ORDER BY id DESC LIMIT 1`,
-    );
-    expect(last[0].name).toBe('IntroduceOperatingModes1834000000000');
-    await ds.undoLastMigration();
+    // Zurueck auf den Stand vor den Betriebsarten (Zwischenloesungen):
+    // spaetere Migrationen zuerst zuruecknehmen.
+    for (;;) {
+      const last = await ds.query<{ name: string }[]>(
+        `SELECT name FROM migrations ORDER BY id DESC LIMIT 1`,
+      );
+      const name = last[0].name;
+      await ds.undoLastMigration();
+      if (name === 'IntroduceOperatingModes1834000000000') break;
+    }
 
     const org = (
       id: string,

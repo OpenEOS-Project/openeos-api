@@ -129,6 +129,27 @@ export const validationSchema = Joi.object({
   AI_CLASSIFY_PER_DAY: Joi.number().integer().min(0).default(500),
   AI_MAX_UPLOAD_MB: Joi.number().integer().min(1).max(50).default(10),
 
+  // Cloud-TSE (tse-swissbit-plan.md §8, README „Cloud-TSE“). Leere Werte
+  // (z. B. `${SWISSBIT_BASE_URL:-}` in docker-compose) gelten wie nicht
+  // gesetzt.
+  TSE_PROVIDER: Joi.string().valid('none', 'swissbit', '').default('none'),
+  TSE_LIFECYCLE: Joi.string()
+    .valid('persistent', 'per_event', '')
+    .default('persistent'),
+  SWISSBIT_BASE_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .allow(''),
+  SWISSBIT_VENDOR_CLIENT: Joi.string().allow(''),
+  SWISSBIT_VENDOR_SECRET: Joi.string().allow(''),
+  SWISSBIT_CREDIT_CLIENT_ID: Joi.string().allow(''),
+  SWISSBIT_CREDIT_CLIENT_SECRET: Joi.string().allow(''),
+  SWISSBIT_PRODUCT_TYPE: Joi.string().allow(''),
+  TSE_ENCRYPTION_KEY: Joi.string().allow(''),
+  TSE_EXPORT_DIR: Joi.string().allow(''),
+  TSE_TX_TIMEOUT_MS: Joi.number().integer().min(500).max(60000).empty(''),
+  TSE_SIGN_BUDGET_MS: Joi.number().integer().min(500).max(120000).empty(''),
+  TSE_ADMIN_TIMEOUT_MS: Joi.number().integer().min(1000).max(300000).empty(''),
+
   // Empfänger für Support-Nachrichten und Kontaktanfragen (optional)
   SUPPORT_NOTIFY_EMAIL: Joi.string().allow('').default(''),
 

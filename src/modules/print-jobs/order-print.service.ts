@@ -17,6 +17,7 @@ import { PrintJobsService } from './print-jobs.service';
 import { PrintRoutingService } from './print-routing.service';
 import { buildReceiptTax, cashChange } from './receipt-tax.util';
 import type { Refund } from '../../database/entities/refund.entity';
+import { tsePrintBlock, type TseReceiptView } from '../tse/tse-view';
 import {
   CANCELLATION_TICKET_TEMPLATE,
   REFUND_RECEIPT_TEMPLATE,
@@ -479,6 +480,11 @@ export class OrderPrintService {
       order: Order | null;
       /** Bei Barzahlung: erhaltener Betrag aus `payment.metadata`, fuers Rueckgeld. */
       amountReceived?: unknown;
+      /**
+       * TSE-Daten des Kassenbelegs (oder Ausfallvermerk). Der Bon entsteht
+       * erst nach der Signatur (AEAO zu § 146a Nr. 2.5).
+       */
+      tse?: TseReceiptView | null;
     },
   ): Promise<void> {
     try {
@@ -568,6 +574,7 @@ export class OrderPrintService {
               amount: data.amount,
               isFullyPaid: data.isFullyPaid,
               is_test: isTest,
+              tse: tsePrintBlock(data.tse),
             },
             null,
             'receipt',
@@ -596,6 +603,8 @@ export class OrderPrintService {
       deviceId: string | null;
       deviceName?: string | null;
       reprint?: boolean;
+      /** TSE-Daten des Gegenbelegs (oder Ausfallvermerk). */
+      tse?: TseReceiptView | null;
     },
   ): Promise<boolean> {
     try {
@@ -646,6 +655,7 @@ export class OrderPrintService {
           device_name: data.deviceName ?? null,
           reprint: data.reprint === true,
           is_test: isTest,
+          tse: tsePrintBlock(data.tse),
         },
         null,
         REFUND_RECEIPT_TEMPLATE,

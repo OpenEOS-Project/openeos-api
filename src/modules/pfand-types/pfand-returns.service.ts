@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -20,6 +21,8 @@ import {
 } from '../../database/entities/pfand-return.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { GatewayService } from '../gateway/gateway.service';
+import { TseSigningService } from '../tse/tse-signing.service';
+import type { TseReceiptView } from '../tse/tse-view';
 import { CreatePfandReturnDto } from './dto';
 
 interface PfandReturnContext {
@@ -39,6 +42,8 @@ export class PfandReturnsService {
     @InjectRepository(PfandType)
     private readonly pfandTypeRepository: Repository<PfandType>,
     private readonly gatewayService: GatewayService,
+    @Optional()
+    private readonly tseSigning?: TseSigningService,
   ) {}
 
   /**
@@ -54,7 +59,7 @@ export class PfandReturnsService {
     organizationId: string,
     dto: CreatePfandReturnDto,
     context: PfandReturnContext = {},
-  ): Promise<PfandReturn> {
+  ): Promise<PfandReturn & { tse: TseReceiptView | null }> {
     const organization = await this.pfandReturnRepository.manager.findOne(
       Organization,
       { where: { id: organizationId }, select: OPERATING_MODE_SELECT },
@@ -150,6 +155,8 @@ export class PfandReturnsService {
       },
     );
 
-    return pfandReturn;
+    // Cloud-TSE: Auszahlung als Kassenbeleg mit negativem Betrag (bar).
+    const tse = (await this.tseSigning?.signPfandReturn(pfandReturn)) ?? null;
+    return Object.assign(pfandReturn, { tse });
   }
 }

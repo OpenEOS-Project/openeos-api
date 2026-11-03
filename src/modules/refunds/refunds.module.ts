@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { TseModule } from '../tse/tse.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   Order,
@@ -29,6 +30,7 @@ import { RefundsService } from './refunds.service';
     forwardRef(() => GatewayModule),
     forwardRef(() => PrintJobsModule),
     SumUpModule,
+    TseModule,
   ],
   providers: [RefundsService, OrderHistoryService],
   exports: [RefundsService, OrderHistoryService],

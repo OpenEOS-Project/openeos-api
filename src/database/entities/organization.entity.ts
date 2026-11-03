@@ -340,6 +340,16 @@ export class Organization extends SoftDeleteEntity {
   })
   operatingModeSince: Date | null;
 
+  /**
+   * Hat die Organisation eine aktive Cloud-TSE? Gepflegt vom TSE-Modul
+   * (`true` beim Aktivieren, `false` beim Deaktivieren), damit
+   * `hasActiveTse` (tse.util.ts) ohne weitere Abfrage entscheiden kann —
+   * die Spalte steht deshalb in `OPERATING_MODE_SELECT`. Wirksam nur mit
+   * eingeschalteter Integration `tse`.
+   */
+  @Column({ name: 'tse_active', type: 'boolean', default: false })
+  tseActive: boolean;
+
   // Relations
   @OneToMany(() => UserOrganization, (userOrg) => userOrg.organization)
   userOrganizations: UserOrganization[];

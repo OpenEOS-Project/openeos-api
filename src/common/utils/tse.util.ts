@@ -1,3 +1,5 @@
+import { isIntegrationEnabled } from '../../modules/integrations/integration-catalog';
+
 /**
  * Cloud-TSE der Organisation (technische Sicherheitseinrichtung, § 146a AO).
  *
@@ -5,28 +7,38 @@
  * zertifizierte TSE hat. In Deutschland haengt daran, ob die Betriebsart
  * `full` (mit Bargeld) waehlbar und wirksam ist (operating-mode.util.ts).
  *
- * Heute immer false: Die Anbindung der Swissbit Cloud-TSE folgt im
- * naechsten Schritt (betriebsarten-spec.md §5). Die TSE-Integration ersetzt
- * `tseStatus.isActive` — z. B. durch einen Blick auf eine von ihr gepflegte
- * Spalte, die `OPERATING_MODE_SELECT` dann mitlaedt. Alle Aufrufer (jede
- * Barzahlung, das Umschalten der Betriebsart, die Antworten an Oberflaeche
- * und Kasse) gehen ueber `hasActiveTse`, damit nichts weiter zu aendern ist.
+ * Aktiv heisst (tse-swissbit-plan.md §8): die Integration `tse` ist
+ * eingeschaltet **und** die TSE der Organisation ist im Zustand `active`.
+ * Den Zustand spiegelt das TSE-Modul in `organizations.tse_active`
+ * (TseUnitService), damit jede Barzahlung ohne Zusatzabfrage pruefen kann;
+ * die Spalte steht in `OPERATING_MODE_SELECT`.
  *
- * Tests setzen den Wert ueber `tseStatus.isActive` und stellen ihn danach
- * zurueck.
+ * Tests koennen den Wert ueber `tseStatus.isActive` setzen und stellen ihn
+ * danach mit `resetTseStatus()` zurueck.
  */
 export interface TseOrg {
   id?: string;
   country?: string | null;
+  settings?: object | null;
+  tseActive?: boolean | null;
+}
+
+/** Die echte Pruefung (Integration an + TSE aktiv). */
+export function isTseActiveForOrg(org: TseOrg): boolean {
+  return org.tseActive === true && isIntegrationEnabled(org.settings, 'tse');
 }
 
 export const tseStatus: {
-  isActive: (org: TseOrg | null | undefined) => boolean;
+  isActive: (org: TseOrg) => boolean;
 } = {
-  isActive: () => false,
+  isActive: isTseActiveForOrg,
 };
 
-/** Hat die Organisation eine aktive Cloud-TSE? (Heute: nie.) */
+export function resetTseStatus(): void {
+  tseStatus.isActive = isTseActiveForOrg;
+}
+
+/** Hat die Organisation eine aktive Cloud-TSE? */
 export function hasActiveTse(org: TseOrg | null | undefined): boolean {
   if (!org) return false;
   return tseStatus.isActive(org) === true;

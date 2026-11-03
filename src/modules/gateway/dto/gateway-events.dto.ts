@@ -339,6 +339,8 @@ export const GatewayEvents = {
 
   // Organization Events
   ORGANIZATION_SETTINGS_UPDATED: 'organizationSettingsUpdated',
+  // Cloud-TSE: Zustand oder Ausfall geaendert (Kasse zeigt die TSE-Pille)
+  TSE_STATUS_CHANGED: 'tseStatusChanged',
 
   // Assistent: Speisekarten-Import (Org-Raum, Web pollt zusaetzlich)
   MENU_IMPORT_UPDATED: 'menuImportUpdated',

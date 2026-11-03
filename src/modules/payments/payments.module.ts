@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TseModule } from '../tse/tse.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
@@ -26,6 +27,7 @@ import { RefundsModule } from '../refunds/refunds.module';
     ]),
     PrintJobsModule,
     RefundsModule,
+    TseModule,
   ],
   controllers: [PaymentsController],
   providers: [PaymentsService, PayPalService],

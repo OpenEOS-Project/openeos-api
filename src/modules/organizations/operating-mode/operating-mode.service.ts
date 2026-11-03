@@ -29,6 +29,7 @@ import {
   type OperatingMode,
   type OperatingModeOrg,
   type OperatingModeView,
+  OPERATING_MODE_SELECT,
 } from '../../../common/utils/operating-mode.util';
 import { hasActiveTse } from '../../../common/utils/tse.util';
 import { DeploymentService } from '../../../common/services/deployment.service';
@@ -70,6 +71,9 @@ interface LockedRow {
   operating_mode: string;
   operating_mode_legacy: boolean;
   operating_mode_since: Date | null;
+  // Fuer hasActiveTse: `full` in Deutschland nur mit aktiver Cloud-TSE.
+  tse_active?: boolean | null;
+  settings?: object | null;
 }
 
 function rowToOrg(id: string, row: LockedRow): OperatingModeOrg {
@@ -79,6 +83,8 @@ function rowToOrg(id: string, row: LockedRow): OperatingModeOrg {
     operatingMode: row.operating_mode,
     operatingModeLegacy: row.operating_mode_legacy,
     operatingModeSince: row.operating_mode_since,
+    tseActive: row.tse_active ?? false,
+    settings: row.settings ?? null,
   };
 }
 
@@ -285,7 +291,8 @@ export class OperatingModeService {
     organizationId: string,
   ): Promise<LockedRow> {
     const [row] = await manager.query<LockedRow[]>(
-      `SELECT country, operating_mode, operating_mode_legacy, operating_mode_since
+      `SELECT country, operating_mode, operating_mode_legacy, operating_mode_since,
+              tse_active, settings
          FROM organizations
         WHERE id = $1 AND deleted_at IS NULL
         FOR UPDATE`,
@@ -307,13 +314,7 @@ export class OperatingModeService {
       .getRepository(Organization)
       .findOne({
         where: { id: organizationId },
-        select: {
-          id: true,
-          country: true,
-          operatingMode: true,
-          operatingModeLegacy: true,
-          operatingModeSince: true,
-        },
+        select: OPERATING_MODE_SELECT,
       });
     if (!organization) {
       throw new NotFoundException({

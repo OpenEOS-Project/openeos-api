@@ -10,6 +10,7 @@ import {
   Post,
   Query,
   UseGuards,
+  Optional,
 } from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -26,6 +27,7 @@ import { OrganizationSettings } from '../../database/entities/organization.entit
 import { GatewayService } from '../gateway/gateway.service';
 import { OrdersService } from '../orders/orders.service';
 import { BatchPaymentDto } from '../payments/dto/batch-payment.dto';
+import { TseStatusService } from '../tse/tse-status.service';
 import { PaymentsBatchService } from '../payments/payments-batch.service';
 import { tableKey } from '../tables/tables.constants';
 import { TablesService } from '../tables/tables.service';
@@ -112,6 +114,8 @@ export class DeviceTablesController {
     private readonly ordersService: OrdersService,
     private readonly paymentsBatchService: PaymentsBatchService,
     private readonly gatewayService: GatewayService,
+    @Optional()
+    private readonly tseStatus?: TseStatusService,
   ) {}
 
   @Get('tables')
@@ -270,7 +274,7 @@ export class DeviceTablesController {
   @ApiOperation({
     summary: 'Pay several open orders in one transaction',
     description:
-      'Alles oder nichts: ist eine Bestellung bereits bezahlt, kommt 409 ORDER_ALREADY_PAID und nichts wird gebucht.',
+      'Alles oder nichts: ist eine Bestellung bereits bezahlt, kommt 409 ORDER_ALREADY_PAID und nichts wird gebucht. Mit aktiver Cloud-TSE trägt jede Zahlung `tse` (Kassenbeleg oder Ausfallvermerk).',
   })
   async payBatch(
     @CurrentDevice() device: Device,
@@ -309,8 +313,9 @@ export class DeviceTablesController {
     return {
       data: {
         printer: printer ? printerStatus(printer) : null,
-        // Wird befuellt, sobald es eine TSE-Anbindung gibt.
-        tse: null,
+        // Cloud-TSE: null ohne Integration; sonst { state: 'ok' | 'error' |
+        // 'creating' | 'inactive', active, serialNumber, clientId, outage }.
+        tse: (await this.tseStatus?.deviceStatus(organizationId)) ?? null,
       },
     };
   }

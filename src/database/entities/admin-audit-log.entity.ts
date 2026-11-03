@@ -53,6 +53,14 @@ export enum AdminAction {
   SET_ORGANIZATION_COUNTRY = 'set_organization_country',
   /** @deprecated Bargeld-Regel der Zwischenloesung (2026-11-01); nur noch Altdaten. */
   SET_CASH_POLICY = 'set_cash_policy',
+  // Cloud-TSE (tse-swissbit-plan.md §8)
+  TSE_INTEGRATION_ENABLED = 'tse_integration_enabled',
+  TSE_INTEGRATION_DISABLED = 'tse_integration_disabled',
+  TSE_CREATION_REQUESTED = 'tse_creation_requested',
+  TSE_ACTIVATED = 'tse_activated',
+  TSE_CREATION_FAILED = 'tse_creation_failed',
+  TSE_DEACTIVATED = 'tse_deactivated',
+  TSE_EXPORT_REQUESTED = 'tse_export_requested',
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -37,6 +38,7 @@ import {
 import { closedWithoutPaymentError } from '../orders/close-without-payment';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
+import { TseSigningService } from '../tse/tse-signing.service';
 import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 
 @Injectable()
@@ -57,6 +59,8 @@ export class PaymentsService {
     @InjectRepository(Organization)
     private readonly organizationRepository: Repository<Organization>,
     private readonly orderPrintService: OrderPrintService,
+    @Optional()
+    private readonly tseSigning?: TseSigningService,
   ) {}
 
   async create(
@@ -144,6 +148,9 @@ export class PaymentsService {
       `Payment created: ${payment.id} for order ${order.orderNumber}`,
     );
 
+    // Cloud-TSE: Kassenbeleg vor dem Bon signieren (wirft nie).
+    const tse = (await this.tseSigning?.signPayment(payment.id)) ?? null;
+
     // Trigger auto-printing for payment
     this.orderPrintService
       .handlePaymentReceived(organizationId, {
@@ -155,12 +162,14 @@ export class PaymentsService {
         isFullyPaid: isFullyPaid,
         order,
         amountReceived: payment.metadata?.amountReceived,
+        tse,
       })
       .catch((err: Error) => {
         this.logger.error(`Failed to trigger payment printing: ${err.message}`);
       });
 
-    return this.findOne(organizationId, payment.id, user);
+    const created = await this.findOne(organizationId, payment.id, user);
+    return Object.assign(created, { tse });
   }
 
   async createSplitPayment(
@@ -284,6 +293,9 @@ export class PaymentsService {
       `Split payment created: ${payment.id} for order ${order.orderNumber}`,
     );
 
+    // Cloud-TSE: Kassenbeleg der Teilzahlung (zugeordnete Positionen).
+    const tse = (await this.tseSigning?.signPayment(payment.id)) ?? null;
+
     // Trigger auto-printing for payment
     const isFullyPaid = Number(order.paidAmount) >= Number(order.total);
     this.orderPrintService
@@ -296,12 +308,14 @@ export class PaymentsService {
         isFullyPaid,
         order,
         amountReceived: payment.metadata?.amountReceived,
+        tse,
       })
       .catch((err: Error) => {
         this.logger.error(`Failed to trigger payment printing: ${err.message}`);
       });
 
-    return this.findOne(organizationId, payment.id, user);
+    const created = await this.findOne(organizationId, payment.id, user);
+    return Object.assign(created, { tse });
   }
 
   async findAll(

@@ -305,6 +305,7 @@ export class OrdersController {
         paymentMethod: r.paymentMethod,
         status: r.status,
         printed: (r as typeof r & { printed?: boolean }).printed ?? false,
+        tse: (r as typeof r & { tse?: unknown }).tse ?? null,
       })),
       order: await this.orderHistoryService.detail(organizationId, orderId),
     };

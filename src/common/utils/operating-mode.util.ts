@@ -45,6 +45,8 @@ export function isOperatingMode(value: unknown): value is OperatingMode {
 export interface OperatingModeOrg {
   id?: string;
   country?: string | null;
+  settings?: object | null;
+  tseActive?: boolean | null;
   operatingMode?: string | null;
   operatingModeLegacy?: boolean | null;
   operatingModeSince?: Date | string | null;
@@ -63,6 +65,9 @@ export const OPERATING_MODE_SELECT = {
   operatingMode: true,
   operatingModeLegacy: true,
   operatingModeSince: true,
+  // hasActiveTse (tse.util.ts) liest sie; ohne sie saehe jede deutsche
+  // Organisation mit TSE wie eine ohne aus (Bargeld gesperrt).
+  tseActive: true,
 } as const;
 
 /** Unbekannt oder nicht geladen: `full` (wie jede Bestandsorganisation). */
