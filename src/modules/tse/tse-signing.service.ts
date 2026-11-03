@@ -40,7 +40,6 @@ import {
   PROCESS_TYPE_RECEIPT,
   bestellungProcessData,
   emptySlots,
-  isoFromUnix,
   kassenbelegProcessData,
   paymentTypeFor,
   slotsFromComposition,
@@ -804,7 +803,7 @@ export function refundComposition(
 /**
  * Sorgt dafuer, dass die Summe der Slots exakt dem Zahlbetrag entspricht
  * (Rundung, fehlende Positionen): die Differenz geht an den groessten
- * Slot, ohne Werte an den 0-%-Slot.
+ * Slot; sind alle Slots leer, an den 0-%-Slot.
  */
 export function fitSlots(slots: VatSlots, totalCents: number): VatSlots {
   const out = [...slots] as VatSlots;
@@ -854,5 +853,3 @@ function receiptLines(
       : {}),
   };
 }
-
-export { isoFromUnix };

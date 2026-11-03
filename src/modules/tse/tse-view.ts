@@ -1,6 +1,6 @@
 import type { TseTransaction } from '../../database/entities/tse-transaction.entity';
 import type { TseUnit } from '../../database/entities/tse-unit.entity';
-import { isoFromUnix, qrCodePayload } from './tse-process-data';
+import { qrCodePayload } from './tse-process-data';
 
 /** Hinweis auf Bon und Beleg bei Ausfall (AEAO zu § 146a Nr. 1.14). */
 export const TSE_FAILED_NOTICE = 'TSE ausgefallen';
@@ -169,5 +169,3 @@ export function tsePrintBlock(
     qr_code: view.qrCode,
   };
 }
-
-export { isoFromUnix };
