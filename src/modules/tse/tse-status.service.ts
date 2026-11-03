@@ -14,6 +14,7 @@ import { TseOutageService } from './tse-outage.service';
 import { TseSigningService } from './tse-signing.service';
 import { TseUnitService } from './tse-unit.service';
 import type { TseReceiptView } from './tse-view';
+import type { TsePostponement } from './tse-monthly-cycle.service';
 
 /** Kurzfassung fuer `GET /organizations/:id` und `GET /device-api/organization`. */
 export interface TseSummary {
@@ -48,6 +49,11 @@ export function tseSummaryOf(
   };
 }
 
+export function postponementsOf(unit: Pick<TseUnit, 'metadata'>) {
+  const list = unit.metadata?.postponements;
+  return Array.isArray(list) ? (list as TsePostponement[]) : [];
+}
+
 export function unitView(unit: TseUnit) {
   const iso = (d: Date | null | undefined) =>
     d ? new Date(d).toISOString() : null;
@@ -65,6 +71,13 @@ export function unitView(unit: TseUnit) {
     failedAt: iso(unit.failedAt),
     deactivatedAt: iso(unit.deactivatedAt),
     deactivationReason: unit.deactivationReason,
+    /* Lebenszyklus `monthly`: geplante Abmeldung (letzter Tag des Monats,
+       20:00 Berlin) und Verschiebungen wegen laufender Veranstaltungen. */
+    plannedDeactivationAt:
+      unit.state === 'active' || unit.state === 'creating'
+        ? iso(unit.plannedDeactivationAt)
+        : null,
+    postponements: postponementsOf(unit),
     certificationId: unit.certificationId,
     certificateExpiresAt: iso(unit.certificateExpiresAt),
     signatureAlgorithm: unit.signatureAlgorithm,

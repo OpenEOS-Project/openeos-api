@@ -1010,6 +1010,34 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject: options.subject, html });
   }
 
+  /**
+   * Warnung an den Betreiber zur Cloud-TSE (Monatsende-Abmeldung
+   * ueberfaellig, Gesundheitspruefung). Fuehrt zur Super-Admin-Liste.
+   */
+  async sendTsePlatformAlertEmail(options: {
+    to: string;
+    subject: string;
+    intro: string;
+    rows: [string, string][];
+    todo: { title: string; text: string } | null;
+  }): Promise<boolean> {
+    const html = rahmen({
+      kontext: 'Betrieb',
+      titel: `OpenEOS — ${options.subject}`,
+      preheader: options.intro,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift(options.subject),
+        absatz(options.intro),
+        datenblock('Details', options.rows),
+        options.todo ? hinweis(options.todo.title, options.todo.text) : null,
+        knopf(`${this.appUrl}/admin/tse`, 'TSE-Übersicht öffnen'),
+      ),
+    });
+    return this.sendEmail({ to: options.to, subject: options.subject, html });
+  }
+
   /** Hinweis an den Betreiber: eine Storno-Erstattung ist gescheitert. */
   async sendAdminEventRefundFailedNotification(options: {
     to: string;

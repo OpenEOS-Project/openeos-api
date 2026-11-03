@@ -902,6 +902,17 @@ paths:
       summary: All Cloud-TSE units (super admin)
       tags: &a9
         - Admin
+  /api/admin/tse/alerts:
+    get:
+      description: "Lebenszyklus `monthly`: ueberfaellige Abmeldungen zum Monatsende (nach 22:00 noch aktiv) und Ergebnisse der Gesundheitspruefung (aktive TSE in einem Monat ohne bezahlte Veranstaltung, fehlender Abmeldetermin). Leere Liste bei `persistent`."
+      operationId: tseAdmin_alerts
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      security: *a8
+      summary: Cloud-TSE alerts for the super-admin list (super admin)
+      tags: *a9
   /api/admin/tse/usage:
     get:
       description: "Nutzungsbericht der Swissbit Billing API für den Credit Token der Plattform: angelegte, aktive (berechnete) und deaktivierte TSEs des Monats, je TSE mit Organisation."
@@ -6984,6 +6995,8 @@ paths:
               - tse_creation_failed
               - tse_deactivated
               - tse_export_requested
+              - tse_deactivation_postponed
+              - tse_deactivation_overdue
               - dsfinvk_closing_requested
               - dsfinvk_exported
         - name: startDate

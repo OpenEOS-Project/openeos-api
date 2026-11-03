@@ -489,7 +489,7 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `ORGANIZATIONS_PER_USER_LIMIT` | Höchstzahl Organisationen, in denen ein Benutzer Mitglied sein darf (Anlegen und Einladung annehmen); 0 = unbegrenzt | 5 |
 | `MEMBERS_PER_ORGANIZATION_LIMIT` | Höchstzahl Mitglieder je Organisation, aktive Mitglieder plus offene Einladungen; 0 = unbegrenzt | 10 |
 | `TSE_PROVIDER` | Cloud-TSE: `none` oder `swissbit` (siehe „Cloud-TSE“) | none |
-| `TSE_LIFECYCLE` | `persistent` (TSE bleibt aktiv) oder `per_event` (nach dem letzten bezahlten Fest des Monats Abschlussexport + Deaktivierung) | persistent |
+| `TSE_LIFECYCLE` | `monthly` (TSE läuft für den Monat der Veranstaltung, Abmeldung am letzten Tag 20:00 Berlin; `per_event` = alter Name) oder `persistent` (TSE bleibt aktiv) | monthly |
 | `SWISSBIT_BASE_URL` | Swissbit Cloud-TSE 2 (Dev: `https://dev.web-tse.de`) | https://web-tse.de |
 | `SWISSBIT_VENDOR_CLIENT` / `SWISSBIT_VENDOR_SECRET` | Vendor-Zugang (Billing API: Credit Token anlegen, Nutzungsbericht, Notfall-Deaktivierung) | – |
 | `SWISSBIT_CREDIT_CLIENT_ID` / `SWISSBIT_CREDIT_CLIENT_SECRET` | Credit Token der Plattform, legt TSEs an (`pnpm tse:create-credit-token`) | – |
@@ -601,8 +601,20 @@ Integration `tse` wie SumUp (Plan und API-Vertrag:
   um. „Alle Funktionen“ ist in Deutschland ohne aktive TSE wählbar, sobald
   eine bezahlte Veranstaltung ansteht (die TSE folgt automatisch, Bargeld
   erst mit aktiver TSE). Preis: derzeit inklusive
-  (`TSE_EVENT_SURCHARGE_EUR=0`). `TSE_LIFECYCLE=per_event` deaktiviert nach dem
-  letzten Fest des Monats.
+  (`TSE_EVENT_SURCHARGE_EUR=0`).
+- **Lebenszyklus `monthly`** (Standard): Swissbit berechnet volle Monate.
+  Die TSE läuft deshalb für den Kalendermonat ihrer Veranstaltung (weitere
+  Veranstaltungen im selben Monat nutzen sie mit) und wird am letzten Tag
+  um 20:00 (Berlin) abgemeldet (`planned_deactivation_at`): ab 18:00
+  Kassenabschlüsse und Abschlussexport, ab 20:00 `disableSecureElement`
+  (Grund `monthly_cycle`, Protokoll mit Zeitraum), danach holt der
+  Export-Lauf den automatischen Abmelde-Export ab. Laufen um 20:00 die
+  Geschäftstage (6–6 Uhr) einer bezahlten Veranstaltung, bleibt die TSE
+  bis zum Ende des Folgemonats (Protokoll `tse_deactivation_postponed`
+  mit Kostenhinweis). Lauf alle 15 Minuten, Wiederholung mit Backoff; um
+  22:00 noch aktiv → Mail an `ADMIN_NOTIFY_EMAIL` und roter Hinweis in
+  `GET /admin/tse/alerts`. Täglich 07:00 Prüfung: aktive TSE in einem Monat
+  ohne bezahlte Veranstaltung → Mail.
 - **Exporte**: Täglich 06:15 (Berlin) holt der Server alle Exporte (auch
   Swissbits automatische Nachtexporte) als TAR mit SHA-256 nach
   `TSE_EXPORT_DIR/<org>/<seriennummer>/<zeitraum>.tar` und löscht sie erst

@@ -10,12 +10,14 @@ import {
 } from '../../database/entities/user-organization.entity';
 import { EmailService } from '../email/email.service';
 import { GatewayService } from '../gateway/gateway.service';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 
 export type TseNoticeKind =
   | 'outage'
   | 'creation_failed'
   | 'activated'
   | 'deactivated'
+  | 'monthly_deactivated'
   | 'export_failed';
 
 /**
@@ -34,7 +36,39 @@ export class TseNotifyService {
     private readonly membershipRepository: Repository<UserOrganization>,
     private readonly emailService: EmailService,
     private readonly moduleRef: ModuleRef,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
+
+  /**
+   * Warnung an den Betreiber (Super-Admin-Adresse, sonst
+   * ADMIN_NOTIFY_EMAIL/ADMIN_EMAIL) — ohne Abbestell-Schalter. `true`, wenn
+   * eine Mail rausging.
+   */
+  async notifyPlatformAdmins(alert: {
+    subject: string;
+    intro: string;
+    rows: [string, string][];
+    todo: { title: string; text: string } | null;
+  }): Promise<boolean> {
+    try {
+      const to = await this.platformSettings.resolvePlatformAdminEmail();
+      if (!to) {
+        this.logger.error(
+          `TSE platform alert "${alert.subject}" not sent: no ADMIN_NOTIFY_EMAIL configured`,
+        );
+        return false;
+      }
+      return await this.emailService.sendTsePlatformAlertEmail({
+        to,
+        ...alert,
+      });
+    } catch (error) {
+      this.logger.error(
+        `TSE platform alert "${alert.subject}" not sent: ${(error as Error).message}`,
+      );
+      return false;
+    }
+  }
 
   /**
    * GatewayService erst zur Laufzeit holen: das Gateway-Modul haengt
@@ -149,6 +183,15 @@ const NOTICE_TEXT: Record<
     todo: {
       title: 'Gut zu wissen',
       text: 'Ohne aktive TSE ist Bargeld in Deutschland gesperrt. Die Exporte findest du weiter unter Integrationen → Cloud-TSE.',
+    },
+  },
+  monthly_deactivated: {
+    subject: 'Cloud-TSE zum Monatsende abgemeldet',
+    intro: (org) =>
+      `Die Cloud-TSE${org ? ` von ${org}` : ''} lief für den Monat deiner Veranstaltung und ist jetzt automatisch abgemeldet. So zahlst du keinen Monat ohne Veranstaltung. OpenEOS hat den Abschlussexport abgeholt und bewahrt alles auf.`,
+    todo: {
+      title: 'Gut zu wissen',
+      text: 'Bei deiner nächsten bezahlten Veranstaltung legt OpenEOS automatisch eine neue TSE an (mit neuer Seriennummer). Bis dahin ist Bargeld in Deutschland gesperrt. Die Exporte findest du unter Integrationen → Cloud-TSE.',
     },
   },
   export_failed: {

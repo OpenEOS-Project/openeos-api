@@ -6,13 +6,15 @@ import { TseUnit } from './tse-unit.entity';
 export type TseExportStatus = 'pending' | 'downloaded' | 'failed';
 
 /**
- * Wer den Export angestossen hat: unser naechtlicher Lauf, ein Admin, die
+ * Wer den Export angestossen hat: unser naechtlicher Lauf, ein Admin, der
+ * Abschlussexport vor der Abmeldung zum Monatsende (`final`), die
  * Deaktivierung (Swissbit exportiert den Rest selbst) oder Swissbit
  * automatisch (gefunden, ohne dass wir ihn gestartet haben).
  */
 export type TseExportTrigger =
   | 'scheduled'
   | 'manual'
+  | 'final'
   | 'deactivation'
   | 'swissbit';
 

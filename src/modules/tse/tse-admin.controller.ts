@@ -10,6 +10,8 @@ import { errorCodeOf } from './swissbit/swissbit.errors';
 import { SwissbitClientProvider } from './swissbit/swissbit-client.provider';
 import { TseConfig } from './tse.config';
 import { localParts } from './tse-dates';
+import { isDeactivationOverdue } from './tse-monthly';
+import { TseMonthlyCycleService } from './tse-monthly-cycle.service';
 import { unitView } from './tse-status.service';
 
 /**
@@ -26,6 +28,7 @@ export class TseAdminController {
     private readonly unitRepository: Repository<TseUnit>,
     private readonly swissbit: SwissbitClientProvider,
     private readonly config: TseConfig,
+    private readonly monthly: TseMonthlyCycleService,
   ) {}
 
   @Get('units')
@@ -40,6 +43,8 @@ export class TseAdminController {
       order: { createdAt: 'DESC' },
       take: 1000,
     });
+    const now = new Date();
+    const monthly = this.config.lifecycle === 'monthly';
     return {
       data: units.map((unit) => ({
         ...unitView(unit),
@@ -48,7 +53,34 @@ export class TseAdminController {
           ? { id: unit.organization.id, name: unit.organization.name }
           : null,
         billedMonths: billedMonths(unit),
+        deactivationAttempts: unit.deactivationAttempts ?? 0,
+        deactivationNextAttemptAt:
+          unit.deactivationNextAttemptAt?.toISOString() ?? null,
+        deactivationAlertedAt:
+          unit.deactivationAlertedAt?.toISOString() ?? null,
+        /* Um 22:00 (geplant + 2 h) noch aktiv: roter Hinweis. */
+        deactivationOverdue:
+          monthly &&
+          unit.state === 'active' &&
+          isDeactivationOverdue(unit.plannedDeactivationAt, now),
       })),
+    };
+  }
+
+  @Get('alerts')
+  @ApiOperation({
+    summary: 'Cloud-TSE alerts for the super-admin list (super admin)',
+    description:
+      'Lebenszyklus `monthly`: ueberfaellige Abmeldungen zum Monatsende (nach 22:00 noch aktiv) und Ergebnisse der Gesundheitspruefung (aktive TSE in einem Monat ohne bezahlte Veranstaltung, fehlender Abmeldetermin). Leere Liste bei `persistent`.',
+  })
+  async alerts() {
+    const issues = await this.monthly.healthCheck(new Date());
+    return {
+      data: {
+        lifecycle: this.config.lifecycle,
+        checkedAt: new Date().toISOString(),
+        issues,
+      },
     };
   }
 

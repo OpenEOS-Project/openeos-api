@@ -573,7 +573,7 @@ export class TseExportService {
     };
   }
 
-  /** Fuer den Lebenszyklus `per_event` und Tests. */
+  /** Offene Exporte (Statusseite, Tests). */
   pendingCount(organizationId: string): Promise<number> {
     return this.exportRepository.count({
       where: { organizationId, status: 'pending' },

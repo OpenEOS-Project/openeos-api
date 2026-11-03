@@ -53,13 +53,8 @@ import type { TseInfo } from './swissbit/swissbit.types';
 import { missingMasterData } from '../dsfinvk/dsfinvk-master';
 import { TseConfig } from './tse.config';
 import { TseCryptoService } from './tse-crypto.service';
-import {
-  autoCreateHorizon,
-  businessDayEnd,
-  localDate,
-  sameLocalMonth,
-  startOfLocalMonth,
-} from './tse-dates';
+import { autoCreateHorizon, localDate, startOfLocalMonth } from './tse-dates';
+import { plannedDeactivationFor, type PaidEventSpan } from './tse-monthly';
 import { TseNotifyService } from './tse-notify.service';
 import { TseOutageService } from './tse-outage.service';
 import { clientIdForOrganization } from './tse-process-data';
@@ -113,8 +108,10 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * - **Automatik**: stuendlich ab 5 Uhr legt ein Lauf die TSE am ersten
  *   Geschaeftstag einer bezahlten Veranstaltung an (DE, Integration an,
  *   Betriebsart nicht „Nur Bons“).
- * - **TSE_LIFECYCLE=per_event**: nach der letzten bezahlten Veranstaltung
- *   des Monats Abschlussexport + Deaktivierung; die naechste
+ * - **TSE_LIFECYCLE=monthly** (Standard): die TSE laeuft fuer den
+ *   Kalendermonat ihrer Veranstaltung (weitere Veranstaltungen im selben
+ *   Monat nutzen sie mit) und wird am letzten Tag um 20:00 abgemeldet
+ *   (`plannedDeactivationAt`, TseMonthlyCycleService); die naechste
  *   Veranstaltung bekommt eine neue TSE (neue Seriennummer).
  * - Mehrere API-Instanzen: Hintergrundschritte je TSE ueber
  *   `job_locked_until`, Cron-Laeufe ueber CronLockService.
@@ -648,10 +645,20 @@ export class TseUnitService {
   }
 
   private async activate(unit: TseUnit): Promise<void> {
+    const activatedAt = new Date();
+    // Lebenszyklus `monthly`: Abmeldung am letzten Tag dieses Monats 20:00.
+    const plannedDeactivationAt =
+      this.config.lifecycle === 'monthly'
+        ? plannedDeactivationFor(activatedAt)
+        : null;
     const switched = await this.dataSource.transaction(async (manager) => {
       await manager.update(TseUnit, unit.id, {
         state: 'active',
-        activatedAt: new Date(),
+        activatedAt,
+        plannedDeactivationAt,
+        deactivationAttempts: 0,
+        deactivationNextAttemptAt: null,
+        deactivationAlertedAt: null,
         lastErrorCode: null,
         lastErrorMessage: null,
       });
@@ -693,6 +700,8 @@ export class TseUnitService {
         productType: unit.productType,
         certificationId: unit.certificationId,
         operatingModeSwitchedToFull: switched,
+        lifecycle: this.config.lifecycle,
+        plannedDeactivationAt: plannedDeactivationAt?.toISOString() ?? null,
       },
     });
     this.notify.statusChanged(unit.organizationId, {
@@ -886,6 +895,7 @@ export class TseUnitService {
             params: {
               requestId:
                 error instanceof SwissbitError ? error.requestId : null,
+              errorCode: errorCodeOf(error),
             },
           });
         }
@@ -898,6 +908,7 @@ export class TseUnitService {
         deactivatedAt,
         deactivatedByUserId: options.userId,
         deactivationReason: options.reason.slice(0, 500),
+        deactivationNextAttemptAt: null,
         jobLockedUntil: null,
       });
       await manager.query(
@@ -949,67 +960,39 @@ export class TseUnitService {
       outage: false,
     });
     this.notify.settingsChanged(unit.organizationId);
-    void this.notify.notifyAdmins(unit.organizationId, 'deactivated', [
-      ['TSE-Seriennummer', unit.serialNumber ?? ''],
+    const monthly = isMonthlyCycleReason(options.reason);
+    void this.notify.notifyAdmins(
+      unit.organizationId,
+      monthly ? 'monthly_deactivated' : 'deactivated',
       [
-        'Grund',
-        options.reason === 'per_event_cycle'
-          ? 'Veranstaltungsmonat beendet'
-          : options.reason,
+        ['TSE-Seriennummer', unit.serialNumber ?? ''],
+        [
+          'Grund',
+          monthly ? 'Monatsende – automatisch abgemeldet' : options.reason,
+        ],
       ],
-    ]);
+    );
     return (
       (await this.unitRepository.findOne({ where: { id: unit.id } })) ?? unit
     );
   }
 
   /**
-   * TSE_LIFECYCLE=per_event, taeglich 6:30 (Berlin, nach Ende des
-   * Geschaeftstags): TSEs deaktivieren, deren letzte bezahlte
-   * Veranstaltung im Monat vorbei ist. Nie, solange eine bezahlte
-   * Veranstaltung laeuft oder im selben Kalendermonat noch eine beginnt.
-   * Vorher wird ein Abschlussexport geholt (exportBeforeDeactivation).
+   * Bezahlte Veranstaltungen der Organisation, die nach `from` enden (fuer
+   * den Monatslauf und die Gesundheitspruefung). Eigene Installation: jede
+   * Veranstaltung zaehlt.
    */
-  async perEventCandidates(now = new Date()): Promise<TseUnit[]> {
-    const units = await this.unitRepository
-      .createQueryBuilder('unit')
-      .addSelect('unit.accessTokenEnc')
-      .where(`unit.state = 'active'`)
-      .getMany();
-    const due: TseUnit[] = [];
-    for (const unit of units) {
-      const events = await this.paidEventsAround(unit.organizationId, now);
-      const running = events.some(
-        (e) =>
-          e.startDate.getTime() <= now.getTime() &&
-          businessDayEnd(e.endDate ?? e.startDate).getTime() > now.getTime(),
-      );
-      if (running) continue;
-      const laterThisMonth = events.some(
-        (e) =>
-          e.startDate.getTime() > now.getTime() &&
-          sameLocalMonth(e.startDate, now),
-      );
-      if (laterThisMonth) continue;
-      const activatedAt = unit.activatedAt?.getTime() ?? 0;
-      const endedDuringUnit = events.some((e) => {
-        const end = businessDayEnd(e.endDate ?? e.startDate).getTime();
-        return end <= now.getTime() && end >= activatedAt;
-      });
-      if (!endedDuringUnit) continue;
-      due.push(unit);
-    }
-    return due;
-  }
-
-  private async paidEventsAround(organizationId: string, now: Date) {
+  async paidEventsAround(
+    organizationId: string,
+    from: Date,
+  ): Promise<PaidEventSpan[]> {
     const qb = this.eventRepository
       .createQueryBuilder('event')
-      .select(['event.id', 'event.startDate', 'event.endDate'])
+      .select(['event.id', 'event.name', 'event.startDate', 'event.endDate'])
       .where('event.organizationId = :organizationId', { organizationId })
       .andWhere('event.startDate IS NOT NULL')
-      .andWhere(`event.startDate > :from`, {
-        from: new Date(now.getTime() - 62 * 24 * 3600_000),
+      .andWhere(`COALESCE(event.endDate, event.startDate) > :from`, {
+        from: new Date(from.getTime() - 2 * 24 * 3600_000),
       });
     if (!this.deployment.isSelfHosted) {
       qb.andWhere('event.billingStatus IN (:...statuses)', {
@@ -1018,6 +1001,8 @@ export class TseUnitService {
     }
     const events = await qb.getMany();
     return events.map((e) => ({
+      id: e.id,
+      name: e.name,
       startDate: e.startDate as Date,
       endDate: e.endDate,
     }));
@@ -1154,6 +1139,11 @@ function infoColumns(
       ? new Date(info.certificateExpirationDate * 1000)
       : null,
   };
+}
+
+/** Abmeldung durch den Monatslauf (auch der fruehere Name `per_event_cycle`). */
+export function isMonthlyCycleReason(reason: string | null | undefined) {
+  return reason === 'monthly_cycle' || reason === 'per_event_cycle';
 }
 
 function formatGermanDate(isoDate: string | null): string {

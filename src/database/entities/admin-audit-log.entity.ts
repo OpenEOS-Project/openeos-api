@@ -61,6 +61,10 @@ export enum AdminAction {
   TSE_CREATION_FAILED = 'tse_creation_failed',
   TSE_DEACTIVATED = 'tse_deactivated',
   TSE_EXPORT_REQUESTED = 'tse_export_requested',
+  /** Monatsende: Abmeldung verschoben (bezahlte Veranstaltung laeuft), mit Kostenhinweis. */
+  TSE_DEACTIVATION_POSTPONED = 'tse_deactivation_postponed',
+  /** Monatsende: Abmeldung um 22:00 noch nicht gelungen, Betreiber gewarnt. */
+  TSE_DEACTIVATION_OVERDUE = 'tse_deactivation_overdue',
   // DSFinV-K (openeos-api#102)
   DSFINVK_CLOSING_REQUESTED = 'dsfinvk_closing_requested',
   DSFINVK_EXPORTED = 'dsfinvk_exported',
