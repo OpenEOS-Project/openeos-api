@@ -99,6 +99,11 @@ export interface TseInfo {
   transactionSignaturesPerMonth: Record<string, number>;
   productTypeUsage: ProductTypeUsage | null;
   metadata: string | null;
+  /**
+   * Zertifikat der TSE (erstes Zertifikat aus `certificateChain`, DER in
+   * Base64 ohne PEM-Kopf) — fuer DSFinV-K Stamm_TSE (TSE_ZERTIFIKAT_I/II).
+   */
+  certificate: string | null;
 }
 
 export interface TransactionRequest {
@@ -283,7 +288,19 @@ export function parseTseInfo(body: unknown): TseInfo {
     transactionSignaturesPerMonth: perMonth,
     productTypeUsage: parseUsage(record.productTypeUsage),
     metadata: str(record, 'metadata'),
+    certificate: firstCertificate(str(record, 'certificateChain')),
   };
+}
+
+/** Erstes Zertifikat einer PEM-Kette als Base64 (ohne Kopf, ohne Umbrueche). */
+export function firstCertificate(chain: string | null): string | null {
+  if (!chain) return null;
+  const match =
+    /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(
+      chain,
+    );
+  const body = (match ? match[1] : chain).replace(/[^A-Za-z0-9+/=]/g, '');
+  return body || null;
 }
 
 export function parseTransactionResponse(body: unknown): TransactionResponse {

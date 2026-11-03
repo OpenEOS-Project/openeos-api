@@ -1,0 +1,92 @@
+# DSFinV-K (Kassenabschluss, Export, eigene Prüfung) und Kassenbuch
+
+Eigene Umsetzung der **Digitalen Schnittstelle der Finanzverwaltung für Kassensysteme (DSFinV-K)** nach § 146a Abs. 1 S. 4 AO, § 4 KassenSichV — ohne Fremdbibliotheken und ohne fremde Prüfwerkzeuge, ausschließlich nach der amtlichen Spezifikation (Entscheidung 2026-11-03). Issue: openeos-api#102.
+
+## Grundlage (Stand der Spezifikation)
+
+| | |
+|---|---|
+| Spezifikation | **DSFinV-K Version 2.4**, Dokument `20231215_DSFinV_K_2_4.pdf` (Stand 15.12.2023; BMF-Schreiben vom 12.01.2024). Inhaltlich gleich 2.3 (Tz. 5: „Inhaltliche Änderungen zur Version 2.3 erfolgten nicht“). |
+| USt-Schlüssel | Anlage 2 `20241205_DSFinV_K_Anlage2_UStSchluessel.pdf` (Stand 05.12.2024) |
+| Bezugsquelle | BZSt, <https://www.bzst.de/DE/Unternehmen/Aussenpruefungen/DigitaleSchnittstelleFinV/digitaleschnittstellefinv_node.html> → `dsfinv_k_v_2_4.zip` (`…/dsfinv_k_v_2_4.zip?__blob=publicationFile&v=19`, abgerufen 03.11.2026, SHA-256 `efd6816f95d86d773015c38e8a80fd0c9eca1bc2bba9968b900cfd9564e7b1a7`) |
+| Vendorte Dateien | `assets/dsfinvk/index.xml` (SHA-256 `d0b1fed3…5c85160`) und `assets/dsfinvk/gdpdu-01-09-2004.dtd` (SHA-256 `af3d4c5a…63f848a2`) unverändert aus `02_index.xml/` des ZIP; `dsfinvk-schema.spec.ts` prüft die Prüfsummen und dass `dsfinvk-schema.ts` genau dieselben Tabellen/Spalten beschreibt. |
+| `TAXONOMIE_VERSION` | `2.4` |
+
+## Aufbau
+
+| Datei | Inhalt |
+|---|---|
+| `dsfinvk-schema.ts` | Die 20 Tabellen aus der amtlichen `index.xml` (Datei, Name, Spalten, Typ, Länge, Nachkommastellen). |
+| `dsfinvk-format.ts` | CSV-Regeln der `index.xml`: UTF-8, `;`, CR LF, Textbegrenzer `"`, Kopfzeile (`Range From 2`), Dezimalkomma ohne Tausendertrenner, Beträge mit 2 Nachkommastellen (Tz. 4.1), Mengen mit 3, Zeitpunkte RFC 3339 (Ortszeit Berlin mit Versatz), TSE-Log-Zeiten `YYYY-MM-DDThh:mm:ss.fffZ`. |
+| `dsfinvk-builder.ts` | Rein: ein Kassenabschluss → Zeilen aller 20 Tabellen + Summen. |
+| `dsfinvk-export.ts`, `dsfinvk-zip.ts` | ZIP (eigener Schreiber/Leser, Deflate aus Node) mit 20 CSV + `index.xml` (nur `DataSupplier` gefüllt) + DTD; Inhalts-Prüfsumme je Abschluss. |
+| `dsfinvk-validator.ts` | Eigene Prüfung (siehe unten), auch als `pnpm dsfinvk:validate <zip>`. |
+| `cash-point-closing.service.ts` | Abschlüsse anlegen (Zeitplan, auf Knopfdruck), speichern, exportieren, ablegen. |
+| `cashbook.service.ts` | Kassenbuch (Anfangsbestand, Einlage, Entnahme, Kassensturz). |
+| `testing/dsfinvk-fixtures.ts` | Testvorgänge, gebaut mit denselben Funktionen wie im Verkauf. |
+
+## Kasse, Abschluss, Vorgänge
+
+- **Eine Kasse je Organisation** (tse-swissbit-plan.md §7): `Z_KASSE_ID` = `KASSE_SERIENNR` = TSE-Client-ID `OEOS-<12 Hex der Org-ID>` (ohne `/` und `_`). Geräte sind **Terminals** (`Stamm_Terminals`, `POS_TERMINAL_ID` je Position). `TERMINAL_ID` im Bonkopf bleibt leer, weil die TSE nur die Client-ID der Kasse kennt (Anhang E, TERMINAL_ID).
+- **Ein Vorgang = ein Datensatz in `tse_transactions`** = ein Bonkopf. `BON_ID` = `BON_NR` = fortlaufende Nummer je Kasse, vergeben vom Datenbank-Trigger beim Einfügen (lückenlos, auch für Abgleich und Kassenbuch); sie steht als „Beleg-Nr.“ auf dem Bon (`tse.bon_number`).
+- **Kassenabschluss** (`cash_point_closings`): je Geschäftstag 06:00–06:00 Europe/Berlin (`BUSINESS_DAY_START_HOUR`), stündlicher Lauf (`:20`) schließt abgelaufene Tage ab; „Kassenabschluss jetzt erstellen“ schließt bis jetzt ab (mehrere Abschlüsse je Tag sind erlaubt, Tz. 3/Anhang E Z_NR). `Z_NR` fortlaufend je Kasse. Jeder Vorgang steht in genau einem Abschluss (`tse_transactions.cash_point_closing_id`); laufende (`pending`) Vorgänge verschieben den Abschluss (409 `DSFINVK_PENDING_TRANSACTIONS`).
+- **Unveränderlich**: Der Abschluss speichert die fertigen Zeilen aller Tabellen (`rows`), Summen (`totals`), Stammdaten zum Abschluss (`master_data`, Tz. 3: Stammdaten je Abschluss) und `content_sha256`; ein Trigger verbietet Änderungen und Löschen. Exporte setzen nur gespeicherte Zeilen zusammen → reproduzierbar.
+- **Ablage**: je Abschluss ein ZIP unter `TSE_EXPORT_DIR/<org>/dsfinvk/Z<nr>_<datum>.zip` mit SHA-256 (`export_sha256`); `archived_at`/`archive_ref` bleiben für den ELeFANT-Upload frei.
+
+## Abbildung (Mapping)
+
+| OpenEOS (`tse_transactions.kind`) | BON_TYP | Positionen (GV_TYP) | Zahlart |
+|---|---|---|---|
+| `receipt` (Zahlung, Einzel/Split/Sammel/Tisch/Verwaltung) | `Beleg` (Testmodus: `AVTraining`) | `Umsatz` je Position (Varianten/Optionen in `Bonpos_Zusatzinfo`), `Pfand` je Position mit Pfand, `TrinkgeldAG`/`TrinkgeldAN`, `Rabatt` je USt-Schlüssel für Bestellrabatte (gesonderte Zeile, Tz. 4.2.4) | `Bar`; Karte → `Unbar` „Kartenzahlung“ (Debit/Kredit unbekannt); PayPal/SumUp Online/Google Pay/Apple Pay → `ElZahlungsdienstleister` |
+| Teilzahlung nach Betrag | `Beleg` | je Satz „Teilzahlung Bestellung N“ (`Umsatz`), Positionen der Bestellung zur Erläuterung in `Bonpos_Zusatzinfo` | wie oben |
+| Beleg über 0,00 | `Beleg` | Positionen + `Rabatt` auf 0 | `Bar` 0,00 |
+| `refund` (Erstattung/Storno) | `Beleg`, `BON_STORNO = 1` bei vollständigem Storno, sonst 0; Verweis in `Bon_Referenzen` (`Transaktion`) | negative Mengen (Tz. 4.2.5); rabattierter Erstattungspreis mit Entstehung in `Bonpos_Preisfindung`; Kulanz ohne Positionen → `Rabatt` (nachträgliche Entgeltminderung) | wie die Erstattung |
+| `deposit_return` (Pfand-Auszahlung) | `Beleg` | `PfandRueckzahlung` | `Bar` negativ |
+| `order` / `order_cancellation` (Tischbetrieb, Bestellung-V1) | `AVBestellung` | `Umsatz` (Storno mit negativer Menge, Tz. 4.2.3) | `Keine` |
+| `abort` (Abgleich, AVBelegabbruch) | `AVBelegabbruch`, Verweis auf den abgebrochenen Vorgang | – | `Keine` |
+| `cashbook` (Kassenbuch) | `Beleg` | `Anfangsbestand` (GV_NAME „Wechselgeld“), `Geldtransit` („Einlage“/„Entnahme“), `DifferenzSollIst` („Kassensturz“), USt-Schlüssel 5 | `Bar` |
+
+- **Abrechnungskreis** (`Bonkopf_AbrKreis`): `Tisch <nr> / Bestellung <nr> (<8 Zeichen Bestell-ID>)` für alle Vorgänge einer Bestellung (Tz. 2.7, 3.1.2.2); die Zahlung verweist zusätzlich auf die Bestellvorgänge (`Bon_Referenzen`).
+- **Beträge**: Bonkopf_USt und Bonkopf_Zahlarten kommen aus den signierten Prozessdaten (Rechnungsdoppel); die Positionen werden je USt-Schlüssel exakt darauf abgestimmt (Differenzen als `Rabatt`/`Aufschlag`, kleine Rundungen mit `GV_NAME` „Rundung“). USt = brutto × Satz / (100 + Satz), gerundet wie auf dem Bon.
+- **USt-Schlüssel**: 19 % → 1, 7 % → 2, 0 % → 5 (nicht steuerbar); steuerbefreite Organisationen (`settings.vatExempt`, Kleinunternehmer) → 6 (umsatzsteuerfrei). Pfand und Trinkgeld stehen wie auf dem Bon und in der TSE im 0-%-Slot (offene Steuerberater-Fragen S1/S2). Kassenbuch immer 5.
+- **TSE-Ausfall**: Vorgang bleibt `Beleg`; `TSE_Transaktionen` mit `TSE_TA_FEHLER` „TSE ausgefallen: <Code> – <Text>“ (≤ 200 Zeichen), ohne Signatur; `BON_NOTIZ` „TSE ausgefallen“. Nachträglich gefundene Signaturen (`recovered_at`) werden signiert geführt (Hinweis in `BON_NOTIZ`).
+- **TSE-Wechsel**: alle im Abschluss genutzten TSEs in `Stamm_TSE` (`TSE_ID` 1…n je Abschluss), Zertifikat aus Swissbit `certificateChain` (`tse_units.certificate`).
+- **Online-Vorkasse** (Shop, QR mit PayPal): nicht über die Kasse erfasst und nicht signiert (BMF-FAQ Anwendungsbereich 10) → nicht in der DSFinV-K.
+- **Trinkgeld**: `settings.dsfinvk.tipRecipient` = `employer` (Standard, `TrinkgeldAG`, Trinkgeld an den Verein) oder `employee` (`TrinkgeldAN`).
+- **Stammdaten**: Name (`settings.legalName` oder Organisationsname), Anschrift (`settings.contact`), `settings.taxNumber`/`settings.vatId` (eins davon Pflicht, § 14 Abs. 4 Nr. 2 UStG; für die Cloud-TSE vorausgesetzt: 409 `TSE_MASTER_DATA_REQUIRED`), Land Alpha-3. Betriebsstätte (`Stamm_Orte`) = Sitz der Organisation.
+
+## Kassenbuch
+
+`cashbook_entries` je Geschäftstag, nur wenn Bargeld erlaubt ist (`assertCashAllowed`). Jede Bargeldbewegung ≠ 0 ist ein eigener Kassenbeleg-V1 (`Beleg^0.00_0.00_0.00_0.00_<betrag>^<betrag>:Bar`, Beispiele Anhang I). Soll-Bestand je Gerät bzw. ganze Kasse = Kassenbuch + Barzahlungen (`captured`/`refunded`) + Bar-Erstattungen (negativ) − Pfand-Auszahlungen, jeweils ohne Testbuchungen. Der Kassensturz bucht die Differenz gezählt − Soll als `DifferenzSollIst` (bei 0 kein Beleg).
+
+## Eigene Prüfung (`dsfinvk-validator.ts`, `pnpm dsfinvk:validate <zip> [--json] [--warnings]`)
+
+1. Dateien: `index.xml`, DTD, alle 20 Tabellen der amtlichen `index.xml`.
+2. `index.xml`: Tabellen, Spalten (Reihenfolge, Typ, Länge, Nachkommastellen), UTF8, DecimalSymbol, Trennzeichen, Textbegrenzer, Kopfzeile — Vergleich mit der amtlichen Vorlage.
+3. CSV: Kopfzeile, Spaltenzahl, CR LF, UTF-8, Längen, Zahlenformat, ISO-8601/RFC-3339-Zeitpunkte, TSE-Zeitformat, Wertelisten (BON_TYP, GV_TYP, ZAHLART_TYP, REF_TYP, TYP, Signaturalgorithmus, Zeitformat, Kodierung, 0/1-Felder), Alpha-3/ISO-4217, Seriennummer ohne `/`/`_`, Pflichtfelder.
+4. Beziehungen: Abschluss (Z_KASSE_ID, Z_ERSTELLUNG, Z_NR) in allen Tabellen, Bon/Position vorhanden, USt-Schlüssel/Terminal/TSE/Agentur in den Stammdaten, Referenzen auf vorhandene Vorgänge mit passendem `REF_DATUM`, genau eine Kasse/ein Ort je Abschluss, STNR oder USTID.
+5. Summen: UMS_BRUTTO = Σ Bonkopf_USt = Σ Bonkopf_Zahlarten; Bonkopf_USt je Schlüssel = Σ Bonpos_USt; Netto + USt = Brutto; USt passt zum Satz (Hinweis); Preisfindung = Position; MENGE × STK_BR ≈ Position (Hinweis); Z_GV_Typ, Z_Zahlart, Z_SE_ZAHLUNGEN, Z_SE_BARZAHLUNGEN, Z_Waehrungen = Σ der Belege; AV-Vorgänge nur Zahlart „Keine“; Training ohne Wirkung auf den Abschluss.
+6. Folgen: Z_NR und BON_ID lückenlos, Z_START_ID/Z_ENDE_ID.
+7. TSE: jeder Vorgang hat eine Zeile in `TSE_Transaktionen` mit vollständiger Signatur oder `TSE_TA_FEHLER`; Transaktionsnummern eindeutig; `TSE_VORGANGSDATEN` passt zu BON_TYP, Bonkopf_USt (Slot je Schlüssel) und Zahlarten (Bar/Unbar) bzw. bei Bestellung-V1 zur Summe.
+
+Die Tests (`dsfinvk-export.spec.ts`, `dsfinvk.db.spec.ts`) prüfen erzeugte Exporte für: mehrere Steuersätze, Rabatte, Varianten, Pfand + Pfandrückgabe, Trinkgeld (AG/AN), Storno/Erstattung (auch über Abschlüsse hinweg, Kulanz, rabattierte Positionen), Training, TSE-Ausfall + AVBelegabbruch, Tischbetrieb (AVBestellung), Kassenbuch, mehrere Terminals, TSE-Wechsel, leeren Tag, Split/Teilzahlung/0-€-Beleg, Determinismus — und Negativfälle (fehlende Datei, falsche Kopfzeile, Dezimalpunkt, falsche Summen, Lücke in BON_ID, fehlende TSE-Zeile, falsche Prozessdaten, fehlende Steuernummer). `dsfinvk.db.spec.ts` läuft mit `TEST_DSFINVK_DATABASE_URL=postgres://…/<name>_scratch` gegen eine Wegwerf-Datenbank.
+
+## Endpunkte
+
+| Methode / Pfad | Wer | Zweck |
+|---|---|---|
+| `GET /organizations/:id/dsfinvk?from=&to=` bzw. `?zFrom=&zTo=` | Admin | ZIP (20 CSV + index.xml + DTD), Header `X-Checksum-SHA256` |
+| `GET /organizations/:id/dsfinvk/closings` | Admin | Abschlüsse + offene Vorgänge |
+| `POST /organizations/:id/dsfinvk/closings` | Admin | Kassenabschluss jetzt |
+| `GET /organizations/:id/dsfinvk/closings/:closingId/download` | Admin | ZIP eines Abschlusses (Archiv) |
+| `GET /organizations/:id/tse/exports/bundle?from=&to=` | Admin | TSE-TAR-Exporte des Zeitraums in einem ZIP |
+| `GET`/`POST /organizations/:id/cashbook` | Admin | Kassenbuch eines Tages / Buchung für die ganze Kasse |
+| `GET`/`POST /device-api/cashbook` | Gerät | Kassenbuch an der Kasse |
+
+## Offene Fragen (Steuerberatung)
+
+- **S1 Pfand**: Mehrwegbecher als Warenumschließung (Satz der Ware) oder eigenständig? Bisher 0-%-Slot wie auf dem Bon.
+- **S2 Trinkgeld**: an den Verein (`TrinkgeldAG`, Steuersatz?) oder an Helfer (`TrinkgeldAN`)? Einstellbar, Standard Verein.
+- **S3 Kleinunternehmer**: Schlüssel 6 (umsatzsteuerfrei, § 19 UStG n. F.) oder 5?
+- **Erstattung über mehrere Sätze**: Aufteilung anteilig nach dem Ursprungsbeleg — so umgesetzt.
+- **Kassenbuch**: Anfangsbestand als `Anfangsbestand` (technisch) vs. `Geldtransit` (wenn am Vortag abgeschöpft); Einlage aus der Vereinskasse als `Geldtransit` statt `Privateinlage`.

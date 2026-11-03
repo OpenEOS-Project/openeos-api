@@ -122,6 +122,22 @@ export const ErrorCodes = {
   TSE_EXPORT_NOT_FOUND: 'TSE_EXPORT_NOT_FOUND',
   // Export noch nicht heruntergeladen oder Datei fehlt — 409
   TSE_EXPORT_NOT_READY: 'TSE_EXPORT_NOT_READY',
+  // DSFinV-K / Kassenbuch (openeos-api#102)
+  // Steuernummer/USt-IdNr oder Anschrift fehlt (Stamm_Abschluss) — 409
+  TSE_MASTER_DATA_REQUIRED: 'TSE_MASTER_DATA_REQUIRED',
+  // Es laufen noch TSE-Vorgaenge im Abschlusszeitraum — 409
+  DSFINVK_PENDING_TRANSACTIONS: 'DSFINVK_PENDING_TRANSACTIONS',
+  // Seit dem letzten Abschluss gibt es keine Vorgaenge — 409
+  DSFINVK_NOTHING_TO_CLOSE: 'DSFINVK_NOTHING_TO_CLOSE',
+  DSFINVK_CLOSING_NOT_FOUND: 'DSFINVK_CLOSING_NOT_FOUND',
+  // Zeitraum fehlt/ungueltig oder zu lang — 400
+  DSFINVK_RANGE_INVALID: 'DSFINVK_RANGE_INVALID',
+  // Im Zeitraum gibt es keinen Kassenabschluss — 404
+  DSFINVK_NO_CLOSINGS: 'DSFINVK_NO_CLOSINGS',
+  // Kassenbuch: Betrag fehlt/ungueltig — 400
+  CASHBOOK_AMOUNT_INVALID: 'CASHBOOK_AMOUNT_INVALID',
+  // Kassenbuch: unbekannte Buchungsart — 400
+  CASHBOOK_TYPE_INVALID: 'CASHBOOK_TYPE_INVALID',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -240,6 +256,19 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.TSE_EXPORT_NOT_FOUND]: 'Export nicht gefunden',
   [ErrorCodes.TSE_EXPORT_NOT_READY]:
     'Der Export ist noch nicht abgeholt – bitte versuch es später noch einmal',
+  [ErrorCodes.TSE_MASTER_DATA_REQUIRED]:
+    'Für die Cloud-TSE brauchen wir Steuernummer oder USt-IdNr. und die Anschrift deiner Organisation',
+  [ErrorCodes.DSFINVK_PENDING_TRANSACTIONS]:
+    'Es laufen gerade noch TSE-Vorgänge – bitte versuch es in einer Minute noch einmal',
+  [ErrorCodes.DSFINVK_NOTHING_TO_CLOSE]:
+    'Seit dem letzten Kassenabschluss gab es keine Vorgänge',
+  [ErrorCodes.DSFINVK_CLOSING_NOT_FOUND]: 'Kassenabschluss nicht gefunden',
+  [ErrorCodes.DSFINVK_RANGE_INVALID]:
+    'Bitte gib einen gültigen Zeitraum an (höchstens ein Jahr)',
+  [ErrorCodes.DSFINVK_NO_CLOSINGS]:
+    'Für diesen Zeitraum gibt es keinen Kassenabschluss',
+  [ErrorCodes.CASHBOOK_AMOUNT_INVALID]: 'Bitte gib einen gültigen Betrag an',
+  [ErrorCodes.CASHBOOK_TYPE_INVALID]: 'Unbekannte Kassenbuch-Buchung',
 };
 
 /**

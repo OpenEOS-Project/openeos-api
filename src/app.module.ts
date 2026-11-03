@@ -65,6 +65,7 @@ import { AiModule } from './modules/ai';
 import { AssistantModule } from './modules/assistant';
 import { McpModule } from './modules/mcp';
 import { TseModule } from './modules/tse';
+import { DsfinvkModule } from './modules/dsfinvk';
 
 @Module({
   imports: [
@@ -203,6 +204,8 @@ import { TseModule } from './modules/tse';
     // MCP-Server fuer KI-Agenten (/mcp, Auth per API-Token)
     McpModule,
     TseModule,
+    // DSFinV-K (Kassenabschluss, Export) und Kassenbuch, openeos-api#102
+    DsfinvkModule,
   ],
   controllers: [],
   providers: [

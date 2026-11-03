@@ -763,6 +763,35 @@ paths:
       security: *a6
       summary: Export now (admins)
       tags: *a7
+  /api/organizations/{id}/tse/exports/bundle:
+    get:
+      description: "Für die Kassen-Nachschau: alle abgeholten TAR-Exporte, die den Zeitraum (Geschäftstage `from`–`to`, 6–6 Uhr) berühren, unverändert in einem ZIP. Header `X-Checksum-SHA256`. 404 TSE_EXPORT_NOT_FOUND, wenn es noch keinen gibt (dann `POST …/tse/exports`)."
+      operationId: tse_bundleExports
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: from
+          required: true
+          in: query
+          description: Erster Geschäftstag (YYYY-MM-DD)
+          schema:
+            example: 2026-11-03
+            type: string
+        - name: to
+          required: false
+          in: query
+          description: Letzter Geschäftstag (YYYY-MM-DD), Standard = `from`
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a6
+      summary: All TSE exports (TAR) of a period as one ZIP (admins)
+      tags: *a7
   /api/organizations/{id}/tse/exports/{exportId}/download:
     get:
       description: Liefert das TAR. Header `X-Checksum-SHA256` mit der Prüfsumme.
@@ -6948,6 +6977,8 @@ paths:
               - tse_creation_failed
               - tse_deactivated
               - tse_export_requested
+              - dsfinvk_closing_requested
+              - dsfinvk_exported
         - name: startDate
           required: false
           in: query
@@ -9831,6 +9862,207 @@ paths:
       security: *a91
       summary: Ausgewählte Kategorien und Produkte anlegen
       tags: *a92
+  /api/organizations/{id}/dsfinvk:
+    get:
+      description: "Export nach DSFinV-K 2.4 für Kassen-Nachschau (§ 146b AO) und Außenprüfung: 20 CSV-Dateien, `index.xml` und `gdpdu-01-09-2004.dtd` als ZIP. Zeitraum nach Geschäftstagen (`from`/`to`, 6–6 Uhr) oder Z-Nummern (`zFrom`/`zTo`). Enthält nur abgeschlossene Tage — für den laufenden Tag vorher `POST …/dsfinvk/closings`. Header `X-Checksum-SHA256`. Fehler: 400 DSFINVK_RANGE_INVALID, 404 DSFINVK_NO_CLOSINGS."
+      operationId: dsfinvk_export
+      parameters:
+        - name: id
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: from
+          required: false
+          in: query
+          description: Erster Geschäftstag (YYYY-MM-DD, 6–6 Uhr), inklusive
+          schema:
+            example: 2026-11-01
+            type: string
+        - name: to
+          required: false
+          in: query
+          description: Letzter Geschäftstag (YYYY-MM-DD), inklusive; Standard = `from`
+          schema:
+            example: 2026-11-03
+            type: string
+        - name: zFrom
+          required: false
+          in: query
+          description: "Statt Datum: erste Z-Nummer"
+          schema:
+            type: number
+        - name: zTo
+          required: false
+          in: query
+          description: "Statt Datum: letzte Z-Nummer (Standard = `zFrom`)"
+          schema:
+            type: number
+      responses:
+        "200":
+          description: ""
+      security: &a93
+        - JWT-auth: []
+      summary: DSFinV-K export as ZIP (admins)
+      tags: &a94
+        - DSFinV-K
+  /api/organizations/{id}/dsfinvk/closings:
+    get:
+      description: Kassenabschlüsse (Z-Nr., Geschäftstag, Zeitraum, Summen je Geschäftsvorfall/Zahlart/USt, Anzahl, Prüfsummen), neueste zuerst; dazu `open` = Vorgänge, die noch in keinem Abschluss stehen.
+      operationId: dsfinvk_listClosings
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: from
+          required: false
+          in: query
+          description: Ab Geschäftstag (YYYY-MM-DD)
+          schema:
+            type: string
+        - name: to
+          required: false
+          in: query
+          description: Bis Geschäftstag (YYYY-MM-DD)
+          schema:
+            type: string
+        - name: limit
+          required: false
+          in: query
+          schema:
+            maximum: 500
+            default: 100
+            type: number
+      responses:
+        "200":
+          description: ""
+      security: *a93
+      summary: Cash point closings (admins)
+      tags: *a94
+    post:
+      description: "Schließt alle offenen Vorgänge bis jetzt ab (je Geschäftstag ein Abschluss, fortlaufende Z-Nr.). Abschlüsse sind unveränderlich. Fehler: 409 DSFINVK_NOTHING_TO_CLOSE, 409 DSFINVK_PENDING_TRANSACTIONS."
+      operationId: dsfinvk_createClosing
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "201":
+          description: ""
+      security: *a93
+      summary: Create a cash point closing now (admins)
+      tags: *a94
+  /api/organizations/{id}/dsfinvk/closings/{closingId}/download:
+    get:
+      description: ZIP des Abschlusses aus dem Archiv (`TSE_EXPORT_DIR/<org>/dsfinvk/`), Header `X-Checksum-SHA256`.
+      operationId: dsfinvk_downloadClosing
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: closingId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a93
+      summary: Download the DSFinV-K export of one closing (admins)
+      tags: *a94
+  /api/organizations/{id}/cashbook:
+    get:
+      description: "Kassenbuch eines Geschäftstags (6–6 Uhr): Buchungen (Anfangsbestand, Einlage, Entnahme, Kassensturz) und Soll-Bestand gesamt und je Gerät (Kassenbuch + Barzahlungen − Bar-Erstattungen − Pfand-Auszahlungen)."
+      operationId: dsfinvk_cashbookDay
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: date
+          required: false
+          in: query
+          description: Geschäftstag (YYYY-MM-DD), Standard = heute
+          schema:
+            type: string
+        - name: deviceId
+          required: false
+          in: query
+          description: Nur dieses Gerät
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a93
+      summary: Cash book of a business day (admins)
+      tags: *a94
+    post:
+      description: Wie an der Kasse, aber für die ganze Kasse (ohne Gerät). Jede Bargeldbewegung ist ein eigener TSE-gesicherter Beleg. Nur wenn Bargeld erlaubt ist (sonst 403 wie bei Barzahlungen).
+      operationId: dsfinvk_createCashbookEntry
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCashbookEntryDto"
+      responses:
+        "201":
+          description: ""
+      security: *a93
+      summary: Book a cash book entry for the whole register (admins)
+      tags: *a94
+  /api/device-api/cashbook:
+    get:
+      description: "Heutiger Geschäftstag (6–6 Uhr): Buchungen dieses Geräts und Soll-Bestand seiner Schublade; `cashAllowed` = Bargeld erlaubt (sonst kein Kassenbuch)."
+      operationId: deviceCashbook_today
+      parameters:
+        - &a95
+          name: X-Device-Token
+          in: header
+          description: Device authentication token
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      summary: Cash book of today for this device
+      tags: &a96
+        - Device API
+    post:
+      description: Anfangsbestand (Wechselgeld), Einlage, Entnahme/Abschöpfung (Geldtransit) oder Kassensturz (gezählter Bestand → Differenz Soll/Ist). Jede Bargeldbewegung ist ein eigener TSE-gesicherter Beleg (Kassenbeleg-V1, `tse` in der Antwort). Nur wenn Bargeld erlaubt ist.
+      operationId: deviceCashbook_create
+      parameters:
+        - *a95
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCashbookEntryDto"
+      responses:
+        "201":
+          description: ""
+      summary: Book a cash book entry at the till
+      tags: *a96
 info:
   title: OpenEOS API
   description: |-
@@ -11164,7 +11396,7 @@ components:
       properties:
         paymentMethod:
           type: string
-          enum: &a94
+          enum: &a98
             - cash
             - card
             - sumup_terminal
@@ -11234,7 +11466,7 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: &a95
+          enum: &a99
             - normal
             - high
             - rush
@@ -11242,7 +11474,7 @@ components:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: &a96
+          enum: &a100
             - pos
             - online
             - qr_order
@@ -11250,7 +11482,7 @@ components:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: &a97
+          enum: &a101
             - table_service
             - counter_pickup
         items:
@@ -11329,7 +11561,7 @@ components:
           type: string
         reasonCode:
           type: string
-          enum: &a93
+          enum: &a97
             - wrong_order
             - quality
             - not_delivered
@@ -11366,7 +11598,7 @@ components:
             $ref: "#/components/schemas/RefundItemSelectionDto"
         reasonCode:
           type: string
-          enum: *a93
+          enum: *a97
         reasonText:
           type: string
           example: Gast hat es sich anders überlegt
@@ -11411,7 +11643,7 @@ components:
           description: "Zahlung, über die erstattet wird. Ohne: von der jüngsten Zahlung rückwärts."
         reasonCode:
           type: string
-          enum: *a93
+          enum: *a97
         reasonText:
           type: string
           example: Burger kalt
@@ -11484,7 +11716,7 @@ components:
             type: string
         paymentMethod:
           type: string
-          enum: *a94
+          enum: *a98
           example: cash
         amountReceived:
           type: number
@@ -11714,17 +11946,17 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: *a95
+          enum: *a99
         source:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: *a96
+          enum: *a100
         fulfillmentType:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: *a97
+          enum: *a101
         items:
           description: Liste der Bestellpositionen
           type: array
@@ -11884,7 +12116,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: &a98
+          enum: &a102
             - fixed
             - manual
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
@@ -11921,7 +12153,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: *a98
+          enum: *a102
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
         amount:
           type: number
@@ -12167,7 +12399,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: &a99
+          enum: &a103
             - rect
             - round
         x:
@@ -12251,7 +12483,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: *a99
+          enum: *a103
         x:
           type: number
         y:
@@ -13768,3 +14000,30 @@ components:
       required:
         - categories
         - products
+    CreateCashbookEntryDto:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - opening_balance
+            - deposit
+            - withdrawal
+            - cash_count
+          description: "`opening_balance` Anfangsbestand (Wechselgeld), `deposit` Einlage, `withdrawal` Entnahme/Abschöpfung, `cash_count` Kassensturz (gezählter Bestand)"
+        amount:
+          type: number
+          description: Betrag in Euro, immer positiv (bei `cash_count` der gezählte Bestand)
+          example: 150
+        note:
+          type: string
+          description: Notiz (z. B. „Wechselgeld aus der Vereinskasse“)
+        scope:
+          type: string
+          enum:
+            - device
+            - register
+          description: "Nur an Geräten: Kassensturz für die Schublade dieses Geräts (Standard) oder die ganze Kasse"
+      required:
+        - type
+        - amount

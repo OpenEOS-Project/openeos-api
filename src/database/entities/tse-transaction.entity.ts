@@ -10,6 +10,7 @@ import { TseUnit } from './tse-unit.entity';
  * - `order`: Bestellvorgang im Tischbetrieb (Bestellung-V1)
  * - `order_cancellation`: Storno von Bestellpositionen (Bestellung-V1, negative Mengen)
  * - `abort`: Abschluss einer haengengebliebenen Transaktion (AVBelegabbruch)
+ * - `cashbook`: Kassenbuch (Anfangsbestand, Einlage, Entnahme, Kassensturz-Differenz)
  */
 export type TseTransactionKind =
   | 'receipt'
@@ -17,7 +18,8 @@ export type TseTransactionKind =
   | 'deposit_return'
   | 'order'
   | 'order_cancellation'
-  | 'abort';
+  | 'abort'
+  | 'cashbook';
 
 /**
  * - `pending`: Anfrage an die TSE laeuft (oder Prozess brach ab)
@@ -188,4 +190,21 @@ export class TseTransaction extends BaseEntity {
 
   @Column({ name: 'duration_ms', type: 'int', nullable: true })
   durationMs: number | null;
+
+  /**
+   * BON_ID/BON_NR der DSFinV-K: fortlaufend je Kasse (Organisation), vom
+   * Datenbank-Trigger beim Einfuegen vergeben (Migration 1836…).
+   */
+  @Column({
+    name: 'bon_id',
+    type: 'bigint',
+    nullable: true,
+    insert: false,
+    update: false,
+  })
+  bonId: string | null;
+
+  /** Kassenabschluss, in dem der Vorgang steht (null = noch offen). */
+  @Column({ name: 'cash_point_closing_id', type: 'uuid', nullable: true })
+  cashPointClosingId: string | null;
 }

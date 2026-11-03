@@ -138,6 +138,21 @@ export function kassenbelegProcessData(
   return `${type}^${slots}^${paymentText}`;
 }
 
+/**
+ * Kassenbuch-Buchung (Kassenbeleg-V1): Bargeldbewegung ohne Umsatzsteuer
+ * im 0-%-Slot, Zahlung bar. Beispiele aus DSFinV-K Anhang I: Anfangsbestand
+ * 100 € → `Beleg^0.00_0.00_0.00_0.00_100.00^100.00:Bar`, Einzahlung zur
+ * Bank (Geldtransit) → `Beleg^0.00_0.00_0.00_0.00_-100.00^-100.00:Bar`.
+ */
+export function cashbookProcessData(amountCents: number): string {
+  const slots = emptySlots();
+  slots[4] = amountCents;
+  return kassenbelegProcessData('Beleg', {
+    slots,
+    payments: [{ type: 'Bar', cents: amountCents }],
+  });
+}
+
 /** Leerer Beleg fuer das Schliessen haengender Transaktionen. */
 export function abortProcessData(): string {
   return kassenbelegProcessData('AVBelegabbruch', {

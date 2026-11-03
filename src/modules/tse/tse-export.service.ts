@@ -7,7 +7,8 @@ import {
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createReadStream, existsSync } from 'fs';
-import { mkdir, open, stat } from 'fs/promises';
+import { mkdir, open, readFile, stat } from 'fs/promises';
+import { createHash } from 'crypto';
 import { join, relative, resolve } from 'path';
 import { IsNull, Not, Repository } from 'typeorm';
 
@@ -23,6 +24,7 @@ import type { User } from '../../database/entities/user.entity';
 import { errorCodeOf, errorMessageOf } from './swissbit/swissbit.errors';
 import { SwissbitClientProvider } from './swissbit/swissbit-client.provider';
 import type { ExportStatus, TseCredentials } from './swissbit/swissbit.types';
+import { createZip } from '../dsfinvk/dsfinvk-zip';
 import { TseConfig } from './tse.config';
 import { TseCryptoService } from './tse-crypto.service';
 import { TseNotifyService } from './tse-notify.service';
@@ -503,6 +505,72 @@ export class TseExportService {
 
   stream(path: string) {
     return createReadStream(path);
+  }
+
+  /**
+   * Alle abgeholten TAR-Exporte, deren Zeitraum `[from, to)` beruehrt, als
+   * ein ZIP (fuer die Kassen-Nachschau: ein Klick). Die TAR-Dateien bleiben
+   * unveraendert (TR-03153), das ZIP ist nur die Verpackung.
+   */
+  async bundle(
+    organizationId: string,
+    user: User,
+    range: { from: Date; to: Date },
+  ): Promise<{
+    data: Buffer;
+    filename: string;
+    sha256: string;
+    files: number;
+  }> {
+    await this.units.assertAdmin(organizationId, user);
+    const rows = await this.exportRepository
+      .createQueryBuilder('e')
+      .where('e.organizationId = :organizationId', { organizationId })
+      .andWhere(`e.status = 'downloaded'`)
+      .andWhere('e.filePath IS NOT NULL')
+      .andWhere('(e.periodFrom IS NULL OR e.periodFrom < :to)', {
+        to: range.to,
+      })
+      .andWhere('(e.periodTo IS NULL OR e.periodTo >= :from)', {
+        from: range.from,
+      })
+      .orderBy('e.periodFrom', 'ASC')
+      .getMany();
+    const base = resolve(this.config.settings.exportDir);
+    const entries: { name: string; data: Buffer }[] = [];
+    for (const row of rows) {
+      const full = resolve(base, row.filePath!);
+      if (!full.startsWith(base + '/') || !existsSync(full)) continue;
+      const data = await readFile(full);
+      if (
+        row.sha256 &&
+        createHash('sha256').update(data).digest('hex') !== row.sha256
+      ) {
+        this.logger.error(
+          `TSE export ${row.filePath} checksum mismatch – skipped in bundle`,
+        );
+        continue;
+      }
+      entries.push({
+        name: `TSE_${row.serialNumber.slice(0, 16)}_${full.split('/').pop()}`,
+        data,
+      });
+    }
+    if (entries.length === 0) {
+      throw new NotFoundException({
+        code: ErrorCodes.TSE_EXPORT_NOT_FOUND,
+        message:
+          'Für diesen Zeitraum gibt es noch keinen abgeholten TSE-Export – stoß einen Export an und versuch es dann noch einmal',
+      });
+    }
+    const data = createZip(entries, new Date());
+    const day = (d: Date) => d.toISOString().slice(0, 10);
+    return {
+      data,
+      filename: `TSE-Export_${day(range.from)}_${day(new Date(range.to.getTime() - 1))}.zip`,
+      sha256: createHash('sha256').update(data).digest('hex'),
+      files: entries.length,
+    };
   }
 
   /** Fuer den Lebenszyklus `per_event` und Tests. */

@@ -96,6 +96,10 @@ export class TseUnit extends BaseEntity {
   })
   logTimeFormat: string | null;
 
+  /** Zertifikat der TSE (Base64, DER) fuer die DSFinV-K (Stamm_TSE). */
+  @Column({ type: 'text', nullable: true })
+  certificate: string | null;
+
   @Column({
     name: 'certification_id',
     type: 'varchar',

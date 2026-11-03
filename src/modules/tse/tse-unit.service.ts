@@ -50,6 +50,7 @@ import {
 } from './swissbit/swissbit.errors';
 import { SwissbitClientProvider } from './swissbit/swissbit-client.provider';
 import type { TseInfo } from './swissbit/swissbit.types';
+import { missingMasterData } from '../dsfinvk/dsfinvk-master';
 import { TseConfig } from './tse.config';
 import { TseCryptoService } from './tse-crypto.service';
 import {
@@ -85,6 +86,8 @@ export interface Eligibility {
   /** Ab wann die Anlage moeglich ist (YYYY-MM-DD, Berlin). */
   availableFrom: string | null;
   event: { id: string; name: string; startDate: string } | null;
+  /** Bei `TSE_MASTER_DATA_REQUIRED`: fehlende Angaben (`taxNumber`, `street`, `zip`, `city`). */
+  missing?: string[];
 }
 
 const CREATION_POLL_MS = 5_000;
@@ -290,6 +293,15 @@ export class TseUnitService {
     if (!isIntegrationEnabled(organization.settings, 'tse')) {
       return result(ErrorCodes.INTEGRATION_DISABLED);
     }
+    // Steuernummer/USt-IdNr. und Anschrift braucht der DSFinV-K-Export
+    // (Stamm_Abschluss, § 14 Abs. 4 Nr. 2 UStG) — vor der ersten Signatur.
+    const missing = missingMasterData({
+      name: '',
+      settings: organization.settings,
+    });
+    if (missing.length > 0) {
+      return result(ErrorCodes.TSE_MASTER_DATA_REQUIRED, { missing });
+    }
     const events = await this.qualifyingEvents(organization.id, now);
     if (events.length === 0) return result(ErrorCodes.TSE_REQUIRES_PAID_EVENT);
     const first = events[0];
@@ -363,6 +375,14 @@ export class TseUnitService {
             eventId: eligibility.event?.id ?? null,
             eventName: eligibility.event?.name ?? null,
           },
+        });
+      }
+      if (eligibility.reason === ErrorCodes.TSE_MASTER_DATA_REQUIRED) {
+        throw new ConflictException({
+          code: ErrorCodes.TSE_MASTER_DATA_REQUIRED,
+          message:
+            'Für die Cloud-TSE brauchen wir Steuernummer oder USt-IdNr. und die Anschrift deiner Organisation. Trag sie unter Einstellungen → Organisation ein.',
+          params: { missing: (eligibility.missing ?? []).join(',') },
         });
       }
       throw new ConflictException({
@@ -752,6 +772,20 @@ export class TseUnitService {
     const created: string[] = [];
     for (const row of rows) {
       try {
+        const organization = await this.organizationRepository.findOne({
+          where: { id: row.organization_id },
+          select: { id: true, settings: true },
+        });
+        if (
+          organization &&
+          missingMasterData({ name: '', settings: organization.settings })
+            .length > 0
+        ) {
+          this.logger.warn(
+            `Automatic TSE creation for org ${row.organization_id} skipped: tax number/address missing`,
+          );
+          continue;
+        }
         const unit = await this.createUnit(row.organization_id, {
           trigger: 'auto',
           eventId: row.event_id,
@@ -1014,6 +1048,21 @@ export class TseUnitService {
     } catch (e) {
       error = errorCodeOf(e);
     }
+    // Fehlende Angaben fuer die DSFinV-K (Stamm_TSE) nachtragen, z. B.
+    // bei TSEs, die vor dem Speichern des Zertifikats angelegt wurden.
+    const backfill: Partial<
+      Pick<TseUnit, 'certificate' | 'publicKey' | 'signatureAlgorithm'>
+    > = {};
+    if (value?.certificate && !unit.certificate)
+      backfill.certificate = value.certificate;
+    if (value?.publicKey && !unit.publicKey)
+      backfill.publicKey = value.publicKey;
+    if (value?.signatureAlgorithm && !unit.signatureAlgorithm)
+      backfill.signatureAlgorithm = value.signatureAlgorithm;
+    if (Object.keys(backfill).length > 0) {
+      Object.assign(unit, backfill);
+      void this.unitRepository.update(unit.id, backfill).catch(() => undefined);
+    }
     const fetchedAt = Date.now();
     this.liveCache.set(unit.id, { value, error, fetchedAt });
     return { value, error, fetchedAt: new Date(fetchedAt).toISOString() };
@@ -1083,8 +1132,10 @@ function infoColumns(
   | 'logTimeFormat'
   | 'certificationId'
   | 'certificateExpiresAt'
-> {
+> &
+  Partial<Pick<TseUnit, 'certificate'>> {
   return {
+    ...(info.certificate ? { certificate: info.certificate } : {}),
     publicKey: info.publicKey,
     signatureAlgorithm: info.signatureAlgorithm,
     logTimeFormat: info.logTimeFormat,

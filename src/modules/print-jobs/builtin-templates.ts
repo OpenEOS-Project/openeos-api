@@ -92,6 +92,9 @@ export const TSE_PRINT_BLOCK = `{# TSE-Angaben nach AEAO zu § 146a Nr. 2.2 und 
 <<CENTER>><<BOLD>>TSE ausgefallen<</BOLD>><</CENTER>>
 <<CENTER>>Beleg ohne Signatur<</CENTER>>
 Kassen-ID: {{ tse.client_id }}
+{% if tse.bon_number %}
+Beleg-Nr.: {{ tse.bon_number }}
+{% endif %}
 {% if tse.serial_number %}
 TSE-Seriennummer:
 {{ tse.serial_number|wordwrap(tse_cols, true, "\\n") }}
@@ -101,6 +104,9 @@ TSE-Seriennummer:
 <<CENTER>><<BOLD>>TRAININGSBUCHUNG - KEIN VERKAUF<</BOLD>><</CENTER>>
 {% endif %}
 Kassen-ID: {{ tse.client_id }}
+{% if tse.bon_number %}
+Beleg-Nr.: {{ tse.bon_number }}
+{% endif %}
 TSE-Seriennummer:
 {{ tse.serial_number|wordwrap(tse_cols, true, "\\n") }}
 TSE-Transaktion: {{ tse.transaction_number }}
