@@ -14,12 +14,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import {
-  ApiTags,
-  ApiBearerAuth,
-  ApiOperation,
-  ApiBody,
-} from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiBody } from '@nestjs/swagger';
 import { AdminEventsService } from './admin-events.service';
 import {
   QueryAdminEventsDto,
