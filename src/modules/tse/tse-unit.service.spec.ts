@@ -30,6 +30,8 @@ interface Fixture {
     endDate: Date | null;
   }>;
   mode?: string;
+  /** false = ohne Steuernummer/Anschrift (DSFinV-K-Stammdaten). */
+  masterData?: boolean;
 }
 
 function chain(result: () => unknown) {
@@ -65,6 +67,16 @@ function setup(fixture: Fixture = {}) {
     country: fixture.country ?? 'DE',
     settings: {
       integrations: { tse: { enabled: fixture.integration ?? true } },
+      ...(fixture.masterData === false
+        ? {}
+        : {
+            taxNumber: '12/345/67890',
+            contact: {
+              address: 'Sportplatzweg 1',
+              zipCode: '12345',
+              city: 'Musterdorf',
+            },
+          }),
     },
     operatingMode: fixture.mode ?? 'cashless',
   };
@@ -414,6 +426,20 @@ describe('TseUnitService — Kostenregeln vor der Anlage', () => {
     ).rejects.toMatchObject({
       response: { code: 'INTEGRATION_DISABLED' },
     });
+  });
+
+  it('needs the tax number and address for the DSFinV-K first', async () => {
+    const f = setup({ masterData: false });
+    await expect(
+      f.service.requestCreation(ORG, admin, {}, {}),
+    ).rejects.toMatchObject({
+      status: 409,
+      response: {
+        code: 'TSE_MASTER_DATA_REQUIRED',
+        params: { missing: 'taxNumber,street,zip,city' },
+      },
+    });
+    expect(f.units.size).toBe(0);
   });
 
   it('needs a paid event that has not ended', async () => {

@@ -36,6 +36,9 @@ export * from './tse-unit.entity';
 export * from './tse-transaction.entity';
 export * from './tse-outage.entity';
 export * from './tse-export.entity';
+// DSFinV-K und Kassenbuch (openeos-api#102)
+export * from './cash-point-closing.entity';
+export * from './cashbook-entry.entity';
 
 // Tables
 export * from './table-area.entity';

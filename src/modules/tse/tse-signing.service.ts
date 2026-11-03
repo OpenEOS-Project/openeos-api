@@ -34,11 +34,13 @@ import {
 import { SwissbitClientProvider } from './swissbit/swissbit-client.provider';
 import type { TransactionResponse } from './swissbit/swissbit.types';
 import { TseConfig } from './tse.config';
+import { rowsOf } from './tse-sql.util';
 import { TseOutageService } from './tse-outage.service';
 import {
   PROCESS_TYPE_ORDER,
   PROCESS_TYPE_RECEIPT,
   bestellungProcessData,
+  cashbookProcessData,
   emptySlots,
   kassenbelegProcessData,
   paymentTypeFor,
@@ -296,6 +298,18 @@ export class TseSigningService {
 
   private async saveResult(tx: TseTransaction): Promise<void> {
     try {
+      // Beleg-Nr. (BON_ID) vergibt der Datenbank-Trigger beim Einfuegen.
+      const rows = rowsOf<{ bon_id: string | null }>(
+        await this.txRepository.query(
+          'SELECT bon_id FROM tse_transactions WHERE id = $1',
+          [tx.id],
+        ),
+      );
+      tx.bonId = rows[0]?.bon_id ?? null;
+    } catch {
+      tx.bonId = tx.bonId ?? null;
+    }
+    try {
       await this.txRepository.update(tx.id, {
         status: tx.status,
         transactionNumber: tx.transactionNumber,
@@ -412,6 +426,7 @@ export class TseSigningService {
     try {
       const order = await this.orderRepository.findOne({
         where: { id: orderId },
+        relations: { items: true },
       });
       if (!order || !(await this.isActive(order.organizationId))) return null;
       const training = order.isTest === true;
@@ -425,7 +440,12 @@ export class TseSigningService {
         }),
         training,
         amountCents: 0,
-        lines: { orderNumber: order.orderNumber, zeroTotal: true },
+        lines: {
+          orderNumber: order.orderNumber,
+          zeroTotal: true,
+          items: snapshotItems(order.items),
+          discount: Number(order.discountAmount) || 0,
+        },
         eventId: order.eventId,
         orderId: order.id,
         ...actor,
@@ -537,6 +557,47 @@ export class TseSigningService {
     }
   }
 
+  /**
+   * Kassenbuch-Buchung (Anfangsbestand, Einlage, Entnahme, Differenz beim
+   * Kassensturz) als eigener Kassenbeleg: Bargeldbewegung im 0-%-Slot,
+   * Zahlung bar (DSFinV-K Anhang I, Beispiele Anfangsbestand/Geldtransit).
+   */
+  async signCashbook(input: {
+    organizationId: string;
+    entryId: string;
+    cashbookType: string;
+    amountCents: number;
+    note?: string | null;
+    terminal?: string | null;
+    userId?: string | null;
+  }): Promise<TseReceiptView | null> {
+    try {
+      if (input.amountCents === 0) return null;
+      if (!(await this.isActive(input.organizationId))) return null;
+      return this.sign({
+        organizationId: input.organizationId,
+        kind: 'cashbook',
+        processType: PROCESS_TYPE_RECEIPT,
+        processData: cashbookProcessData(input.amountCents),
+        training: false,
+        amountCents: input.amountCents,
+        lines: {
+          cashbookType: input.cashbookType,
+          amountCents: input.amountCents,
+          note: input.note ?? null,
+          entryId: input.entryId,
+        },
+        terminal: input.terminal ?? null,
+        userId: input.userId ?? null,
+      });
+    } catch (error) {
+      this.logger.error(
+        `TSE cashbook entry ${input.entryId} failed: ${(error as Error).message}`,
+      );
+      return null;
+    }
+  }
+
   // ----------------------------------------------- Bestellvorgaenge
 
   /**
@@ -577,7 +638,8 @@ export class TseSigningService {
   async signOrderChange(
     orderId: string,
     changes: Array<{
-      item: Pick<OrderItem, 'productName' | 'unitPrice' | 'optionsPrice'>;
+      item: Pick<OrderItem, 'productName' | 'unitPrice' | 'optionsPrice'> &
+        Partial<Pick<OrderItem, 'taxRate'>>;
       quantity: number;
     }>,
     actor: TseActor,
@@ -614,7 +676,7 @@ export class TseSigningService {
   private signOrderLines(
     order: Order,
     kind: 'order' | 'order_cancellation',
-    lines: OrderLine[],
+    lines: (OrderLine & { taxRate?: number })[],
     actor: TseActor,
   ): Promise<TseReceiptView | null> {
     const training = order.isTest === true;
@@ -714,12 +776,15 @@ function orderLine(
   item: Pick<
     OrderItem,
     'productName' | 'unitPrice' | 'optionsPrice' | 'quantity'
-  >,
-): OrderLine {
+  > &
+    Partial<Pick<OrderItem, 'taxRate'>>,
+): OrderLine & { taxRate?: number } {
   return {
     quantity: item.quantity,
     name: item.productName,
     unitCents: cents(unitGross(item)),
+    // Nur fuer die DSFinV-K-Kopie (nicht Teil der Prozessdaten).
+    ...(item.taxRate !== undefined ? { taxRate: Number(item.taxRate) } : {}),
   };
 }
 
@@ -824,24 +889,48 @@ export function fitSlots(slots: VatSlots, totalCents: number): VatSlots {
   return out;
 }
 
-function receiptLines(
-  order: Order,
-  payment: Payment,
+/**
+ * Kopie der Positionen fuer die DSFinV-K (Bonpos, Bonpos_Zusatzinfo): je
+ * Position Name, Menge, Stueckpreis inkl. Optionen, Satz, Pfand, Artikel,
+ * Warengruppe und Optionen (Varianten).
+ */
+export function snapshotItems(
+  items: OrderItem[] | undefined,
+): Record<string, unknown>[] {
+  return (items ?? [])
+    .filter((i) => i.status !== OrderItemStatus.CANCELLED)
+    .map((i) => ({
+      id: i.id,
+      name: i.productName,
+      quantity: i.quantity,
+      unitPrice: unitGross(i),
+      taxRate: Number(i.taxRate),
+      deposit: Number(i.depositAmount || 0),
+      productId: i.productId ?? null,
+      categoryId: i.categoryId ?? null,
+      categoryName: i.categoryName ?? null,
+      options: (i.options?.selected ?? []).map((o) => ({
+        group: o.group,
+        option: o.option,
+        priceModifier: Number(o.priceModifier) || 0,
+      })),
+    }));
+}
+
+export function receiptLines(
+  order: Pick<
+    Order,
+    'orderNumber' | 'items' | 'discountAmount' | 'tipAmount' | 'total'
+  >,
+  payment: Pick<Payment, 'paymentMethod' | 'amount' | 'metadata'>,
   composition: Composition,
 ): Record<string, unknown> {
   return {
     orderNumber: order.orderNumber,
     paymentMethod: payment.paymentMethod,
     amount: Number(payment.amount),
-    items: (order.items ?? [])
-      .filter((i) => i.status !== OrderItemStatus.CANCELLED)
-      .map((i) => ({
-        name: i.productName,
-        quantity: i.quantity,
-        unitPrice: unitGross(i),
-        taxRate: Number(i.taxRate),
-        deposit: Number(i.depositAmount || 0),
-      })),
+    orderTotal: Number(order.total) || 0,
+    items: snapshotItems(order.items),
     discount: Number(order.discountAmount) || 0,
     tip: Number(order.tipAmount) || 0,
     composition: {

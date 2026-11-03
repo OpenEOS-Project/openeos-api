@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -6,6 +6,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -81,4 +82,20 @@ export class QueryTseUsageDto {
   @Min(1)
   @Max(12)
   month?: number;
+}
+
+export class TseExportBundleQueryDto {
+  @ApiProperty({
+    description: 'Erster Geschäftstag (YYYY-MM-DD)',
+    example: '2026-11-03',
+  })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  from: string;
+
+  @ApiPropertyOptional({
+    description: 'Letzter Geschäftstag (YYYY-MM-DD), Standard = `from`',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  to?: string;
 }

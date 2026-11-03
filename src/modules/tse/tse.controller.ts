@@ -27,7 +27,9 @@ import {
   CreateTseDto,
   DeactivateTseDto,
   QueryTseTransactionsDto,
+  TseExportBundleQueryDto,
 } from './dto/tse.dto';
+import { businessDayRange } from '../dsfinvk/dsfinvk-master';
 import { TseExportService } from './tse-export.service';
 import { TseSigningService } from './tse-signing.service';
 import { TseStatusService, unitView } from './tse-status.service';
@@ -139,6 +141,30 @@ export class TseController {
     const organization = await this.units.assertAdmin(id, user);
     assertIntegrationEnabled(organization.settings, 'tse');
     return { data: await this.exports.requestManual(id, user, meta(request)) };
+  }
+
+  @Get('exports/bundle')
+  @ApiOperation({
+    summary: 'All TSE exports (TAR) of a period as one ZIP (admins)',
+    description:
+      'Für die Kassen-Nachschau: alle abgeholten TAR-Exporte, die den Zeitraum (Geschäftstage `from`–`to`, 6–6 Uhr) berühren, unverändert in einem ZIP. Header `X-Checksum-SHA256`. 404 TSE_EXPORT_NOT_FOUND, wenn es noch keinen gibt (dann `POST …/tse/exports`).',
+  })
+  async bundleExports(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: TseExportBundleQueryDto,
+    @CurrentUser() user: User,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const from = businessDayRange(query.from).from;
+    const to = businessDayRange(query.to ?? query.from).to;
+    const file = await this.exports.bundle(id, user, { from, to });
+    res.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${file.filename}"`,
+      'X-Checksum-SHA256': file.sha256,
+      'Cache-Control': 'no-store',
+    });
+    return new StreamableFile(file.data, { length: file.data.length });
   }
 
   @Get('exports/:exportId/download')

@@ -40,6 +40,11 @@ export interface TseReceiptView {
   paymentId: string | null;
   refundId: string | null;
   pfandReturnId: string | null;
+  /**
+   * Beleg-Nr. der Kasse (DSFinV-K BON_ID/BON_NR), fortlaufend je
+   * Organisation; null, solange die Datenbank sie noch nicht vergeben hat.
+   */
+  bonNumber: number | null;
   createdAt: string;
 }
 
@@ -127,6 +132,7 @@ export function tseReceiptView(
     paymentId: tx.paymentId ?? null,
     refundId: tx.refundId ?? null,
     pfandReturnId: tx.pfandReturnId ?? null,
+    bonNumber: toNumber(tx.bonId),
     createdAt: iso(tx.createdAt) ?? new Date().toISOString(),
   };
 }
@@ -144,6 +150,8 @@ export interface TsePrintBlock {
   process_type: string;
   serial_number: string | null;
   client_id: string;
+  /** Beleg-Nr. (DSFinV-K BON_NR), null bei aelteren Vorgaengen. */
+  bon_number: number | null;
   transaction_number: number | null;
   signature_counter: number | null;
   start_time: string | null;
@@ -167,6 +175,7 @@ export function tsePrintBlock(
     process_type: view.processType,
     serial_number: view.serialNumber,
     client_id: view.clientId,
+    bon_number: view.bonNumber ?? null,
     transaction_number: view.transactionNumber,
     signature_counter: view.signatureCounter,
     start_time: view.startTime,

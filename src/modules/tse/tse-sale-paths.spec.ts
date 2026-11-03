@@ -56,6 +56,7 @@ function view(
     processData: 'Beleg^…',
     serialNumber: 'ff',
     clientId: 'OEOS-1',
+    bonNumber: null,
     transactionNumber: 1,
     signatureCounter: 2,
     startTime: null,
