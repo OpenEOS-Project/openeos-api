@@ -12,6 +12,7 @@ import { UsersService } from '../users/users.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { OrganizationViewService } from '../organizations/organization-view.service';
 
 jest.mock('uuid', () => ({
   v4: () => jest.requireActual<typeof import('crypto')>('crypto').randomUUID(),
@@ -208,6 +209,7 @@ describe('AuthController passes the client to the session', () => {
       twoFactorService as never,
       config,
       undefined as never,
+      new OrganizationViewService(),
     );
     return { ctrl, login, refreshTokens };
   }

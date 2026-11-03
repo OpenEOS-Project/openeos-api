@@ -60,7 +60,7 @@ import { CreatePaymentDto } from '../payments/dto';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { TseSigningService } from '../tse/tse-signing.service';
-import { TseStatusService } from '../tse/tse-status.service';
+import { OrganizationViewService } from '../organizations/organization-view.service';
 import type { TseReceiptView } from '../tse/tse-view';
 import {
   assertCashAllowed,
@@ -68,7 +68,6 @@ import {
   handOverOnCompletion,
   isOrdersOnly,
   OPERATING_MODE_SELECT,
-  operatingModeView,
   shouldAutoCompleteOrderOnly,
 } from '../../common/utils/operating-mode.util';
 import { PrintersService } from '../printers/printers.service';
@@ -119,6 +118,7 @@ import {
 import {
   BUILTIN_PRINT_TEMPLATES,
   TSE_RECEIPT_TEMPLATES,
+  withPaymentLabel,
   withTseBlock,
 } from '../print-jobs/builtin-templates';
 
@@ -189,8 +189,9 @@ export class DeviceApiController {
     private readonly printerAgentsService: PrinterAgentsService,
     @Optional()
     private readonly tseSigning?: TseSigningService,
+    // Optional mit Rueckfall: ohne TSE-Modul (Tests) bleibt `tse` null.
     @Optional()
-    private readonly tseStatus?: TseStatusService,
+    private readonly organizationView: OrganizationViewService = new OrganizationViewService(),
   ) {}
 
   @Get('organization')
@@ -215,14 +216,12 @@ export class DeviceApiController {
         id: organization.id,
         name: organization.name,
         settings: organization.settings,
-        // Betriebsart (operating-mode.util.ts): country, operatingMode,
+        // Abgeleitete Felder wie jede Organisations-Antwort
+        // (OrganizationViewService): country, operatingMode,
         // operatingModeLegacy, operatingModeSince, tseActive, cashAllowed,
-        // pricesVisible. Die Kasse richtet Preise, Zahlarten und Abschluss
-        // danach; der Server prueft jede Zahlung trotzdem selbst.
-        ...operatingModeView(organization),
-        // Cloud-TSE: { available, integrationEnabled, active, state,
-        // serialNumber, clientId } (tse-swissbit-plan.md §8).
-        tse: (await this.tseStatus?.summary(organization)) ?? null,
+        // pricesVisible, tse. Die Kasse richtet Preise, Zahlarten und
+        // Abschluss danach; der Server prueft jede Zahlung trotzdem selbst.
+        ...(await this.organizationView.derived(organization)),
       },
     };
   }
@@ -366,10 +365,12 @@ export class DeviceApiController {
     const templateMap: Record<string, string> = {};
     for (const t of templates) {
       const tpl = t.template as { generatedTemplate?: string } | string | null;
+      // Zahlart als Anzeigename („Bar“) statt Rohwert („cash“), auch in
+      // Vorlagen aus der Zeit vor `payment_label`.
       if (typeof tpl === 'string') {
-        templateMap[t.type] = tpl;
+        templateMap[t.type] = withPaymentLabel(tpl);
       } else if (tpl && typeof tpl.generatedTemplate === 'string') {
-        templateMap[t.type] = tpl.generatedTemplate;
+        templateMap[t.type] = withPaymentLabel(tpl.generatedTemplate);
       }
       // else: skip — agent falls back to its built-in template for this type.
     }
@@ -1598,6 +1599,33 @@ export class DeviceApiController {
     const organizationId = requireOrganization(device);
     return {
       data: await this.orderHistoryService.detail(organizationId, orderId),
+    };
+  }
+
+  @Get('orders/:orderId/tse')
+  @ApiOperation({
+    summary: 'TSE-Daten einer Bestellung (Kasse)',
+    description:
+      'Alle TSE-Vorgänge der Bestellung in zeitlicher Reihenfolge — Bestellvorgang, Kassenbelege (auch Teil- und Sammelzahlungen), Gegenbelege der Erstattungen — je mit `kind`, `status`, Signatur, QR-Code-Inhalt (`qrCode`, DSFinV-K Anhang I) und Bezug (`paymentId`, `refundId`). Nur Bestellungen der Organisation des Geräts (sonst 404). Leer ohne Cloud-TSE. Liest nur gespeicherte Daten, signiert nichts.',
+  })
+  async getOrderTse(
+    @CurrentDevice() device: Device,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
+  ): Promise<{ data: TseReceiptView[] }> {
+    const organizationId = requireOrganization(device);
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId, organizationId },
+      select: { id: true },
+    });
+    if (!order) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORDER_NOT_FOUND,
+        message: 'Bestellung nicht gefunden',
+      });
+    }
+    return {
+      data: (await this.tseSigning?.forOrder(order.id, organizationId)) ?? [],
     };
   }
 

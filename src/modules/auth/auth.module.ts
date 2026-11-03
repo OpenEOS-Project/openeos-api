@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { TwoFactorService } from './two-factor.service';
 import { JwtStrategy, LocalStrategy } from './strategies';
 import { EncryptionService } from '../../common/services/encryption.service';
+import { OrganizationViewModule } from '../organizations/organization-view.module';
 import {
   User,
   Organization,
@@ -32,6 +33,7 @@ import {
       LoginMagicLink,
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
+    OrganizationViewModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({

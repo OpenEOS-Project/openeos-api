@@ -59,7 +59,7 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 <<BOLD>>{{ "GESAMT:".ljust(cols - 12) }}{{ total|default(0)|currency|rjust(12) }}<</BOLD>>
 {% if payment_method is defined %}
 {{ line }}
-Zahlungsart: {{ payment_method }}
+Zahlungsart: {{ payment_label|default(payment_method) }}
 {% endif %}
 {% endif %}
 <<FEED:3>>
@@ -133,10 +133,10 @@ const RECEIPT_SOURCE =
 
 {% endif %}
 <<CENTER>><<BIG>>{{ organization.name|default("OpenEOS") }}<</BIG>><</CENTER>>
-{% if organization.address is defined %}
+{% if organization.address is defined and organization.address %}
 <<CENTER>>{{ organization.address }}<</CENTER>>
 {% endif %}
-{% if organization.phone is defined %}
+{% if organization.phone is defined and organization.phone %}
 <<CENTER>>Tel: {{ organization.phone }}<</CENTER>>
 {% endif %}
 <<CENTER>>{{ sep }}<</CENTER>>
@@ -176,7 +176,7 @@ Kunde: {{ customer_name }}
 <<BOLD>>{{ "GESAMT:".ljust(cols - 12) }}{{ total|default(0)|currency|rjust(12) }}<</BOLD>>
 {{ line }}
 {% if payment_method is defined %}
-Zahlungsart: {{ payment_method }}
+Zahlungsart: {{ payment_label|default(payment_method) }}
 {% if paid_amount is defined %}
 Bezahlt: {{ paid_amount|currency }}
 {% endif %}
@@ -301,6 +301,22 @@ export function withTseBlock(source: string): string {
   const head = lines.slice(0, insertAt).join('\n');
   const tail = lines.slice(insertAt).join('\n');
   return `${head}${head ? '\n' : ''}${TSE_PRINT_BLOCK}${tail}`;
+}
+
+/** `{{ payment_method }}` als reine Ausgabe (nicht in Bedingungen). */
+const RAW_PAYMENT_METHOD = /\{\{\s*payment_method\s*\}\}/g;
+
+/**
+ * Eigene Vorlagen (Designer) druckten die Zahlart als Rohwert („cash“).
+ * Die API schickt dazu `payment_label` („Bar“, „Karte (SumUp)“ …); die
+ * Ausgabe nimmt ihn, wo vorhanden. Bedingungen auf `payment_method`
+ * bleiben unberuehrt.
+ */
+export function withPaymentLabel(source: string): string {
+  return source.replace(
+    RAW_PAYMENT_METHOD,
+    '{{ payment_label|default(payment_method) }}',
+  );
 }
 
 export const BUILTIN_PRINT_TEMPLATES: Record<string, string> = {

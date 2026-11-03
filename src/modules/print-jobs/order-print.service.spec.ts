@@ -141,13 +141,18 @@ describe('cash change helpers', () => {
 });
 
 describe('OrderPrintService receipt payload', () => {
-  function setup(vatExempt: boolean | undefined, items: OrderItem[]) {
+  function setup(
+    vatExempt: boolean | undefined,
+    items: OrderItem[],
+    extraSettings: Record<string, unknown> = {},
+  ) {
     const organization = {
       id: 'org-1',
       name: 'Verein',
       settings: {
         vatExempt,
         orderFlow: { receiptPrinting: { enabled: true } },
+        ...extraSettings,
       },
     } as unknown as Organization;
     const organizationRepository = {
@@ -247,5 +252,63 @@ describe('OrderPrintService receipt payload', () => {
     expect('tax_amount' in p).toBe(false);
     expect('tax_lines' in p).toBe(false);
     expect(p.change).toBeUndefined();
+  });
+
+  it('sends a German payment label next to the raw method', async () => {
+    const { service, payload } = setup(true, items);
+    await service.handlePaymentReceived('org-1', {
+      orderId: 'order-1',
+      orderNumber: 'A-1',
+      paymentId: 'pay-1',
+      amount: 24.6,
+      paymentMethod: 'cash',
+      isFullyPaid: true,
+      order,
+    });
+    const p = payload();
+    expect(p.payment_method).toBe('cash');
+    expect(p.payment_label).toBe('Bar');
+  });
+
+  it('leaves an empty address out of the header instead of printing undefined', async () => {
+    const { service, payload } = setup(true, items, {
+      address: {},
+      contact: { email: 'a@b.de', phone: '  ' },
+    });
+    await service.handlePaymentReceived('org-1', {
+      orderId: 'order-1',
+      orderNumber: 'A-1',
+      paymentId: 'pay-1',
+      amount: 24.6,
+      paymentMethod: 'sumup_terminal',
+      isFullyPaid: true,
+      order,
+    });
+    const p = payload();
+    const organization = JSON.parse(JSON.stringify(p.organization)) as Record<
+      string,
+      unknown
+    >;
+    expect(organization).toEqual({ name: 'Verein' });
+    expect(JSON.stringify(p)).not.toContain('undefined');
+    expect(p.payment_label).toBe('Karte (SumUp)');
+  });
+
+  it('prints only the address parts that exist', async () => {
+    const { service, payload } = setup(true, items, {
+      address: { street: '', zip: '12345', city: 'Musterstadt' },
+    });
+    await service.handlePaymentReceived('org-1', {
+      orderId: 'order-1',
+      orderNumber: 'A-1',
+      paymentId: 'pay-1',
+      amount: 24.6,
+      paymentMethod: 'card',
+      isFullyPaid: true,
+      order,
+    });
+    expect(payload().organization).toMatchObject({
+      address: '12345 Musterstadt',
+    });
   });
 });

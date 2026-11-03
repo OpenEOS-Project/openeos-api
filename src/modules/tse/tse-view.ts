@@ -35,6 +35,11 @@ export interface TseReceiptView {
   qrCode: string | null;
   errorCode: string | null;
   terminal: string | null;
+  /** Bezug des Vorgangs (null, wenn nicht zutreffend). */
+  orderId: string | null;
+  paymentId: string | null;
+  refundId: string | null;
+  pfandReturnId: string | null;
   createdAt: string;
 }
 
@@ -118,6 +123,10 @@ export function tseReceiptView(
     qrCode,
     errorCode: signed ? null : tx.errorCode,
     terminal: tx.terminal,
+    orderId: tx.orderId ?? null,
+    paymentId: tx.paymentId ?? null,
+    refundId: tx.refundId ?? null,
+    pfandReturnId: tx.pfandReturnId ?? null,
     createdAt: iso(tx.createdAt) ?? new Date().toISOString(),
   };
 }

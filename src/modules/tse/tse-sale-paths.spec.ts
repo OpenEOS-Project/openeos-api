@@ -67,6 +67,10 @@ function view(
     qrCode: null,
     errorCode: null,
     terminal: 'device-1',
+    orderId: null,
+    paymentId: null,
+    refundId: null,
+    pfandReturnId: null,
     createdAt: new Date().toISOString(),
   };
 }
