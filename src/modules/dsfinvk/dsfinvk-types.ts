@@ -148,8 +148,10 @@ export interface DsfinvkClosingInput {
 export type DsfinvkRows = Record<TableName, CsvRow[]>;
 
 export interface ClosingTotals {
-  /** Summe UMS_BRUTTO aller Belege (BON_TYP Beleg) in Cent. */
+  /** Summe UMS_BRUTTO aller Belege (BON_TYP Beleg) in Cent — inkl. Kassenbuch, Pfand, Trinkgeld. */
   grossCents: number;
+  /** Umsatz brutto (GV Umsatz + Rabatt + Aufschlag) in Cent. */
+  salesGrossCents: number;
   /** Summe aller Zahlungen / Barzahlungen (Z_SE_ZAHLUNGEN / Z_SE_BARZAHLUNGEN). */
   paymentsCents: number;
   cashCents: number;
