@@ -17195,6 +17195,278 @@
           "Device API"
         ]
       }
+    },
+    "/api/admin/retention/config": {
+      "get": {
+        "operationId": "retentionAdmin_config",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Effective retention periods and run mode",
+        "tags": [
+          "Admin — Aufbewahrung und Löschung"
+        ]
+      }
+    },
+    "/api/admin/retention/runs": {
+      "get": {
+        "operationId": "retentionAdmin_runs",
+        "parameters": [
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "guest_data",
+                "helper_data",
+                "auth_records",
+                "audit_logs",
+                "support_messages",
+                "contact_requests",
+                "assistant_imports",
+                "organization_inactivity",
+                "organization_purge",
+                "user_accounts",
+                "fiscal_archive"
+              ]
+            }
+          },
+          {
+            "name": "trigger",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "scheduled",
+                "manual",
+                "instruction"
+              ]
+            }
+          },
+          {
+            "name": "organizationId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Protocol of deletion runs, newest first",
+        "tags": [
+          "Admin — Aufbewahrung und Löschung"
+        ]
+      },
+      "post": {
+        "operationId": "retentionAdmin_start",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRetentionRunDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Run the deletion jobs now (dry run unless dryRun=false or RETENTION_DRY_RUN=false)",
+        "tags": [
+          "Admin — Aufbewahrung und Löschung"
+        ]
+      }
+    },
+    "/api/admin/retention/notices": {
+      "get": {
+        "operationId": "retentionAdmin_notices",
+        "parameters": [
+          {
+            "name": "open",
+            "required": false,
+            "in": "query",
+            "description": "`true`: nur offene, `false`: nur erledigte/aufgehobene",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subjectType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "organization",
+                "user"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Announced closures and deletions of organizations and accounts",
+        "tags": [
+          "Admin — Aufbewahrung und Löschung"
+        ]
+      }
+    },
+    "/api/admin/retention/organizations/{organizationId}/keep": {
+      "post": {
+        "operationId": "retentionAdmin_keepOrganization",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Cancel an announced closure for inactivity (counts as activity, period restarts)",
+        "tags": [
+          "Admin — Aufbewahrung und Löschung"
+        ]
+      }
+    },
+    "/api/admin/retention/users/{userId}/keep": {
+      "post": {
+        "operationId": "retentionAdmin_keepUser",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Cancel an announced account deletion for inactivity (period restarts)",
+        "tags": [
+          "Admin — Aufbewahrung und Löschung"
+        ]
+      }
+    },
+    "/api/admin/retention/organizations/{organizationId}/erasures": {
+      "post": {
+        "operationId": "retentionAdmin_erase",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EraseRecordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Erase a specific guest or helper record on the customer’s instruction (logged with reason and executing admin)",
+        "tags": [
+          "Admin — Aufbewahrung und Löschung"
+        ]
+      }
     }
   },
   "info": {
@@ -22563,6 +22835,73 @@
         "required": [
           "type",
           "amount"
+        ]
+      },
+      "StartRetentionRunDto": {
+        "type": "object",
+        "properties": {
+          "categories": {
+            "type": "array",
+            "description": "Nur diese Datenarten (leer: alle eingestellten)",
+            "items": {
+              "type": "string",
+              "enum": [
+                "guest_data",
+                "helper_data",
+                "auth_records",
+                "audit_logs",
+                "support_messages",
+                "contact_requests",
+                "assistant_imports",
+                "organization_inactivity",
+                "organization_purge",
+                "user_accounts",
+                "fiscal_archive"
+              ]
+            }
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "Probelauf (nur zählen). Ohne Angabe gilt RETENTION_DRY_RUN der Instanz."
+          }
+        }
+      },
+      "EraseRecordDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "order",
+              "guest_email",
+              "shift_registration",
+              "helper_email"
+            ],
+            "description": "`order`: Gästeangaben einer Bestellung · `guest_email`: alle Bestellangaben zu einer E-Mail-Adresse · `shift_registration`: eine Schichtanmeldung (ganze Eingabe) · `helper_email`: alle Schichtanmeldungen zu einer E-Mail-Adresse"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Bei `order` und `shift_registration`"
+          },
+          "email": {
+            "type": "string",
+            "description": "Bei `guest_email` und `helper_email`"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Anlass für das Protokoll, z. B. „Weisung per E-Mail vom 04.11.2026, Ticket 123“. Keine Namen oder Inhalte.",
+            "minLength": 3,
+            "maxLength": 500
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "Nur zählen, nichts ändern"
+          }
+        },
+        "required": [
+          "kind",
+          "reason"
         ]
       }
     }
