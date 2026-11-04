@@ -602,6 +602,14 @@ Integration `tse` wie SumUp (Plan und API-Vertrag:
   eine bezahlte Veranstaltung ansteht (die TSE folgt automatisch, Bargeld
   erst mit aktiver TSE). Preis: derzeit inklusive
   (`TSE_EVENT_SURCHARGE_EUR=0`).
+- **Pflichtangaben beim Kauf**: Die Registrierung fragt keine Steuerdaten.
+  Vor Zahlung, Rechnung oder Erlass prüft der Server offiziellen Namen
+  (`settings.legalName`) und Rechnungsanschrift (`billing_address`), bei
+  einem Kauf mit Cloud-TSE (DE) zusätzlich Steuernummer oder USt-IdNr.
+  (Format DE) und die Anschrift der Organisation — sonst 400
+  `PURCHASE_MASTER_DATA_REQUIRED` mit `params.missing`. Der Bezahldialog
+  speichert fehlende Angaben über `PUT /organizations/:id/purchase-master-data`;
+  der Support kann beim Erlass mit `overrideMasterData` + Grund übersteuern.
 - **Lebenszyklus `monthly`** (Standard): Swissbit berechnet volle Monate.
   Die TSE läuft deshalb für den Kalendermonat ihrer Veranstaltung (weitere
   Veranstaltungen im selben Monat nutzen sie mit) und wird am letzten Tag

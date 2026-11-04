@@ -8756,8 +8756,49 @@
         ]
       }
     },
+    "/api/organizations/{organizationId}/purchase-master-data": {
+      "put": {
+        "description": "Offizieller Name (`settings.legalName`), Rechnungsanschrift (`billingAddress`) und optional Steuernummer/USt-IdNr. (`settings.taxNumber`/`vatId`, Format DE geprüft: 400 `TAX_ID_INVALID` mit `params.field`). Ist die Anschrift der Organisation (Kontakt) noch leer, wird sie mit der Rechnungsanschrift gefüllt. Antwort: der neue Stand wie `masterData` in `GET …/events/:eventId/billing`.",
+        "operationId": "eventBilling_savePurchaseMasterData",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurchaseMasterDataDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Pflichtangaben vor dem Kauf speichern (Admins)",
+        "tags": [
+          "Event Billing"
+        ]
+      }
+    },
     "/api/organizations/{organizationId}/events/{eventId}/order-invoice": {
       "post": {
+        "description": "Fehlen Pflichtangaben (offizieller Name, Rechnungsanschrift; bei Cloud-TSE Steuernummer/USt-IdNr.), 400 `PURCHASE_MASTER_DATA_REQUIRED` mit `params.missing`. Die Anschrift aus dem Formular zählt mit.",
         "operationId": "eventBilling_orderInvoice",
         "parameters": [
           {
@@ -8805,7 +8846,7 @@
     },
     "/api/organizations/{organizationId}/events/{eventId}/checkout": {
       "post": {
-        "description": "Deutschland mit Cloud-TSE (`tse.offer` in GET …/billing): bei „Alle Funktionen“ gehört die TSE immer dazu, Bestandsorganisationen antworten mit `withTse`. Nach der Zahlung schaltet der Server die Integration `tse` automatisch ein; die TSE wird am ersten Veranstaltungstag angelegt (sofort, wenn die Veranstaltung schon läuft). Mit `TSE_EVENT_SURCHARGE_EUR` > 0 kommt eine Position „Cloud-TSE“ je Veranstaltung dazu.",
+        "description": "Deutschland mit Cloud-TSE (`tse.offer` in GET …/billing): bei „Alle Funktionen“ gehört die TSE immer dazu, Bestandsorganisationen antworten mit `withTse`. Nach der Zahlung schaltet der Server die Integration `tse` automatisch ein; die TSE wird am ersten Veranstaltungstag angelegt (sofort, wenn die Veranstaltung schon läuft). Mit `TSE_EVENT_SURCHARGE_EUR` > 0 kommt eine Position „Cloud-TSE“ je Veranstaltung dazu. Fehlen Pflichtangaben (`masterData` in GET …/billing): 400 `PURCHASE_MASTER_DATA_REQUIRED` mit `params.missing` (`legalName`, `street`, `zip`, `city`, `taxNumber`, `vatId`).",
         "operationId": "eventBilling_createCheckout",
         "parameters": [
           {
@@ -12013,6 +12054,7 @@
                 "event_invoice_credit_note",
                 "event_invoice_resent",
                 "event_invoice_marked_paid",
+                "event_master_data_override",
                 "assistant_enabled",
                 "assistant_disabled",
                 "menu_import_applied",
@@ -20634,6 +20676,44 @@
           }
         }
       },
+      "PurchaseMasterDataDto": {
+        "type": "object",
+        "properties": {
+          "legalName": {
+            "type": "string",
+            "example": "Musterverein e.V.",
+            "description": "Offizieller Name (wie im Vereinsregister)"
+          },
+          "street": {
+            "type": "string",
+            "example": "Musterstraße 1"
+          },
+          "zip": {
+            "type": "string",
+            "example": "12345"
+          },
+          "city": {
+            "type": "string",
+            "example": "Musterstadt"
+          },
+          "taxNumber": {
+            "type": "string",
+            "example": "12/345/67890",
+            "description": "Steuernummer (Deutschland: 10–13 Ziffern). Leerer Text löscht sie."
+          },
+          "vatId": {
+            "type": "string",
+            "example": "DE123456789",
+            "description": "USt-IdNr. (DE + 9 Ziffern). Leerer Text löscht sie."
+          }
+        },
+        "required": [
+          "legalName",
+          "street",
+          "zip",
+          "city"
+        ]
+      },
       "OrderInvoiceBillingAddressDto": {
         "type": "object",
         "properties": {
@@ -21714,6 +21794,14 @@
           "withTse": {
             "type": "boolean",
             "description": "Nur Bestandsorganisationen in Deutschland (Bargeld ohne TSE): Antwort auf „Mit Cloud-TSE (Bargeld rechtssicher)?“. `true` stellt beim Freischalten auf „Alle Funktionen“ um, schaltet die Integration `tse` ein und die TSE wird automatisch angelegt; `false` oder fehlend: alles bleibt, wie es ist. Bei „Alle Funktionen“ in Deutschland gehört die TSE immer dazu, sonst wird der Wert ignoriert."
+          },
+          "overrideMasterData": {
+            "type": "boolean",
+            "description": "Fehlen Pflichtangaben (400 `PURCHASE_MASTER_DATA_REQUIRED`), trotzdem erlassen. Nur mit `overrideReason` (protokolliert als `event_master_data_override`)."
+          },
+          "overrideReason": {
+            "type": "string",
+            "example": "Angaben kommen per Mail nach"
           }
         }
       },

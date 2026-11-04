@@ -31,7 +31,19 @@ import {
 import { StripeService } from '../stripe/stripe.service';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
-import { OrderInvoiceDto } from './dto/event-billing.dto';
+import {
+  OrderInvoiceDto,
+  PurchaseMasterDataDto,
+} from './dto/event-billing.dto';
+import {
+  isValidTaxNumber,
+  isValidVatId,
+  missingPurchaseMasterData,
+  normalizeVatId,
+  purchaseMasterDataOf,
+  type PurchaseMasterDataField,
+  type PurchaseMasterDataValues,
+} from './purchase-master-data';
 import { TSE_SURCHARGE_LINE } from '../../common/constants/billing-text';
 import {
   TseAutoActivationService,
@@ -103,6 +115,18 @@ const NO_TSE: EventTseTerms = {
   surchargeCharged: null,
 };
 
+/**
+ * Pflichtangaben vor dem Kauf (Entscheidung 2026-11-04). `missing` gilt
+ * ohne Cloud-TSE, `missingWithTse` mit (Bestand: je nach Antwort im Dialog;
+ * bei `tse.offer = 'included'` sind beide gleich).
+ */
+export interface PurchaseMasterDataStatus {
+  values: PurchaseMasterDataValues;
+  missing: PurchaseMasterDataField[];
+  missingWithTse: PurchaseMasterDataField[];
+  country: string | null;
+}
+
 /** Preisvorschau samt der Grenze, bis zu der sich kostenlos testen laesst. */
 export interface EventPricePreview extends EventPrice {
   testEventMaxOrders: number;
@@ -112,6 +136,8 @@ export interface EventPricePreview extends EventPrice {
 export interface EventBillingInfo extends EventPrice {
   /** Cloud-TSE zur Freischaltung (Deutschland), siehe EventTseTerms. */
   tse: EventTseTerms;
+  /** Pflichtangaben, die vor dem Bezahlen fehlen (Dialogschritt). */
+  masterData: PurchaseMasterDataStatus;
   /** Ob die Online-Zahlung ueberhaupt zur Verfuegung steht. */
   onlinePaymentAvailable: boolean;
   billingMode: string;
@@ -255,6 +281,113 @@ export class EventBillingService {
         `Cloud-TSE nach Freischaltung von Event ${event.id} nicht eingeschaltet: ${(error as Error).message}`,
       );
     }
+  }
+
+  /** Pflichtangaben fuer Dialog und Pruefung (siehe purchase-master-data.ts). */
+  masterDataStatus(organization: Organization): PurchaseMasterDataStatus {
+    const missing = missingPurchaseMasterData(organization, {
+      withTse: this.tseChoice(organization, false).included === true,
+    });
+    const missingWithTse = missingPurchaseMasterData(organization, {
+      withTse: this.tseChoice(organization, true).included === true,
+    });
+    return {
+      values: purchaseMasterDataOf(organization),
+      missing,
+      missingWithTse,
+      country: organization.country ?? null,
+    };
+  }
+
+  /**
+   * Vor Zahlung, Rechnung und Erlass: fehlen Pflichtangaben, 400
+   * `PURCHASE_MASTER_DATA_REQUIRED` mit `params.missing` (kommagetrennt).
+   */
+  assertPurchaseMasterData(organization: Organization, withTse: boolean): void {
+    const missing = missingPurchaseMasterData(organization, { withTse });
+    if (missing.length === 0) return;
+    throw new BadRequestException({
+      code: ErrorCodes.PURCHASE_MASTER_DATA_REQUIRED,
+      message: withTse
+        ? 'Bevor du bezahlst, brauchen wir den offiziellen Namen, die Rechnungsanschrift und – für die Cloud-TSE – Steuernummer oder USt-IdNr. deiner Organisation.'
+        : 'Bevor du bezahlst, brauchen wir den offiziellen Namen und die Rechnungsanschrift deiner Organisation.',
+      params: { missing: missing.join(','), withTse },
+    });
+  }
+
+  /**
+   * `PUT …/purchase-master-data`: Pflichtangaben speichern (nur Admins).
+   * Steuerangaben in `settings`, Rechnungsanschrift in `billing_address`,
+   * die Anschrift der Organisation nur, wenn sie noch leer ist.
+   */
+  async savePurchaseMasterData(
+    organizationId: string,
+    dto: PurchaseMasterDataDto,
+    user: User,
+  ): Promise<PurchaseMasterDataStatus> {
+    await this.organizationsService.checkRole(
+      organizationId,
+      user,
+      OrganizationRole.ADMIN,
+    );
+    const organization = await this.getOrganization(organizationId);
+    const german = (organization.country ?? 'DE').toUpperCase() === 'DE';
+    const taxNumber =
+      dto.taxNumber === undefined ? undefined : dto.taxNumber.trim();
+    const vatId =
+      dto.vatId === undefined ? undefined : normalizeVatId(dto.vatId);
+    if (taxNumber && german && !isValidTaxNumber(taxNumber)) {
+      throw new BadRequestException({
+        code: ErrorCodes.TAX_ID_INVALID,
+        message:
+          'Die Steuernummer hat nicht das richtige Format (10 bis 13 Ziffern, z. B. 12/345/67890)',
+        params: { field: 'taxNumber' },
+      });
+    }
+    if (vatId && !isValidVatId(vatId)) {
+      throw new BadRequestException({
+        code: ErrorCodes.TAX_ID_INVALID,
+        message:
+          'Die USt-IdNr. hat nicht das richtige Format (z. B. DE123456789)',
+        params: { field: 'vatId' },
+      });
+    }
+    const street = dto.street.trim();
+    const zip = dto.zip.trim();
+    const city = dto.city.trim();
+    const legalName = dto.legalName.trim();
+    const settings = { ...(organization.settings ?? {}) } as Record<
+      string,
+      unknown
+    > & {
+      contact?: { address?: string; zipCode?: string; city?: string };
+    };
+    settings.legalName = legalName;
+    if (taxNumber !== undefined) settings.taxNumber = taxNumber;
+    if (vatId !== undefined) settings.vatId = vatId;
+    const contact = settings.contact ?? {};
+    if (
+      !contact.address?.trim() ||
+      !contact.zipCode?.trim() ||
+      !contact.city?.trim()
+    ) {
+      settings.contact = { ...contact, address: street, zipCode: zip, city };
+    }
+    organization.settings = settings as unknown as Organization['settings'];
+    organization.billingAddress = {
+      ...(organization.billingAddress ?? {}),
+      name: organization.billingAddress?.name?.trim() || legalName,
+      street,
+      zip,
+      city,
+      country:
+        organization.billingAddress?.country || organization.country || 'DE',
+    };
+    await this.organizationRepository.save(organization);
+    this.logger.log(
+      `Purchase master data saved for org ${organizationId} by ${user.id}`,
+    );
+    return this.masterDataStatus(organization);
   }
 
   private async getOrganization(organizationId: string): Promise<Organization> {
@@ -501,6 +634,7 @@ export class EventBillingService {
     return {
       ...price,
       tse: this.tseTerms(organization, event),
+      masterData: this.masterDataStatus(organization),
       onlinePaymentAvailable: this.stripeService.isConfigured,
       billingMode: organization.billingMode,
       billingStatus: event.billingStatus,
@@ -565,12 +699,20 @@ export class EventBillingService {
     const finalPrice =
       Math.round((price.finalPrice + tse.surcharge) * 100) / 100;
 
-    organization.billingEmail = dto.billingEmail;
-    organization.billingAddress = {
+    const billingAddress = {
       ...dto.billingAddress,
       name: dto.billingName,
       country: organization.billingAddress?.country || 'DE',
     };
+    // Pflichtangaben mit der Anschrift aus dem Formular pruefen — erst
+    // danach wird gespeichert.
+    this.assertPurchaseMasterData(
+      { ...organization, billingAddress } as Organization,
+      tse.included === true,
+    );
+
+    organization.billingEmail = dto.billingEmail;
+    organization.billingAddress = billingAddress;
     await this.organizationRepository.save(organization);
 
     /* Stripe stellt die Rechnung — vor dem Freischalten, damit eine
@@ -755,12 +897,26 @@ export class EventBillingService {
     const price = await this.resolvePrice(organization, event);
     const currency = organization.settings?.currency || 'EUR';
     const tse = this.tseChoice(organization, options.withTse);
+    this.assertPurchaseMasterData(organization, tse.included === true);
 
+    const master = purchaseMasterDataOf(organization);
+    const address = organization.billingAddress;
     const customerId = await this.stripeService.ensureCustomer({
       existingCustomerId: organization.stripeCustomerId,
       organizationId: organization.id,
-      organizationName: organization.name,
+      // Rechnungsempfaenger: offizieller Name (Pflichtangabe beim Kauf).
+      organizationName:
+        address?.name?.trim() || master.legalName || organization.name,
       email: organization.billingEmail ?? user.email,
+      address:
+        address?.street && address.zip && address.city
+          ? {
+              line1: address.street,
+              postal_code: address.zip,
+              city: address.city,
+              country: address.country || organization.country || 'DE',
+            }
+          : null,
     });
 
     if (customerId !== organization.stripeCustomerId) {
@@ -1003,6 +1159,55 @@ export class EventBillingService {
    * Cloud-TSE einschalten. Die Antwort einer Bestandsorganisation kommt
    * vom Support oder aus einer frueheren Zahlungsseite (`tse_included`).
    */
+  /**
+   * Vor dem Erlass (Support): Pflichtangaben wie beim Kauf. Fehlen sie,
+   * 400 `PURCHASE_MASTER_DATA_REQUIRED` — ausser mit `overrideMasterData`
+   * und Grund (protokolliert als `event_master_data_override`).
+   */
+  async assertWaiveMasterData(
+    eventId: string,
+    options: {
+      withTse?: boolean;
+      overrideMasterData?: boolean;
+      overrideReason?: string | null;
+    },
+    actor: { userId: string; ipAddress: string; userAgent?: string | null },
+  ): Promise<void> {
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+    });
+    if (!event) return; // waive() meldet 404
+    const organization = await this.organizationRepository.findOne({
+      where: { id: event.organizationId },
+    });
+    if (!organization) return;
+    const answer = options.withTse ?? event.tseIncluded ?? null;
+    const withTse = this.tseChoice(organization, answer).included === true;
+    const missing = missingPurchaseMasterData(organization, { withTse });
+    if (missing.length === 0) return;
+    if (!options.overrideMasterData) {
+      this.assertPurchaseMasterData(organization, withTse);
+      return;
+    }
+    const reason = (options.overrideReason ?? '').trim();
+    if (!reason) {
+      throw new BadRequestException({
+        code: ErrorCodes.PURCHASE_MASTER_DATA_OVERRIDE_REASON_REQUIRED,
+        message:
+          'Bitte gib einen Grund an, warum ohne vollständige Angaben erlassen wird',
+        params: { missing: missing.join(',') },
+      });
+    }
+    await this.billingAudit.record({
+      action: AdminAction.EVENT_MASTER_DATA_OVERRIDE,
+      organizationId: organization.id,
+      eventId: event.id,
+      actor,
+      reason,
+      details: { missing, withTse },
+    });
+  }
+
   async afterWaive(
     event: Event,
     withTse: boolean | undefined,

@@ -38,6 +38,8 @@ export enum AdminAction {
   EVENT_INVOICE_CREDIT_NOTE = 'event_invoice_credit_note',
   EVENT_INVOICE_RESENT = 'event_invoice_resent',
   EVENT_INVOICE_MARKED_PAID = 'event_invoice_marked_paid',
+  /** Support hat ohne vollstaendige Pflichtangaben erlassen (mit Grund). */
+  EVENT_MASTER_DATA_OVERRIDE = 'event_master_data_override',
   // Assistent-Funktionen (ki-plan.md Abschnitt 6)
   ASSISTANT_ENABLED = 'assistant_enabled',
   ASSISTANT_DISABLED = 'assistant_disabled',
