@@ -79,15 +79,17 @@ function categories(env: Env): RetentionCategory[] {
  *
  * - `RETENTION_ENABLED`: Standard an im gehosteten Betrieb, aus bei
  *   `DEPLOYMENT_MODE=selfhosted` (dort entscheidet der Betreiber).
- * - `RETENTION_DRY_RUN`: Standard aus nur bei `NODE_ENV=production`,
- *   sonst an — Staging und Entwicklung zaehlen erst einmal nur.
+ * - `RETENTION_DRY_RUN`: Standard an — echte Loeschlaeufe nur mit
+ *   ausdruecklichem `RETENTION_DRY_RUN=false`. `NODE_ENV` taugt nicht als
+ *   Unterscheidung, weil auch Staging mit `production` laeuft; so zaehlt
+ *   jede neue Umgebung erst einmal nur, bis jemand das Protokoll geprueft
+ *   und die Loeschung bewusst eingeschaltet hat.
  */
 export function loadRetentionConfig(env: Env = process.env): RetentionConfig {
   const selfHosted = env.DEPLOYMENT_MODE === 'selfhosted';
-  const production = env.NODE_ENV === 'production';
   return {
     enabled: bool(env, 'RETENTION_ENABLED', !selfHosted),
-    dryRun: bool(env, 'RETENTION_DRY_RUN', !production),
+    dryRun: bool(env, 'RETENTION_DRY_RUN', true),
     categories: categories(env),
     guestDataDays: int(
       env,

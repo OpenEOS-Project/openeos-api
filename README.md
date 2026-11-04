@@ -682,9 +682,10 @@ Regeln, die für alle Läufe gelten:
 
 **Probelauf.** `RETENTION_DRY_RUN=true` führt jeden Lauf vollständig aus
 und rollt ihn am Ende zurück: Die Zahlen im Protokoll stimmen, geändert
-wird nichts, Mails und Dateilöschungen bleiben aus. Standard: echte Läufe
-nur bei `NODE_ENV=production`, sonst Probelauf. Neue Installationen
-sollten zuerst im Probelauf laufen und das Protokoll prüfen.
+wird nichts, Mails und Dateilöschungen bleiben aus. Standard ist der
+Probelauf – auch bei `NODE_ENV=production`, weil Staging ebenso läuft.
+Echte Läufe erst nach Prüfung des Protokolls mit `RETENTION_DRY_RUN=false`
+einschalten.
 
 **Super-Admin-API** (`/api/admin/retention`):
 
@@ -707,7 +708,7 @@ sollten zuerst im Probelauf laufen und das Protokoll prüfen.
 | Variable | Standard |
 |---|---|
 | `RETENTION_ENABLED` | `true`, bei `DEPLOYMENT_MODE=selfhosted` `false` |
-| `RETENTION_DRY_RUN` | `false` bei `NODE_ENV=production`, sonst `true` |
+| `RETENTION_DRY_RUN` | `true` (Probelauf); echte Läufe nur mit `false` |
 | `RETENTION_CATEGORIES` | alle (kommagetrennte Liste zum Einschränken) |
 | `RETENTION_CONTACT_EMAIL` | `OPERATOR_EMAIL` – Adresse für Exportanfragen in der Löschankündigung |
 | `RETENTION_GUEST_DATA_DAYS` / `RETENTION_HELPER_DATA_DAYS` | 30 (min. 30) |

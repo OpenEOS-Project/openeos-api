@@ -110,7 +110,7 @@ services:
       TSE_ADMIN_TIMEOUT_MS: ${TSE_ADMIN_TIMEOUT_MS:-}
 
       # Aufbewahrung und Loeschung, README „Aufbewahrung und Löschung“.
-      # Ohne Angabe: in Produktion echte Loeschlaeufe, sonst Probelauf.
+      # Ohne Angabe: Probelauf (nur zaehlen). Echte Laeufe: RETENTION_DRY_RUN=false.
       RETENTION_ENABLED: ${RETENTION_ENABLED:-}
       RETENTION_DRY_RUN: ${RETENTION_DRY_RUN:-}
       RETENTION_CATEGORIES: ${RETENTION_CATEGORIES:-}

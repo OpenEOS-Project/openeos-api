@@ -9,7 +9,12 @@ const DAY = 24 * 60 * 60 * 1000;
 
 describe('loadRetentionConfig', () => {
   it('uses the periods from the contract documents by default', () => {
-    expect(loadRetentionConfig({ NODE_ENV: 'production' })).toEqual({
+    expect(
+      loadRetentionConfig({
+        NODE_ENV: 'production',
+        RETENTION_DRY_RUN: 'false',
+      }),
+    ).toEqual({
       enabled: true,
       dryRun: false,
       categories: [],
@@ -28,21 +33,20 @@ describe('loadRetentionConfig', () => {
     });
   });
 
-  it('only counts outside production unless told otherwise', () => {
+  it('only counts until real runs are switched on explicitly', () => {
     expect(loadRetentionConfig({}).dryRun).toBe(true);
-    expect(loadRetentionConfig({ NODE_ENV: 'development' }).dryRun).toBe(true);
-    expect(
-      loadRetentionConfig({ NODE_ENV: 'production', RETENTION_DRY_RUN: 'true' })
-        .dryRun,
-    ).toBe(true);
-    expect(
-      loadRetentionConfig({ NODE_ENV: 'test', RETENTION_DRY_RUN: 'false' })
-        .dryRun,
-    ).toBe(false);
+    // Auch Staging laeuft mit NODE_ENV=production.
+    expect(loadRetentionConfig({ NODE_ENV: 'production' }).dryRun).toBe(true);
     // Leer gesetzt (docker compose `${VAR:-}`) gilt wie nicht gesetzt.
     expect(
       loadRetentionConfig({ NODE_ENV: 'production', RETENTION_DRY_RUN: '' })
         .dryRun,
+    ).toBe(true);
+    expect(
+      loadRetentionConfig({
+        NODE_ENV: 'production',
+        RETENTION_DRY_RUN: 'false',
+      }).dryRun,
     ).toBe(false);
   });
 

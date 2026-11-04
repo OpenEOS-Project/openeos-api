@@ -47,7 +47,7 @@ describe('RetentionService', () => {
     return new RetentionService(
       dataSource,
       runs,
-      loadRetentionConfig({ NODE_ENV: 'production', ...env }),
+      loadRetentionConfig({ RETENTION_DRY_RUN: 'false', ...env }),
       jobs,
       cronLock,
     );

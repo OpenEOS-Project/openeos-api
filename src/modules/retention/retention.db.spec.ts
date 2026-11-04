@@ -96,7 +96,7 @@ describeWithDb('Retention jobs against Postgres', () => {
     await ds.initialize();
     uploadDir = mkdtempSync(path.join(tmpdir(), 'retention-'));
 
-    const config = loadRetentionConfig({ NODE_ENV: 'production' });
+    const config = loadRetentionConfig({ RETENTION_DRY_RUN: 'false' });
     const email = {
       appUrl: 'https://app.example.test',
       sendEmail: (o: { to: string; subject: string }) => {
