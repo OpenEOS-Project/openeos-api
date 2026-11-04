@@ -84,6 +84,13 @@ export class CurrentUserWithLimitsDto extends UserResponseDto {
     description: 'Aktuelle Mitgliedschaften des Benutzers, egal welche Rolle',
   })
   organizationCount: number;
+
+  @ApiProperty({
+    example: false,
+    description:
+      'Admin einer Organisation, der die aktuelle Fassung von AGB oder AVV noch nicht angenommen hat (POST /legal/accept).',
+  })
+  legalReacceptanceRequired: boolean;
 }
 
 export class CurrentUserResponseDto {

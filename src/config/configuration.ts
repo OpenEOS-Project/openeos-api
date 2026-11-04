@@ -1,3 +1,5 @@
+import { legalConfigFromEnv } from './legal.config';
+
 export type DeploymentMode = 'saas' | 'selfhosted';
 
 const DEPLOYMENT_MODE: DeploymentMode =
@@ -100,11 +102,16 @@ export default () => ({
     // Eine leer gesetzte Variable blendet den Link ebenfalls aus.
     imprintUrl:
       process.env.PLATFORM_IMPRINT_URL ??
-      (IS_SELF_HOSTED ? '' : 'https://openeos.de/imprint'),
+      (IS_SELF_HOSTED ? '' : 'https://openeos.de/impressum'),
     privacyUrl:
       process.env.PLATFORM_PRIVACY_URL ??
-      (IS_SELF_HOSTED ? '' : 'https://openeos.de/privacy'),
+      (IS_SELF_HOSTED ? '' : 'https://openeos.de/datenschutz'),
   },
+
+  // AGB, AVV, Datenschutzerklaerung und Impressum von LUXCODE: aktuelle
+  // Fassungen und Website (siehe legal.config.ts). Eigenstaendig betrieben
+  // gelten sie nicht (keine Annahme, keine erneute Annahme).
+  legal: legalConfigFromEnv(process.env, IS_SELF_HOSTED),
 
   billing: {
     // Zahlungsziel der Stripe-Rechnung beim Kauf auf Rechnung, in Tagen.

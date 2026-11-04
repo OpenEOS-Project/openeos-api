@@ -93,5 +93,6 @@ export * from './organization-cash-policy-change.entity';
 export * from './organization-operating-mode-change.entity';
 export * from './menu-import.entity';
 export * from './ai-usage.entity';
+export * from './legal-acceptance.entity';
 export * from './retention-run.entity';
 export * from './retention-notice.entity';
