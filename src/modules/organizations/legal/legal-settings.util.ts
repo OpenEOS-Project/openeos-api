@@ -29,6 +29,7 @@ type LegalErrorCode =
   | 'url'
   | 'maxLength'
   | 'linkOrText'
+  | 'placeholder'
   | 'email';
 
 function invalid(
@@ -151,6 +152,15 @@ export function normalizeLegalSettings(
         field,
         'maxLength',
         `Der Text darf höchstens ${max} Zeichen lang sein.`,
+      );
+    }
+    /* Aus der Vorlage fuer den Datenschutzhinweis: noch nicht ersetzte
+       Felder wie {{kunde.name}} duerfen nicht veroeffentlicht werden. */
+    if (/\{\{\s*kunde\./.test(text)) {
+      invalid(
+        field,
+        'placeholder',
+        'Der Text enthält noch Platzhalter aus der Vorlage (z. B. {{kunde.name}}). Bitte ersetze sie durch eure Angaben.',
       );
     }
     if (text) result[field] = text;

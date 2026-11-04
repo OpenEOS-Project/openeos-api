@@ -94,6 +94,25 @@ export const validationSchema = Joi.object({
     .uri({ scheme: ['http', 'https'] })
     .allow(''),
 
+  // Rechtstexte von LUXCODE: Website mit den Fassungen (Standard: aus
+  // APP_URL abgeleitet, sonst https://openeos.de) und die aktuellen
+  // Fassungen als Datum der „Stand“-Zeile (YYYY-MM-DD).
+  LEGAL_SITE_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .allow(''),
+  LEGAL_AGB_VERSION: Joi.string()
+    .pattern(/^\d{4}-\d{2}-\d{2}$/)
+    .allow(''),
+  LEGAL_AVV_VERSION: Joi.string()
+    .pattern(/^\d{4}-\d{2}-\d{2}$/)
+    .allow(''),
+  LEGAL_PRIVACY_VERSION: Joi.string()
+    .pattern(/^\d{4}-\d{2}-\d{2}$/)
+    .allow(''),
+  LEGAL_IMPRINT_VERSION: Joi.string()
+    .pattern(/^\d{4}-\d{2}-\d{2}$/)
+    .allow(''),
+
   // Hersteller auf der Herstellerbescheinigung (Adresszeilen mit |).
   OPERATOR_NAME: Joi.string().allow(''),
   OPERATOR_ADDRESS: Joi.string().allow(''),

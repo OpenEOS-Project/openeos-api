@@ -6,6 +6,7 @@ import {
   toCountryCode,
 } from '../../organizations/dto/operating-mode.dto';
 import {
+  Equals,
   IsBoolean,
   IsEmail,
   IsIn,
@@ -96,4 +97,25 @@ export class RegisterDto {
   @IsOptional()
   @IsBoolean()
   newsletterOptIn?: boolean;
+
+  @ApiProperty({
+    example: true,
+    description:
+      'Pflicht: AGB und Auftragsverarbeitungsvertrag in der aktuellen Fassung gelesen und angenommen. Gespeichert werden Fassung, Zeitpunkt, IP-Adresse und Browser.',
+  })
+  @Equals(true, {
+    message: 'Bitte akzeptiere die AGB und den Auftragsverarbeitungsvertrag.',
+  })
+  acceptTerms: boolean;
+
+  @ApiProperty({
+    example: true,
+    description:
+      'Pflicht: Bestätigung, als Unternehmer, juristische Person des öffentlichen Rechts oder eingetragener Verein zu handeln und die Organisation vertreten zu dürfen (AGB Ziffer 2.4).',
+  })
+  @Equals(true, {
+    message:
+      'Bitte bestätige, dass du als Unternehmer, juristische Person des öffentlichen Rechts oder eingetragener Verein handelst.',
+  })
+  confirmBusiness: boolean;
 }

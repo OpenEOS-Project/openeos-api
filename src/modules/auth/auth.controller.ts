@@ -25,6 +25,7 @@ import { ConfigService } from '@nestjs/config';
 import { OrganizationLimitsService } from '../../common/services/organization-limits.service';
 import { OrganizationViewService } from '../organizations/organization-view.service';
 import { AuthService, SessionClient } from './auth.service';
+import { LegalService } from '../legal/legal.service';
 import { TwoFactorService } from './two-factor.service';
 import {
   RegisterDto,
@@ -91,6 +92,7 @@ export class AuthController {
     private readonly configService: ConfigService,
     private readonly limits: OrganizationLimitsService,
     private readonly organizationView: OrganizationViewService,
+    private readonly legal: LegalService,
   ) {}
 
   @Public()
@@ -107,8 +109,11 @@ export class AuthController {
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 409, description: 'Email already exists' })
-  async register(@Body() registerDto: RegisterDto) {
-    const result = await this.authService.register(registerDto);
+  async register(@Body() registerDto: RegisterDto, @Req() request: Request) {
+    const result = await this.authService.register(
+      registerDto,
+      this.getClientInfo(request),
+    );
 
     return {
       user: this.sanitizeUser(
@@ -496,6 +501,11 @@ export class AuthController {
         ),
         organizationLimit: this.limits.effectiveOrganizationLimit(fullUser),
         organizationCount: fullUser.userOrganizations?.length ?? 0,
+        /* Admin ohne Annahme der aktuellen AGB-/AVV-Fassung: die
+           Oberflaeche fragt vor dem Weiterarbeiten erneut. */
+        legalReacceptanceRequired: await this.legal.isReacceptanceRequired(
+          fullUser.id,
+        ),
       },
     };
   }
