@@ -63,6 +63,7 @@ import { saveOrderWithNumbers } from '../orders/order-numbering';
 import { findTableIdByLabel } from '../tables/table-lookup';
 import { escapeHtml } from '../email/email-template';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
+import { assertLegalInfoComplete } from '../organizations/legal/legal-settings.util';
 
 interface CreateCheckoutBody {
   email: string;
@@ -218,6 +219,8 @@ export class EventsShopCheckoutController {
         message: 'Organisation nicht gefunden',
       });
     }
+    // Ohne Impressum und Datenschutzhinweis des Vereins keine Bestellung.
+    assertLegalInfoComplete(organization);
     /* Nur das Anlegen neuer Checkouts wird gesperrt. Pruefung und Webhook
        eines bereits begonnenen Checkouts laufen weiter: dort ist das Geld
        womoeglich schon bezahlt, und ohne Abschluss fehlte die Bestellung. */
