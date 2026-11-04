@@ -82,7 +82,7 @@ export function datenblock(titel: string, zeilen: [string, string][]): string {
       ([label, wert]) => `
     <tr>
       <td width="150" style="width:150px;padding:9px 12px 9px 0;font-family:${MONO};font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:${FARBE.mute};border-bottom:1px solid ${FARBE.linie}">${escapeHtml(label)}</td>
-      <td style="padding:9px 0;font-family:${SANS};font-size:15px;font-weight:bold;color:${FARBE.ink};border-bottom:1px solid ${FARBE.linie}">${escapeHtml(wert)}</td>
+      <td style="padding:9px 0;font-family:${SANS};font-size:15px;font-weight:bold;color:${FARBE.ink};border-bottom:1px solid ${FARBE.linie};overflow-wrap:anywhere;word-break:break-word">${escapeHtml(wert)}</td>
     </tr>`,
     )
     .join('');

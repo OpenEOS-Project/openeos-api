@@ -19,6 +19,7 @@ import { StripeModule } from '../stripe/stripe.module';
 import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { TseModule } from '../tse/tse.module';
+import { LegalModule } from '../legal/legal.module';
 import {
   Event,
   Organization,
@@ -57,6 +58,8 @@ import {
     OrganizationsModule,
     // Cloud-TSE „All inclusive“: nach dem Freischalten automatisch einschalten.
     TseModule,
+    // Buchungsbestaetigung mit AGB/AVV-Fassungen und ELSTER-Angaben.
+    LegalModule,
   ],
   controllers: [
     EventsController,

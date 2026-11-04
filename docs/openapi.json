@@ -1572,190 +1572,30 @@
         ]
       }
     },
-    "/api/users/me": {
-      "patch": {
-        "description": "Update the current user profile",
-        "operationId": "users_updateProfile",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateProfileDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Profile updated successfully"
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Update profile",
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/users/me/avatar": {
-      "post": {
-        "description": "Upload a new avatar image",
-        "operationId": "users_uploadAvatar",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "avatar": {
-                    "type": "string",
-                    "format": "binary"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Avatar uploaded successfully"
-          },
-          "400": {
-            "description": "Invalid file"
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Upload avatar",
-        "tags": [
-          "Users"
-        ]
-      },
-      "delete": {
-        "description": "Remove the current avatar",
-        "operationId": "users_deleteAvatar",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Avatar deleted successfully"
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Delete avatar",
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/users/me/email/change": {
-      "post": {
-        "description": "Request a verification email to change email address",
-        "operationId": "users_requestEmailChange",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RequestEmailChangeDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Verification email sent"
-          },
-          "400": {
-            "description": "Invalid password or email already in use"
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Request email change",
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/users/me/email/verify": {
-      "post": {
-        "description": "Verify and complete email change",
-        "operationId": "users_verifyEmailChange",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/VerifyEmailChangeDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Email changed successfully"
-          },
-          "400": {
-            "description": "Invalid or expired token"
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Verify email change",
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/users/me/preferences": {
+    "/api/legal/versions": {
       "get": {
-        "description": "Get user preferences",
-        "operationId": "users_getPreferences",
+        "description": "Aktuelle Fassungen (Datum der „Stand“-Zeile) mit Links auf die Website, die Archiv-Adresse der Fassung und das PDF. `enabled` ist bei eigenständigem Betrieb false — dort gelten die Texte von LUXCODE nicht.",
+        "operationId": "legal_getVersions",
         "parameters": [],
         "responses": {
           "200": {
-            "description": "User preferences"
-          },
-          "401": {
-            "description": "Unauthorized"
+            "description": ""
+          }
+        },
+        "summary": "Current legal texts (AGB, AVV, privacy, imprint)",
+        "tags": [
+          "Legal"
+        ]
+      }
+    },
+    "/api/legal/status": {
+      "get": {
+        "description": "Je Dokument die aktuelle und die zuletzt angenommene Fassung (mit Zeitpunkt und Links). `required`: Admin einer Organisation ohne Annahme der aktuellen Fassung.",
+        "operationId": "legal_getStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
           }
         },
         "security": [
@@ -1763,31 +1603,30 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Get preferences",
+        "summary": "Accepted AGB/AVV versions of the current user",
         "tags": [
-          "Users"
+          "Legal"
         ]
-      },
-      "patch": {
-        "description": "Update user preferences",
-        "operationId": "users_updatePreferences",
+      }
+    },
+    "/api/legal/accept": {
+      "post": {
+        "description": "Speichert die Annahme der aktuellen Fassungen mit Zeitpunkt, IP-Adresse und Browser. Antwort wie GET /legal/status.",
+        "operationId": "legal_accept",
         "parameters": [],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdatePreferencesDto"
+                "$ref": "#/components/schemas/AcceptLegalDto"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Preferences updated successfully"
-          },
-          "401": {
-            "description": "Unauthorized"
+            "description": ""
           }
         },
         "security": [
@@ -1795,139 +1634,24 @@
             "JWT-auth": []
           }
         ],
-        "summary": "Update preferences",
+        "summary": "Accept the current AGB/AVV versions",
         "tags": [
-          "Users"
+          "Legal"
         ]
       }
     },
-    "/api/users/me/sessions": {
+    "/api/organizations/{id}/legal/elster": {
       "get": {
-        "description": "Get list of active sessions/devices",
-        "operationId": "users_getSessions",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "List of sessions"
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Get active sessions",
-        "tags": [
-          "Users"
-        ]
-      },
-      "delete": {
-        "description": "Revoke all sessions except the current one",
-        "operationId": "users_revokeAllOtherSessions",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Sessions revoked"
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Revoke all other sessions",
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/users/me/sessions/{id}": {
-      "delete": {
-        "description": "Revoke a specific session",
-        "operationId": "users_revokeSession",
+        "description": "Angaben für die Mitteilung nach § 146a Abs. 4 AO: Software, Hersteller, Version, Seriennummer der Kasse (`OEOS-…`), Betriebsstätte, Steuernummer und je Cloud-TSE Seriennummer, Zertifizierungs-ID, Zertifikat, Inbetriebnahme und Außerbetriebnahme.",
+        "operationId": "legalElster_get",
         "parameters": [
           {
             "name": "id",
             "required": true,
             "in": "path",
+            "description": "ID der Organisation",
             "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Session revoked"
-          },
-          "400": {
-            "description": "Session not found"
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "summary": "Revoke session",
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/organizations/{organizationId}/uploads/image": {
-      "post": {
-        "operationId": "uploads_uploadImage",
-        "parameters": [
-          {
-            "name": "category",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Uploads"
-        ]
-      }
-    },
-    "/api/organizations/{organizationId}/uploads/{filename}": {
-      "delete": {
-        "operationId": "uploads_deleteImage",
-        "parameters": [
-          {
-            "name": "filename",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "category",
-            "required": true,
-            "in": "query",
-            "schema": {
+              "format": "uuid",
               "type": "string"
             }
           }
@@ -1942,44 +1666,9 @@
             "JWT-auth": []
           }
         ],
+        "summary": "Data for the tax office notification (ELSTER, admins)",
         "tags": [
-          "Uploads"
-        ]
-      }
-    },
-    "/api/organizations/{organizationId}/uploads/{category}/{filename}": {
-      "get": {
-        "operationId": "uploads_getImage",
-        "parameters": [
-          {
-            "name": "category",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "filename",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ],
-        "tags": [
-          "Uploads"
+          "Legal"
         ]
       }
     },
@@ -7932,6 +7621,417 @@
         "summary": "Tisch löschen",
         "tags": [
           "Tables"
+        ]
+      }
+    },
+    "/api/users/me": {
+      "patch": {
+        "description": "Update the current user profile",
+        "operationId": "users_updateProfile",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profile updated successfully"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update profile",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/me/avatar": {
+      "post": {
+        "description": "Upload a new avatar image",
+        "operationId": "users_uploadAvatar",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "avatar": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Avatar uploaded successfully"
+          },
+          "400": {
+            "description": "Invalid file"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Upload avatar",
+        "tags": [
+          "Users"
+        ]
+      },
+      "delete": {
+        "description": "Remove the current avatar",
+        "operationId": "users_deleteAvatar",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Avatar deleted successfully"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete avatar",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/me/email/change": {
+      "post": {
+        "description": "Request a verification email to change email address",
+        "operationId": "users_requestEmailChange",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestEmailChangeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Verification email sent"
+          },
+          "400": {
+            "description": "Invalid password or email already in use"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Request email change",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/me/email/verify": {
+      "post": {
+        "description": "Verify and complete email change",
+        "operationId": "users_verifyEmailChange",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailChangeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Email changed successfully"
+          },
+          "400": {
+            "description": "Invalid or expired token"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Verify email change",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/me/preferences": {
+      "get": {
+        "description": "Get user preferences",
+        "operationId": "users_getPreferences",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "User preferences"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get preferences",
+        "tags": [
+          "Users"
+        ]
+      },
+      "patch": {
+        "description": "Update user preferences",
+        "operationId": "users_updatePreferences",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePreferencesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preferences updated successfully"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update preferences",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/me/sessions": {
+      "get": {
+        "description": "Get list of active sessions/devices",
+        "operationId": "users_getSessions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "List of sessions"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get active sessions",
+        "tags": [
+          "Users"
+        ]
+      },
+      "delete": {
+        "description": "Revoke all sessions except the current one",
+        "operationId": "users_revokeAllOtherSessions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Sessions revoked"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Revoke all other sessions",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/me/sessions/{id}": {
+      "delete": {
+        "description": "Revoke a specific session",
+        "operationId": "users_revokeSession",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session revoked"
+          },
+          "400": {
+            "description": "Session not found"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Revoke session",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/organizations/{organizationId}/uploads/image": {
+      "post": {
+        "operationId": "uploads_uploadImage",
+        "parameters": [
+          {
+            "name": "category",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Uploads"
+        ]
+      }
+    },
+    "/api/organizations/{organizationId}/uploads/{filename}": {
+      "delete": {
+        "operationId": "uploads_deleteImage",
+        "parameters": [
+          {
+            "name": "filename",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Uploads"
+        ]
+      }
+    },
+    "/api/organizations/{organizationId}/uploads/{category}/{filename}": {
+      "get": {
+        "operationId": "uploads_getImage",
+        "parameters": [
+          {
+            "name": "category",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filename",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Uploads"
         ]
       }
     },
@@ -17541,6 +17641,16 @@
             "type": "boolean",
             "example": false,
             "description": "Einwilligung in gelegentliche Produkt-Neuigkeiten per E-Mail. Gespeichert wird der Zeitpunkt der Einwilligung als Nachweis."
+          },
+          "acceptTerms": {
+            "type": "boolean",
+            "example": true,
+            "description": "Pflicht: AGB und Auftragsverarbeitungsvertrag in der aktuellen Fassung gelesen und angenommen. Gespeichert werden Fassung, Zeitpunkt, IP-Adresse und Browser."
+          },
+          "confirmBusiness": {
+            "type": "boolean",
+            "example": true,
+            "description": "Pflicht: Bestätigung, als Unternehmer, juristische Person des öffentlichen Rechts oder eingetragener Verein zu handeln und die Organisation vertreten zu dürfen (AGB Ziffer 2.4)."
           }
         },
         "required": [
@@ -17548,7 +17658,9 @@
           "firstName",
           "lastName",
           "organizationName",
-          "country"
+          "country",
+          "acceptTerms",
+          "confirmBusiness"
         ]
       },
       "UserResponseDto": {
@@ -17860,6 +17972,11 @@
             "type": "number",
             "example": 2,
             "description": "Aktuelle Mitgliedschaften des Benutzers, egal welche Rolle"
+          },
+          "legalReacceptanceRequired": {
+            "type": "boolean",
+            "example": false,
+            "description": "Admin einer Organisation, der die aktuelle Fassung von AGB oder AVV noch nicht angenommen hat (POST /legal/accept)."
           }
         },
         "required": [
@@ -17873,7 +17990,8 @@
           "createdAt",
           "updatedAt",
           "organizationLimit",
-          "organizationCount"
+          "organizationCount",
+          "legalReacceptanceRequired"
         ]
       },
       "CurrentUserResponseDto": {
@@ -18135,185 +18253,32 @@
           }
         }
       },
-      "UpdateProfileDto": {
+      "AcceptLegalDto": {
         "type": "object",
         "properties": {
-          "firstName": {
-            "type": "string",
-            "example": "Max",
-            "description": "Vorname"
-          },
-          "lastName": {
-            "type": "string",
-            "example": "Mustermann",
-            "description": "Nachname"
-          }
-        }
-      },
-      "RequestEmailChangeDto": {
-        "type": "object",
-        "properties": {
-          "newEmail": {
-            "type": "string",
-            "example": "neue-email@example.com",
-            "description": "Neue E-Mail-Adresse"
-          },
-          "password": {
-            "type": "string",
-            "example": "MeinPasswort123!",
-            "description": "Aktuelles Passwort zur Bestätigung"
-          }
-        },
-        "required": [
-          "newEmail",
-          "password"
-        ]
-      },
-      "VerifyEmailChangeDto": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string",
-            "example": "abc123...",
-            "description": "Verifizierungstoken aus der E-Mail"
-          }
-        },
-        "required": [
-          "token"
-        ]
-      },
-      "NotificationPreferencesDto": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "boolean",
-            "example": true,
-            "description": "E-Mail-Benachrichtigungen"
-          },
-          "push": {
-            "type": "boolean",
-            "example": true,
-            "description": "Push-Benachrichtigungen"
-          }
-        }
-      },
-      "DashboardWidgetSizeDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "topProducts",
-            "description": "Widget-Kennung"
-          },
-          "w": {
-            "type": "number",
-            "example": 6,
-            "description": "Breite in Rasterspalten (1–12)"
-          },
-          "h": {
-            "type": "number",
-            "example": 2,
-            "description": "Höhe in Rasterzeilen (1–6)"
-          }
-        }
-      },
-      "DashboardPreferencesDto": {
-        "type": "object",
-        "properties": {
-          "widgets": {
-            "example": [
-              "ordersToday",
-              "revenueToday"
-            ],
-            "description": "Aktivierte Dashboard-Widgets in Anzeigereihenfolge",
+          "documents": {
             "type": "array",
+            "description": "Welche Dokumente angenommen werden; ohne Angabe beide.",
             "items": {
-              "type": "string"
-            }
-          },
-          "sizes": {
-            "description": "Kachelgrößen im Raster; ohne Eintrag gilt die Vorgabe",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DashboardWidgetSizeDto"
-            }
-          }
-        }
-      },
-      "OnboardingPreferencesDto": {
-        "type": "object",
-        "properties": {
-          "tourVersion": {
-            "type": "number",
-            "example": 1,
-            "description": "Version der abgeschlossenen Tour"
-          },
-          "tourCompletedAt": {
-            "type": "string",
-            "example": "2026-09-09T10:00:00.000Z"
-          },
-          "quickStartHidden": {
-            "type": "boolean",
-            "example": true,
-            "description": "Quick-Start ausgeblendet"
-          },
-          "lastSeenChangelog": {
-            "type": "string",
-            "example": "2026-09-17",
-            "description": "Neuester gesehener Changelog-Eintrag (JJJJ-MM-TT)"
-          }
-        }
-      },
-      "UpdatePreferencesDto": {
-        "type": "object",
-        "properties": {
-          "theme": {
-            "type": "string",
-            "example": "system",
-            "description": "Theme-Einstellung",
-            "enum": [
-              "light",
-              "dark",
-              "system"
-            ]
-          },
-          "locale": {
-            "type": "string",
-            "example": "de",
-            "description": "Spracheinstellung",
-            "enum": [
-              "de",
-              "en"
-            ]
-          },
-          "notifications": {
-            "example": {
-              "email": true,
-              "push": true
-            },
-            "description": "Benachrichtigungseinstellungen",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/NotificationPreferencesDto"
-              }
-            ]
-          },
-          "dashboard": {
-            "example": {
-              "widgets": [
-                "ordersToday",
-                "revenueToday"
+              "type": "string",
+              "enum": [
+                "agb",
+                "avv"
               ]
-            },
-            "description": "Dashboard-Konfiguration (aktivierte Widgets in Reihenfolge)",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/DashboardPreferencesDto"
-              }
-            ]
+            }
           },
-          "onboarding": {
-            "$ref": "#/components/schemas/OnboardingPreferencesDto"
+          "context": {
+            "type": "string",
+            "enum": [
+              "reacceptance",
+              "purchase"
+            ],
+            "description": "`reacceptance` (Standard): neue Fassung nach dem Login; `purchase`: Annahme beim Buchen einer Veranstaltung."
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Organisation, für die angenommen wird. Ohne Angabe: alle Organisationen, in denen du Admin bist."
           }
         }
       },
@@ -20508,6 +20473,188 @@
           "isActive": {
             "type": "boolean",
             "example": true
+          }
+        }
+      },
+      "UpdateProfileDto": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "example": "Max",
+            "description": "Vorname"
+          },
+          "lastName": {
+            "type": "string",
+            "example": "Mustermann",
+            "description": "Nachname"
+          }
+        }
+      },
+      "RequestEmailChangeDto": {
+        "type": "object",
+        "properties": {
+          "newEmail": {
+            "type": "string",
+            "example": "neue-email@example.com",
+            "description": "Neue E-Mail-Adresse"
+          },
+          "password": {
+            "type": "string",
+            "example": "MeinPasswort123!",
+            "description": "Aktuelles Passwort zur Bestätigung"
+          }
+        },
+        "required": [
+          "newEmail",
+          "password"
+        ]
+      },
+      "VerifyEmailChangeDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "example": "abc123...",
+            "description": "Verifizierungstoken aus der E-Mail"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "NotificationPreferencesDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "boolean",
+            "example": true,
+            "description": "E-Mail-Benachrichtigungen"
+          },
+          "push": {
+            "type": "boolean",
+            "example": true,
+            "description": "Push-Benachrichtigungen"
+          }
+        }
+      },
+      "DashboardWidgetSizeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "topProducts",
+            "description": "Widget-Kennung"
+          },
+          "w": {
+            "type": "number",
+            "example": 6,
+            "description": "Breite in Rasterspalten (1–12)"
+          },
+          "h": {
+            "type": "number",
+            "example": 2,
+            "description": "Höhe in Rasterzeilen (1–6)"
+          }
+        }
+      },
+      "DashboardPreferencesDto": {
+        "type": "object",
+        "properties": {
+          "widgets": {
+            "example": [
+              "ordersToday",
+              "revenueToday"
+            ],
+            "description": "Aktivierte Dashboard-Widgets in Anzeigereihenfolge",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sizes": {
+            "description": "Kachelgrößen im Raster; ohne Eintrag gilt die Vorgabe",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardWidgetSizeDto"
+            }
+          }
+        }
+      },
+      "OnboardingPreferencesDto": {
+        "type": "object",
+        "properties": {
+          "tourVersion": {
+            "type": "number",
+            "example": 1,
+            "description": "Version der abgeschlossenen Tour"
+          },
+          "tourCompletedAt": {
+            "type": "string",
+            "example": "2026-09-09T10:00:00.000Z"
+          },
+          "quickStartHidden": {
+            "type": "boolean",
+            "example": true,
+            "description": "Quick-Start ausgeblendet"
+          },
+          "lastSeenChangelog": {
+            "type": "string",
+            "example": "2026-09-17",
+            "description": "Neuester gesehener Changelog-Eintrag (JJJJ-MM-TT)"
+          }
+        }
+      },
+      "UpdatePreferencesDto": {
+        "type": "object",
+        "properties": {
+          "theme": {
+            "type": "string",
+            "example": "system",
+            "description": "Theme-Einstellung",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ]
+          },
+          "locale": {
+            "type": "string",
+            "example": "de",
+            "description": "Spracheinstellung",
+            "enum": [
+              "de",
+              "en"
+            ]
+          },
+          "notifications": {
+            "example": {
+              "email": true,
+              "push": true
+            },
+            "description": "Benachrichtigungseinstellungen",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NotificationPreferencesDto"
+              }
+            ]
+          },
+          "dashboard": {
+            "example": {
+              "widgets": [
+                "ordersToday",
+                "revenueToday"
+              ]
+            },
+            "description": "Dashboard-Konfiguration (aktivierte Widgets in Reihenfolge)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DashboardPreferencesDto"
+              }
+            ]
+          },
+          "onboarding": {
+            "$ref": "#/components/schemas/OnboardingPreferencesDto"
           }
         }
       },

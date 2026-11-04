@@ -177,3 +177,17 @@ describe('toPublicLegalInfo', () => {
     });
   });
 });
+
+describe('normalizeLegalSettings — template placeholders', () => {
+  it('refuses a privacy text that still contains {{kunde.*}} fields', () => {
+    expect(() =>
+      normalizeLegalSettings({
+        privacyText: 'Verantwortlich ist:\n{{kunde.name}}\n{{ kunde.email }}',
+      }),
+    ).toThrow();
+    expect(
+      normalizeLegalSettings({ privacyText: 'Verantwortlich ist der TSV.' })
+        .privacyText,
+    ).toBe('Verantwortlich ist der TSV.');
+  });
+});

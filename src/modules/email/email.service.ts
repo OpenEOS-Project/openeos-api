@@ -166,6 +166,182 @@ export class EmailService {
       .trim();
   }
 
+  // ============ Rechtstexte: Registrierung und Buchung ============
+
+  /**
+   * Nach der Registrierung: welche Fassungen von AGB und AVV angenommen
+   * wurden, mit Links auf genau diese Fassungen und ihre PDFs (AGB Ziffer
+   * 3.4, AVV Ziffer 1.2). Bestaetigt nur den Eingang — die Annahme durch
+   * LUXCODE ist das nicht (AGB Ziffer 3.3).
+   */
+  async sendRegistrationLegalEmail(options: {
+    to: string;
+    firstName: string;
+    organizationName: string | null;
+    acceptedAt: Date;
+    documents: LegalEmailDocument[];
+    privacy: { url: string; pdfUrl: string };
+  }): Promise<boolean> {
+    const subject =
+      'Deine Registrierung bei OpenEOS: AGB und Auftragsverarbeitungsvertrag';
+    const zeitpunkt = new Intl.DateTimeFormat('de-DE', {
+      dateStyle: 'long',
+      timeStyle: 'short',
+      timeZone: 'Europe/Berlin',
+    }).format(options.acceptedAt);
+    const zeilen: [string, string][] = [];
+    if (options.organizationName) {
+      zeilen.push(['Organisation', options.organizationName]);
+    }
+    zeilen.push(['Angenommen am', `${zeitpunkt} Uhr`]);
+    for (const doc of options.documents) {
+      zeilen.push([doc.label, `Fassung vom ${fassungsdatum(doc.version)}`]);
+    }
+
+    const html = rahmen({
+      kontext: 'Registrierung',
+      titel: `OpenEOS — ${subject}`,
+      preheader:
+        'Die Fassungen von AGB und Auftragsverarbeitungsvertrag, die du bei der Registrierung angenommen hast – zum Nachlesen und Speichern.',
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift(`Danke, ${options.firstName}.`) +
+          absatz(
+            'Wir haben deine Registrierung erhalten. Dabei hast du die Allgemeinen Geschäftsbedingungen (AGB) und den Auftragsverarbeitungsvertrag (AVV) angenommen und bestätigt, dass du als Unternehmer, juristische Person des öffentlichen Rechts oder eingetragener Verein handelst und die Organisation vertreten darfst.',
+          ),
+        datenblock('Deine Annahme', zeilen),
+        absatz('Hier sind genau diese Fassungen zum Nachlesen und Speichern:') +
+          dokumentLinks(options.documents),
+        absatz(
+          `Wie wir deine Daten verarbeiten, steht in der <a href="${escapeHtml(options.privacy.url)}">Datenschutzerklärung</a> (<a href="${escapeHtml(options.privacy.pdfUrl)}">PDF</a>). Alle Texte findest du jederzeit in der App unter „Rechtliches“.`,
+          true,
+        ),
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /**
+   * Buchungsbestaetigung einer Freischaltung (AGB Ziffer 3.3 und 3.4):
+   * Leistung, Tage, Preis, Zahlungsweg, die geltenden Fassungen von AGB und
+   * AVV und — bei Cloud-TSE — die Angaben fuer die Mitteilung an das
+   * Finanzamt (§ 146a Abs. 4 AO).
+   */
+  async sendEventBookingConfirmationEmail(options: {
+    to: string;
+    organizationName: string;
+    eventName: string;
+    startDate: Date | null;
+    endDate: Date | null;
+    timeZone: string;
+    days: number | null;
+    tseIncluded: boolean;
+    amount: number;
+    currency: string;
+    paymentMethod: 'stripe' | 'invoice';
+    invoiceNumber: string | null;
+    bookedAt: Date;
+    documents: LegalEmailDocument[];
+    elster: BookingElsterData | null;
+  }): Promise<boolean> {
+    const subject = `Buchungsbestätigung: ${options.eventName}`;
+    const betrag = new Intl.NumberFormat('de-DE', {
+      style: 'currency',
+      currency: options.currency || 'EUR',
+    }).format(options.amount);
+    const datum = new Intl.DateTimeFormat('de-DE', {
+      dateStyle: 'medium',
+      timeZone: options.timeZone,
+    });
+    const zeitraum =
+      options.startDate && options.endDate
+        ? `${datum.format(options.startDate)} – ${datum.format(options.endDate)}`
+        : options.startDate
+          ? datum.format(options.startDate)
+          : '–';
+    const tage = options.days ?? 0;
+    const leistung =
+      `Freischaltung von OpenEOS (Tagesnutzung) für ${tage} Event-${tage === 1 ? 'Tag' : 'Tage'}` +
+      (options.tseIncluded ? ', Cloud-TSE inklusive' : '');
+    const zeilen: [string, string][] = [
+      ['Organisation', options.organizationName],
+      ['Veranstaltung', options.eventName],
+      ['Zeitraum', zeitraum],
+      ['Leistung', leistung],
+      ['Preis', betrag],
+      [
+        'Zahlung',
+        options.paymentMethod === 'invoice'
+          ? `Auf Rechnung${options.invoiceNumber ? ` (${options.invoiceNumber})` : ''}`
+          : 'Karte oder Lastschrift über Stripe',
+      ],
+      [
+        'Gebucht am',
+        new Intl.DateTimeFormat('de-DE', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: options.timeZone,
+        }).format(options.bookedAt) + ' Uhr',
+      ],
+    ];
+
+    const elster = options.elster;
+    let elsterBlock: string | null = null;
+    if (elster) {
+      const e: [string, string][] = [
+        ['Software', `${elster.softwareName} (${elster.manufacturer})`],
+        ['Version', elster.softwareVersion],
+        ['Seriennummer Kasse', elster.registerSerial],
+      ];
+      if (elster.tse) {
+        e.push(['TSE-Seriennummer', elster.tse.serialNumber ?? '–']);
+        e.push(['Zertifizierungs-ID', elster.tse.certificationId ?? '–']);
+        if (elster.tse.certificateExpiresAt) {
+          e.push([
+            'Zertifikat gültig bis',
+            datum.format(elster.tse.certificateExpiresAt),
+          ]);
+        }
+        if (elster.tse.activatedAt) {
+          e.push(['TSE in Betrieb seit', datum.format(elster.tse.activatedAt)]);
+        }
+      }
+      elsterBlock = stapeln(
+        datenblock('Angaben für die Finanzamt-Meldung (ELSTER)', e),
+        absatz(
+          elster.tse
+            ? 'Diese Angaben brauchst du für die Mitteilung nach § 146a Abs. 4 AO über „Mein ELSTER“. Du findest sie mit dem Verlauf aller TSEs auch in der App unter „Rechtliches“.'
+            : 'Die Cloud-TSE wird frühestens im Monat des Veranstaltungsbeginns eingerichtet. Ihre Seriennummer und das Zertifikat findest du dann in der App unter „Rechtliches“ → „Angaben für die Finanzamt-Meldung (ELSTER)“.',
+        ),
+      );
+    }
+
+    const html = rahmen({
+      kontext: 'Buchung',
+      titel: `OpenEOS — ${subject}`,
+      preheader: `Wir bestätigen deine Buchung für „${options.eventName}“: ${leistung}, ${betrag}.`,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Deine Buchung ist bestätigt.') +
+          absatz(
+            `Wir bestätigen deine Buchung für „${options.eventName}“. Die Veranstaltung ist freigeschaltet.`,
+          ),
+        datenblock('Buchung', zeilen),
+        absatz(VAT_EXEMPT_NOTE),
+        absatz(
+          'Für die Buchung gelten diese Fassungen – zum Nachlesen und Speichern:',
+        ) + dokumentLinks(options.documents),
+        elsterBlock,
+        knopf(`${this.appUrl}/events`, 'Zur Veranstaltung'),
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   // ============ Registration / Email Verification Templates ============
 
   async sendEmailVerificationEmail(options: {
@@ -1567,4 +1743,48 @@ export class EmailService {
       inhalt: angepasst,
     });
   }
+}
+
+/** Ein Rechtstext mit Links auf eine bestimmte Fassung (fuer Mails). */
+export interface LegalEmailDocument {
+  label: string;
+  version: string;
+  versionUrl: string;
+  pdfUrl: string;
+}
+
+/** Angaben fuer die Mitteilung nach § 146a Abs. 4 AO in der Buchungsmail. */
+export interface BookingElsterData {
+  softwareName: string;
+  manufacturer: string;
+  softwareVersion: string;
+  registerSerial: string;
+  tse: {
+    serialNumber: string | null;
+    certificationId: string | null;
+    certificateExpiresAt: Date | null;
+    activatedAt: Date | null;
+  } | null;
+}
+
+/** 2026-11-04 → 4. November 2026 */
+function fassungsdatum(version: string): string {
+  const [y, m, d] = version.split('-').map(Number);
+  if (!y || !m || !d) return version;
+  return new Intl.DateTimeFormat('de-DE', {
+    dateStyle: 'long',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(y, m - 1, d)));
+}
+
+/** Liste „AGB (Fassung vom …): Ansehen · PDF“. */
+function dokumentLinks(documents: LegalEmailDocument[]): string {
+  return documents
+    .map((doc) =>
+      absatz(
+        `<strong>${escapeHtml(doc.label)}</strong> (Fassung vom ${escapeHtml(fassungsdatum(doc.version))}): <a href="${escapeHtml(doc.versionUrl)}">ansehen</a> · <a href="${escapeHtml(doc.pdfUrl)}">PDF</a>`,
+        true,
+      ),
+    )
+    .join('');
 }

@@ -59,6 +59,7 @@ import { TablesModule } from './modules/tables';
 import { PlatformSettingsModule } from './modules/platform-settings';
 import { SupportModule } from './modules/support';
 import { ContactModule } from './modules/contact';
+import { LegalModule } from './modules/legal';
 import { ChangelogModule } from './modules/changelog';
 import { DeployGuardModule } from './modules/deploy-guard/deploy-guard.module';
 import { AiModule } from './modules/ai';
@@ -197,6 +198,7 @@ import { DsfinvkModule } from './modules/dsfinvk';
     PlatformSettingsModule,
     SupportModule,
     ContactModule,
+    LegalModule,
     DeployGuardModule,
     // Assistent: Modellanbieter + Kontingente (global) und die Funktionen
     AiModule,

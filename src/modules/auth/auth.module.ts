@@ -9,6 +9,7 @@ import { TwoFactorService } from './two-factor.service';
 import { JwtStrategy, LocalStrategy } from './strategies';
 import { EncryptionService } from '../../common/services/encryption.service';
 import { OrganizationViewModule } from '../organizations/organization-view.module';
+import { LegalModule } from '../legal/legal.module';
 import {
   User,
   Organization,
@@ -34,6 +35,7 @@ import {
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     OrganizationViewModule,
+    LegalModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({

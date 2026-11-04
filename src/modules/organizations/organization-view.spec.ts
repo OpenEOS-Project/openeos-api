@@ -261,6 +261,7 @@ describe('organization responses carry the same derived fields', () => {
       undefined as never,
       limits as never,
       new OrganizationViewService(service),
+      { isReacceptanceRequired: () => Promise.resolve(false) } as never,
     );
     const { user: me } = await controller.getCurrentUser(fullUser as never);
     expect(me.userOrganizations?.[0].organization).toMatchObject(DERIVED);
