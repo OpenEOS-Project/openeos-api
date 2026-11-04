@@ -231,7 +231,13 @@ describeWithDb('Cloud-TSE monthly lifecycle (database)', () => {
 
   const actions = async (organizationId: string) =>
     (
-      await ds.query<{ action: string; reason: string | null; details: any }[]>(
+      await ds.query<
+        {
+          action: string;
+          reason: string | null;
+          details: Record<string, string>;
+        }[]
+      >(
         `SELECT action, reason, details FROM admin_audit_logs WHERE organization_id = $1 ORDER BY created_at`,
         [organizationId],
       )
@@ -278,7 +284,7 @@ describeWithDb('Cloud-TSE monthly lifecycle (database)', () => {
     );
     expect(deactivated?.details).toMatchObject({
       reason: 'monthly_cycle',
-      period: { activatedAt: expect.any(String) },
+      period: { activatedAt: expect.any(String) as unknown },
     });
     expect(notify.notifyAdmins).toHaveBeenCalledWith(
       o,
@@ -405,7 +411,7 @@ describeWithDb('Cloud-TSE monthly lifecycle (database)', () => {
     expect(notify.notifyPlatformAdmins).toHaveBeenCalledTimes(1);
     expect(notify.notifyPlatformAdmins).toHaveBeenCalledWith(
       expect.objectContaining({
-        subject: expect.stringContaining('überfällig'),
+        subject: expect.stringContaining('überfällig') as unknown,
       }),
     );
     expect((await actions(o)).map((a) => a.action)).toContain(

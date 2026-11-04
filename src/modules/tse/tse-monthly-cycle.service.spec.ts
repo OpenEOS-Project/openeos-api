@@ -162,8 +162,8 @@ describe('TseMonthlyCycleService', () => {
       expect.objectContaining({
         details: expect.objectContaining({
           extraMonth: '2026-12',
-          costNote: expect.stringContaining('weiteren Monat'),
-        }),
+          costNote: expect.stringContaining('weiteren Monat') as unknown,
+        }) as unknown,
       }),
     );
   });
