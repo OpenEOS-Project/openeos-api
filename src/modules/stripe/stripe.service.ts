@@ -6,6 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 
+import { VAT_EXEMPT_NOTE } from '../../common/constants/billing-text';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 
 /** Rechnungsanschrift, wie Stripe sie am Kunden fuehrt. */
@@ -352,7 +353,12 @@ export class StripeService {
           })),
         ],
         // Ohne Rechnung bliebe dem Verein nur die Kartenabrechnung als Beleg.
-        invoice_creation: { enabled: true },
+        // Der Hinweis nach § 19 UStG gehoert auf jede Rechnung (AGB 8.2) —
+        // wie bei den Rechnungen „auf Rechnung“ (StripeInvoiceService).
+        invoice_creation: {
+          enabled: true,
+          invoice_data: { footer: VAT_EXEMPT_NOTE },
+        },
         success_url: params.successUrl,
         cancel_url: params.cancelUrl,
         metadata: params.metadata,
