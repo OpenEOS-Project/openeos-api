@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 
 import {
   ErrorCodes,
@@ -255,4 +255,27 @@ export function toPublicLegalInfo(
       privacyUrl: platform.privacyUrl || null,
     },
   };
+}
+
+/**
+ * Ohne Impressum und Datenschutzhinweis des Vereins wird im Shop nicht
+ * bestellt: Der Verein verkauft und erhebt die Kontaktdaten, also muss er
+ * beides vorher nennen. Die Shop-Oberflaeche blendet die Kasse dann aus;
+ * diese Pruefung haelt auch direkte Aufrufe und offene Tabs auf. Gleiche
+ * Regel wie `complete` in der oeffentlichen Sicht.
+ */
+export function assertLegalInfoComplete(
+  organization: Pick<Organization, 'name' | 'settings'> | null | undefined,
+): void {
+  const { complete } = toPublicLegalInfo(organization, {
+    imprintUrl: null,
+    privacyUrl: null,
+  });
+  if (!complete) {
+    throw new ForbiddenException({
+      code: 'LEGAL_INFO_MISSING',
+      message:
+        'Dieser Shop ist noch nicht freigeschaltet: Es fehlen Impressum oder Datenschutzhinweis des Veranstalters.',
+    });
+  }
 }
