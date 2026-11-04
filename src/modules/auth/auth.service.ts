@@ -6,6 +6,7 @@ import {
   ConflictException,
   Logger,
   Inject,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -38,6 +39,12 @@ import {
 } from './dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { DeploymentService } from '../../common/services/deployment.service';
+import { LegalAcceptance } from '../../database/entities/legal-acceptance.entity';
+import {
+  acceptanceRows,
+  AcceptanceClient,
+  LegalService,
+} from '../legal/legal.service';
 
 /** Woher eine Anmeldung kam — fuer die Sitzungsliste. */
 export interface SessionClient {
@@ -97,6 +104,9 @@ export class AuthService {
     @Inject(CACHE_MANAGER)
     private readonly cacheManager: Cache,
     private readonly deployment: DeploymentService,
+    /* Optional, damit Tests ohne Rechtstexte-Modul auskommen. */
+    @Optional()
+    private readonly legalService?: LegalService,
   ) {}
 
   async getPendingInvitations(userId: string): Promise<Invitation[]> {
@@ -114,7 +124,10 @@ export class AuthService {
     });
   }
 
-  async register(registerDto: RegisterDto): Promise<{
+  async register(
+    registerDto: RegisterDto,
+    client?: AcceptanceClient,
+  ): Promise<{
     user: User;
     requiresEmailVerification: true;
     /** Ohne Passwort ging statt der Bestaetigung ein Anmeldelink raus. */
@@ -128,7 +141,20 @@ export class AuthService {
       organizationName,
       country,
       newsletterOptIn,
+      acceptTerms,
+      confirmBusiness,
     } = registerDto;
+
+    /* Die DTO-Pruefung verlangt beide Haken schon; hier noch einmal, falls
+       register() einmal von woanders aufgerufen wird. */
+    if (acceptTerms !== true || confirmBusiness !== true) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.LEGAL_ACCEPTANCE_REQUIRED,
+        message:
+          'Bitte akzeptiere die AGB und den Auftragsverarbeitungsvertrag und bestätige den Kundenkreis.',
+      });
+    }
 
     /* Eigenstaendig gibt es keine Selbstregistrierung.
        Zwei Gruende: sie legt jedes Mal eine weitere Organisation an, und sie
@@ -175,6 +201,7 @@ export class AuthService {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
+    let registeredOrganization: Organization | null = null;
 
     try {
       // Create user
@@ -222,6 +249,30 @@ export class AuthService {
           role: OrganizationRole.ADMIN,
         });
         await queryRunner.manager.save(userOrganization);
+        registeredOrganization = organization;
+      }
+
+      /* Nachweis der Annahme von AGB und AVV (Fassung, Zeitpunkt, IP,
+         Browser) — in derselben Transaktion: ohne Nachweis kein Konto. */
+      const legalConfig = this.legalService?.config;
+      if (legalConfig?.enabled) {
+        await queryRunner.manager.insert(
+          LegalAcceptance,
+          acceptanceRows({
+            config: legalConfig,
+            user,
+            organization: registeredOrganization
+              ? {
+                  id: registeredOrganization.id,
+                  name: registeredOrganization.name,
+                }
+              : null,
+            documents: ['agb', 'avv'],
+            context: 'registration',
+            businessConfirmed: true,
+            client,
+          }),
+        );
       }
 
       await queryRunner.commitTransaction();
@@ -250,6 +301,13 @@ export class AuthService {
       }
 
       await this.notifyAdminOfRegistration(user);
+
+      // Welche Fassungen angenommen wurden, mit Links und PDFs.
+      await this.legalService?.sendRegistrationEmail({
+        user,
+        organizationName: registeredOrganization?.name ?? null,
+        acceptedAt: new Date(),
+      });
 
       return {
         user,

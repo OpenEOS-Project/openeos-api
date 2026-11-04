@@ -210,6 +210,7 @@ describe('AuthController passes the client to the session', () => {
       config,
       undefined as never,
       new OrganizationViewService(),
+      { isReacceptanceRequired: () => Promise.resolve(false) } as never,
     );
     return { ctrl, login, refreshTokens };
   }

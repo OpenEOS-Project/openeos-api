@@ -50,6 +50,7 @@ import {
   type TseCheckoutOffer,
   type UnlockPath,
 } from '../tse/tse-auto-activation.service';
+import { BookingConfirmationService } from '../legal/booking-confirmation.service';
 import { BillingAuditService } from './billing-audit.service';
 import { AdminAction } from '../../database/entities/admin-audit-log.entity';
 import {
@@ -222,6 +223,9 @@ export class EventBillingService {
        immer vorhanden (EventsModule importiert TseModule). */
     @Optional()
     private readonly tseAuto?: TseAutoActivationService,
+    /* Optional wie tseAuto: Buchungsbestaetigung an die Organisation. */
+    @Optional()
+    private readonly bookingConfirmation?: BookingConfirmationService,
   ) {}
 
   /** Cloud-TSE-Angaben fuer Dialog und Vorschau. */
@@ -820,6 +824,14 @@ export class EventBillingService {
 
     await this.followUpTse(event, 'invoice', dto.withTse, user.id);
 
+    await this.bookingConfirmation?.send({
+      event,
+      organization,
+      paymentMethod: 'invoice',
+      amount: finalPrice,
+      invoiceNumber: issued?.snapshot.stripeInvoiceNumber ?? null,
+    });
+
     return event;
   }
 
@@ -1150,6 +1162,15 @@ export class EventBillingService {
 
     // Kein Benutzer: bezahlt hat Stripe (Webhook bzw. Rueckkehr).
     await this.followUpTse(event, 'checkout', withTse, null);
+
+    if (organization) {
+      await this.bookingConfirmation?.send({
+        event,
+        organization,
+        paymentMethod: 'stripe',
+        amount: betrag,
+      });
+    }
 
     return event;
   }

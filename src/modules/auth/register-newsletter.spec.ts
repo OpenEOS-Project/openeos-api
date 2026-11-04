@@ -1,6 +1,8 @@
 import { ConfigService } from '@nestjs/config';
 
 import { AuthService } from './auth.service';
+import { legalConfigFromEnv } from '../../config/legal.config';
+import { LegalAcceptance } from '../../database/entities/legal-acceptance.entity';
 
 jest.mock('uuid', () => ({
   v4: () => jest.requireActual<typeof import('crypto')>('crypto').randomUUID(),
@@ -11,8 +13,9 @@ jest.mock('uuid', () => ({
  * sichern, dass die Einwilligung mit Zeitpunkt am Konto landet — und ohne
  * Haken keine.
  */
-function setup() {
+function setup(legalService?: unknown) {
   const saved: unknown[] = [];
+  const inserted: { target: unknown; rows: unknown }[] = [];
   const identity = <T>(data: T) => data;
   const userRepository = {
     findOne: jest.fn(() => Promise.resolve(null)),
@@ -35,7 +38,10 @@ function setup() {
         return Promise.resolve(entity);
       }),
       query: jest.fn(() => Promise.resolve([])),
-      insert: jest.fn(() => Promise.resolve({})),
+      insert: jest.fn((target: unknown, rows: unknown) => {
+        inserted.push({ target, rows });
+        return Promise.resolve({});
+      }),
     },
   };
   const dataSource = { createQueryRunner: () => queryRunner };
@@ -60,8 +66,9 @@ function setup() {
     none,
     none,
     deployment as never,
+    legalService as never,
   );
-  return { service, saved };
+  return { service, saved, inserted };
 }
 
 const base = {
@@ -70,6 +77,8 @@ const base = {
   lastName: 'Neu',
   organizationName: 'TSV Musterstadt',
   country: 'DE',
+  acceptTerms: true,
+  confirmBusiness: true,
 };
 
 describe('AuthService.register — newsletter consent', () => {
@@ -97,5 +106,47 @@ describe('AuthService.register — newsletter consent', () => {
       newsletterOptIn: false,
     });
     expect(explicitNo.newsletterOptInAt).toBeNull();
+  });
+});
+
+describe('AuthService.register — AGB/AVV acceptance', () => {
+  const legalService = {
+    config: legalConfigFromEnv({}, false),
+    sendRegistrationEmail: jest.fn(() => Promise.resolve()),
+  };
+
+  it('stores AGB and AVV acceptance with IP and user agent in the transaction', async () => {
+    const { service, inserted } = setup(legalService);
+    await service.register(
+      { ...base },
+      { ip: '203.0.113.9', userAgent: 'Mozilla/5.0' },
+    );
+    const legal = inserted.find((i) => i.target === LegalAcceptance);
+    expect(legal?.rows).toEqual([
+      expect.objectContaining({
+        document: 'agb',
+        version: '2026-11-04',
+        context: 'registration',
+        businessConfirmed: true,
+        ipAddress: '203.0.113.9',
+        userAgent: 'Mozilla/5.0',
+        userEmail: 'neu@example.org',
+        organizationName: 'TSV Musterstadt',
+      }),
+      expect.objectContaining({ document: 'avv', version: '2026-11-04' }),
+    ]);
+    expect(legalService.sendRegistrationEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationName: 'TSV Musterstadt' }),
+    );
+  });
+
+  it('refuses a registration without both confirmations', async () => {
+    const { service } = setup(legalService);
+    await expect(
+      service.register({ ...base, confirmBusiness: false }),
+    ).rejects.toThrow();
+    await expect(
+      service.register({ ...base, acceptTerms: false }),
+    ).rejects.toThrow();
   });
 });
