@@ -179,6 +179,26 @@ export const validationSchema = Joi.object({
   ORGANIZATIONS_PER_USER_LIMIT: Joi.number().integer().min(0).default(5),
   MEMBERS_PER_ORGANIZATION_LIMIT: Joi.number().integer().min(0).default(10),
 
+  // Aufbewahrung und Loeschung (README „Aufbewahrung und Löschung“). Leer
+  // gilt wie nicht gesetzt; Standardwerte in retention.config.ts. Fristen,
+  // nach denen Kundendaten verschwinden, nicht unter 30 Tagen.
+  RETENTION_ENABLED: Joi.boolean().empty(''),
+  RETENTION_DRY_RUN: Joi.boolean().empty(''),
+  RETENTION_CATEGORIES: Joi.string().allow(''),
+  RETENTION_CONTACT_EMAIL: Joi.string().email().allow(''),
+  RETENTION_GUEST_DATA_DAYS: Joi.number().integer().min(30).empty(''),
+  RETENTION_HELPER_DATA_DAYS: Joi.number().integer().min(30).empty(''),
+  RETENTION_AUDIT_LOG_DAYS: Joi.number().integer().min(1).empty(''),
+  RETENTION_STALE_CREDENTIAL_DAYS: Joi.number().integer().min(1).empty(''),
+  RETENTION_SUPPORT_MONTHS: Joi.number().integer().min(1).empty(''),
+  RETENTION_CONTACT_MONTHS: Joi.number().integer().min(1).empty(''),
+  RETENTION_INACTIVE_ORG_MONTHS: Joi.number().integer().min(1).empty(''),
+  RETENTION_INACTIVE_USER_MONTHS: Joi.number().integer().min(1).empty(''),
+  RETENTION_NOTICE_DAYS: Joi.number().integer().min(30).empty(''),
+  RETENTION_EXPORT_PERIOD_DAYS: Joi.number().integer().min(30).empty(''),
+  RETENTION_FISCAL_ARCHIVE_YEARS: Joi.number().integer().min(10).empty(''),
+  RETENTION_RUN_LOG_YEARS: Joi.number().integer().min(1).empty(''),
+
   // Token fuer GET /api/internal/deploy-guard (Deploy-Workflows fragen dort,
   // ob gerade ein Fest laeuft). Leer: Endpunkt antwortet 404.
   DEPLOY_GUARD_TOKEN: Joi.string().min(32).allow('').optional(),

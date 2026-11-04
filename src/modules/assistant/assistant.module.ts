@@ -48,6 +48,6 @@ import { MenuImportWorkerService } from './menu-import/menu-import-worker.servic
     MenuImportService,
     MenuImportWorkerService,
   ],
-  exports: [AssistantService, IconSuggestionService],
+  exports: [AssistantService, IconSuggestionService, MenuImportWorkerService],
 })
 export class AssistantModule {}

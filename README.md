@@ -627,6 +627,100 @@ Zustand in `~/.config/openeos/swissbit-dev-state.json` und legt höchstens
 dann eine TSE an, wenn keine mehr existiert):
 `SWISSBIT_INTEGRATION=1 pnpm test -- swissbit.integration`.
 
+## Aufbewahrung und Löschung
+
+Das Modul `retention` löscht bzw. anonymisiert personenbezogene Daten nach
+festen Fristen und bewahrt die steuerlich relevanten Kassendaten auf. Es
+trennt zwei Bereiche:
+
+- **Steuerarchiv** (TSE-Exporte, Kassenabschlüsse mit DSFinV-K-Export,
+  signierte Vorgänge einschließlich Training, Kassenbuch): zehn Jahre ab dem
+  Ende des Kalenderjahres, auch nach dem Ende der Organisation. Kein
+  Löschlauf ändert diese Tabellen; Kassenabschlüsse sind zusätzlich per
+  Datenbank-Trigger gegen Löschen gesperrt. Bestellungen, auf die das
+  Steuerarchiv verweist, bleiben erhalten (ohne Gästeangaben).
+- **Personenbezogene Daten außerhalb des Steuerarchivs** werden nach den
+  Fristen unten gelöscht oder anonymisiert. Bedienernamen in erstellten
+  Kassenabschlüssen bleiben, weil sie Teil des Abschlusses sind.
+
+Jede Nacht um 03:30 (Europe/Berlin) läuft je Datenart ein Löschlauf, auf
+genau einer Instanz (`CronLockService`), jede Datenart in einer eigenen
+Transaktion. Jeder Lauf steht mit Datenart, Anzahl je Teilschritt,
+Beginn/Ende, Probelauf und Fehler in `retention_runs` – ohne Inhalte.
+
+| Datenart (`category`) | Was | Frist (Standard) | Verfahren |
+|---|---|---|---|
+| `guest_data` | Name, Telefon, E-Mail und Anmerkungen von Gästen in Bestellungen, Shop-Checkouts, Bestellungen am Tisch, Druckaufträgen | 30 Tage nach dem Ende der Veranstaltung (ohne Enddatum: nach der Bestellung, nur abgeschlossene) | Felder leeren; Bestellung bleibt ohne Personenbezug |
+| `helper_data` | Schichtanmeldungen mit Name, E-Mail, Telefon, Anmerkungen, Notizen, Änderungsvorschläge, Helfer-Links | 30 Tage nach der letzten Schicht des Plans | löschen; Plan und Schichten bleiben |
+| `auth_records` | abgelaufene Sitzungen, Einmalcodes, Anmelde- und Helfer-Links, vertrauenswürdige Geräte, Passwort-/E-Mail-Änderungslinks | nach Ablauf (1 Tag Puffer) | löschen |
+| `auth_records` | angenommene/abgelaufene Einladungen, widerrufene/abgelaufene API-Tokens | 90 Tage | löschen |
+| `audit_logs` | Admin-Protokoll | 90 Tage | löschen; Einträge zu Abrechnung, Cloud-TSE, Kassenabschluss und Betriebsart bleiben ohne IP/Browser |
+| `audit_logs` | IP und Browser in Änderungsprotokollen der Betriebsart | 90 Tage | Felder leeren |
+| `audit_logs` | Protokoll der Löschläufe | 3 Jahre | löschen |
+| `support_messages` | Support-Chat | 12 Monate nach letzter Nachricht und letzter Nutzung bzw. Löschung der Organisation | löschen |
+| `contact_requests` | Anfragen über die Website | 6 Monate nach „erledigt“ | löschen |
+| `assistant_imports` | hochgeladene Speisekarten / Vorschläge | 24 Stunden / 30 Tage (stündlicher Job im Assistenten, hier protokolliert) | löschen |
+| `organization_inactivity` | Organisationen ohne Nutzung | Ankündigung nach 24 Monaten, Schließung frühestens 30 Tage später | Mail an die Admins mit Exportlink, dann wie „Organisation löschen“ |
+| `organization_purge` | gelöschte bzw. geschlossene Organisationen | Ankündigung, endgültig nach Exportfrist (30 Tage) und frühestens 30 Tage nach der Ankündigung | Kundendaten löschen; Steuerarchiv, Abrechnungsdaten des Betreibers und die Organisation als gesperrte Hülle (Name, Anschrift, Steuernummer) bleiben |
+| `user_accounts` | Benutzerkonten ohne bestehende Organisation | Ankündigung nach 24 Monaten ohne Nutzung, Löschung frühestens 30 Tage später | anonymisieren (Name, E-Mail, Zugangsdaten, Tokens, Avatar) |
+| `fiscal_archive` | Steuerarchiv | 10 Jahre ab Ende des Kalenderjahres | nur zählen, nie löschen |
+
+Regeln, die für alle Läufe gelten:
+
+- **Kein Löschen ohne Exportangebot**: Organisationen und Konten werden
+  erst gelöscht, wenn die Ankündigung (`retention_notices`) mindestens 30
+  Tage alt ist – auch wenn die Organisation schon länger gelöscht war.
+  Fristen für Kundendaten lassen sich nicht unter 30 Tage setzen.
+- **Nicht während des Kassenbetriebs**: Eine Organisation mit aktiver
+  Cloud-TSE, mit noch abzuholenden TSE-Exporten (35 Tage nach der
+  Deaktivierung) oder mit Vorgängen ohne Kassenabschluss wird weder
+  geschlossen noch endgültig gelöscht.
+- Nutzung nach der Ankündigung (Buchung, Bestellung, Anmeldung) oder eine
+  wiederhergestellte Organisation hebt die Ankündigung auf.
+- Datensicherungen werden nicht einzeln bereinigt; gelöschte Daten laufen
+  mit dem Sicherungszyklus aus.
+
+**Probelauf.** `RETENTION_DRY_RUN=true` führt jeden Lauf vollständig aus
+und rollt ihn am Ende zurück: Die Zahlen im Protokoll stimmen, geändert
+wird nichts, Mails und Dateilöschungen bleiben aus. Standard ist der
+Probelauf – auch bei `NODE_ENV=production`, weil Staging ebenso läuft.
+Echte Läufe erst nach Prüfung des Protokolls mit `RETENTION_DRY_RUN=false`
+einschalten.
+
+**Super-Admin-API** (`/api/admin/retention`):
+
+- `GET config` – wirksame Fristen und Modus
+- `GET runs?category=&trigger=&organizationId=` – Protokoll
+- `POST runs { categories?, dryRun? }` – Lauf von Hand (ohne `dryRun` gilt
+  die Einstellung der Instanz)
+- `GET notices?open=true` – angekündigte Schließungen und Löschungen
+- `POST organizations/:id/keep`, `POST users/:id/keep` – Ankündigung wegen
+  Inaktivität aufheben (zählt als Nutzung)
+- `POST organizations/:id/erasures { kind, id | email, reason, dryRun? }` –
+  Einzellöschung auf Weisung des Kunden: `order` (Gästeangaben einer
+  Bestellung), `guest_email` (alle Bestellangaben zu einer Adresse),
+  `shift_registration` (eine Anmeldung), `helper_email` (alle Anmeldungen
+  zu einer Adresse). Steht mit ausführender Person und Anlass im Protokoll
+  (`trigger = instruction`).
+
+**Konfiguration** (leer = Standard):
+
+| Variable | Standard |
+|---|---|
+| `RETENTION_ENABLED` | `true`, bei `DEPLOYMENT_MODE=selfhosted` `false` |
+| `RETENTION_DRY_RUN` | `true` (Probelauf); echte Läufe nur mit `false` |
+| `RETENTION_CATEGORIES` | alle (kommagetrennte Liste zum Einschränken) |
+| `RETENTION_CONTACT_EMAIL` | `OPERATOR_EMAIL` – Adresse für Exportanfragen in der Löschankündigung |
+| `RETENTION_GUEST_DATA_DAYS` / `RETENTION_HELPER_DATA_DAYS` | 30 (min. 30) |
+| `RETENTION_AUDIT_LOG_DAYS` / `RETENTION_STALE_CREDENTIAL_DAYS` | 90 |
+| `RETENTION_SUPPORT_MONTHS` / `RETENTION_CONTACT_MONTHS` | 12 / 6 |
+| `RETENTION_INACTIVE_ORG_MONTHS` / `RETENTION_INACTIVE_USER_MONTHS` | 24 / 24 |
+| `RETENTION_NOTICE_DAYS` / `RETENTION_EXPORT_PERIOD_DAYS` | 30 / 30 (min. 30) |
+| `RETENTION_FISCAL_ARCHIVE_YEARS` / `RETENTION_RUN_LOG_YEARS` | 10 (min. 10) / 3 |
+
+Tests gegen eine Wegwerf-Datenbank (Name auf `_test` oder `_scratch`):
+`TEST_RETENTION_DATABASE_URL=postgres://… pnpm test retention.db`.
+
 ## MCP (KI-Agenten)
 
 Die API ist ein [MCP](https://modelcontextprotocol.io)-Server: Claude Desktop, Claude Code, Cursor und eigene Agenten bedienen OpenEOS über dieselben Werkzeuge. Nur Administration — keine Kasse, keine Erstattungen, keine Mitglieder, kein Löschen, keine Freischaltung.

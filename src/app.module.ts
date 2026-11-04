@@ -67,6 +67,7 @@ import { AssistantModule } from './modules/assistant';
 import { McpModule } from './modules/mcp';
 import { TseModule } from './modules/tse';
 import { DsfinvkModule } from './modules/dsfinvk';
+import { RetentionModule } from './modules/retention';
 
 @Module({
   imports: [
@@ -208,6 +209,7 @@ import { DsfinvkModule } from './modules/dsfinvk';
     TseModule,
     // DSFinV-K (Kassenabschluss, Export) und Kassenbuch, openeos-api#102
     DsfinvkModule,
+    RetentionModule,
   ],
   controllers: [],
   providers: [
