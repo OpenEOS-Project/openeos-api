@@ -100,10 +100,10 @@ export default () => ({
     // Eine leer gesetzte Variable blendet den Link ebenfalls aus.
     imprintUrl:
       process.env.PLATFORM_IMPRINT_URL ??
-      (IS_SELF_HOSTED ? '' : 'https://openeos.de/imprint'),
+      (IS_SELF_HOSTED ? '' : 'https://openeos.de/impressum'),
     privacyUrl:
       process.env.PLATFORM_PRIVACY_URL ??
-      (IS_SELF_HOSTED ? '' : 'https://openeos.de/privacy'),
+      (IS_SELF_HOSTED ? '' : 'https://openeos.de/datenschutz'),
   },
 
   billing: {

@@ -33,8 +33,8 @@ function loadPlatform(env: Record<string, string | undefined>) {
 describe('platform legal links', () => {
   it('defaults to openeos.de in the hosted service', () => {
     expect(loadPlatform({})).toEqual({
-      imprintUrl: 'https://openeos.de/imprint',
-      privacyUrl: 'https://openeos.de/privacy',
+      imprintUrl: 'https://openeos.de/impressum',
+      privacyUrl: 'https://openeos.de/datenschutz',
     });
   });
 
