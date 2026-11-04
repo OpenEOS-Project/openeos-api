@@ -182,6 +182,38 @@ export class TseUnit extends BaseEntity {
   @Column({ type: 'int', default: 0 })
   attempts: number;
 
+  /**
+   * Lebenszyklus `monthly`: geplante Abmeldung (letzter Tag des Monats,
+   * 20:00 Berlin). Verschiebt sich um einen Monat, wenn zu diesem Zeitpunkt
+   * eine bezahlte Veranstaltung laeuft (`metadata.postponements`).
+   */
+  @Column({
+    name: 'planned_deactivation_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  plannedDeactivationAt: Date | null;
+
+  /** Gescheiterte Abmeldeversuche im aktuellen Monatslauf. */
+  @Column({ name: 'deactivation_attempts', type: 'int', default: 0 })
+  deactivationAttempts: number;
+
+  /** Naechster Abmeldeversuch nach einem Fehler (Backoff). */
+  @Column({
+    name: 'deactivation_next_attempt_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  deactivationNextAttemptAt: Date | null;
+
+  /** Wann der Betreiber wegen ueberfaelliger Abmeldung gewarnt wurde. */
+  @Column({
+    name: 'deactivation_alerted_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  deactivationAlertedAt: Date | null;
+
   /** Kurzzeit-Sperre fuer Hintergrundschritte (mehrere API-Instanzen). */
   @Column({
     name: 'job_locked_until',

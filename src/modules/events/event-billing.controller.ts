@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Param,
   Body,
   Query,
@@ -22,7 +23,11 @@ import {
   EventUnlockCancellationService,
   toCancellationSummary,
 } from './event-unlock-cancellation.service';
-import { CreateEventCheckoutDto, OrderInvoiceDto } from './dto';
+import {
+  CreateEventCheckoutDto,
+  OrderInvoiceDto,
+  PurchaseMasterDataDto,
+} from './dto';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
@@ -78,10 +83,35 @@ export class EventBillingController {
     return { data };
   }
 
+  @Put('purchase-master-data')
+  @ApiOperation({
+    summary: 'Pflichtangaben vor dem Kauf speichern (Admins)',
+    description:
+      'Offizieller Name (`settings.legalName`), Rechnungsanschrift (`billingAddress`) und optional Steuernummer/USt-IdNr. ' +
+      '(`settings.taxNumber`/`vatId`, Format DE geprüft: 400 `TAX_ID_INVALID` mit `params.field`). ' +
+      'Ist die Anschrift der Organisation (Kontakt) noch leer, wird sie mit der Rechnungsanschrift gefüllt. ' +
+      'Antwort: der neue Stand wie `masterData` in `GET …/events/:eventId/billing`.',
+  })
+  async savePurchaseMasterData(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Body() dto: PurchaseMasterDataDto,
+    @CurrentUser() user: User,
+  ) {
+    const data = await this.eventBillingService.savePurchaseMasterData(
+      organizationId,
+      dto,
+      user,
+    );
+    return { data };
+  }
+
   @Post('events/:eventId/order-invoice')
   @ApiOperation({
     summary:
       'Veranstaltung kostenpflichtig auf Rechnung bestellen (Kauf auf Rechnung)',
+    description:
+      'Fehlen Pflichtangaben (offizieller Name, Rechnungsanschrift; bei Cloud-TSE Steuernummer/USt-IdNr.), ' +
+      '400 `PURCHASE_MASTER_DATA_REQUIRED` mit `params.missing`. Die Anschrift aus dem Formular zählt mit.',
   })
   async orderInvoice(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -105,7 +135,9 @@ export class EventBillingController {
       'Deutschland mit Cloud-TSE (`tse.offer` in GET …/billing): bei „Alle Funktionen“ gehört die TSE immer dazu, ' +
       'Bestandsorganisationen antworten mit `withTse`. Nach der Zahlung schaltet der Server die Integration `tse` ' +
       'automatisch ein; die TSE wird am ersten Veranstaltungstag angelegt (sofort, wenn die Veranstaltung schon läuft). ' +
-      'Mit `TSE_EVENT_SURCHARGE_EUR` > 0 kommt eine Position „Cloud-TSE“ je Veranstaltung dazu.',
+      'Mit `TSE_EVENT_SURCHARGE_EUR` > 0 kommt eine Position „Cloud-TSE“ je Veranstaltung dazu. ' +
+      'Fehlen Pflichtangaben (`masterData` in GET …/billing): 400 `PURCHASE_MASTER_DATA_REQUIRED` mit `params.missing` ' +
+      '(`legalName`, `street`, `zip`, `city`, `taxNumber`, `vatId`).',
   })
   @ApiBody({ type: CreateEventCheckoutDto, required: false })
   async createCheckout(

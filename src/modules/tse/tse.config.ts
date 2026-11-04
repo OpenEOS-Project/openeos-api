@@ -3,7 +3,18 @@ import { ConfigService } from '@nestjs/config';
 import { join } from 'path';
 
 export type TseProviderName = 'none' | 'swissbit';
-export type TseLifecycle = 'persistent' | 'per_event';
+/**
+ * - `monthly` (Standard): die TSE laeuft fuer den Kalendermonat ihrer
+ *   Veranstaltung und wird zum Monatsende automatisch abgemeldet
+ *   (tse-monthly.ts). Der fruehere Wert `per_event` gilt als `monthly`.
+ * - `persistent`: einmal angelegt, bleibt die TSE aktiv.
+ */
+export type TseLifecycle = 'persistent' | 'monthly';
+
+/** `TSE_LIFECYCLE` lesen: `persistent` oder (Standard, auch `per_event`) `monthly`. */
+export function parseTseLifecycle(raw: string): TseLifecycle {
+  return raw.trim().toLowerCase() === 'persistent' ? 'persistent' : 'monthly';
+}
 
 /** Produktions-URL der Swissbit Cloud-TSE 2 (Dev: https://dev.web-tse.de). */
 export const SWISSBIT_PROD_URL = 'https://web-tse.de';
@@ -49,8 +60,7 @@ export function tseSettingsFromEnv(
 ): TseSettings {
   const provider =
     value(env, 'TSE_PROVIDER') === 'swissbit' ? 'swissbit' : 'none';
-  const lifecycle =
-    value(env, 'TSE_LIFECYCLE') === 'per_event' ? 'per_event' : 'persistent';
+  const lifecycle = parseTseLifecycle(value(env, 'TSE_LIFECYCLE'));
   const uploadDir = value(env, 'UPLOAD_DIR') || './uploads';
   const exportDir =
     value(env, 'TSE_EXPORT_DIR') || join(uploadDir, 'tse-exports');

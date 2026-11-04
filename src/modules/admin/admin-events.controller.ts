@@ -188,7 +188,17 @@ export class AdminEventsController {
     @Param('id') id: string,
     @Body() dto: WaiveEventDto,
     @CurrentUser() user: User,
+    @Req() req: Request,
   ) {
+    await this.eventBillingService.assertWaiveMasterData(
+      id,
+      {
+        withTse: dto?.withTse,
+        overrideMasterData: dto?.overrideMasterData,
+        overrideReason: dto?.overrideReason,
+      },
+      actorOf(user, req),
+    );
     const event = await this.adminEventsService.waive(id);
     await this.eventBillingService.afterWaive(
       event,

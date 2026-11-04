@@ -154,9 +154,11 @@ export const validationSchema = Joi.object({
   // (z. B. `${SWISSBIT_BASE_URL:-}` in docker-compose) gelten wie nicht
   // gesetzt.
   TSE_PROVIDER: Joi.string().valid('none', 'swissbit', '').default('none'),
+  // `monthly` (Standard): Abmeldung zum Monatsende; `per_event` = alter
+  // Name dafuer; `persistent`: TSE bleibt aktiv.
   TSE_LIFECYCLE: Joi.string()
-    .valid('persistent', 'per_event', '')
-    .default('persistent'),
+    .valid('monthly', 'persistent', 'per_event', '')
+    .default('monthly'),
   SWISSBIT_BASE_URL: Joi.string()
     .uri({ scheme: ['http', 'https'] })
     .allow(''),

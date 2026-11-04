@@ -11,10 +11,8 @@ import { SwissbitClientProvider } from './swissbit/swissbit-client.provider';
 import type { TseCredentials } from './swissbit/swissbit.types';
 import { TseConfig } from './tse.config';
 import { TseCryptoService } from './tse-crypto.service';
-import { TseExportService } from './tse-export.service';
 import { PROCESS_TYPE_RECEIPT, abortProcessData } from './tse-process-data';
 import { rowsOf } from './tse-sql.util';
-import { TseUnitService } from './tse-unit.service';
 
 /** Ein Vorgang gilt als abgebrochen, wenn er so lange `pending` ist. */
 const PENDING_STALE_MS = 2 * 60_000;
@@ -41,7 +39,9 @@ interface StartedSnapshot {
  *    (`recovered_at`; der Bon trug den Ausfallvermerk).
  * 4. Offene Ausfaelle schliessen, wenn die TSE danach wieder signiert hat
  *    (Ausfaelle, die eine andere Instanz geoeffnet hat).
- * 5. TSE_LIFECYCLE=per_event: siehe `perEventJob`.
+ *
+ * Der Lebenszyklus `monthly` (Abmeldung zum Monatsende) steht in
+ * TseMonthlyCycleService.
  */
 @Injectable()
 export class TseReconcileService {
@@ -55,8 +55,6 @@ export class TseReconcileService {
     private readonly config: TseConfig,
     private readonly swissbit: SwissbitClientProvider,
     private readonly crypto: TseCryptoService,
-    private readonly units: TseUnitService,
-    private readonly exports: TseExportService,
     private readonly cronLock: CronLockService,
   ) {}
 
@@ -279,63 +277,5 @@ export class TseReconcileService {
          ) s
         WHERE o.id = s.id`,
     );
-  }
-
-  // ------------------------------------------ Lebenszyklus per_event
-
-  /**
-   * TSE_LIFECYCLE=per_event, taeglich 06:30 (Berlin): Abschlussexport,
-   * dann endgueltig deaktivieren (Grund `per_event_cycle`). Die naechste
-   * bezahlte Veranstaltung bekommt automatisch eine neue TSE.
-   */
-  @Cron('30 6 * * *', {
-    name: 'tse-per-event-cycle',
-    timeZone: 'Europe/Berlin',
-  })
-  async perEventJob(): Promise<void> {
-    if (!this.config.enabled || this.config.lifecycle !== 'per_event') return;
-    await this.cronLock.runExclusive('tse-per-event-cycle', async () => {
-      await this.runPerEventCycle();
-    });
-  }
-
-  async runPerEventCycle(now = new Date()): Promise<string[]> {
-    const due = await this.units.perEventCandidates(now);
-    const done: string[] = [];
-    for (const unit of due) {
-      try {
-        // (a) Abschlussexport holen (wenn moeglich) …
-        await this.exports
-          .collect(unit, {
-            startNew: true,
-            trigger: 'scheduled',
-            waitMs: 15 * 60_000,
-          })
-          .catch((error) =>
-            this.logger.warn(
-              `Final export before per-event deactivation failed: ${errorMessageOf(error)}`,
-            ),
-          );
-        // (b+c+d) … dann deaktivieren; den Rest exportiert Swissbit selbst,
-        // der Export-Lauf holt ihn bis zu 35 Tage lang taeglich ab.
-        await this.units.deactivate(unit, {
-          reason: 'per_event_cycle',
-          userId: null,
-          disableIntegration: false,
-        });
-        done.push(unit.id);
-        await this.exports
-          .collect({ ...unit, state: 'deactivated' } as TseUnit, {
-            startNew: false,
-            trigger: 'deactivation',
-          })
-          .catch(() => undefined);
-      } catch (error) {
-        this.logger.error(
-          `Per-event deactivation of TSE unit ${unit.id} failed: ${errorMessageOf(error)}`,
-        );
-      }
-    }
-    return done;
   }
 }

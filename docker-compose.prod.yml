@@ -96,7 +96,7 @@ services:
 
       # Cloud-TSE (Swissbit), README „Cloud-TSE“. Leer = nicht gesetzt.
       TSE_PROVIDER: ${TSE_PROVIDER:-none}
-      TSE_LIFECYCLE: ${TSE_LIFECYCLE:-persistent}
+      TSE_LIFECYCLE: ${TSE_LIFECYCLE:-monthly}
       SWISSBIT_BASE_URL: ${SWISSBIT_BASE_URL:-}
       SWISSBIT_VENDOR_CLIENT: ${SWISSBIT_VENDOR_CLIENT:-}
       SWISSBIT_VENDOR_SECRET: ${SWISSBIT_VENDOR_SECRET:-}

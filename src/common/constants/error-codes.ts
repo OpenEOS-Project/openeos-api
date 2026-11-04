@@ -125,6 +125,14 @@ export const ErrorCodes = {
   // DSFinV-K / Kassenbuch (openeos-api#102)
   // Steuernummer/USt-IdNr oder Anschrift fehlt (Stamm_Abschluss) — 409
   TSE_MASTER_DATA_REQUIRED: 'TSE_MASTER_DATA_REQUIRED',
+  // Kauf/Freischaltung: offizieller Name, Rechnungsanschrift (und bei
+  // Cloud-TSE Steuernummer/USt-IdNr.) fehlen — 400, `params.missing`
+  PURCHASE_MASTER_DATA_REQUIRED: 'PURCHASE_MASTER_DATA_REQUIRED',
+  // Support erlaesst ohne vollstaendige Angaben, aber ohne Grund — 400
+  PURCHASE_MASTER_DATA_OVERRIDE_REASON_REQUIRED:
+    'PURCHASE_MASTER_DATA_OVERRIDE_REASON_REQUIRED',
+  // Steuernummer/USt-IdNr. im falschen Format — 400, `params.field`
+  TAX_ID_INVALID: 'TAX_ID_INVALID',
   // Es laufen noch TSE-Vorgaenge im Abschlusszeitraum — 409
   DSFINVK_PENDING_TRANSACTIONS: 'DSFINVK_PENDING_TRANSACTIONS',
   // Seit dem letzten Abschluss gibt es keine Vorgaenge — 409
@@ -258,6 +266,12 @@ export const ErrorMessages: Record<ErrorCode, string> = {
     'Der Export ist noch nicht abgeholt – bitte versuch es später noch einmal',
   [ErrorCodes.TSE_MASTER_DATA_REQUIRED]:
     'Für die Cloud-TSE brauchen wir Steuernummer oder USt-IdNr. und die Anschrift deiner Organisation',
+  [ErrorCodes.PURCHASE_MASTER_DATA_REQUIRED]:
+    'Bevor du bezahlst, brauchen wir noch ein paar Angaben zu deiner Organisation',
+  [ErrorCodes.PURCHASE_MASTER_DATA_OVERRIDE_REASON_REQUIRED]:
+    'Bitte gib einen Grund an, warum ohne vollständige Angaben erlassen wird',
+  [ErrorCodes.TAX_ID_INVALID]:
+    'Steuernummer oder USt-IdNr. hat nicht das richtige Format',
   [ErrorCodes.DSFINVK_PENDING_TRANSACTIONS]:
     'Es laufen gerade noch TSE-Vorgänge – bitte versuch es in einer Minute noch einmal',
   [ErrorCodes.DSFINVK_NOTHING_TO_CLOSE]:

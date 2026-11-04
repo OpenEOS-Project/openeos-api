@@ -52,7 +52,14 @@ function orgFor(kind: Kind): Organization {
     name: 'Musikverein Harmonie e.V.',
     billingMode: 'prepaid',
     billingEmail: 'kasse@example.org',
-    billingAddress: null,
+    // Pflichtangaben beim Kauf (offizieller Name, Rechnungsanschrift).
+    billingAddress: {
+      name: 'Musikverein Harmonie e.V.',
+      street: 'Hauptstr. 1',
+      zip: '12345',
+      city: 'Musterstadt',
+      country: 'DE',
+    },
     eventPriceOverride: null,
     discountPercent: null,
     discountValidUntil: null,
@@ -65,6 +72,7 @@ function orgFor(kind: Kind): Organization {
     settings: {
       timezone: 'Europe/Berlin',
       currency: 'EUR',
+      legalName: 'Musikverein Harmonie e.V.',
       taxNumber: '12/345/67890',
       address: { street: 'Hauptstr. 1', zip: '12345', city: 'Musterstadt' },
     },

@@ -19,6 +19,7 @@ import { TseConfig } from './tse.config';
 import { TseController } from './tse.controller';
 import { TseCryptoService } from './tse-crypto.service';
 import { TseExportService } from './tse-export.service';
+import { TseMonthlyCycleService } from './tse-monthly-cycle.service';
 import { TseNotifyService } from './tse-notify.service';
 import { TseOutageService } from './tse-outage.service';
 import { TseReconcileService } from './tse-reconcile.service';
@@ -59,6 +60,7 @@ import { TseUnitService } from './tse-unit.service';
     TseUnitService,
     TseExportService,
     TseReconcileService,
+    TseMonthlyCycleService,
     TseStatusService,
     TseAutoActivationService,
   ],
@@ -68,6 +70,7 @@ import { TseUnitService } from './tse-unit.service';
     TseUnitService,
     TseConfig,
     TseAutoActivationService,
+    TseMonthlyCycleService,
   ],
 })
 export class TseModule {}
