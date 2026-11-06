@@ -34,6 +34,7 @@ exports[`API token allowlist matches the documented matrix (ki-plan.md section 8
   "read GET /organizations/:organizationId/events/active",
   "read GET /organizations/:organizationId/orders",
   "read GET /organizations/:organizationId/orders/:orderId",
+  "read GET /organizations/:organizationId/orders/export",
   "read GET /organizations/:organizationId/orders/stats",
   "read GET /organizations/:organizationId/pfand-types",
   "catalog:write POST /organizations/:organizationId/pfand-types",
