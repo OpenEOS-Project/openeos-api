@@ -22111,22 +22111,27 @@
           "code": {
             "type": "string",
             "example": "ABC123",
-            "description": "QR-Code (optional)"
+            "description": "Code des gescannten QR-Codes (Pflicht)"
           },
           "eventId": {
             "type": "string",
-            "description": "Event ID for direct ordering"
+            "deprecated": true,
+            "description": "Nicht mehr unterstützt — ohne `code` antwortet die API mit 400 QR_CODE_REQUIRED."
           },
           "organizationId": {
             "type": "string",
-            "description": "Organization ID for direct ordering"
+            "deprecated": true,
+            "description": "Nicht mehr unterstützt — ohne `code` antwortet die API mit 400 QR_CODE_REQUIRED."
           },
           "tableNumber": {
             "type": "string",
             "example": "5",
-            "description": "Table number"
+            "description": "Tischnummer, falls der QR-Code keine eigene hat (Tischnummer des QR-Codes hat Vorrang)"
           }
-        }
+        },
+        "required": [
+          "code"
+        ]
       },
       "CartItemOptionDto": {
         "type": "object",
