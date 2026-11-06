@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
 import { Repository } from 'typeorm';
 
 import { Organization } from '../../database/entities/organization.entity';
@@ -7,6 +8,7 @@ import {
   OrganizationRole,
   UserOrganization,
 } from '../../database/entities/user-organization.entity';
+import { UpdateOrganizationDto } from './dto/update-organization.dto';
 import { OrganizationsService } from './organizations.service';
 
 jest.mock('uuid', () => ({
@@ -103,5 +105,39 @@ describe('OrganizationsService.update — legal information', () => {
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(save).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrganizationsService.update — fields not sent', () => {
+  it('keeps name and the other columns when only settings are sent', async () => {
+    const { service, save } = setup();
+    // So kommt der Body nach der ValidationPipe an: als Klasseninstanz, in
+    // der die nicht gesendeten Felder als `undefined` stehen.
+    const dto = plainToInstance(UpdateOrganizationDto, {
+      settings: { legal: { imprintUrl: 'https://tsv.example/impressum' } },
+    });
+    expect(Object.prototype.hasOwnProperty.call(dto, 'name')).toBe(true);
+
+    const result = await service.update(ORG_ID, dto, user);
+
+    expect(result.name).toBe('TSV Musterstadt');
+    expect(Object.entries(result).filter(([, v]) => v === undefined)).toEqual(
+      [],
+    );
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'TSV Musterstadt' }),
+    );
+  });
+
+  it('still applies fields that were sent', async () => {
+    const { service } = setup();
+    const dto = plainToInstance(UpdateOrganizationDto, {
+      name: 'TSV Musterstadt 1890',
+    });
+
+    const result = await service.update(ORG_ID, dto, user);
+
+    expect(result.name).toBe('TSV Musterstadt 1890');
+    expect(result.settings.currency).toBe('EUR');
   });
 });

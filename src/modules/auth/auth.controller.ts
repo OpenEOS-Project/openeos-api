@@ -231,9 +231,7 @@ export class AuthController {
     this.setAccessTokenCookie(response, result.accessToken);
 
     return {
-      user: this.sanitizeUser(
-        await this.organizationView.forMemberships(result.user),
-      ),
+      user: await this.sessionUser(result.user),
       accessToken: result.accessToken,
     };
   }
@@ -422,9 +420,7 @@ export class AuthController {
     this.setAccessTokenCookie(response, result.accessToken);
 
     return {
-      user: this.sanitizeUser(
-        await this.organizationView.forMemberships(result.user),
-      ),
+      user: await this.sessionUser(result.user),
       accessToken: result.accessToken,
     };
   }
@@ -682,9 +678,7 @@ export class AuthController {
     this.setAccessTokenCookie(response, result.accessToken);
 
     return {
-      user: this.sanitizeUser(
-        await this.organizationView.forMemberships(result.user),
-      ),
+      user: await this.sessionUser(result.user),
       accessToken: result.accessToken,
     };
   }
@@ -833,6 +827,21 @@ export class AuthController {
       path: '/',
       maxAge: parseDurationToMs(expiration),
     });
+  }
+
+  /**
+   * Benutzer in der Antwort einer frisch angelegten Sitzung (Passwort,
+   * Anmeldelink, zweiter Faktor). Traegt wie `/auth/me` das Flag
+   * `legalReacceptanceRequired` — die Oberflaeche spart sich damit direkt
+   * nach der Anmeldung den Extra-Aufruf von `/legal/status`.
+   */
+  private async sessionUser(user: User) {
+    return {
+      ...this.sanitizeUser(await this.organizationView.forMemberships(user)),
+      legalReacceptanceRequired: await this.legal.isReacceptanceRequired(
+        user.id,
+      ),
+    };
   }
 
   private sanitizeUser(user: User): Partial<User> {

@@ -332,7 +332,18 @@ export class OrganizationsService {
        ueberschreiben. Zusammengefuehrt wird eine Ebene tief; wer `pos`
        schickt, ersetzt `pos` als Ganzes, und das ist auch gemeint. */
     const { settings: incomingSettings, ...rest } = updateDto;
-    Object.assign(organization, rest);
+    /* Nur Felder uebernehmen, die wirklich mitgeschickt wurden. Das DTO
+       kommt als Klasseninstanz an (ES2023-Klassenfelder): nicht gesendete
+       Felder stehen darin als eigene Schluessel mit `undefined`. Ein
+       blindes Object.assign setzte damit `name` & Co. am Entity auf
+       undefined — save() laesst die Spalten zwar in Ruhe, die Antwort kam
+       aber ohne Namen zurueck. `null` bleibt erlaubt (Feld leeren). */
+    Object.assign(
+      organization,
+      Object.fromEntries(
+        Object.entries(rest).filter(([, value]) => value !== undefined),
+      ),
+    );
     /* Die rechtlichen Angaben erscheinen auf oeffentlichen Seiten (Shop,
        Helferseiten) — deshalb hier streng pruefen und bereinigen statt sie
        wie den Rest der Einstellungen ungesehen abzulegen. */

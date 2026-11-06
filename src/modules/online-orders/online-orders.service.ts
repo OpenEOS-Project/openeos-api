@@ -52,6 +52,7 @@ import { SumUpService } from '../sumup/sumup.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { saveOrderWithNumbers } from '../orders/order-numbering';
+import { assertLegalInfoComplete } from '../organizations/legal/legal-settings.util';
 
 @Injectable()
 export class OnlineOrdersService {
@@ -357,6 +358,14 @@ export class OnlineOrdersService {
     const session = await this.getSession(sessionToken);
     // Betriebsart „Nur Bons“: keine Bestellung per QR-Code (403).
     assertPaymentsAllowed(session.organization);
+    /* Ohne Impressum und Datenschutzhinweis des Vereins keine Bestellung —
+       gleiche Regel wie im Shop (403 LEGAL_INFO_MISSING). Gesperrt wird nur
+       das Aufgeben; Bezahlen und Status einer schon aufgegebenen
+       Bestellung laufen weiter. */
+    assertLegalInfoComplete(
+      session.organization,
+      'Bestellen per QR-Code ist noch nicht möglich: Es fehlen Impressum oder Datenschutzhinweis des Veranstalters.',
+    );
 
     if (session.cart.items.length === 0) {
       throw new BadRequestException({

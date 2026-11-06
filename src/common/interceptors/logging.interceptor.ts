@@ -9,7 +9,29 @@ import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import type { Request, Response } from 'express';
 
+import { stripQueryString } from '../utils/sentry-scrub.util';
+
 const HEALTH_PATH = /^\/[^/?]+\/health(?:[/?]|$)/;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Lange Zufallswerte im Pfad (Einladungs-, Helfer-, Bestaetigungslinks). */
+const TOKEN_SEGMENT = /^[A-Za-z0-9_-]{32,}$/;
+
+/**
+ * Pfad fuer das Anfrage-Log: ohne Query-String und Fragment (dort stehen
+ * Anmelde-, Abmelde- und Kopplungs-Tokens) und mit geschwaerzten
+ * Token-Segmenten (`/invitations/<token>`, `/shifts/manage/<token>`).
+ * UUIDs bleiben stehen — das sind IDs, keine Geheimnisse.
+ */
+export function requestLogPath(url: string | undefined): string {
+  const path = stripQueryString(url ?? '');
+  return path
+    .split('/')
+    .map((segment) =>
+      TOKEN_SEGMENT.test(segment) && !UUID.test(segment) ? ':token' : segment,
+    )
+    .join('/');
+}
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
@@ -17,14 +39,16 @@ export class LoggingInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<Request>();
-    const { method, url } = request;
+    /* Kein IP, kein User-Agent, keine Query: das Log braucht nur, was zum
+       Nachvollziehen einer Anfrage reicht. Wo eine IP gebraucht wird
+       (Sitzungen, Audit-Log), steht sie in der Datenbank. */
+    const { method } = request;
+    const url = requestLogPath(request.originalUrl || request.url);
     // Der Rumpf ist ungeprueftes JSON — nur fuers Debug-Log gelesen.
     const body = request.body as Record<string, unknown> | undefined;
     const requestId =
       (request.headers['x-request-id'] as string | undefined) ||
       this.generateRequestId();
-    const userAgent = request.headers['user-agent'] || 'unknown';
-    const ip = request.ip;
 
     const now = Date.now();
 
@@ -37,9 +61,7 @@ export class LoggingInterceptor implements NestInterceptor {
     const quiet = HEALTH_PATH.test(url);
 
     if (!quiet) {
-      this.logger.log(
-        `[${requestId}] ${method} ${url} - IP: ${ip} - UA: ${userAgent.substring(0, 50)}`,
-      );
+      this.logger.log(`[${requestId}] ${method} ${url}`);
     }
 
     if (

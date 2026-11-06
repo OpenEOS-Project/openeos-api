@@ -10,6 +10,7 @@ import type { Response, Request } from 'express';
 import * as Sentry from '@sentry/nestjs';
 import { ErrorCodes, ErrorMessages } from '../constants/error-codes';
 import { reportUser, stripQueryString } from '../utils/sentry-scrub.util';
+import { requestLogPath } from '../interceptors/logging.interceptor';
 
 interface ErrorDetail {
   field?: string;
@@ -112,7 +113,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // Log error
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
-        `[${requestId}] ${request.method} ${request.url} - ${status} - ${message}`,
+        `[${requestId}] ${request.method} ${requestLogPath(request.url)} - ${status} - ${message}`,
         exception instanceof Error ? exception.stack : undefined,
       );
 
@@ -133,16 +134,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
         Sentry.captureException(exception);
       });
     } else {
-      /* Guards laufen vor dem Logging-Interceptor: bei 401/403 gibt es
-         deshalb keine zweite Zeile mit IP und Client, und die Anfrage-Nummer
-         ist "undefined". Ohne diese Angaben liess sich eine Schleife aus
-         tausenden 401 keinem Geraet zuordnen. */
-      const herkunft =
-        status === HttpStatus.UNAUTHORIZED || status === HttpStatus.FORBIDDEN
-          ? ` - IP: ${request.ip} - UA: ${String(request.headers['user-agent'] ?? '').slice(0, 80)}`
-          : '';
+      /* Wie im Anfrage-Log: Pfad ohne Query und Tokens, keine IP und kein
+         User-Agent. Wer bei einer 401-Schleife das Geraet sucht, findet es
+         ueber die Sitzungen bzw. das Audit-Log in der Datenbank. */
       this.logger.warn(
-        `[${requestId}] ${request.method} ${request.url} - ${status} - ${message}${herkunft}`,
+        `[${requestId}] ${request.method} ${requestLogPath(request.url)} - ${status} - ${message}`,
       );
       if (details && details.length > 0) {
         this.logger.warn(
