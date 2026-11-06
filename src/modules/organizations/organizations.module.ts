@@ -9,6 +9,7 @@ import {
 import { OrganizationsService } from './organizations.service';
 import { OperatingModeService } from './operating-mode/operating-mode.service';
 import { CountryService } from './country/country.service';
+import { IntegrationCredentialsBackfillService } from './integration-credentials-backfill.service';
 import {
   Organization,
   User,
@@ -32,7 +33,12 @@ import { DevicesModule } from '../devices/devices.module';
     OrganizationViewModule,
   ],
   controllers: [OrganizationsController, InvitationsController],
-  providers: [OrganizationsService, OperatingModeService, CountryService],
+  providers: [
+    OrganizationsService,
+    OperatingModeService,
+    CountryService,
+    IntegrationCredentialsBackfillService,
+  ],
   exports: [OrganizationsService, OperatingModeService, CountryService],
 })
 export class OrganizationsModule {}
