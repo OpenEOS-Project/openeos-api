@@ -285,9 +285,15 @@ export class RetentionService {
       });
     }
     const [runs, total] = await qb.getManyAndCount();
-    const orgIds = [
-      ...new Set(runs.map((r) => r.organizationId).filter(Boolean)),
-    ] as string[];
+    /** Organisation des Eintrags bzw. die mit einem Konto geloeschten. */
+    const organizationsOf = (run: RetentionRun): string[] => {
+      if (run.organizationId) return [run.organizationId];
+      const ids = run.details?.organizationIds;
+      return Array.isArray(ids)
+        ? ids.filter((id): id is string => typeof id === 'string')
+        : [];
+    };
+    const orgIds = [...new Set(runs.flatMap(organizationsOf))];
     const userIds = [
       ...new Set(runs.map((r) => r.executedByUserId).filter(Boolean)),
     ] as string[];
@@ -318,9 +324,11 @@ export class RetentionService {
         : undefined;
       return {
         ...run,
-        organizationName: run.organizationId
-          ? (orgNames.get(run.organizationId) ?? null)
-          : null,
+        organizationName:
+          organizationsOf(run)
+            .map((id) => orgNames.get(id))
+            .filter(Boolean)
+            .join(', ') || null,
         executedBy: person
           ? {
               id: person.id,

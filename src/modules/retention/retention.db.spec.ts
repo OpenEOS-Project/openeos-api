@@ -1519,6 +1519,13 @@ describeWithDb('Retention jobs against Postgres', () => {
         accountDeletionsScheduled: 1,
       });
       expect(result.details).toEqual({ organizationIds: [orgId] });
+      const listed = await service.listRuns({
+        trigger: 'self_service',
+        limit: 200,
+      });
+      expect(
+        listed.items.find((r) => r.id === result.id)?.organizationName,
+      ).toBe('Solo e. V.');
       expect(scheduled?.organizations).toEqual([
         { organizationId: orgId, name: 'Solo e. V.' },
       ]);
