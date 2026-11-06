@@ -22,13 +22,18 @@ import {
 } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { DeploymentService } from '../../common/services/deployment.service';
+import { toPublicLegalInfo } from '../organizations/legal/legal-settings.util';
 
 @ApiTags('Online Orders')
 @ApiSecurity('X-Session-Token')
 @Controller('public/order')
 @Public()
 export class OnlineOrdersController {
-  constructor(private readonly onlineOrdersService: OnlineOrdersService) {}
+  constructor(
+    private readonly onlineOrdersService: OnlineOrdersService,
+    private readonly deployment: DeploymentService,
+  ) {}
 
   private getSessionToken(headers: Record<string, string>): string {
     const token = headers['x-session-token'];
@@ -88,6 +93,14 @@ export class OnlineOrdersController {
           : null,
         // Betriebsart „Nur Bons“: keine Bestellung per QR-Code.
         onlineOrderingAvailable: !isOrdersOnly(session.organization),
+        /* Impressum und Datenschutzhinweis des Vereins (wie im Shop), dazu
+           die Plattform-Links von OpenEOS. Fehlt eins davon
+           (`complete: false`), lehnt POST submit mit 403
+           LEGAL_INFO_MISSING ab. */
+        legal: toPublicLegalInfo(
+          session.organization,
+          this.deployment.platformLegal,
+        ),
       },
     };
   }

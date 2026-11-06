@@ -218,3 +218,45 @@ describe('HttpExceptionFilter error reports', () => {
     expect(Sentry.captureException).toHaveBeenCalled();
   });
 });
+
+describe('HttpExceptionFilter log lines', () => {
+  it('log 401/403 without IP, user agent, query string or token', () => {
+    const token = 'f'.repeat(64);
+    const lines: string[] = [];
+    const response = {
+      getHeader: () => undefined,
+      status: () => response,
+      json: () => response,
+    };
+    const request = {
+      headers: {
+        'x-request-id': 'req-1',
+        'user-agent': 'Mozilla/5.0 SecretBrowser/1.0',
+      },
+      method: 'POST',
+      url: `/api/invitations/${token}/accept?token=${token}`,
+      ip: '203.0.113.7',
+    };
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => response,
+        getRequest: () => request,
+      }),
+    } as unknown as ArgumentsHost;
+    const filter = new HttpExceptionFilter();
+    (
+      filter as unknown as {
+        logger: { warn: (m: string) => void; error: (m: string) => void };
+      }
+    ).logger = {
+      warn: (m) => lines.push(m),
+      error: (m) => lines.push(m),
+    };
+
+    filter.catch(new UnauthorizedException('Nicht angemeldet'), host);
+
+    expect(lines).toEqual([
+      '[req-1] POST /api/invitations/:token/accept - 401 - Nicht angemeldet',
+    ]);
+  });
+});

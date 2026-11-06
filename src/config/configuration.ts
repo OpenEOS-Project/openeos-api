@@ -97,15 +97,21 @@ export default () => ({
     // Impressum und Datenschutz des Plattformbetreibers. Shop und
     // Helferseiten zeigen sie klein unter den Angaben des Vereins
     // ("Bereitgestellt mit OpenEOS"). Gehostet sind das die Seiten von
-    // openeos.de; eigenstaendig betrieben gibt es ohne gesetzte Variable
-    // keine Plattform-Links, dann zaehlen nur die Angaben des Vereins.
-    // Eine leer gesetzte Variable blendet den Link ebenfalls aus.
+    // Website der Rechtstexte (LEGAL_SITE_URL bzw. aus APP_URL abgeleitet:
+    // openeos.de, auf Staging staging.openeos.de); eigenstaendig betrieben
+    // gibt es ohne gesetzte Variable keine Plattform-Links, dann zaehlen
+    // nur die Angaben des Vereins. Eine leer gesetzte Variable blendet den
+    // Link ebenfalls aus.
     imprintUrl:
       process.env.PLATFORM_IMPRINT_URL ??
-      (IS_SELF_HOSTED ? '' : 'https://openeos.de/impressum'),
+      (IS_SELF_HOSTED
+        ? ''
+        : `${legalConfigFromEnv(process.env, false).siteUrl}/impressum`),
     privacyUrl:
       process.env.PLATFORM_PRIVACY_URL ??
-      (IS_SELF_HOSTED ? '' : 'https://openeos.de/datenschutz'),
+      (IS_SELF_HOSTED
+        ? ''
+        : `${legalConfigFromEnv(process.env, false).siteUrl}/datenschutz`),
   },
 
   // AGB, AVV, Datenschutzerklaerung und Impressum von LUXCODE: aktuelle

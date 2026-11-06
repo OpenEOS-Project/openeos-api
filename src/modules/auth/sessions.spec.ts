@@ -210,10 +210,14 @@ describe('AuthController passes the client to the session', () => {
       config,
       undefined as never,
       new OrganizationViewService(),
-      { isReacceptanceRequired: () => Promise.resolve(false) } as never,
+      { isReacceptanceRequired: () => Promise.resolve(reaccept) } as never,
     );
     return { ctrl, login, refreshTokens };
   }
+  let reaccept = false;
+  beforeEach(() => {
+    reaccept = false;
+  });
 
   const request = {
     headers: { 'user-agent': 'Mozilla/5.0 Test' },
@@ -247,6 +251,27 @@ describe('AuthController passes the client to the session', () => {
     await ctrl.refresh({}, request, response);
     expect(refreshTokens).toHaveBeenCalledWith('r-old', client);
   });
+
+  /* Wie /auth/me: die Oberflaeche zeigt den Hinweis auf neue AGB/AVV ohne
+     Extra-Aufruf von /legal/status. */
+  it.each([true, false])(
+    'reports legalReacceptanceRequired=%s on every login path',
+    async (required) => {
+      reaccept = required;
+      const { ctrl } = controller();
+      const results = [
+        await ctrl.login({ email: 'a@b.de', password: 'x' }, request, response),
+        await ctrl.verifyMagicLink({ token: 't' }, request, response),
+        await ctrl.verify2FA(user, { code: '123456' }, request, response),
+      ];
+      for (const result of results) {
+        expect(result).toMatchObject({
+          user: { legalReacceptanceRequired: required },
+        });
+        expect('passwordHash' in (result as { user: object }).user).toBe(false);
+      }
+    },
+  );
 });
 
 describe('UsersController sessions', () => {

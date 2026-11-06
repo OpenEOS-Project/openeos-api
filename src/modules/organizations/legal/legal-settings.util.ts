@@ -262,10 +262,12 @@ export function toPublicLegalInfo(
  * bestellt: Der Verein verkauft und erhebt die Kontaktdaten, also muss er
  * beides vorher nennen. Die Shop-Oberflaeche blendet die Kasse dann aus;
  * diese Pruefung haelt auch direkte Aufrufe und offene Tabs auf. Gleiche
- * Regel wie `complete` in der oeffentlichen Sicht.
+ * Regel wie `complete` in der oeffentlichen Sicht; gilt genauso fuer die
+ * Bestellung per QR-Code am Tisch (`/public/order/submit`).
  */
 export function assertLegalInfoComplete(
   organization: Pick<Organization, 'name' | 'settings'> | null | undefined,
+  message = 'Dieser Shop ist noch nicht freigeschaltet: Es fehlen Impressum oder Datenschutzhinweis des Veranstalters.',
 ): void {
   const { complete } = toPublicLegalInfo(organization, {
     imprintUrl: null,
@@ -274,8 +276,7 @@ export function assertLegalInfoComplete(
   if (!complete) {
     throw new ForbiddenException({
       code: 'LEGAL_INFO_MISSING',
-      message:
-        'Dieser Shop ist noch nicht freigeschaltet: Es fehlen Impressum oder Datenschutzhinweis des Veranstalters.',
+      message,
     });
   }
 }

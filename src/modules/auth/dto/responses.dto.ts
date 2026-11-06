@@ -29,9 +29,18 @@ export class UserResponseDto {
   updatedAt: Date;
 }
 
+export class LoginUserResponseDto extends UserResponseDto {
+  @ApiProperty({
+    example: false,
+    description:
+      'Admin einer Organisation, der die aktuelle Fassung von AGB oder AVV noch nicht angenommen hat (POST /legal/accept). Wie bei GET /auth/me.',
+  })
+  legalReacceptanceRequired: boolean;
+}
+
 export class LoginResponseDto {
-  @ApiProperty({ type: UserResponseDto })
-  user: UserResponseDto;
+  @ApiProperty({ type: LoginUserResponseDto })
+  user: LoginUserResponseDto;
 
   @ApiProperty({
     example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',

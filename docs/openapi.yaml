@@ -938,7 +938,7 @@ paths:
       tags: *a9
   /api/legal/versions:
     get:
-      description: Aktuelle Fassungen (Datum der „Stand“-Zeile) mit Links auf die Website, die Archiv-Adresse der Fassung und das PDF. `enabled` ist bei eigenständigem Betrieb false — dort gelten die Texte von LUXCODE nicht.
+      description: "Aktuelle Fassungen (Datum der „Stand“-Zeile) mit Links auf die Website, die Archiv-Adresse der Fassung und das PDF. `enabled` ist bei eigenständigem Betrieb false — dort gelten die Texte von LUXCODE nicht. `platform`: Impressum und Datenschutz des Plattformbetreibers für öffentliche Seiten ohne Verein (z. B. Startseite des Shops); `null` = nicht anzeigen."
       operationId: legal_getVersions
       parameters: []
       responses:
@@ -10838,11 +10838,59 @@ components:
       required:
         - email
         - password
+    LoginUserResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        email:
+          type: string
+          example: max@example.com
+        firstName:
+          type: string
+          example: Max
+        lastName:
+          type: string
+          example: Mustermann
+        isActive:
+          type: boolean
+          example: true
+        isSuperAdmin:
+          type: boolean
+          example: false
+        lastLoginAt:
+          type: object
+          example: 2024-01-15T10:30:00.000Z
+          nullable: true
+        createdAt:
+          format: date-time
+          type: string
+          example: 2024-01-01T00:00:00.000Z
+        updatedAt:
+          format: date-time
+          type: string
+          example: 2024-01-15T10:30:00.000Z
+        legalReacceptanceRequired:
+          type: boolean
+          example: false
+          description: Admin einer Organisation, der die aktuelle Fassung von AGB oder AVV noch nicht angenommen hat (POST /legal/accept). Wie bei GET /auth/me.
+      required:
+        - id
+        - email
+        - firstName
+        - lastName
+        - isActive
+        - isSuperAdmin
+        - lastLoginAt
+        - createdAt
+        - updatedAt
+        - legalReacceptanceRequired
     LoginResponseDto:
       type: object
       properties:
         user:
-          $ref: "#/components/schemas/UserResponseDto"
+          $ref: "#/components/schemas/LoginUserResponseDto"
         accessToken:
           type: string
           example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
