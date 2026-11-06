@@ -24,10 +24,13 @@ export function newsletterUnsubscribeToken(
 
 /** Benutzer-ID aus einem gueltigen Token, sonst `null`. */
 export function verifyNewsletterUnsubscribeToken(
-  token: string | null | undefined,
+  token: unknown,
   secret: string,
 ): string | null {
-  if (!token || token.length > 200 || !secret) return null;
+  // Query-Parameter koennen als Liste ankommen (?token=a&token=b).
+  if (typeof token !== 'string' || !token || token.length > 200 || !secret) {
+    return null;
+  }
   const [userId, sig, extra] = token.trim().split('.');
   if (!userId || !sig || extra !== undefined || !UUID.test(userId)) {
     return null;

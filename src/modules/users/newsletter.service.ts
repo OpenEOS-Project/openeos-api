@@ -72,7 +72,7 @@ export class NewsletterService {
   }
 
   /** Abmelden ueber den Link; wiederholbar, verraet nicht, ob es das Konto gibt. */
-  async unsubscribe(token: string | undefined): Promise<void> {
+  async unsubscribe(token: unknown): Promise<void> {
     const userId = verifyNewsletterUnsubscribeToken(token, this.secret);
     if (!userId) {
       throw new BadRequestException({

@@ -8,7 +8,12 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 
 import { CurrentUser, Public } from '../../common/decorators';
@@ -52,9 +57,15 @@ export class NewsletterPublicController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({ summary: 'Withdraw the newsletter consent via signed link' })
+  @ApiQuery({
+    name: 'token',
+    required: false,
+    type: String,
+    description: 'Token aus dem Abmeldelink (RFC 8058 One-Click)',
+  })
   async unsubscribe(
     @Body() dto: NewsletterUnsubscribeDto,
-    @Query('token') queryToken?: string,
+    @Query('token') queryToken?: unknown,
   ) {
     await this.newsletter.unsubscribe(dto?.token ?? queryToken);
     return {

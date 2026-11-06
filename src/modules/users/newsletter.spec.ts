@@ -28,6 +28,7 @@ describe('newsletter unsubscribe token', () => {
     expect(verifyNewsletterUnsubscribeToken(`${token}x`, SECRET)).toBeNull();
     expect(verifyNewsletterUnsubscribeToken('garbage', SECRET)).toBeNull();
     expect(verifyNewsletterUnsubscribeToken(undefined, SECRET)).toBeNull();
+    expect(verifyNewsletterUnsubscribeToken([token, token], SECRET)).toBeNull();
   });
 
   it('builds the link for mails', () => {

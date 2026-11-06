@@ -8010,8 +8010,9 @@
         "parameters": [
           {
             "name": "token",
-            "required": true,
+            "required": false,
             "in": "query",
+            "description": "Token aus dem Abmeldelink (RFC 8058 One-Click)",
             "schema": {
               "type": "string"
             }
