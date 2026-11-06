@@ -8,6 +8,7 @@ import {
 } from '../../database/entities';
 import { OrganizationsService } from '../organizations/organizations.service';
 import { AiProvider } from '../ai/ai-provider.interface';
+import { AiInputFilesService } from '../ai/ai-input-files.service';
 import { AiQuotaService } from '../ai/ai-quota.service';
 import { AssistantService } from './assistant.service';
 
@@ -46,8 +47,10 @@ function setup(
   } as unknown as OrganizationsService;
   const provider = {
     isAvailable: () => options.available ?? true,
-    supportsPdf: () => options.pdf ?? true,
   } as unknown as AiProvider;
+  const inputFiles = {
+    pdfSupported: () => options.pdf ?? true,
+  } as unknown as AiInputFilesService;
   const quota = {
     getQuota: jest.fn((_org: string, feature: string) =>
       Promise.resolve({
@@ -64,6 +67,7 @@ function setup(
     organizationsService,
     provider,
     quota,
+    inputFiles,
   );
   return { service, query, auditSave, checkRole };
 }
@@ -82,7 +86,7 @@ describe('AssistantService', () => {
     });
   });
 
-  it('reports pdfSupported=false when the provider only reads images', async () => {
+  it('reports pdfSupported=false when neither the provider nor the rasterizer reads PDFs', async () => {
     const { service } = setup({ enabled: true, pdf: false });
     await expect(service.getStatus(ORG, user)).resolves.toMatchObject({
       available: true,

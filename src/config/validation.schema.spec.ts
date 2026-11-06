@@ -16,6 +16,9 @@ const EMPTY_AI_ENV = {
   OPENAI_BASE_URL: '',
   AI_MODEL_EXTRACT: '',
   AI_MODEL_CLASSIFY: '',
+  AI_REASONING_EFFORT_EXTRACT: '',
+  AI_REASONING_EFFORT_CLASSIFY: '',
+  AI_MAX_IMAGES_PER_REQUEST: '',
 };
 
 function validate(env: Record<string, string>) {
@@ -31,6 +34,9 @@ function loadAiConfig(env: Record<string, string | undefined>) {
     'OPENAI_BASE_URL',
     'AI_MODEL_EXTRACT',
     'AI_MODEL_CLASSIFY',
+    'AI_REASONING_EFFORT_EXTRACT',
+    'AI_REASONING_EFFORT_CLASSIFY',
+    'AI_MAX_IMAGES_PER_REQUEST',
   ]) {
     delete process.env[key];
   }
@@ -57,6 +63,46 @@ describe('validationSchema: empty optional assistant variables', () => {
     expect(value.OPENAI_BASE_URL).toBe('');
     expect(value.AI_MODEL_EXTRACT).toBe('');
     expect(value.AI_MODEL_CLASSIFY).toBe('');
+  });
+
+  it('treats empty reasoning effort and image limit as not set', () => {
+    const { error, value } = validate(EMPTY_AI_ENV);
+    expect(error).toBeUndefined();
+    expect(value.AI_REASONING_EFFORT_EXTRACT).toBe('');
+    expect(value.AI_REASONING_EFFORT_CLASSIFY).toBe('');
+    expect(value.AI_MAX_IMAGES_PER_REQUEST).toBe(0);
+    const ai = loadAiConfig(EMPTY_AI_ENV);
+    expect(ai.reasoningEffortExtract).toBe('');
+    expect(ai.maxImagesPerRequest).toBe(0);
+  });
+
+  it('accepts the IONOS settings and rejects unknown effort values', () => {
+    const ionos = {
+      ...EMPTY_AI_ENV,
+      AI_REASONING_EFFORT_EXTRACT: 'medium',
+      AI_REASONING_EFFORT_CLASSIFY: 'none',
+      AI_MAX_IMAGES_PER_REQUEST: '4',
+    };
+    const { error, value } = validate(ionos);
+    expect(error).toBeUndefined();
+    expect(value.AI_MAX_IMAGES_PER_REQUEST).toBe(4);
+    const ai = loadAiConfig(ionos);
+    expect(ai.reasoningEffortExtract).toBe('medium');
+    expect(ai.reasoningEffortClassify).toBe('none');
+    expect(ai.maxImagesPerRequest).toBe(4);
+    for (const effort of ['none', 'low', 'medium', 'high', 'xhigh']) {
+      expect(
+        validate({ ...EMPTY_AI_ENV, AI_REASONING_EFFORT_EXTRACT: effort })
+          .error,
+      ).toBeUndefined();
+    }
+    expect(
+      validate({ ...EMPTY_AI_ENV, AI_REASONING_EFFORT_CLASSIFY: 'turbo' })
+        .error,
+    ).toBeDefined();
+    expect(
+      validate({ ...EMPTY_AI_ENV, AI_MAX_IMAGES_PER_REQUEST: '-1' }).error,
+    ).toBeDefined();
   });
 
   it('still rejects a non-URL base URL', () => {

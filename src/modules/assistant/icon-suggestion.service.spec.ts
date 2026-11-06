@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { AiProvider } from '../ai/ai-provider.interface';
 import { AiQuotaService } from '../ai/ai-quota.service';
 import { AiProviderError } from '../ai/ai-provider.error';
@@ -11,11 +12,15 @@ function setup(options: {
     icon: string | null;
     confidence?: 'high' | 'medium' | 'low';
   }[];
-  fail?: boolean;
+  fail?: boolean | Error;
 }) {
   const extractStructured = jest.fn(() =>
     options.fail
-      ? Promise.reject(new AiProviderError('down'))
+      ? Promise.reject(
+          options.fail instanceof Error
+            ? options.fail
+            : new AiProviderError('down'),
+        )
       : Promise.resolve({
           value: { assignments: options.assignments ?? [] },
           model: 'claude-haiku-4-5',
@@ -27,6 +32,7 @@ function setup(options: {
   const provider = {
     name: 'anthropic',
     isAvailable: () => options.available ?? true,
+    modelFor: () => 'claude-haiku-4-5',
     extractStructured,
   } as unknown as AiProvider;
   const reserve = jest.fn(() => Promise.resolve({ id: 'usage-1' }));
@@ -109,11 +115,80 @@ describe('IconSuggestionService', () => {
   });
 
   it('ignores model answers outside the candidate list', async () => {
-    const { service } = setup({
-      assignments: [{ name: 'Hauswein', icon: 'pommes', confidence: 'high' }],
+    // „Sauergespritzter“ trifft lexikalisch halb (weinschorle 0.53): das
+    // Modell bekommt nur die zehn besten Kandidaten, Pommes ist keiner.
+    const { service, extractStructured } = setup({
+      assignments: [
+        { name: 'Sauergespritzter', icon: 'pommes', confidence: 'high' },
+        { name: 'Hauswein', icon: 'gibt-es-nicht', confidence: 'high' },
+      ],
     });
-    const result = await service.suggest('org', 'user', ['Hauswein']);
+    const result = await service.suggest('org', 'user', [
+      'Sauergespritzter',
+      'Hauswein',
+    ]);
+    const request = extractStructured.mock.calls[0][0] as unknown as {
+      text: string;
+    };
+    const items = JSON.parse(
+      /<untrusted source="product-names">\n([\s\S]*?)\n<\/untrusted>/.exec(
+        request.text,
+      )![1],
+    ) as { name: string; allowed: string[] | string }[];
+    expect(items[0].allowed).toHaveLength(10);
+    expect(items[0].allowed).not.toContain('pommes');
     expect(result[0].suggestions[0]?.icon).not.toBe('pos-icon:pommes');
+    // Auch aus der Gesamtliste zaehlen nur Icons, die es gibt.
+    expect(
+      result[1].suggestions.find((match) => match.source === 'model'),
+    ).toBeUndefined();
+  });
+
+  it('offers every icon once when the best lexical match is weak (Riesling, Export)', async () => {
+    const { service, extractStructured } = setup({
+      assignments: [
+        { name: 'Riesling trocken', icon: 'weisswein', confidence: 'high' },
+        { name: 'Export 0,5 l', icon: 'pils', confidence: 'medium' },
+      ],
+    });
+    const result = await service.suggest('org', 'user', [
+      'Riesling trocken',
+      'Export 0,5 l',
+    ]);
+    const request = extractStructured.mock.calls[0][0] as unknown as {
+      text: string;
+      system: string;
+    };
+    const items = JSON.parse(
+      /<untrusted source="product-names">\n([\s\S]*?)\n<\/untrusted>/.exec(
+        request.text,
+      )![1],
+    ) as { name: string; allowed: string[] | string }[];
+    expect(items).toEqual([
+      { name: 'Riesling trocken', allowed: 'alle' },
+      { name: 'Export 0,5 l', allowed: 'alle' },
+    ]);
+    // Die Gesamtliste steht genau einmal ausserhalb der fremden Daten.
+    const listLine = request.text
+      .split('\n')
+      .find((line) => line.startsWith('Gesamtliste der Icon-IDs: '))!;
+    const all = JSON.parse(
+      listLine.slice('Gesamtliste der Icon-IDs: '.length),
+    ) as string[];
+    expect(all).toEqual(service.index.ids());
+    expect(all.length).toBeGreaterThan(40);
+    expect(request.text.split('Gesamtliste').length).toBe(2);
+    expect(request.system).toContain('"alle"');
+    expect(result[0].suggestions[0]).toEqual({
+      icon: 'pos-icon:weisswein',
+      score: 0.6,
+      source: 'model',
+    });
+    expect(result[1].suggestions[0]).toEqual({
+      icon: 'pos-icon:pils',
+      score: 0.5,
+      source: 'model',
+    });
   });
 
   it('keeps "no icon" when the model answers null or is unsure (issue #87)', async () => {
@@ -171,5 +246,34 @@ describe('IconSuggestionService', () => {
     const result = await failing.service.suggest('org', 'user', ['Hauswein']);
     expect(result[0].name).toBe('Hauswein');
     expect(failing.settle).toHaveBeenCalledWith('usage-1', { status: 'error' });
+  });
+
+  it('logs a cut-off answer (reasoning ate the token limit) and keeps the lexical result', async () => {
+    const cutOff = setup({
+      fail: new AiProviderError(
+        'Die Antwort des Modells war zu lang und wurde abgeschnitten (finish=length, 4096/4096 Tokens, davon 4096 Reasoning)',
+        undefined,
+        false,
+        'invalid_output',
+      ),
+    });
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      const lexical = cutOff.service.suggestLexical(['Hauswein']);
+      const result = await cutOff.service.suggest('org', 'user', ['Hauswein']);
+      expect(result).toEqual(lexical);
+      expect(cutOff.settle).toHaveBeenCalledWith('usage-1', {
+        status: 'error',
+      });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /fehlgeschlagen.*nur lexikalische.*finish=length/,
+        ),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

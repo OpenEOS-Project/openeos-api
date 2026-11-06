@@ -15,6 +15,8 @@ import { GatewayService } from '../../gateway/gateway.service';
 import { AI_PROVIDER } from '../../ai/ai-provider.interface';
 import type { AiInputFile, AiProvider } from '../../ai/ai-provider.interface';
 import { AiQuotaService } from '../../ai/ai-quota.service';
+import { AiInputFilesService } from '../../ai/ai-input-files.service';
+import { readAiConfig } from '../../ai/ai-provider.factory';
 import { wrapUntrusted } from '../../ai/providers/structured-output.util';
 import { IconSuggestionService } from '../icon-suggestion.service';
 import { describeMenuImportFailure } from './menu-import-errors';
@@ -23,6 +25,8 @@ import {
   MENU_EXTRACTION_SCHEMA,
   MENU_EXTRACTION_SCHEMA_NAME,
   MENU_EXTRACTION_SYSTEM_PROMPT,
+  RawMenuExtraction,
+  mergeExtractions,
   validateExtraction,
 } from './menu-extraction.schema';
 import { mapExtraction } from './menu-suggestion.mapper';
@@ -50,6 +54,7 @@ const IMPORT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export class MenuImportWorkerService {
   private readonly logger = new Logger(MenuImportWorkerService.name);
   private readonly uploadDir: string;
+  private readonly maxPages: number;
 
   constructor(
     @InjectRepository(MenuImport)
@@ -66,8 +71,10 @@ export class MenuImportWorkerService {
     private readonly gatewayService: GatewayService,
     private readonly cronLock: CronLockService,
     configService: ConfigService,
+    private readonly inputFiles: AiInputFilesService,
   ) {
     this.uploadDir = configService.get<string>('UPLOAD_DIR') || './uploads';
+    this.maxPages = readAiConfig(configService).menuPagesPerImport;
   }
 
   /** Verarbeitung anstossen, ohne die Antwort auf den Upload aufzuhalten. */
@@ -142,60 +149,81 @@ export class MenuImportWorkerService {
   }
 
   private async extract(menuImport: MenuImport): Promise<MenuSuggestion> {
-    const files: AiInputFile[] =
+    const uploaded: AiInputFile[] =
       menuImport.files.length > 0
         ? (await readFiles(this.uploadDir, menuImport.files)).map((file) => ({
             mediaType: file.mediaType,
             data: file.buffer,
           }))
         : [];
-
-    const parts: string[] = [];
-    if (menuImport.source === 'text') {
-      parts.push(
-        'Hier ist der Text der Speisekarte:',
-        wrapUntrusted('menu-text', menuImport.inputText ?? ''),
-      );
-    } else {
-      parts.push(
-        files.length === 1
-          ? 'Die Speisekarte ist die angehängte Datei.'
-          : `Die Speisekarte sind die ${files.length} angehängten Seiten in dieser Reihenfolge.`,
-      );
-    }
-    parts.push(
-      'Gib alle Kategorien und Produkte als strukturierte Daten zurück.',
-    );
-
-    const result = await this.provider.extractStructured<unknown>({
-      purpose: 'extract',
-      system: MENU_EXTRACTION_SYSTEM_PROMPT,
-      text: parts.join('\n\n'),
-      files,
-      schemaName: MENU_EXTRACTION_SCHEMA_NAME,
-      schema: MENU_EXTRACTION_SCHEMA,
+    // Fotos verkleinern, PDF ggf. in Seitenbilder; dann nach
+    // AI_MAX_IMAGES_PER_REQUEST in Aufrufe teilen (IONOS: hoechstens 4).
+    const files = await this.inputFiles.prepare(uploaded, {
+      maxPages: this.maxPages,
     });
+    const batches = files.length > 0 ? this.inputFiles.batches(files) : [[]];
+
+    const parts: RawMenuExtraction[] = [];
+    let lastValue: unknown = null;
+    const usage = { inputTokens: 0, outputTokens: 0, durationMs: 0 };
+    let model = '';
+    let firstPage = 1;
+    for (const [index, batch] of batches.entries()) {
+      const result = await this.provider.extractStructured<unknown>({
+        purpose: 'extract',
+        system: MENU_EXTRACTION_SYSTEM_PROMPT,
+        text: this.promptFor(menuImport, {
+          batch,
+          batchCount: batches.length,
+          firstPage,
+          totalPages: files.length,
+          previous: parts,
+        }),
+        files: batch,
+        schemaName: MENU_EXTRACTION_SCHEMA_NAME,
+        schema: MENU_EXTRACTION_SCHEMA,
+      });
+      usage.inputTokens += result.inputTokens;
+      usage.outputTokens += result.outputTokens;
+      usage.durationMs += result.durationMs;
+      model = result.model;
+      lastValue = result.value;
+      firstPage += batch.length;
+      // Teilergebnis gleich pruefen: die naechsten Seiten bekommen dessen
+      // Kategorien und Hinweise als Kontext mit.
+      if (index < batches.length - 1) {
+        parts.push(validateExtraction(result.value));
+      }
+    }
 
     if (menuImport.usageId) {
       await this.quota.settle(menuImport.usageId, {
         status: 'ok',
-        model: result.model,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-        durationMs: result.durationMs,
+        model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        durationMs: usage.durationMs,
       });
     }
     await this.importRepository.update(
       { id: menuImport.id },
       {
         usage: {
-          inputTokens: result.inputTokens,
-          outputTokens: result.outputTokens,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
         },
       },
     );
+    if (batches.length > 1) {
+      this.logger.log(
+        `Import ${menuImport.id}: ${files.length} Seiten in ${batches.length} Aufrufen (AI_MAX_IMAGES_PER_REQUEST)`,
+      );
+    }
 
-    const extraction = validateExtraction(result.value);
+    const extraction = mergeExtractions([
+      ...parts,
+      validateExtraction(lastValue),
+    ]);
     const [existingCategories, existingProducts, organization] =
       await Promise.all([
         this.categoryRepository.find({
@@ -221,6 +249,68 @@ export class MenuImportWorkerService {
     // der Vorschlag bleibt leer und traegt den Hinweis aus validateExtraction.
     if (suggestion.products.length === 0) return suggestion;
     return this.attachIcons(menuImport, suggestion);
+  }
+
+  /**
+   * Nutzertext je Aufruf. Bei mehreren Aufrufen erfaehrt das Modell, welche
+   * Seiten es sieht, und bekommt Kategorien und Hinweise der vorherigen
+   * Seiten mit — als Daten markiert, denn sie stammen aus der Karte.
+   */
+  private promptFor(
+    menuImport: MenuImport,
+    context: {
+      batch: AiInputFile[];
+      batchCount: number;
+      firstPage: number;
+      totalPages: number;
+      previous: RawMenuExtraction[];
+    },
+  ): string {
+    const parts: string[] = [];
+    if (menuImport.source === 'text') {
+      parts.push(
+        'Hier ist der Text der Speisekarte:',
+        wrapUntrusted('menu-text', menuImport.inputText ?? ''),
+      );
+    } else if (context.batchCount === 1) {
+      parts.push(
+        context.batch.length === 1
+          ? 'Die Speisekarte ist die angehängte Datei.'
+          : `Die Speisekarte sind die ${context.batch.length} angehängten Seiten in dieser Reihenfolge.`,
+      );
+    } else {
+      const last = context.firstPage + context.batch.length - 1;
+      parts.push(
+        `Die Speisekarte hat ${context.totalPages} Seiten und wird in ${context.batchCount} Teilen gelesen. ` +
+          (context.batch.length === 1
+            ? `Angehängt ist Seite ${context.firstPage}.`
+            : `Angehängt sind die Seiten ${context.firstPage} bis ${last} in dieser Reihenfolge.`) +
+          ' Gib nur zurück, was auf diesen Seiten steht.',
+      );
+      if (context.previous.length > 0) {
+        const categories = [
+          ...new Set(
+            context.previous.flatMap((part) =>
+              part.categories.map((category) => category.name),
+            ),
+          ),
+        ];
+        const warnings = [
+          ...new Set(context.previous.flatMap((part) => part.warnings)),
+        ];
+        parts.push(
+          'Kategorien und Hinweise der vorherigen Seiten (nur als Kontext): Setzt sich eine Kategorie hier ohne eigene Überschrift fort, verwende denselben Namen. Ein allgemeiner Hinweis von dort (etwa ein Pfand für alle Getränke) gilt auch für passende Produkte auf diesen Seiten.',
+          wrapUntrusted(
+            'previous-pages',
+            JSON.stringify({ categories, warnings }),
+          ),
+        );
+      }
+    }
+    parts.push(
+      'Gib alle Kategorien und Produkte als strukturierte Daten zurück.',
+    );
+    return parts.join('\n\n');
   }
 
   private async attachIcons(

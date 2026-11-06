@@ -10001,7 +10001,7 @@ paths:
         - Internal
   /api/organizations/{organizationId}/assistant:
     get:
-      description: "enabled: Opt-in der Organisation; available: ein Modellanbieter ist auf dem Server konfiguriert; pdfSupported: der Anbieter liest PDF-Dateien (sonst nimmt der Speisekarten-Import nur Bilder); quotas: Tageskontingente (Europe/Berlin) mit limit/used/remaining/resetAt."
+      description: "enabled: Opt-in der Organisation; available: ein Modellanbieter ist auf dem Server konfiguriert; pdfSupported: der Speisekarten-Import nimmt PDF-Dateien (der Anbieter liest sie direkt, oder die API wandelt sie in Seitenbilder; sonst nur Bilder); quotas: Tageskontingente (Europe/Berlin) mit limit/used/remaining/resetAt."
       operationId: assistant_getStatus
       parameters:
         - name: organizationId
@@ -10067,7 +10067,7 @@ paths:
       x-api-token-scope: read
   /api/organizations/{organizationId}/events/{eventId}/menu-imports:
     post:
-      description: "multipart: `files[]` (1–AI_MENU_PAGES_PER_IMPORT Bilder jpg/png/webp oder genau eine PDF ≤ AI_MAX_UPLOAD_MB) oder Feld `text`. Antwort 202 mit Job-ID; Status per GET pollen (alle 2 s) oder Socket-Event `menuImportUpdated { id, eventId, status }` im Organisations-Raum. Fehler: 404 AI_DISABLED, 403 ASSISTANT_DISABLED, 429 AI_QUOTA_EXCEEDED (params.resetAt), 400 MENU_IMPORT_INVALID_FILES (reason MENU_IMPORT_PDF_UNSUPPORTED, wenn der Anbieter keine PDF liest — siehe pdfSupported im Assistent-Status)."
+      description: "multipart: `files[]` (1–AI_MENU_PAGES_PER_IMPORT Bilder jpg/png/webp oder genau eine PDF ≤ AI_MAX_UPLOAD_MB) oder Feld `text`. Antwort 202 mit Job-ID; Status per GET pollen (alle 2 s) oder Socket-Event `menuImportUpdated { id, eventId, status }` im Organisations-Raum. Fehler: 404 AI_DISABLED, 403 ASSISTANT_DISABLED, 429 AI_QUOTA_EXCEEDED (params.resetAt), 400 MENU_IMPORT_INVALID_FILES (reason MENU_IMPORT_PDF_UNSUPPORTED, wenn der Import keine PDF nimmt — siehe pdfSupported im Assistent-Status; params.pages, wenn eine in Bilder gewandelte PDF mehr als AI_MENU_PAGES_PER_IMPORT Seiten hat)."
       operationId: menuImport_create
       parameters:
         - name: organizationId

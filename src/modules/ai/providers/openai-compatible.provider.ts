@@ -6,17 +6,29 @@ import {
   AiInputFile,
   AiProvider,
   AiPurpose,
+  AiReasoningEffort,
   AiResult,
   AiStructuredRequest,
 } from '../ai-provider.interface';
 import { AiProviderError } from '../ai-provider.error';
-import { choiceSchema, parseStructuredJson } from './structured-output.util';
+import {
+  assertImageLimit,
+  choiceSchema,
+  parseStructuredJson,
+} from './structured-output.util';
 
 export interface OpenAiCompatibleProviderOptions {
   apiKey: string;
   baseUrl?: string;
   modelExtract?: string;
   modelClassify?: string;
+  /**
+   * `reasoning_effort` je Zweck (AI_REASONING_EFFORT_EXTRACT/_CLASSIFY).
+   * Fehlt er, wird der Parameter nicht gesendet.
+   */
+  reasoningEffort?: Partial<Record<AiPurpose, AiReasoningEffort | ''>>;
+  /** AI_MAX_IMAGES_PER_REQUEST; leer/0 = keine eigene Grenze. */
+  maxImagesPerRequest?: number;
   /** Nur fuer Tests: fertiger Client statt eines echten. */
   client?: Pick<OpenAI, 'chat'>;
 }
@@ -32,23 +44,36 @@ const DEFAULT_MAX_OUTPUT_TOKENS: Record<AiPurpose, number> = {
 };
 
 /**
- * Chat Completions gegen eine OpenAI-kompatible API (`OPENAI_BASE_URL`).
- * Strukturierte Ausgabe ueber `response_format: json_schema` (strict),
- * Bilder als Data-URLs.
+ * Chat Completions gegen eine OpenAI-kompatible API (`OPENAI_BASE_URL`),
+ * z. B. OpenAI selbst oder IONOS AI Model Hub. Strukturierte Ausgabe ueber
+ * `response_format: json_schema` (strict), Bilder als Data-URLs,
+ * `reasoning_effort` je Zweck, wenn konfiguriert.
  *
- * PDFs liest dieser Anbieter nicht: Chat Completions kennt bei den
- * meisten kompatiblen Diensten keine Dokument-Eingabe, und die API hat
- * keine Bibliothek, die Seiten in Bilder wandelt. Ein Import mit PDF wird
- * fuer diesen Anbieter schon beim Hochladen abgelehnt
- * (MENU_IMPORT_INVALID_FILES) — Fotos der Seiten gehen immer.
+ * PDFs liest dieser Anbieter nicht direkt: Chat Completions kennt bei den
+ * meisten kompatiblen Diensten keine Dokument-Eingabe. AiInputFilesService
+ * wandelt eine PDF vorher in Seitenbilder (pdftoppm aus poppler-utils);
+ * fehlt das Werkzeug, lehnt der Import PDFs beim Hochladen ab.
  */
 export class OpenAiCompatibleProvider implements AiProvider {
   readonly name = 'openai' as const;
   private readonly logger = new Logger(OpenAiCompatibleProvider.name);
   private readonly client: Pick<OpenAI, 'chat'> | null;
   private readonly models: Record<AiPurpose, string>;
+  private readonly reasoningEffort: Partial<
+    Record<AiPurpose, AiReasoningEffort>
+  >;
+  private readonly maxImages: number | null;
 
   constructor(options: OpenAiCompatibleProviderOptions) {
+    this.reasoningEffort = {};
+    for (const purpose of ['extract', 'classify'] as const) {
+      const effort = options.reasoningEffort?.[purpose];
+      if (effort) this.reasoningEffort[purpose] = effort;
+    }
+    this.maxImages =
+      options.maxImagesPerRequest && options.maxImagesPerRequest > 0
+        ? options.maxImagesPerRequest
+        : null;
     this.models = {
       extract: options.modelExtract || OPENAI_DEFAULT_MODELS.extract,
       classify: options.modelClassify || OPENAI_DEFAULT_MODELS.classify,
@@ -71,14 +96,23 @@ export class OpenAiCompatibleProvider implements AiProvider {
     return false;
   }
 
+  maxImagesPerRequest(): number | null {
+    return this.maxImages;
+  }
+
   modelFor(purpose: AiPurpose): string {
     return this.models[purpose];
+  }
+
+  /** Konfigurierte Reasoning-Stufe (leer: Parameter wird nicht gesendet). */
+  reasoningEffortFor(purpose: AiPurpose): AiReasoningEffort | undefined {
+    return this.reasoningEffort[purpose];
   }
 
   async complete(request: AiCompletionRequest): Promise<AiResult<string>> {
     const model = this.modelFor(request.purpose);
     const started = Date.now();
-    const completion = await this.send(model, {
+    const completion = await this.send(request.purpose, {
       model,
       max_completion_tokens:
         request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS[request.purpose],
@@ -99,13 +133,14 @@ export class OpenAiCompatibleProvider implements AiProvider {
   async extractStructured<T>(
     request: AiStructuredRequest,
   ): Promise<AiResult<T>> {
+    assertImageLimit(request.files, this.maxImages);
     const model = this.modelFor(request.purpose);
     const started = Date.now();
     const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
       ...(request.files ?? []).map((file) => this.filePart(file)),
       { type: 'text', text: request.text },
     ];
-    const completion = await this.send(model, {
+    const completion = await this.send(request.purpose, {
       model,
       max_completion_tokens:
         request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS[request.purpose],
@@ -151,8 +186,9 @@ export class OpenAiCompatibleProvider implements AiProvider {
     file: AiInputFile,
   ): OpenAI.Chat.Completions.ChatCompletionContentPart {
     if (file.mediaType === 'application/pdf') {
+      // Kommt nur an, wenn die Umwandlung in Seitenbilder uebersprungen wurde.
       throw new AiProviderError(
-        'PDF wird von diesem Anbieter nicht unterstützt — bitte Fotos der Seiten hochladen',
+        'PDF wird von diesem Anbieter nicht direkt gelesen — die Seiten müssen vorher als Bilder kommen',
       );
     }
     return {
@@ -164,9 +200,13 @@ export class OpenAiCompatibleProvider implements AiProvider {
   }
 
   private async send(
-    model: string,
-    params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+    purpose: AiPurpose,
+    base: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
   ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+    const model = base.model;
+    const effort = this.reasoningEffort[purpose];
+    const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming =
+      effort ? { ...base, reasoning_effort: effort } : base;
     if (!this.client) {
       throw new AiProviderError(
         'OPENAI_API_KEY fehlt',
@@ -179,8 +219,10 @@ export class OpenAiCompatibleProvider implements AiProvider {
     try {
       const completion = await this.client.chat.completions.create(params);
       const choice = completion.choices?.[0];
+      const reasoningTokens =
+        completion.usage?.completion_tokens_details?.reasoning_tokens;
       this.logger.log(
-        `openai ${model}: ${completion.usage?.prompt_tokens ?? '?'} in / ${completion.usage?.completion_tokens ?? '?'} out, ${Date.now() - started} ms, finish=${choice?.finish_reason ?? '-'}`,
+        `openai ${model} (${purpose}${effort ? `, reasoning ${effort}` : ''}): ${completion.usage?.prompt_tokens ?? '?'} in / ${completion.usage?.completion_tokens ?? '?'} out${reasoningTokens ? ` (${reasoningTokens} reasoning)` : ''}, ${Date.now() - started} ms, finish=${choice?.finish_reason ?? '-'}`,
       );
       if (!choice) {
         throw new AiProviderError(
@@ -199,8 +241,22 @@ export class OpenAiCompatibleProvider implements AiProvider {
         );
       }
       if (choice.finish_reason === 'length') {
+        // Typisch fuer Reasoning-Modelle ohne AI_REASONING_EFFORT_*: das
+        // Nachdenken verbraucht das ganze Token-Limit, die Antwort bleibt
+        // leer. Laut loggen, damit der Ausfall nicht still bleibt.
+        const limit = params.max_completion_tokens ?? '?';
+        const spentOnReasoning =
+          reasoningTokens !== undefined &&
+          reasoningTokens > 0 &&
+          reasoningTokens >= (completion.usage?.completion_tokens ?? 0) * 0.9;
+        const hint = spentOnReasoning
+          ? ` — fast alles ging ins Reasoning (${reasoningTokens} Tokens); AI_REASONING_EFFORT_${purpose.toUpperCase()} senken (z. B. ${purpose === 'classify' ? 'none' : 'low'})`
+          : '';
+        this.logger.warn(
+          `openai ${model} (${purpose}): Antwort abgeschnitten, finish=length bei ${completion.usage?.completion_tokens ?? '?'}/${limit} Tokens${hint}`,
+        );
         throw new AiProviderError(
-          'Die Antwort des Modells war zu lang und wurde abgeschnitten',
+          `Die Antwort des Modells war zu lang und wurde abgeschnitten (finish=length, ${completion.usage?.completion_tokens ?? '?'}/${limit} Tokens${reasoningTokens ? `, davon ${reasoningTokens} Reasoning` : ''})`,
           undefined,
           false,
           'invalid_output',

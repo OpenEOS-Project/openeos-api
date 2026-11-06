@@ -485,9 +485,11 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `OPENAI_API_KEY` / `OPENAI_BASE_URL` | Schlüssel und Basis-URL für `AI_PROVIDER=openai` (OpenAI-kompatible Chat Completions) | – / https://api.openai.com/v1 |
 | `AI_MODEL_EXTRACT` / `AI_MODEL_CLASSIFY` | Modell für die Speisekarten-Extraktion / für Klassifikationen (leer: Standard je Anbieter) | – |
 | `AI_MENU_IMPORTS_PER_DAY` | Speisekarten-Importe je Organisation und Tag (Europe/Berlin) | 5 |
-| `AI_MENU_PAGES_PER_IMPORT` | Bilder je Import | 6 |
+| `AI_MENU_PAGES_PER_IMPORT` | Bilder bzw. PDF-Seiten je Import (PDF-Seiten zählen, wenn sie als Bilder an den Anbieter gehen) | 6 |
 | `AI_CLASSIFY_PER_DAY` | Klassifikationen (Icon-Vorschläge per Modell) je Organisation und Tag | 500 |
 | `AI_MAX_UPLOAD_MB` | Maximale Dateigröße je hochgeladener Speisekarte | 10 |
+| `AI_REASONING_EFFORT_EXTRACT` / `AI_REASONING_EFFORT_CLASSIFY` | Nur `openai`: `reasoning_effort` je Zweck (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`); leer = nicht senden | – |
+| `AI_MAX_IMAGES_PER_REQUEST` | Höchstens so viele Bilder je Modellaufruf; längere Karten werden in mehreren Aufrufen gelesen (IONOS: 4) | 0 (unbegrenzt) |
 | `ORGANIZATIONS_PER_USER_LIMIT` | Höchstzahl Organisationen, in denen ein Benutzer Mitglied sein darf (Anlegen und Einladung annehmen); 0 = unbegrenzt | 5 |
 | `MEMBERS_PER_ORGANIZATION_LIMIT` | Höchstzahl Mitglieder je Organisation, aktive Mitglieder plus offene Einladungen; 0 = unbegrenzt | 10 |
 | `TSE_PROVIDER` | Cloud-TSE: `none` oder `swissbit` (siehe „Cloud-TSE“) | none |
@@ -581,10 +583,27 @@ Der Assistent hilft Vereinen beim Einrichten: **Speisekarten-Import** (Foto, PDF
 **Anbieter**
 
 - `anthropic`: Claude über die Messages API (`@anthropic-ai/sdk`), strukturierte Ausgabe per JSON-Schema, Bilder und PDFs als Base64-Blöcke in einem Aufruf.
-- `openai`: Chat Completions über das offizielle `openai`-SDK mit konfigurierbarer `OPENAI_BASE_URL` — damit lassen sich auch andere OpenAI-kompatible Dienste anbinden. Strukturierte Ausgabe per `response_format: json_schema` (strict), Bilder als Data-URLs. **PDFs liest dieser Anbieter nicht** (Chat Completions kennt bei den meisten Diensten keine Dokument-Eingabe, und die API hat keine Bibliothek, die Seiten rendert): ein PDF-Upload wird für ihn mit `400 MENU_IMPORT_INVALID_FILES` abgelehnt, Fotos der Seiten gehen immer.
+- `openai`: Chat Completions über das offizielle `openai`-SDK mit konfigurierbarer `OPENAI_BASE_URL` — damit lassen sich auch andere OpenAI-kompatible Dienste anbinden (getestet: IONOS AI Model Hub, siehe unten). Strukturierte Ausgabe per `response_format: json_schema` (strict), Bilder als Data-URLs, optional `reasoning_effort` je Zweck (`AI_REASONING_EFFORT_EXTRACT` / `_CLASSIFY`). **PDFs** kennt Chat Completions meist nicht: die API wandelt sie vorher mit `pdftoppm` (poppler-utils, im Docker-Image enthalten) in Seitenbilder (1600 px lange Kante, ≈ 137 dpi bei A4). Eine PDF mit mehr als `AI_MENU_PAGES_PER_IMPORT` Seiten wird beim Hochladen mit `400 MENU_IMPORT_INVALID_FILES` (`params.pages`) abgelehnt. Fehlt poppler-utils (Installation ohne Docker), meldet der Status `pdfSupported: false` und ein PDF-Upload wird mit Reason `MENU_IMPORT_PDF_UNSUPPORTED` abgelehnt — Fotos der Seiten gehen immer.
 - `none`: aus (Standard).
 
 Modell-IDs stehen in der Konfiguration (`AI_MODEL_EXTRACT`, `AI_MODEL_CLASSIFY`), nicht im Code.
+
+**Fotos und Seitenzahl.** Für alle Anbieter werden Fotos vor dem Senden mit `sharp` nach EXIF gedreht und auf 1600 px lange Kante verkleinert (JPEG). Nimmt ein Dienst nur wenige Bilder je Aufruf (`AI_MAX_IMAGES_PER_REQUEST`, IONOS: 4), liest der Import längere Karten in mehreren, möglichst gleich großen Aufrufen (6 Seiten → 3 + 3); spätere Aufrufe bekommen die Kategorien und Hinweise der vorherigen Seiten als Kontext, die Teilergebnisse werden zusammengeführt. Kontingent: weiterhin ein Import, Tokens summiert.
+
+**IONOS AI Model Hub** (OpenAI-kompatibel, Rechenzentrum Berlin). Empfohlene Konfiguration — im Anbieter-Test (11/2026, 8 Testkarten) lag `Qwen/Qwen3.8-27B` mit Reasoning `medium` bei 97 % fehlerfreien Produkten, Icon-Vorschläge brauchen Reasoning `none`:
+
+```env
+AI_PROVIDER=openai
+OPENAI_API_KEY=<Token, nur für den AI Model Hub>
+OPENAI_BASE_URL=https://openai.inference.de-txl.ionos.com/v1
+AI_MODEL_EXTRACT=Qwen/Qwen3.8-27B
+AI_MODEL_CLASSIFY=Qwen/Qwen3.8-27B
+AI_REASONING_EFFORT_EXTRACT=medium
+AI_REASONING_EFFORT_CLASSIFY=none
+AI_MAX_IMAGES_PER_REQUEST=4
+```
+
+Bricht ein Reasoning-Modell mit `finish=length` ab (das Nachdenken hat das Token-Limit verbraucht), steht im Log eine Warnung mit Reasoning-Tokens und dem Hinweis, `AI_REASONING_EFFORT_*` zu senken; Icon-Vorschläge bleiben dann lexikalisch.
 
 **Kontingente und Protokoll.** Jeder Modellaufruf steht in `ai_usage` (Organisation, Funktion, Modell, Tokens, Dauer, Status). Daraus zählt `AiQuotaService` je Organisation und Kalendertag (Europe/Berlin): `AI_MENU_IMPORTS_PER_DAY` Importe, `AI_CLASSIFY_PER_DAY` Klassifikationen. Aufrufe, die beim Anbieter scheitern, kosten kein Kontingent. Bei Überschreitung antwortet die API mit `429 AI_QUOTA_EXCEEDED` und `params.resetAt`.
 
@@ -592,7 +611,7 @@ Modell-IDs stehen in der Konfiguration (`AI_MODEL_EXTRACT`, `AI_MODEL_CLASSIFY`)
 
 **Sicherheit.** Speisekarten sind fremder Inhalt: Das Modell liefert ausschließlich strukturierte Ausgabe gegen ein festes Schema, Text wird als `<untrusted>`-Daten übergeben, die Antwort wird vor dem Speichern Zeile für Zeile mit class-validator geprüft und nur als Vorschlag gespeichert — angelegt wird erst, was ein Mensch in der Vorschau bestätigt. Dateiinhalte und Schlüssel erscheinen nie im Log.
 
-**Icon-Vorschläge.** `POST /api/organizations/:orgId/assistant/icon-suggestions { names[] }`. Stufe 1 ohne Modell: Namen und Suchbegriffe der Icons aus `@openeos/pos-icons` (schlanker Index im Repo, `pnpm icons:sync` nach einem Paket-Update). Stufe 2 nur für unklare Namen und nur mit freiem Kontingent: das Klassifikationsmodell wählt aus den zehn besten Kandidaten — oder ausdrücklich keines. Jeder Vorschlag trägt `source` (`lexical`: Treffer im Index, Score bis 1; `model`: Modellwahl, Score 0,6/0,5 je Sicherheit); ein leeres `suggestions`-Array heißt „kein passendes Icon“. Die Web-App sollte nur `lexical`-Treffer automatisch vorauswählen.
+**Icon-Vorschläge.** `POST /api/organizations/:orgId/assistant/icon-suggestions { names[] }`. Stufe 1 ohne Modell: Namen und Suchbegriffe der Icons aus `@openeos/pos-icons` (schlanker Index im Repo, `pnpm icons:sync` nach einem Paket-Update). Stufe 2 nur für unklare Namen und nur mit freiem Kontingent: das Klassifikationsmodell wählt aus den zehn besten Kandidaten — liegt schon der beste lexikalische Treffer unter 0,35 (Rebsorten, „Export“), aus allen Icons (die Liste steht einmal im Aufruf) — oder ausdrücklich keines. Jeder Vorschlag trägt `source` (`lexical`: Treffer im Index, Score bis 1; `model`: Modellwahl, Score 0,6/0,5 je Sicherheit); ein leeres `suggestions`-Array heißt „kein passendes Icon“. Die Web-App sollte nur `lexical`-Treffer automatisch vorauswählen.
 
 ## Cloud-TSE (Swissbit)
 

@@ -55,7 +55,7 @@ export class MenuImportController {
   @ApiOperation({
     summary: 'Speisekarte zur Auswertung einreichen',
     description:
-      'multipart: `files[]` (1–AI_MENU_PAGES_PER_IMPORT Bilder jpg/png/webp oder genau eine PDF ≤ AI_MAX_UPLOAD_MB) oder Feld `text`. Antwort 202 mit Job-ID; Status per GET pollen (alle 2 s) oder Socket-Event `menuImportUpdated { id, eventId, status }` im Organisations-Raum. Fehler: 404 AI_DISABLED, 403 ASSISTANT_DISABLED, 429 AI_QUOTA_EXCEEDED (params.resetAt), 400 MENU_IMPORT_INVALID_FILES (reason MENU_IMPORT_PDF_UNSUPPORTED, wenn der Anbieter keine PDF liest — siehe pdfSupported im Assistent-Status).',
+      'multipart: `files[]` (1–AI_MENU_PAGES_PER_IMPORT Bilder jpg/png/webp oder genau eine PDF ≤ AI_MAX_UPLOAD_MB) oder Feld `text`. Antwort 202 mit Job-ID; Status per GET pollen (alle 2 s) oder Socket-Event `menuImportUpdated { id, eventId, status }` im Organisations-Raum. Fehler: 404 AI_DISABLED, 403 ASSISTANT_DISABLED, 429 AI_QUOTA_EXCEEDED (params.resetAt), 400 MENU_IMPORT_INVALID_FILES (reason MENU_IMPORT_PDF_UNSUPPORTED, wenn der Import keine PDF nimmt — siehe pdfSupported im Assistent-Status; params.pages, wenn eine in Bilder gewandelte PDF mehr als AI_MENU_PAGES_PER_IMPORT Seiten hat).',
   })
   @ApiBody({
     schema: {

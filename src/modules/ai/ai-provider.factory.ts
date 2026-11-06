@@ -1,6 +1,11 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AiProvider, AiProviderName } from './ai-provider.interface';
+import {
+  AI_REASONING_EFFORTS,
+  AiProvider,
+  AiProviderName,
+  AiReasoningEffort,
+} from './ai-provider.interface';
 import { AnthropicProvider } from './providers/anthropic.provider';
 import { OpenAiCompatibleProvider } from './providers/openai-compatible.provider';
 import { NoneProvider } from './providers/none.provider';
@@ -16,6 +21,17 @@ export interface AiConfig {
   menuPagesPerImport: number;
   classifyPerDay: number;
   maxUploadMb: number;
+  /** Nur `openai`; leer = `reasoning_effort` nicht senden. */
+  reasoningEffortExtract: AiReasoningEffort | '';
+  reasoningEffortClassify: AiReasoningEffort | '';
+  /** 0 = keine eigene Grenze. */
+  maxImagesPerRequest: number;
+}
+
+function effortOf(value: unknown): AiReasoningEffort | '' {
+  return (AI_REASONING_EFFORTS as readonly unknown[]).includes(value)
+    ? (value as AiReasoningEffort)
+    : '';
 }
 
 export function readAiConfig(configService: ConfigService): AiConfig {
@@ -31,6 +47,13 @@ export function readAiConfig(configService: ConfigService): AiConfig {
     menuPagesPerImport: config?.menuPagesPerImport ?? 6,
     classifyPerDay: config?.classifyPerDay ?? 500,
     maxUploadMb: config?.maxUploadMb ?? 10,
+    reasoningEffortExtract: effortOf(config?.reasoningEffortExtract),
+    reasoningEffortClassify: effortOf(config?.reasoningEffortClassify),
+    maxImagesPerRequest:
+      Number.isFinite(config?.maxImagesPerRequest) &&
+      (config?.maxImagesPerRequest ?? 0) > 0
+        ? (config?.maxImagesPerRequest as number)
+        : 0,
   };
 }
 
@@ -47,13 +70,19 @@ export function createAiProvider(config: AiConfig): AiProvider {
       if (!config.anthropicApiKey) {
         logger.error('AI_PROVIDER=anthropic, aber ANTHROPIC_API_KEY fehlt');
       }
+      if (config.reasoningEffortExtract || config.reasoningEffortClassify) {
+        logger.warn(
+          'AI_REASONING_EFFORT_* gilt nur für AI_PROVIDER=openai und wird ignoriert',
+        );
+      }
       const provider = new AnthropicProvider({
         apiKey: config.anthropicApiKey,
         modelExtract: config.modelExtract,
         modelClassify: config.modelClassify,
+        maxImagesPerRequest: config.maxImagesPerRequest,
       });
       logger.log(
-        `Assistent: anthropic (${provider.modelFor('extract')} / ${provider.modelFor('classify')})`,
+        `Assistent: anthropic (${provider.modelFor('extract')} / ${provider.modelFor('classify')}${limitText(provider)})`,
       );
       return provider;
     }
@@ -66,9 +95,18 @@ export function createAiProvider(config: AiConfig): AiProvider {
         baseUrl: config.openaiBaseUrl,
         modelExtract: config.modelExtract,
         modelClassify: config.modelClassify,
+        reasoningEffort: {
+          extract: config.reasoningEffortExtract,
+          classify: config.reasoningEffortClassify,
+        },
+        maxImagesPerRequest: config.maxImagesPerRequest,
       });
+      const effort = (purpose: 'extract' | 'classify') =>
+        provider.reasoningEffortFor(purpose)
+          ? `, reasoning ${provider.reasoningEffortFor(purpose)}`
+          : '';
       logger.log(
-        `Assistent: openai-kompatibel ${config.openaiBaseUrl} (${provider.modelFor('extract')} / ${provider.modelFor('classify')})`,
+        `Assistent: openai-kompatibel ${config.openaiBaseUrl} (${provider.modelFor('extract')}${effort('extract')} / ${provider.modelFor('classify')}${effort('classify')}${limitText(provider)})`,
       );
       return provider;
     }
@@ -76,4 +114,9 @@ export function createAiProvider(config: AiConfig): AiProvider {
       logger.log('Assistent: aus (AI_PROVIDER=none)');
       return new NoneProvider();
   }
+}
+
+function limitText(provider: AiProvider): string {
+  const max = provider.maxImagesPerRequest();
+  return max ? `, höchstens ${max} Bilder je Aufruf` : '';
 }

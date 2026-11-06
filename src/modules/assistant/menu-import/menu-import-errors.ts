@@ -1,5 +1,10 @@
 import { AiProviderError } from '../../ai/ai-provider.error';
 import type { AiProviderErrorKind } from '../../ai/ai-provider.error';
+import { PdfReadError } from '../../ai/pdf-rasterizer';
+
+/** Die PDF liess sich nicht in Seitenbilder wandeln. */
+export const MENU_IMPORT_PDF_UNREADABLE_TEXT =
+  'Die PDF-Datei konnte nicht gelesen werden – lade Fotos der Seiten hoch.';
 
 /**
  * Was die Web-App bei einem fehlgeschlagenen Import anzeigt — kurz, auf
@@ -32,6 +37,12 @@ export function describeMenuImportFailure(error: unknown): MenuImportFailure {
       : typeof error === 'string' && error
         ? error
         : 'Unbekannter Fehler';
+  if (error instanceof PdfReadError) {
+    return {
+      message: MENU_IMPORT_PDF_UNREADABLE_TEXT,
+      detail: detail.slice(0, 2000),
+    };
+  }
   const kind: AiProviderErrorKind =
     error instanceof AiProviderError ? error.kind : 'other';
   return {

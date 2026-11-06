@@ -39,7 +39,7 @@ export class AssistantController {
   @ApiOperation({
     summary: 'Status der Assistent-Funktionen',
     description:
-      'enabled: Opt-in der Organisation; available: ein Modellanbieter ist auf dem Server konfiguriert; pdfSupported: der Anbieter liest PDF-Dateien (sonst nimmt der Speisekarten-Import nur Bilder); quotas: Tageskontingente (Europe/Berlin) mit limit/used/remaining/resetAt.',
+      'enabled: Opt-in der Organisation; available: ein Modellanbieter ist auf dem Server konfiguriert; pdfSupported: der Speisekarten-Import nimmt PDF-Dateien (der Anbieter liest sie direkt, oder die API wandelt sie in Seitenbilder; sonst nur Bilder); quotas: Tageskontingente (Europe/Berlin) mit limit/used/remaining/resetAt.',
   })
   @ApiResponse({
     status: 200,

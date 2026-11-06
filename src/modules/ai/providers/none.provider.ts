@@ -23,6 +23,10 @@ export class NoneProvider implements AiProvider {
     return false;
   }
 
+  maxImagesPerRequest(): number | null {
+    return null;
+  }
+
   modelFor(_purpose: AiPurpose): string {
     return 'none';
   }
