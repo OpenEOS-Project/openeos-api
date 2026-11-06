@@ -9,6 +9,7 @@ import { Order } from './order.entity';
 import { QrCode } from './qr-code.entity';
 import { Invitation } from './invitation.entity';
 import { Invoice } from './invoice.entity';
+import { organizationSettingsTransformer } from '../transformers/organization-settings.transformer';
 
 /**
  * Rechtliche Angaben des Vereins fuer seine oeffentlichen Seiten (Shop,
@@ -183,7 +184,13 @@ export class Organization extends SoftDeleteEntity {
   @Column({ name: 'logo_url', type: 'varchar', length: 500, nullable: true })
   logoUrl: string | null;
 
-  @Column({ type: 'jsonb', default: {} })
+  /** Zugangsdaten der Zahlungsanbieter liegen verschluesselt in der
+   *  Datenbank (organization-settings.transformer.ts). */
+  @Column({
+    type: 'jsonb',
+    default: {},
+    transformer: organizationSettingsTransformer,
+  })
   settings: OrganizationSettings;
 
   @Column({

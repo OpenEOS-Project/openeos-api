@@ -57,6 +57,9 @@ services:
       # 2FA
       TWO_FACTOR_ENCRYPTION_KEY: ${TWO_FACTOR_ENCRYPTION_KEY:?TWO_FACTOR_ENCRYPTION_KEY is required}
       TWO_FACTOR_ISSUER: ${TWO_FACTOR_ISSUER:-OpenEOS}
+      # Zugangsdaten der Zahlungsanbieter (SumUp, PayPal). Leer = Rueckfall
+      # auf TWO_FACTOR_ENCRYPTION_KEY.
+      INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:-}
 
       # Optional: Stripe
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
