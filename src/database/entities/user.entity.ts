@@ -181,6 +181,18 @@ export class User extends SoftDeleteEntity {
   newsletterOptInAt: Date | null;
 
   /**
+   * Widerruf der Newsletter-Einwilligung. `newsletterOptInAt` bleibt
+   * stehen (Nachweis der Einwilligung); angemeldet ist, wer eine
+   * Einwilligung ohne spaeteren Widerruf hat.
+   */
+  @Column({
+    name: 'newsletter_opt_out_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  newsletterOptOutAt: Date | null;
+
+  /**
    * Eigene Obergrenze fuer Organisationen (Anlegen und Einladungen
    * annehmen). NULL: es gilt ORGANIZATIONS_PER_USER_LIMIT; 0: unbegrenzt.
    * Setzt nur ein Super-Admin, etwa im Support-Fall.

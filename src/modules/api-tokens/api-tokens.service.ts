@@ -3,9 +3,11 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  Optional,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { OrganizationClosureService } from '../../common/organization-closure/organization-closure.service';
 import { IsNull, MoreThan, Repository } from 'typeorm';
 import * as crypto from 'crypto';
 
@@ -98,6 +100,8 @@ export class ApiTokensService {
     private readonly eventRepository: Repository<Event>,
     @InjectRepository(AdminAuditLog)
     private readonly auditLogRepository: Repository<AdminAuditLog>,
+    @Optional()
+    private readonly closures?: OrganizationClosureService,
   ) {}
 
   /**
@@ -201,6 +205,14 @@ export class ApiTokensService {
         },
       });
       if (!membership) return null;
+      /* Geloeschte Organisation: bis zur endgueltigen Loeschung nur noch
+         zum Export im Kundenportal offen (AGB 10.4), nicht fuer Tokens. */
+      if (
+        this.closures &&
+        (await this.closures.closure(eintrag.organizationId))
+      ) {
+        return null;
+      }
     } else if (!eintrag.user.isSuperAdmin) {
       return null;
     }

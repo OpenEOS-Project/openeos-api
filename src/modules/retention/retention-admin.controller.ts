@@ -18,6 +18,7 @@ import {
   EraseRecordDto,
   ListRetentionNoticesQueryDto,
   ListRetentionRunsQueryDto,
+  PurgeOrganizationDto,
   StartRetentionRunDto,
 } from './dto';
 import { RetentionErasureService } from './retention-erasure.service';
@@ -126,6 +127,28 @@ export class RetentionAdminController {
         kind: dto.kind,
         id: dto.id,
         email: dto.email,
+        reason: dto.reason,
+        dryRun: dto.dryRun,
+        executedByUserId: user.id,
+      }),
+    };
+  }
+
+  @Post('organizations/:organizationId/purge')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Finally delete an organization now, on the customer’s request (AVV 10.2, AGB 20.5). Requires the exact organization name and a reason; fiscal archive stays; logged as instruction',
+  })
+  async purgeOrganization(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Body() dto: PurgeOrganizationDto,
+    @CurrentUser() user: User,
+  ) {
+    return {
+      data: await this.erasure.purgeOrganization({
+        organizationId,
+        confirmName: dto.confirmName,
         reason: dto.reason,
         dryRun: dto.dryRun,
         executedByUserId: user.id,

@@ -22,8 +22,17 @@ export const RETENTION_CATEGORIES = [
 
 export type RetentionCategory = (typeof RETENTION_CATEGORIES)[number];
 
-/** scheduled = naechtlicher Lauf, manual = von Hand ausgeloest, instruction = Einzelloeschung auf Weisung */
-export type RetentionTrigger = 'scheduled' | 'manual' | 'instruction';
+/**
+ * scheduled = naechtlicher Lauf, manual = von Hand ausgeloest,
+ * instruction = Loeschung auf Weisung (Einzelloeschung, sofortige
+ * endgueltige Loeschung einer Organisation), self_service = Benutzer hat
+ * sein Konto selbst geloescht
+ */
+export type RetentionTrigger =
+  | 'scheduled'
+  | 'manual'
+  | 'instruction'
+  | 'self_service';
 
 export type RetentionRunStatus = 'running' | 'succeeded' | 'failed';
 

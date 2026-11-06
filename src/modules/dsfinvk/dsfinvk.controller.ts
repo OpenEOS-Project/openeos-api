@@ -21,6 +21,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { CurrentUser } from '../../common/decorators';
+import { ClosedOrganizationAccess } from '../../common/organization-closure/organization-closure.guard';
 import type { User } from '../../database/entities';
 import { TseUnitService } from '../tse/tse-unit.service';
 import { CashbookService } from './cashbook.service';
@@ -92,6 +93,8 @@ export class DsfinvkController {
   }
 
   @Post('dsfinvk/closings')
+  // Dient dem Export: auch in einer geloeschten Organisation (AGB 10.4).
+  @ClosedOrganizationAccess()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create a cash point closing now (admins)',

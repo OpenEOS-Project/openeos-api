@@ -7956,6 +7956,89 @@
         ]
       }
     },
+    "/api/users/me/newsletter": {
+      "get": {
+        "operationId": "newsletter_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Newsletter consent of the current user",
+        "tags": [
+          "Users"
+        ]
+      },
+      "put": {
+        "operationId": "newsletter_set",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNewsletterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Give or withdraw the newsletter consent (both timestamps are kept as proof)",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/public/newsletter/unsubscribe": {
+      "post": {
+        "operationId": "newsletterPublic_unsubscribe",
+        "parameters": [
+          {
+            "name": "token",
+            "required": false,
+            "in": "query",
+            "description": "Token aus dem Abmeldelink (RFC 8058 One-Click)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewsletterUnsubscribeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Withdraw the newsletter consent via signed link",
+        "tags": [
+          "Public"
+        ]
+      }
+    },
     "/api/organizations/{organizationId}/uploads/image": {
       "post": {
         "operationId": "uploads_uploadImage",
@@ -11326,6 +11409,21 @@
               "default": 20,
               "example": 20,
               "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "`closed`: gelöschte Organisationen (Exportfrist bzw. endgültig gelöscht), `all`: alle",
+            "schema": {
+              "default": "active",
+              "type": "string",
+              "enum": [
+                "active",
+                "closed",
+                "all"
+              ]
             }
           }
         ],
@@ -17417,7 +17515,8 @@
               "enum": [
                 "scheduled",
                 "manual",
-                "instruction"
+                "instruction",
+                "self_service"
               ]
             }
           },
@@ -17632,6 +17731,113 @@
         "summary": "Erase a specific guest or helper record on the customer’s instruction (logged with reason and executing admin)",
         "tags": [
           "Admin — Aufbewahrung und Löschung"
+        ]
+      }
+    },
+    "/api/admin/retention/organizations/{organizationId}/purge": {
+      "post": {
+        "operationId": "retentionAdmin_purgeOrganization",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurgeOrganizationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Finally delete an organization now, on the customer’s request (AVV 10.2, AGB 20.5). Requires the exact organization name and a reason; fiscal archive stays; logged as instruction",
+        "tags": [
+          "Admin — Aufbewahrung und Löschung"
+        ]
+      }
+    },
+    "/api/users/me/deletion": {
+      "get": {
+        "operationId": "accountDeletion_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "What deleting the own account would do (blocking organizations, organizations closed with it, confirmation method)",
+        "tags": [
+          "Users"
+        ]
+      },
+      "post": {
+        "operationId": "accountDeletion_delete",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAccountDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Delete (anonymise) the own account after confirming with password or e-mail code; logs out",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/me/deletion/code": {
+      "post": {
+        "operationId": "accountDeletion_sendCode",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Send a confirmation code by e-mail",
+        "tags": [
+          "Users"
         ]
       }
     }
@@ -21058,6 +21264,30 @@
           }
         }
       },
+      "UpdateNewsletterDto": {
+        "type": "object",
+        "properties": {
+          "subscribed": {
+            "type": "boolean",
+            "description": "true = Einwilligung erteilen, false = widerrufen"
+          }
+        },
+        "required": [
+          "subscribed"
+        ]
+      },
+      "NewsletterUnsubscribeDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Token aus dem Abmeldelink (alternativ als Query-Parameter `token`)"
+          },
+          "List-Unsubscribe": {
+            "type": "string"
+          }
+        }
+      },
       "CreateEventDto": {
         "type": "object",
         "properties": {
@@ -23224,6 +23454,43 @@
           "kind",
           "reason"
         ]
+      },
+      "PurgeOrganizationDto": {
+        "type": "object",
+        "properties": {
+          "confirmName": {
+            "type": "string",
+            "description": "Name der Organisation zur Bestätigung, genau wie gespeichert (Leerzeichen am Rand werden ignoriert).",
+            "maxLength": 255
+          },
+          "reason": {
+            "type": "string",
+            "description": "Anlass für das Protokoll, z. B. „Löschverlangen per E-Mail vom 06.11.2026 (AVV 10.2)“. Keine Namen oder Inhalte.",
+            "minLength": 10,
+            "maxLength": 500
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "Nur zählen, nichts ändern"
+          }
+        },
+        "required": [
+          "confirmName",
+          "reason"
+        ]
+      },
+      "DeleteAccountDto": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "Aktuelles Passwort (Konten mit Passwort)"
+          },
+          "code": {
+            "type": "string",
+            "description": "Code aus der E-Mail (Konten ohne Passwort)"
+          }
+        }
       }
     }
   }

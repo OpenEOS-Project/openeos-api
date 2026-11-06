@@ -238,7 +238,8 @@ export class CashPointClosingService {
 
       const organization = await m
         .getRepository(Organization)
-        .findOneOrFail({ where: { id: organizationId } });
+        // Auch geloeschte: offene Vorgaenge werden noch abgeschlossen.
+        .findOneOrFail({ where: { id: organizationId }, withDeleted: true });
       const registerId = clientIdForOrganization(organizationId);
       const previous = await m.getRepository(CashPointClosing).findOne({
         where: { organizationId },
@@ -716,6 +717,7 @@ export class CashPointClosingService {
       if (!closing || closing.exportFilePath) return;
       const organization = await this.organizationRepository.findOne({
         where: { id: closing.organizationId },
+        withDeleted: true,
       });
       if (!organization) return;
       const data = this.zipFor(organization, [closing]);

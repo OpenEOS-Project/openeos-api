@@ -177,8 +177,11 @@ export class OrganizationPurgeJob implements RetentionJob {
     }
   }
 
-  /** Grund, warum (noch) nicht geloescht werden darf, sonst `null`. */
-  private async blocker(
+  /**
+   * Grund, warum (noch) nicht geloescht werden darf, sonst `null`. Gilt
+   * auch fuer die sofortige Loeschung auf Verlangen.
+   */
+  async blocker(
     ctx: RetentionRunContext,
     organizationId: string,
   ): Promise<string | null> {

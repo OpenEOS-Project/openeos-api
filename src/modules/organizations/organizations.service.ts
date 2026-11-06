@@ -260,7 +260,18 @@ export class OrganizationsService {
       .innerJoin('org.userOrganizations', 'uo', 'uo.userId = :userId', {
         userId: user.id,
       })
-      .where('org.deletedAt IS NULL')
+      // Geloeschte Organisationen bleiben bis zur endgueltigen Loeschung fuer
+      // ihre Administratoren sichtbar (nur lesend, AGB 10.4).
+      .withDeleted()
+      .where(
+        `(org.deletedAt IS NULL OR (uo.role = 'admin'
+           AND org.slug NOT LIKE 'purged-%'
+           AND NOT EXISTS (SELECT 1 FROM retention_notices n
+                            WHERE n.subject_type = 'organization'
+                              AND n.subject_id = org.id
+                              AND n.kind = 'organization_deletion'
+                              AND n.executed_at IS NOT NULL)))`,
+      )
       .orderBy('org.name', 'ASC')
       .skip(skip)
       .take(limit);
@@ -271,9 +282,13 @@ export class OrganizationsService {
   }
 
   async findOne(id: string, user: User): Promise<Organization> {
+    // Auch geloeschte: bis zur endgueltigen Loeschung lesen deren
+    // Administratoren sie noch (Schreibzugriffe sperrt der
+    // OrganizationClosureGuard).
     const organization = await this.organizationRepository.findOne({
       where: { id },
       relations: ['userOrganizations', 'userOrganizations.user'],
+      withDeleted: true,
     });
 
     if (!organization) {
@@ -908,7 +923,8 @@ export class OrganizationsService {
       relations: ['organization'],
     });
 
-    if (!invitation) {
+    // Ohne Organisation: geloescht (die Relation laedt sie nicht mehr).
+    if (!invitation || !invitation.organization) {
       throw new NotFoundException({
         code: ErrorCodes.NOT_FOUND,
         reason: ErrorReasons.INVITATION_NOT_FOUND,
