@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { randomBytes } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -33,6 +33,7 @@ import {
   AdminUpdateRegistrationDto,
 } from './dto';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { recordDeletion } from '../retention/deletion-log';
 
 @Injectable()
 export class ShiftsService {
@@ -169,9 +170,56 @@ export class ShiftsService {
     return this.shiftPlanRepository.save(plan);
   }
 
-  async deletePlan(organizationId: string, planId: string): Promise<void> {
+  async deletePlan(
+    organizationId: string,
+    planId: string,
+    actorUserId: string | null = null,
+  ): Promise<void> {
     const plan = await this.findOnePlan(organizationId, planId);
-    await this.shiftPlanRepository.remove(plan);
+    await this.withHelperDeletionLog(
+      organizationId,
+      actorUserId,
+      `SELECT r.id FROM shift_registrations r
+         JOIN shifts s ON s.id = r.shift_id
+         JOIN shift_jobs j ON j.id = s.shift_job_id
+        WHERE j.shift_plan_id = $1`,
+      plan.id,
+      { shiftPlansDeleted: 1 },
+      { shiftPlanId: plan.id },
+      (manager) => manager.remove(plan),
+    );
+  }
+
+  /**
+   * Loescht in einer Transaktion und haelt im Protokoll der Loeschungen
+   * fest, welche Schichtanmeldungen (Helferdaten) dabei mit weggefallen
+   * sind (Loeschkonzept 1.5/5.3, Ausloeser `club`). Ohne betroffene
+   * Anmeldungen kein Eintrag.
+   */
+  private async withHelperDeletionLog(
+    organizationId: string,
+    actorUserId: string | null,
+    registrationIdsSql: string,
+    param: string,
+    removed: Record<string, number>,
+    details: Record<string, unknown>,
+    remove: (manager: EntityManager) => Promise<unknown>,
+  ): Promise<void> {
+    await this.registrationRepository.manager.transaction(async (manager) => {
+      const rows: { id: string }[] = await manager.query(registrationIdsSql, [
+        param,
+      ]);
+      await remove(manager);
+      if (rows.length === 0) return;
+      await recordDeletion(manager, {
+        category: 'helper_data',
+        trigger: 'club',
+        organizationId,
+        executedByUserId: actorUserId,
+        removed: { ...removed, registrationsDeleted: rows.length },
+        details: { ...details, registrationIds: rows.map((r) => r.id) },
+      });
+    });
   }
 
   async publishPlan(
@@ -278,7 +326,11 @@ export class ShiftsService {
     return this.shiftJobRepository.save(job);
   }
 
-  async deleteJob(organizationId: string, jobId: string): Promise<void> {
+  async deleteJob(
+    organizationId: string,
+    jobId: string,
+    actorUserId: string | null = null,
+  ): Promise<void> {
     const job = await this.shiftJobRepository.findOne({
       where: { id: jobId },
       relations: ['shiftPlan'],
@@ -292,7 +344,17 @@ export class ShiftsService {
       });
     }
 
-    await this.shiftJobRepository.remove(job);
+    await this.withHelperDeletionLog(
+      organizationId,
+      actorUserId,
+      `SELECT r.id FROM shift_registrations r
+         JOIN shifts s ON s.id = r.shift_id
+        WHERE s.shift_job_id = $1`,
+      job.id,
+      { shiftJobsDeleted: 1 },
+      { shiftJobId: job.id },
+      (manager) => manager.remove(job),
+    );
   }
 
   // ============ Shifts ============
@@ -377,7 +439,11 @@ export class ShiftsService {
     return this.shiftRepository.save(shift);
   }
 
-  async deleteShift(organizationId: string, shiftId: string): Promise<void> {
+  async deleteShift(
+    organizationId: string,
+    shiftId: string,
+    actorUserId: string | null = null,
+  ): Promise<void> {
     const shift = await this.shiftRepository.findOne({
       where: { id: shiftId },
       relations: ['job', 'job.shiftPlan'],
@@ -391,7 +457,15 @@ export class ShiftsService {
       });
     }
 
-    await this.shiftRepository.remove(shift);
+    await this.withHelperDeletionLog(
+      organizationId,
+      actorUserId,
+      `SELECT r.id FROM shift_registrations r WHERE r.shift_id = $1`,
+      shift.id,
+      { shiftsDeleted: 1 },
+      { shiftId: shift.id },
+      (manager) => manager.remove(shift),
+    );
   }
 
   async createShiftsBulk(
@@ -1022,6 +1096,7 @@ export class ShiftsService {
   async deleteRegistration(
     organizationId: string,
     registrationId: string,
+    actorUserId: string | null = null,
   ): Promise<void> {
     const reg = await this.findRegistrationWithAccess(
       organizationId,
@@ -1029,9 +1104,18 @@ export class ShiftsService {
     );
 
     // Delete all registrations in the same group
-    await this.registrationRepository.delete({
-      registrationGroupId: reg.registrationGroupId,
-    });
+    await this.withHelperDeletionLog(
+      organizationId,
+      actorUserId,
+      `SELECT id FROM shift_registrations WHERE registration_group_id = $1`,
+      reg.registrationGroupId,
+      {},
+      { registrationGroupId: reg.registrationGroupId },
+      (manager) =>
+        manager.delete(ShiftRegistration, {
+          registrationGroupId: reg.registrationGroupId,
+        }),
+    );
   }
 
   /** Remove a single shift from a helper's group, leaving the helper's other
@@ -1040,12 +1124,21 @@ export class ShiftsService {
   async removeSingleRegistration(
     organizationId: string,
     registrationId: string,
+    actorUserId: string | null = null,
   ): Promise<void> {
     const reg = await this.findRegistrationWithAccess(
       organizationId,
       registrationId,
     );
-    await this.registrationRepository.delete({ id: reg.id });
+    await this.withHelperDeletionLog(
+      organizationId,
+      actorUserId,
+      `SELECT id FROM shift_registrations WHERE id = $1`,
+      reg.id,
+      {},
+      { registrationGroupId: reg.registrationGroupId },
+      (manager) => manager.delete(ShiftRegistration, { id: reg.id }),
+    );
   }
 
   async updateRegistrationNotes(
@@ -1506,7 +1599,27 @@ export class ShiftsService {
         message: 'Schicht gehört nicht zu diesem Plan',
       });
     }
-    await this.registrationRepository.delete({ id: reg.id });
+    // Der Helfer meldet sich selbst ab: steht im Protokoll der Loeschungen
+    // (Ausloeser `self_service`, ohne ausfuehrendes Konto).
+    await this.registrationRepository.manager.transaction(async (manager) => {
+      const [plan]: { organization_id: string }[] = await manager.query(
+        `SELECT organization_id FROM shift_plans WHERE id = $1`,
+        [link.shiftPlanId],
+      );
+      await manager.delete(ShiftRegistration, { id: reg.id });
+      await recordDeletion(manager, {
+        category: 'helper_data',
+        trigger: 'self_service',
+        organizationId: plan?.organization_id ?? null,
+        executedByUserId: null,
+        removed: { registrationsDeleted: 1 },
+        details: {
+          registrationIds: [reg.id],
+          registrationGroupId: reg.registrationGroupId,
+          shiftPlanId: link.shiftPlanId,
+        },
+      });
+    });
   }
 
   /** Helper-side add: attach a new shift to one of the helper's existing

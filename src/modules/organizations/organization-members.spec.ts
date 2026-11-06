@@ -118,9 +118,20 @@ function setup(options: Options) {
 
   /* Hinzufuegen laeuft in einer Transaktion (Platzpruefung plus Schreiben);
      der Manager reicht das Speichern an das Repository-Mock durch. */
+  const logged: unknown[][] = [];
   const manager = {
     save: (entity: Partial<UserOrganization>) =>
       userOrganizationRepository.save(entity as UserOrganization),
+    /* Entfernen loescht in derselben Transaktion und schreibt den Eintrag
+       ins Protokoll der Loeschungen (retention_runs). */
+    delete: (_entity: unknown, where: unknown) => {
+      removed.push(where);
+      return Promise.resolve({ affected: 1 });
+    },
+    query: (_sql: string, params: unknown[]) => {
+      logged.push(params);
+      return Promise.resolve([]);
+    },
   };
   const dataSource = {
     transaction: (fn: (m: typeof manager) => Promise<unknown>) => fn(manager),
@@ -144,7 +155,14 @@ function setup(options: Options) {
     limits as never,
   );
 
-  return { service, createdUsers, savedMemberships, removed, sentMails };
+  return {
+    service,
+    createdUsers,
+    savedMemberships,
+    removed,
+    sentMails,
+    logged,
+  };
 }
 
 const newAccount: AddMemberDto = {
@@ -283,6 +301,24 @@ describe('OrganizationsService.addMember', () => {
         ACTOR,
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('refuses accounts whose deletion is scheduled', async () => {
+    const { service, savedMemberships } = setup({
+      actorRole: OrganizationRole.ADMIN,
+      existingUser: {
+        id: 'existing',
+        deletionDueAt: new Date(Date.now() + 86400000),
+      } as User,
+    });
+    await expect(
+      service.addMember(
+        ORG_ID,
+        { email: 'x@example.com', role: OrganizationRole.MEMBER },
+        ACTOR,
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(savedMemberships).toHaveLength(0);
   });
 
   it('does not let non-admins grant permissions they lack', async () => {
@@ -508,6 +544,33 @@ describe('OrganizationsService.removeMember', () => {
 
     await service.removeMember(ORG_ID, 'm1', ACTOR);
     expect(removed).toHaveLength(1);
+  });
+
+  it('records the removal in the deletion log (who, kind, ids, no names)', async () => {
+    const { service, logged } = setup({
+      actorRole: OrganizationRole.ADMIN,
+      target: {
+        id: 'm1',
+        userId: 'u-target',
+        role: OrganizationRole.MEMBER,
+        permissions: {},
+      },
+    });
+    await service.removeMember(ORG_ID, 'm1', ACTOR);
+    expect(logged).toHaveLength(1);
+    const [category, trigger, , counts, total, orgId, executedBy, , details] =
+      logged[0];
+    expect(category).toBe('memberships');
+    expect(trigger).toBe('club');
+    expect(JSON.parse(counts as string)).toEqual({ membershipsDeleted: 1 });
+    expect(total).toBe(1);
+    expect(orgId).toBe(ORG_ID);
+    expect(executedBy).toBe(ACTOR.id);
+    expect(JSON.parse(details as string)).toEqual({
+      membershipId: 'm1',
+      userId: 'u-target',
+    });
+    expect(JSON.stringify(logged[0])).not.toContain('target@example.com');
   });
 
   it('lets admins remove admins but never the last one', async () => {

@@ -22,7 +22,7 @@ export class RetentionRun {
   @Column({ type: 'varchar', length: 40 })
   category: string;
 
-  /** scheduled | manual | instruction */
+  /** scheduled | manual | instruction | self_service | club */
   @Column({ type: 'varchar', length: 20 })
   trigger: string;
 
@@ -63,6 +63,13 @@ export class RetentionRun {
   /** Anlass einer Einzelloeschung (z. B. Datum und Weg der Weisung). */
   @Column({ type: 'varchar', length: 500, nullable: true })
   reason: string | null;
+
+  /**
+   * Kennungen der betroffenen Datensaetze (z. B. `registrationIds`,
+   * `membershipId`), nie Inhalte wie Namen oder E-Mail-Adressen.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  details: Record<string, unknown> | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt: Date;

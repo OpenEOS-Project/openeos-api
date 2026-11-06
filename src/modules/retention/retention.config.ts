@@ -159,3 +159,49 @@ export function exportOfferHonoured(
   const required = Math.max(noticeDays, MIN_EXPORT_OFFER_DAYS);
   return noticeSentAt.getTime() <= daysBefore(now, required).getTime();
 }
+
+/** Erinnerungen vor einer Schliessung bzw. endgueltigen Loeschung. */
+export const REMINDER_DAYS = [30, 10, 1] as const;
+
+/**
+ * Spielraum, weil der naechtliche Lauf nicht auf die Sekunde gleich startet:
+ * „10 Tage vorher“ heisst „im Lauf, in dem noch hoechstens 10,5 Tage
+ * bleiben“.
+ */
+const REMINDER_SLACK_DAYS = 0.5;
+
+/**
+ * Welche Erinnerung ist jetzt faellig? Liefert die Tage vor dem Termin
+ * (30, 10, 1) oder `null`.
+ *
+ * - Die Ankuendigung selbst zaehlt als Erinnerung fuer alle Stufen, die bei
+ *   ihrem Versand schon erreicht waren (die Ankuendigung 30 Tage vorher ist
+ *   also die 30-Tage-Erinnerung).
+ * - Bereits verschickte Stufen (`lastReminderDays`) und groessere kommen
+ *   nie wieder.
+ * - Hat der Lauf Tage verpasst, kommt nur die juengste faellige Stufe, nie
+ *   mehrere auf einmal.
+ * - Nach dem Termin keine Erinnerung mehr.
+ */
+export function dueReminder(o: {
+  sentAt: Date;
+  dueAt: Date;
+  now: Date;
+  lastReminderDays: number | null;
+}): number | null {
+  const remaining = (o.dueAt.getTime() - o.now.getTime()) / DAY_MS;
+  if (remaining <= 0) return null;
+  const atNotice = (o.dueAt.getTime() - o.sentAt.getTime()) / DAY_MS;
+  const open = REMINDER_DAYS.filter(
+    (days) =>
+      remaining <= days + REMINDER_SLACK_DAYS &&
+      atNotice > days + REMINDER_SLACK_DAYS &&
+      (o.lastReminderDays === null || days < o.lastReminderDays),
+  );
+  return open.length > 0 ? Math.min(...open) : null;
+}
+
+/** Ganze Tage bis zum Termin fuer den Mailtext (mindestens 1). */
+export function daysLeft(dueAt: Date, now: Date): number {
+  return Math.max(1, Math.round((dueAt.getTime() - now.getTime()) / DAY_MS));
+}

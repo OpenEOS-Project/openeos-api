@@ -1204,6 +1204,21 @@ paths:
       security: *a11
       summary: Set the country once (admins, only while none is set)
       tags: *a12
+  /api/organizations/{id}/restore:
+    post:
+      operationId: organizations_restore
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a11
+      summary: Cancel the deletion of an organization (admins, until the final deletion)
+      tags: *a12
   /api/organizations/{id}/members:
     get:
       operationId: organizations_getMembers
@@ -10423,10 +10438,14 @@ paths:
               - organization_inactivity
               - organization_purge
               - user_accounts
+              - deletion_reminders
               - fiscal_archive
+              - organization_closure
+              - memberships
         - name: trigger
           required: false
           in: query
+          description: "`club`: Loeschungen durch den Verein (Organisation, Mitglieder, Schichtanmeldungen), `self_service`: Konto bzw. Anmeldung selbst geloescht"
           schema:
             type: string
             enum:
@@ -10434,6 +10453,7 @@ paths:
               - manual
               - instruction
               - self_service
+              - club
         - name: organizationId
           required: false
           in: query
@@ -10608,6 +10628,16 @@ paths:
           description: ""
       security: *a102
       summary: Send a confirmation code by e-mail
+      tags: *a103
+  /api/users/me/deletion/cancel:
+    post:
+      operationId: accountDeletion_cancel
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      security: *a102
+      summary: Cancel a scheduled account deletion (restores the account and the organizations deleted with it, until the final deletion)
       tags: *a103
 info:
   title: OpenEOS API
@@ -14746,6 +14776,7 @@ components:
               - organization_inactivity
               - organization_purge
               - user_accounts
+              - deletion_reminders
               - fiscal_archive
         dryRun:
           type: boolean

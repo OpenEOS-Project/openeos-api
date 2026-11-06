@@ -54,6 +54,8 @@ import { DeploymentService } from '../../common/services/deployment.service';
 import { OrganizationLimitsService } from '../../common/services/organization-limits.service';
 import { restoreMaskedCredentials } from '../../common/utils/response-redaction.util';
 import { isKnownIntegration } from '../integrations/integration-catalog';
+import { recordDeletion } from '../retention/deletion-log';
+import { restoreOrganization } from '../retention/organization-restore';
 
 const INVITATION_EXPIRY_DAYS = 7;
 const BCRYPT_ROUNDS = 12;
@@ -516,12 +518,77 @@ export class OrganizationsService {
     // Check if user is admin
     await this.checkRole(organization.id, user, OrganizationRole.ADMIN);
 
-    // Soft delete
-    await this.organizationRepository.softRemove(organization);
+    // Soft delete: ab jetzt nur noch lesend (Exportfrist), dann endgueltig.
+    // Steht mit ausfuehrender Person im Protokoll der Loeschungen.
+    await this.dataSource.transaction(async (manager) => {
+      await manager.softRemove(organization);
+      await recordDeletion(manager, {
+        category: 'organization_closure',
+        trigger: 'club',
+        organizationId: organization.id,
+        executedByUserId: user.id,
+        removed: { organizationsClosed: 1 },
+      });
+    });
 
     this.logger.log(
       `Organization deleted: ${organization.name} (${organization.id})`,
     );
+  }
+
+  /**
+   * „Löschung abbrechen“: Ein Admin holt die geloeschte bzw. geschlossene
+   * Organisation zurueck, solange sie nicht endgueltig geloescht ist. Wer
+   * sein eigenes Konto mitloeschen laesst, bricht stattdessen die
+   * Kontoloeschung ab (die holt die Organisation mit zurueck).
+   */
+  async restore(id: string, user: User): Promise<Organization> {
+    const organization = await this.findOne(id, user);
+    await this.checkRole(organization.id, user, OrganizationRole.ADMIN);
+    if (!organization.deletedAt) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.ORGANIZATION_NOT_CLOSED,
+        message: 'Die Organisation ist nicht gelöscht.',
+      });
+    }
+    if (user.deletionDueAt) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.ACCOUNT_DELETION_SCHEDULED,
+        message:
+          'Dein Konto wird gelöscht. Brich zuerst die Löschung deines Kontos ab – damit kommt auch die Organisation zurück.',
+      });
+    }
+    const restored = await this.dataSource.transaction(async (manager) => {
+      const now = new Date();
+      if (!(await restoreOrganization(manager, organization.id, now))) {
+        return false;
+      }
+      await recordDeletion(manager, {
+        category: 'organization_closure',
+        trigger: 'club',
+        organizationId: organization.id,
+        executedByUserId: user.id,
+        removed: {},
+        notes: { organizationsRestored: 1 },
+        at: now,
+      });
+      return true;
+    });
+    if (!restored) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.ORGANIZATION_ALREADY_PURGED,
+        message: 'Diese Organisation ist bereits endgültig gelöscht.',
+      });
+    }
+    this.logger.log(
+      `Organization restored: ${organization.name} (${organization.id})`,
+    );
+    return this.organizationRepository.findOneOrFail({
+      where: { id: organization.id },
+    });
   }
 
   // Member Management
@@ -594,6 +661,15 @@ export class OrganizationsService {
 
     if (!user) {
       user = await this.createMemberAccount(addMemberDto);
+    }
+
+    if (user.deletionDueAt) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.ACCOUNT_DELETION_SCHEDULED,
+        message:
+          'Dieses Konto wird gerade gelöscht und kann keiner Organisation beitreten.',
+      });
     }
 
     // Check if already a member
@@ -753,7 +829,17 @@ export class OrganizationsService {
       }
     }
 
-    await this.userOrganizationRepository.remove(member);
+    await this.dataSource.transaction(async (manager) => {
+      await manager.delete(UserOrganization, { id: member.id });
+      await recordDeletion(manager, {
+        category: 'memberships',
+        trigger: 'club',
+        organizationId,
+        executedByUserId: currentUser.id,
+        removed: { membershipsDeleted: 1 },
+        details: { membershipId: member.id, userId: member.userId },
+      });
+    });
 
     this.logger.log(
       `Member removed from organization ${organizationId}: ${member.user.email}`,

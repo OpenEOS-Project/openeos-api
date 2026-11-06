@@ -143,12 +143,27 @@ export class OrganizationLimitsService {
     user: Pick<User, 'id' | 'isSuperAdmin'>,
     manager: EntityManager,
   ): Promise<void> {
+    // Super-Admins koennen ihr Konto nicht loeschen, also auch nicht planen.
     if (user.isSuperAdmin) return;
 
-    const rows: { organization_limit: number | null }[] = await manager.query(
-      'SELECT organization_limit FROM users WHERE id = $1 FOR UPDATE',
+    const rows: {
+      organization_limit: number | null;
+      deletion_due_at: Date | null;
+    }[] = await manager.query(
+      'SELECT organization_limit, deletion_due_at FROM users WHERE id = $1 FOR UPDATE',
       [user.id],
     );
+    // Geplante Kontoloeschung: bis zum Termin nur noch anmelden und
+    // exportieren, keine neue Organisation und kein Beitritt.
+    if (rows[0]?.deletion_due_at) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ACCOUNT_DELETION_SCHEDULED,
+        message:
+          'Dein Konto wird gelöscht. Solange kannst du keine Organisation anlegen und keiner beitreten. Brich die Löschung ab, wenn du OpenEOS weiter nutzen willst.',
+      });
+    }
+
     const limit = this.effectiveOrganizationLimit({
       organizationLimit: rows[0]?.organization_limit ?? null,
     });
