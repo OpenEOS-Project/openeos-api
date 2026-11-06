@@ -44,8 +44,9 @@ export class OnlineOrderSession extends BaseEntity {
   @Column({ name: 'event_id', type: 'uuid', nullable: true })
   eventId: string | null;
 
-  @Column({ name: 'qr_code_id', type: 'uuid', nullable: true })
-  qrCodeId: string | null;
+  /** Jede Sitzung beginnt mit einem QR-Code (Spalte NOT NULL). */
+  @Column({ name: 'qr_code_id', type: 'uuid' })
+  qrCodeId: string;
 
   @Column({ name: 'session_token', type: 'varchar', length: 255, unique: true })
   sessionToken: string;

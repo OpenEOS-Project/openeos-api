@@ -87,66 +87,44 @@ export class OnlineOrdersService {
   async startSession(
     startDto: StartSessionDto,
   ): Promise<{ sessionToken: string; session: OnlineOrderSession }> {
-    let organizationId: string;
-    let eventId: string | null = null;
-    let tableNumber: string | null = startDto.tableNumber || null;
-    let qrCodeId: string | null = null;
-
-    if (startDto.code) {
-      // QR Code flow (existing)
-      const qrCode = await this.qrCodeRepository.findOne({
-        where: { code: startDto.code, isActive: true },
-        relations: ['organization', 'event'],
-      });
-
-      if (!qrCode) {
-        throw new NotFoundException({
-          code: ErrorCodes.NOT_FOUND,
-          reason: ErrorReasons.QR_CODE_NOT_FOUND,
-          message: 'QR-Code nicht gefunden oder nicht aktiv',
-        });
-      }
-
-      organizationId = qrCode.organizationId;
-      eventId = qrCode.eventId;
-      qrCodeId = qrCode.id;
-      if (qrCode.tableNumber) {
-        tableNumber = qrCode.tableNumber;
-      }
-
-      // Update scan count
-      qrCode.scanCount += 1;
-      qrCode.lastScannedAt = new Date();
-      await this.qrCodeRepository.save(qrCode);
-
-      this.logger.log(`Session started via QR: ${qrCode.code}`);
-    } else if (startDto.organizationId) {
-      // Direct flow - need organizationId at minimum
-      organizationId = startDto.organizationId;
-
-      if (startDto.eventId) {
-        eventId = startDto.eventId;
-      } else {
-        // Find the most relevant active event for this organization
-        const event = await this.orderRepository.manager
-          .getRepository(Event)
-          .findOne({
-            where: { organizationId, status: In(['active', 'test']) },
-            order: { startDate: 'ASC' },
-          });
-        eventId = event?.id || null;
-      }
-
-      this.logger.log(
-        `Session started directly for org ${organizationId}, event ${eventId}`,
-      );
-    } else {
+    // Bestellen am Tisch beginnt mit dem Scan eines QR-Codes: er bindet die
+    // Sitzung an Organisation, Veranstaltung und Tisch (qr_code_id ist
+    // NOT NULL). Der fruehere Weg „nur organizationId“ endete deshalb in
+    // einem 500 — jetzt eine klare Antwort.
+    const code = startDto.code?.trim();
+    if (!code) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.QR_CODE_OR_ORGANIZATION_REQUIRED,
-        message: 'Entweder code oder organizationId ist erforderlich',
+        reason: ErrorReasons.QR_CODE_REQUIRED,
+        message:
+          'Zum Bestellen am Tisch bitte den QR-Code scannen — ohne QR-Code geht es nicht.',
       });
     }
+
+    const qrCode = await this.qrCodeRepository.findOne({
+      where: { code, isActive: true },
+      relations: ['organization', 'event'],
+    });
+
+    if (!qrCode) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.QR_CODE_NOT_FOUND,
+        message: 'QR-Code nicht gefunden oder nicht aktiv',
+      });
+    }
+
+    const organizationId = qrCode.organizationId;
+    const eventId = qrCode.eventId;
+    const qrCodeId = qrCode.id;
+    const tableNumber = qrCode.tableNumber || startDto.tableNumber || null;
+
+    // Update scan count
+    qrCode.scanCount += 1;
+    qrCode.lastScannedAt = new Date();
+    await this.qrCodeRepository.save(qrCode);
+
+    this.logger.log(`Session started via QR: ${qrCode.code}`);
 
     // Generate session token
     const sessionToken = this.generateSessionToken();
@@ -165,6 +143,10 @@ export class OnlineOrdersService {
     });
 
     await this.sessionRepository.save(session);
+    // Fuer die Antwort (eventName, organizationName) — erst nach dem
+    // Speichern, damit nichts ueber die Relationen mitgeschrieben wird.
+    session.organization = qrCode.organization;
+    session.event = qrCode.event ?? null;
 
     return { sessionToken, session };
   }
