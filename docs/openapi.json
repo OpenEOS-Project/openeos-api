@@ -2057,6 +2057,35 @@
         ]
       }
     },
+    "/api/organizations/{id}/restore": {
+      "post": {
+        "operationId": "organizations_restore",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Cancel the deletion of an organization (admins, until the final deletion)",
+        "tags": [
+          "Organizations"
+        ]
+      }
+    },
     "/api/organizations/{id}/members": {
       "get": {
         "operationId": "organizations_getMembers",
@@ -5450,6 +5479,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "isTest",
+            "required": false,
+            "in": "query",
+            "description": "Testbestellungen (Veranstaltung im Testmodus): `true` nur Testbestellungen, `false` nur echte; ohne Angabe beide",
+            "schema": {
+              "example": false,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -5801,6 +5840,16 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "isTest",
+            "required": false,
+            "in": "query",
+            "description": "Testbestellungen (Veranstaltung im Testmodus): `true` nur Testbestellungen, `false` nur echte; ohne Angabe beide",
+            "schema": {
+              "example": false,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -5817,6 +5866,205 @@
           }
         ],
         "summary": "Bestellstatistik",
+        "tags": [
+          "Orders"
+        ],
+        "x-api-token-scope": "read"
+      }
+    },
+    "/api/organizations/{organizationId}/orders/export": {
+      "get": {
+        "description": "Alle Bestellungen, die zu den Filtern passen (dieselben wie bei `GET …/orders`, ohne Seiten), als CSV-Download für Excel: Semikolon, UTF-8 mit BOM, Dezimalkomma, Datum und Uhrzeit in deutscher Zeit (Europe/Berlin), älteste zuerst. `variant=orders` liefert eine Zeile je Bestellung, `variant=items` eine Zeile je Position. In der Betriebsart „Nur Bons“ (`orders_only`) nur Mengen, keine Beträge. Gastname und Anmerkungen stehen nur, solange sie gespeichert sind (sie werden 30 Tage nach der Veranstaltung gelöscht); Telefonnummern nie. Scope `read`; der Token-Besitzer braucht Admin oder das Recht „Bestellungen“.",
+        "operationId": "exportOrders",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "required": false,
+            "in": "query",
+            "description": "Filter nach Event-ID",
+            "schema": {
+              "example": "550e8400-e29b-41d4-a716-446655440000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Filter nach Bestellstatus",
+            "schema": {
+              "example": "open",
+              "type": "string",
+              "enum": [
+                "open",
+                "in_progress",
+                "ready",
+                "completed",
+                "cancelled"
+              ]
+            }
+          },
+          {
+            "name": "paymentStatus",
+            "required": false,
+            "in": "query",
+            "description": "Filter nach Zahlungsstatus",
+            "schema": {
+              "example": "pending",
+              "type": "string",
+              "enum": [
+                "unpaid",
+                "partly_paid",
+                "paid",
+                "refunded"
+              ]
+            }
+          },
+          {
+            "name": "source",
+            "required": false,
+            "in": "query",
+            "description": "Filter nach Bestellquelle",
+            "schema": {
+              "example": "pos",
+              "type": "string",
+              "enum": [
+                "pos",
+                "online",
+                "qr_order"
+              ]
+            }
+          },
+          {
+            "name": "fulfillmentType",
+            "required": false,
+            "in": "query",
+            "description": "Filter nach Erfüllungstyp",
+            "schema": {
+              "example": "counter_pickup",
+              "type": "string",
+              "enum": [
+                "table_service",
+                "counter_pickup"
+              ]
+            }
+          },
+          {
+            "name": "dateFrom",
+            "required": false,
+            "in": "query",
+            "description": "Startdatum für Filterung",
+            "schema": {
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dateTo",
+            "required": false,
+            "in": "query",
+            "description": "Enddatum für Filterung",
+            "schema": {
+              "example": "2024-12-31T23:59:59.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Suche: Bestell-/Tagesnummer, Tisch, Name oder Produkt",
+            "schema": {
+              "example": "Burger",
+              "type": "string"
+            }
+          },
+          {
+            "name": "displayStatus",
+            "required": false,
+            "in": "query",
+            "description": "Status wie in der Kasse (kommagetrennt): in_kitchen, ready, completed, unpaid, cancelled, partly_refunded, refunded",
+            "schema": {
+              "example": "unpaid,refunded",
+              "type": "string"
+            }
+          },
+          {
+            "name": "paymentMethod",
+            "required": false,
+            "in": "query",
+            "description": "Zahlart (kommagetrennt): cash, card, sumup, discount",
+            "schema": {
+              "example": "cash,sumup",
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceId",
+            "required": false,
+            "in": "query",
+            "description": "Nur Bestellungen dieses Geräts",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "isTest",
+            "required": false,
+            "in": "query",
+            "description": "Testbestellungen (Veranstaltung im Testmodus): `true` nur Testbestellungen, `false` nur echte; ohne Angabe beide",
+            "schema": {
+              "example": false,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "variant",
+            "required": false,
+            "in": "query",
+            "description": "`orders`: eine Zeile je Bestellung; `items`: eine Zeile je Position",
+            "schema": {
+              "default": "orders",
+              "type": "string",
+              "enum": [
+                "orders",
+                "items"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV-Datei als Download (`Content-Disposition: attachment; filename=\"bestellungen_JJJJ-MM-TT.csv\"`)",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "Bestellnummer;Tagesnummer;Datum;Uhrzeit;Veranstaltung;Status;Kanal;Ausgabe;Tisch;Gerät;Artikel;Zahlart;Zwischensumme;Rabatt;Pfand;Trinkgeld;Gesamt;Bezahlt;Erstattet;Enthaltene MwSt;Testbestellung;Gastname;Anmerkung\r\nSF-0042;42;11.07.2026;20:04:58;Sommerfest;Abgeschlossen;Kasse;Am Tisch;A03;Kasse Festzelt 1;3;Bar;12,50;0,00;2,00;0,00;14,50;14,50;0,00;1,49;Nein;;\r\n"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Bestellungen als CSV exportieren",
         "tags": [
           "Orders"
         ],
@@ -17502,7 +17750,10 @@
                 "organization_inactivity",
                 "organization_purge",
                 "user_accounts",
-                "fiscal_archive"
+                "deletion_reminders",
+                "fiscal_archive",
+                "organization_closure",
+                "memberships"
               ]
             }
           },
@@ -17510,13 +17761,15 @@
             "name": "trigger",
             "required": false,
             "in": "query",
+            "description": "`club`: Loeschungen durch den Verein (Organisation, Mitglieder, Schichtanmeldungen), `self_service`: Konto bzw. Anmeldung selbst geloescht",
             "schema": {
               "type": "string",
               "enum": [
                 "scheduled",
                 "manual",
                 "instruction",
-                "self_service"
+                "self_service",
+                "club"
               ]
             }
           },
@@ -17836,6 +18089,26 @@
           }
         ],
         "summary": "Send a confirmation code by e-mail",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/me/deletion/cancel": {
+      "post": {
+        "operationId": "accountDeletion_cancel",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Cancel a scheduled account deletion (restores the account and the organizations deleted with it, until the final deletion)",
         "tags": [
           "Users"
         ]
@@ -23412,6 +23685,7 @@
                 "organization_inactivity",
                 "organization_purge",
                 "user_accounts",
+                "deletion_reminders",
                 "fiscal_archive"
               ]
             }

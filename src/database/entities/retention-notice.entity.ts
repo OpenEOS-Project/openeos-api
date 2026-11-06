@@ -14,11 +14,15 @@ export type RetentionNoticeSubject = 'organization' | 'user';
  *   endgueltige Loeschung angekuendigt
  * - `user_inactivity`: Konto ohne Organisation und ohne Anmeldung,
  *   Loeschung angekuendigt
+ * - `account_deletion`: Benutzer hat sein Konto geloescht und war einziges
+ *   Mitglied einer Organisation; das Konto wird mit ihr endgueltig
+ *   geloescht (`details.organizationIds`)
  */
 export type RetentionNoticeKind =
   | 'organization_inactivity'
   | 'organization_deletion'
-  | 'user_inactivity';
+  | 'user_inactivity'
+  | 'account_deletion';
 
 /**
  * Ankuendigung vor einer Schliessung oder endgueltigen Loeschung. Ohne
@@ -80,6 +84,24 @@ export class RetentionNotice {
     nullable: true,
   })
   cancelReason: string | null;
+
+  /**
+   * Zuletzt verschickte Erinnerung: Tage vor `dueAt` (30, 10 oder 1). Jede
+   * Erinnerung geht hoechstens einmal raus.
+   */
+  @Column({ name: 'reminder_days', type: 'int', nullable: true })
+  reminderDays: number | null;
+
+  @Column({
+    name: 'reminded_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  remindedAt: Date | null;
+
+  /** Zusatzangaben ohne Inhalte, z. B. `{ organizationIds: [...] }`. */
+  @Column({ type: 'jsonb', nullable: true })
+  details: Record<string, unknown> | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp with time zone' })
   createdAt: Date;

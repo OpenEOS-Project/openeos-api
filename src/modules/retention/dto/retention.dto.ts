@@ -17,22 +17,31 @@ import {
   ValidateIf,
 } from 'class-validator';
 
-import { RETENTION_CATEGORIES } from '../retention.types';
-import type { RetentionCategory } from '../retention.types';
+import {
+  DELETION_LOG_CATEGORIES,
+  RETENTION_CATEGORIES,
+  RETENTION_TRIGGERS,
+} from '../retention.types';
+import type {
+  DeletionLogCategory,
+  RetentionCategory,
+} from '../retention.types';
 import { ERASURE_KINDS } from '../retention-erasure.service';
 import type { ErasureKind } from '../retention-erasure.service';
 
 export class ListRetentionRunsQueryDto {
-  @ApiPropertyOptional({ enum: RETENTION_CATEGORIES })
+  @ApiPropertyOptional({ enum: DELETION_LOG_CATEGORIES })
   @IsOptional()
-  @IsIn(RETENTION_CATEGORIES)
-  category?: RetentionCategory;
+  @IsIn(DELETION_LOG_CATEGORIES)
+  category?: DeletionLogCategory;
 
   @ApiPropertyOptional({
-    enum: ['scheduled', 'manual', 'instruction', 'self_service'],
+    enum: RETENTION_TRIGGERS,
+    description:
+      '`club`: Loeschungen durch den Verein (Organisation, Mitglieder, Schichtanmeldungen), `self_service`: Konto bzw. Anmeldung selbst geloescht',
   })
   @IsOptional()
-  @IsIn(['scheduled', 'manual', 'instruction', 'self_service'])
+  @IsIn(RETENTION_TRIGGERS)
   trigger?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })

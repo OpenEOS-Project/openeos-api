@@ -7,7 +7,20 @@ import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import type { CronLockService } from '../../common/redis/cron-lock.service';
-import { RetentionRun } from '../../database/entities';
+import {
+  Invitation,
+  Organization,
+  RetentionRun,
+  Shift,
+  ShiftJob,
+  ShiftPlan,
+  ShiftRegistration,
+  User,
+  UserOrganization,
+} from '../../database/entities';
+import { OrganizationsService } from '../organizations/organizations.service';
+import { ShiftsService } from '../shifts/shifts.service';
+import { DeletionRemindersJob } from './jobs/deletion-reminders.job';
 import type { MenuImportWorkerService } from '../assistant/menu-import/menu-import-worker.service';
 import type { EmailService } from '../email/email.service';
 import { rowsOf } from '../tse/tse-sql.util';
@@ -63,6 +76,8 @@ describeWithDb('Retention jobs against Postgres', () => {
   let encryption: EncryptionService;
   let uploadDir: string;
   const sent: { to: string; subject: string; text?: string }[] = [];
+  /** Empfaenger, an die der Versand scheitert. */
+  const failFor = new Set<string>();
   const orgIds: string[] = [];
   const userIds: string[] = [];
   const contactIds: string[] = [];
@@ -108,6 +123,7 @@ describeWithDb('Retention jobs against Postgres', () => {
     const email = {
       appUrl: 'https://app.example.test',
       sendEmail: (o: { to: string; subject: string; text?: string }) => {
+        if (failFor.has(o.to)) return Promise.resolve(false);
         sent.push({ to: o.to, subject: o.subject, text: o.text });
         return Promise.resolve(true);
       },
@@ -131,6 +147,7 @@ describeWithDb('Retention jobs against Postgres', () => {
       new OrganizationInactivityJob(notices),
       new OrganizationPurgeJob(notices, options),
       new UserAccountsJob(notices, options),
+      new DeletionRemindersJob(notices, options),
       new FiscalArchiveJob(),
     ];
     service = new RetentionService(
@@ -1342,12 +1359,10 @@ describeWithDb('Retention jobs against Postgres', () => {
       expect(status.blockers[0]?.reason).toBe('active_events');
     });
 
-    it('rejects a wrong password, then anonymises like the retention job and closes sole organizations', async () => {
-      const soleOrg = await org({ name: 'Nur ich' });
+    it('rejects a wrong password, then anonymises at once when no organization goes with it', async () => {
       const sharedOrg = await org({ name: 'Mit Anderen' });
       const userId = await user();
       const otherAdmin = await user();
-      await member(userId, soleOrg);
       await member(userId, sharedOrg);
       await member(otherAdmin, sharedOrg);
       await withPassword(userId, 'richtig123');
@@ -1360,9 +1375,8 @@ describeWithDb('Retention jobs against Postgres', () => {
 
       const status = await deletion.status(userId);
       expect(status.confirmation).toBe('password');
-      expect(status.closesOrganizations).toEqual([
-        { organizationId: soleOrg, name: 'Nur ich' },
-      ]);
+      expect(status.closesOrganizations).toEqual([]);
+      expect(status.scheduledDeletionAt).toBeNull();
 
       await expect(deletion.deleteAccount(userId, {})).rejects.toThrow(
         'Passwort',
@@ -1372,14 +1386,14 @@ describeWithDb('Retention jobs against Postgres', () => {
       ).rejects.toThrow('stimmt nicht');
       sent.length = 0;
 
-      const result = await deletion.deleteAccount(userId, {
+      const { run: result, scheduled } = await deletion.deleteAccount(userId, {
         password: 'richtig123',
       });
 
+      expect(scheduled).toBeNull();
       expect(result.trigger).toBe('self_service');
       expect(result.executedByUserId).toBe(userId);
       expect(result.counts.accountsAnonymised).toBe(1);
-      expect(result.counts.organizationsClosed).toBe(1);
       const row = await one(
         `SELECT email, first_name, last_name, password_hash, is_active, newsletter_opt_in_at, deleted_at FROM users WHERE id = $1`,
         [userId],
@@ -1398,20 +1412,12 @@ describeWithDb('Retention jobs against Postgres', () => {
       expect(
         (
           await one(`SELECT deleted_at FROM organizations WHERE id = $1`, [
-            soleOrg,
-          ])
-        ).deleted_at,
-      ).not.toBeNull();
-      expect(
-        (
-          await one(`SELECT deleted_at FROM organizations WHERE id = $1`, [
             sharedOrg,
           ])
         ).deleted_at,
       ).toBeNull();
       const mail = sent.find((m) => m.to === email);
       expect(mail?.subject).toBe('Dein OpenEOS-Konto wurde gelöscht');
-      expect(mail?.text).toContain('„Nur ich“');
     });
 
     it('accounts without password confirm with an e-mail code', async () => {
@@ -1434,7 +1440,9 @@ describeWithDb('Retention jobs against Postgres', () => {
           code: '000000' === code ? '111111' : '000000',
         }),
       ).rejects.toThrow('Code');
-      const result = await deletion.deleteAccount(userId, { code: code! });
+      const { run: result } = await deletion.deleteAccount(userId, {
+        code: code!,
+      });
       expect(result.status).toBe('succeeded');
       // Der Code ist verbraucht.
       expect(
@@ -1459,6 +1467,652 @@ describeWithDb('Retention jobs against Postgres', () => {
       const status = await deletion.status(userId);
       expect(status.unclosedTransactions).toBe(true);
       expect(status.allowed).toBe(false);
+    });
+  });
+
+  // ------------------------------------------- Geplante Kontoloeschung
+
+  describe('scheduled account deletion (sole member)', () => {
+    async function soleMember(name: string) {
+      const orgId = await org({ name });
+      const sharedOrg = await org({ name: `${name} (geteilt)` });
+      const userId = await user();
+      const otherAdmin = await user();
+      await member(userId, orgId);
+      await member(userId, sharedOrg);
+      await member(otherAdmin, sharedOrg);
+      await sql(`UPDATE users SET password_hash = $2 WHERE id = $1`, [
+        userId,
+        await bcrypt.hash('richtig123', 4),
+      ]);
+      await sql(
+        `INSERT INTO api_tokens (organization_id, user_id, name, token_hash, token_prefix, scopes)
+         VALUES ($1, $2, 'Export', $3, 'oe_test', '["read"]')`,
+        [orgId, userId, randomUUID()],
+      );
+      const email = (
+        await one(`SELECT email FROM users WHERE id = $1`, [userId])
+      ).email;
+      return { orgId, sharedOrg, userId, email };
+    }
+
+    it('closes the organization, keeps the account until the final deletion and announces both', async () => {
+      const { orgId, sharedOrg, userId, email } =
+        await soleMember('Solo e. V.');
+      const status = await deletion.status(userId);
+      expect(status.closesOrganizations).toEqual([
+        { organizationId: orgId, name: 'Solo e. V.' },
+      ]);
+      expect(
+        Math.round((status.scheduledDeletionAt!.getTime() - Date.now()) / DAY),
+      ).toBe(30);
+      sent.length = 0;
+
+      const { run: result, scheduled } = await deletion.deleteAccount(userId, {
+        password: 'richtig123',
+      });
+      expect(result.trigger).toBe('self_service');
+      expect(result.counts).toMatchObject({
+        organizationsClosed: 1,
+        membershipsDeleted: 1,
+        apiTokensDeleted: 1,
+        accountDeletionsScheduled: 1,
+      });
+      expect(result.details).toEqual({ organizationIds: [orgId] });
+      const listed = await service.listRuns({
+        trigger: 'self_service',
+        limit: 200,
+      });
+      expect(
+        listed.items.find((r) => r.id === result.id)?.organizationName,
+      ).toBe('Solo e. V.');
+      expect(scheduled?.organizations).toEqual([
+        { organizationId: orgId, name: 'Solo e. V.' },
+      ]);
+
+      // Konto bleibt (Anmeldung, Export), Organisation nur lesend.
+      const u = await one(
+        `SELECT email, is_active, deleted_at, deletion_due_at FROM users WHERE id = $1`,
+        [userId],
+      );
+      expect(u.email).toBe(email);
+      expect(u.is_active).toBe(true);
+      expect(u.deleted_at).toBeNull();
+      expect(new Date(u.deletion_due_at).getTime()).toBe(
+        scheduled!.dueAt.getTime(),
+      );
+      expect(
+        (
+          await sql(
+            `SELECT organization_id FROM user_organizations WHERE user_id = $1`,
+            [userId],
+          )
+        ).map((r) => r.organization_id),
+      ).toEqual([orgId]);
+      const closure = await closures.closure(orgId);
+      expect(closure?.readOnly).toBe(true);
+      expect(closure?.finalDeletionAt.getTime()).toBe(
+        scheduled!.dueAt.getTime(),
+      );
+      expect(
+        (
+          await one(`SELECT deleted_at FROM organizations WHERE id = $1`, [
+            sharedOrg,
+          ])
+        ).deleted_at,
+      ).toBeNull();
+
+      // Eine Mail: Bestaetigung = Ankuendigung 30 Tage vorher.
+      const mails = sent.filter((m) => m.to === email);
+      expect(mails).toHaveLength(1);
+      expect(mails[0].subject).toMatch(
+        /^Dein OpenEOS-Konto wird am .* gelöscht$/,
+      );
+      expect(mails[0].text).toContain('„Solo e. V.“');
+      expect(mails[0].text).toContain('Löschung abbrechen');
+      expect(mails[0].text).toContain('https://app.example.test/reports');
+      expect(mails[0].text).toContain('zehn Jahre');
+
+      // Ein zweites Mal geht nicht; der Status zeigt die geplante Loeschung.
+      const after = await deletion.status(userId);
+      expect(after.allowed).toBe(false);
+      expect(after.scheduled?.dueAt.getTime()).toBe(scheduled!.dueAt.getTime());
+      await expect(
+        deletion.deleteAccount(userId, { password: 'richtig123' }),
+      ).rejects.toThrow('bereits geplant');
+
+      // Der naechtliche Lauf kuendigt die Organisation nicht noch einmal an.
+      sent.length = 0;
+      await run('organization_purge');
+      expect(sent.filter((m) => m.to === email)).toHaveLength(0);
+      expect(
+        await sql(
+          `SELECT 1 FROM retention_notices WHERE subject_id = $1 AND kind = 'organization_deletion'`,
+          [orgId],
+        ),
+      ).toHaveLength(1);
+    });
+
+    it('reminds once 10 days and 1 day before, as one mail about account and organization', async () => {
+      const { orgId, userId, email } = await soleMember('Erinnerung e. V.');
+      const { scheduled } = await deletion.deleteAccount(userId, {
+        password: 'richtig123',
+      });
+      const due = scheduled!.dueAt;
+      const at = (daysBefore: number) =>
+        new Date(due.getTime() - daysBefore * DAY + 60_000);
+      sent.length = 0;
+
+      await run('deletion_reminders', { now: at(25) });
+      expect(sent.filter((m) => m.to === email)).toHaveLength(0);
+
+      const ten = await run('deletion_reminders', { now: at(10) });
+      expect(ten.counts.remindersCoveredByAccount).toBeGreaterThanOrEqual(1);
+      let mails = sent.filter((m) => m.to === email);
+      expect(mails).toHaveLength(1);
+      expect(mails[0].subject).toBe(
+        'Erinnerung: Dein OpenEOS-Konto wird in 10 Tagen endgültig gelöscht',
+      );
+      expect(mails[0].text).toContain('„Erinnerung e. V.“');
+      // Die Organisation selbst bekommt keine zweite Mail (auch nicht an die
+      // Rechnungsadresse).
+      expect(
+        sent.filter(
+          (m) =>
+            m.to === 'kasse@verein.example' &&
+            m.subject.includes('Erinnerung e. V.'),
+        ),
+      ).toHaveLength(0);
+      const orgNotice = await one(
+        `SELECT reminder_days FROM retention_notices WHERE subject_id = $1 AND kind = 'organization_deletion'`,
+        [orgId],
+      );
+      expect(Number(orgNotice.reminder_days)).toBe(10);
+
+      await run('deletion_reminders', { now: at(9.5) });
+      expect(sent.filter((m) => m.to === email)).toHaveLength(1);
+
+      await run('deletion_reminders', { now: at(1) });
+      mails = sent.filter((m) => m.to === email);
+      expect(mails).toHaveLength(2);
+      expect(mails[1].subject).toBe(
+        'Erinnerung: Dein OpenEOS-Konto wird morgen endgültig gelöscht',
+      );
+    });
+
+    it('anonymises the account together with the final deletion of the organization', async () => {
+      const { orgId, userId, email } = await soleMember('Ende e. V.');
+      const { scheduled } = await deletion.deleteAccount(userId, {
+        password: 'richtig123',
+      });
+      const due = scheduled!.dueAt;
+
+      // Vor dem Termin: nichts.
+      const before = await run('user_accounts', {
+        now: new Date(due.getTime() - DAY),
+      });
+      expect(before.counts.scheduledDeletionsWaiting).toBeGreaterThanOrEqual(1);
+      expect(
+        (await one(`SELECT deleted_at FROM users WHERE id = $1`, [userId]))
+          .deleted_at,
+      ).toBeNull();
+
+      // Probelauf am Termin: zaehlt, aendert nichts.
+      const after = new Date(due.getTime() + 60_000);
+      await run('organization_purge', { now: after, dryRun: true });
+      await run('user_accounts', { now: after, dryRun: true });
+      expect(
+        (
+          await one(`SELECT deleted_at, email FROM users WHERE id = $1`, [
+            userId,
+          ])
+        ).email,
+      ).toBe(email);
+
+      // Konto vor der Organisation? Wartet, bis sie endgueltig geloescht ist.
+      const waiting = await run('user_accounts', { now: after });
+      expect(waiting.counts.skippedOrganizationPending).toBeGreaterThanOrEqual(
+        1,
+      );
+
+      sent.length = 0;
+      await run('organization_purge', { now: after });
+      const final = await run('user_accounts', { now: after });
+      expect(final.counts.scheduledDeletionsExecuted).toBeGreaterThanOrEqual(1);
+      const row = await one(
+        `SELECT email, deleted_at, is_active FROM users WHERE id = $1`,
+        [userId],
+      );
+      expect(row.email).toBe(`deleted-${userId}@deleted.invalid`);
+      expect(row.deleted_at).not.toBeNull();
+      expect(
+        (await one(`SELECT slug FROM organizations WHERE id = $1`, [orgId]))
+          .slug,
+      ).toBe(`purged-${orgId}`);
+      const notice = await one(
+        `SELECT executed_at FROM retention_notices WHERE subject_id = $1 AND kind = 'account_deletion'`,
+        [userId],
+      );
+      expect(notice.executed_at).not.toBeNull();
+      const mail = sent.find((m) => m.to === email);
+      expect(mail?.subject).toBe('Dein OpenEOS-Konto wurde gelöscht');
+      expect(mail?.text).toContain('„Ende e. V.“');
+      expect(mail?.text).toContain('Wie angekündigt');
+    });
+
+    it('"Löschung abbrechen" restores account and organization until the final deletion', async () => {
+      const { orgId, userId } = await soleMember('Doch nicht e. V.');
+      await deletion.deleteAccount(userId, { password: 'richtig123' });
+
+      const cancelled = await deletion.cancelScheduledDeletion(userId);
+      expect(cancelled.trigger).toBe('self_service');
+      expect(cancelled.counts).toMatchObject({
+        organizationsRestored: 1,
+        accountDeletionsCancelled: 1,
+      });
+      expect(
+        (await one(`SELECT deletion_due_at FROM users WHERE id = $1`, [userId]))
+          .deletion_due_at,
+      ).toBeNull();
+      expect(
+        (
+          await one(`SELECT deleted_at FROM organizations WHERE id = $1`, [
+            orgId,
+          ])
+        ).deleted_at,
+      ).toBeNull();
+      const notices = await sql(
+        `SELECT kind, cancel_reason FROM retention_notices
+          WHERE subject_id = ANY($1::uuid[]) AND kind IN ('organization_deletion', 'account_deletion')
+          ORDER BY kind`,
+        [[orgId, userId]],
+      );
+      expect(notices).toEqual([
+        { kind: 'account_deletion', cancel_reason: 'cancelled' },
+        { kind: 'organization_deletion', cancel_reason: 'restored' },
+      ]);
+      expect((await deletion.status(userId)).scheduled).toBeNull();
+      await expect(deletion.cancelScheduledDeletion(userId)).rejects.toThrow(
+        'keine Löschung geplant',
+      );
+
+      // Keine Erinnerungen mehr fuer aufgehobene Ankuendigungen.
+      sent.length = 0;
+      await run('deletion_reminders', { now: later(20) });
+      expect(
+        sent.filter((m) => m.text?.includes('Doch nicht e. V.')),
+      ).toHaveLength(0);
+    });
+
+    it('cannot cancel once the organization is finally deleted', async () => {
+      const { orgId, userId } = await soleMember('Zu spät e. V.');
+      await deletion.deleteAccount(userId, { password: 'richtig123' });
+      await sql(
+        `UPDATE retention_notices SET executed_at = now()
+          WHERE subject_id = $1 AND kind = 'organization_deletion'`,
+        [orgId],
+      );
+      await expect(deletion.cancelScheduledDeletion(userId)).rejects.toThrow(
+        'bereits endgültig gelöscht',
+      );
+    });
+  });
+
+  // --------------------------------------------------------- Erinnerungen
+
+  describe('deletion_reminders', () => {
+    /** Geloeschte Organisation mit Ankuendigung `sentAt`, Termin 30 Tage spaeter. */
+    async function announced(name: string, sentAt: Date) {
+      const orgId = await org({ name, deletedAt: sentAt });
+      const adminId = await user();
+      await member(adminId, orgId);
+      const email = (
+        await one(`SELECT email FROM users WHERE id = $1`, [adminId])
+      ).email;
+      const [n] = await sql(
+        `INSERT INTO retention_notices (subject_type, subject_id, kind, sent_at, recipient_count, due_at, activity_at)
+         VALUES ('organization', $1, 'organization_deletion', $2, 1, $3, $2) RETURNING id`,
+        [orgId, sentAt, later(30, sentAt)],
+      );
+      return { orgId, email, noticeId: n.id, dueAt: later(30, sentAt) };
+    }
+    const mine = (email: string) => sent.filter((m) => m.to === email);
+
+    it('sends the 10-day and the 1-day reminder exactly once each (the notice is the 30-day mail)', async () => {
+      const base = new Date();
+      const { email, noticeId } = await announced('Termin e. V.', base);
+      sent.length = 0;
+
+      await run('deletion_reminders', { now: later(1, base) });
+      await run('deletion_reminders', { now: later(19, base) });
+      expect(mine(email)).toHaveLength(0);
+
+      const ten = await run('deletion_reminders', { now: later(20, base) });
+      expect(ten.counts.remindersSent10d).toBeGreaterThanOrEqual(1);
+      expect(mine(email)).toHaveLength(1);
+      expect(mine(email)[0].subject).toBe(
+        'Erinnerung: „Termin e. V.“ wird in 10 Tagen endgültig gelöscht',
+      );
+      expect(mine(email)[0].text).toContain('https://app.example.test/reports');
+      expect(mine(email)[0].text).toContain('Löschung abbrechen');
+      expect(mine(email)[0].text).toContain('zehn Jahren');
+
+      // Gleicher Tag, naechster Tag: nichts Neues.
+      await run('deletion_reminders', { now: later(20.2, base) });
+      await run('deletion_reminders', { now: later(21, base) });
+      expect(mine(email)).toHaveLength(1);
+
+      await run('deletion_reminders', { now: later(29, base) });
+      expect(mine(email)).toHaveLength(2);
+      expect(mine(email)[1].subject).toBe(
+        'Erinnerung: „Termin e. V.“ wird morgen endgültig gelöscht',
+      );
+      await run('deletion_reminders', { now: later(29.4, base) });
+      // Nach dem Termin keine Erinnerung mehr.
+      await run('deletion_reminders', { now: later(31, base) });
+      expect(mine(email)).toHaveLength(2);
+      const notice = await one(
+        `SELECT reminder_days, reminded_at FROM retention_notices WHERE id = $1`,
+        [noticeId],
+      );
+      expect(Number(notice.reminder_days)).toBe(1);
+      expect(notice.reminded_at).not.toBeNull();
+    });
+
+    it('catches up with only the most recent due reminder after missed runs', async () => {
+      const base = new Date();
+      const { email, noticeId } = await announced('Verpasst e. V.', base);
+      sent.length = 0;
+      const result = await run('deletion_reminders', { now: later(29, base) });
+      expect(result.counts.remindersSent1d).toBeGreaterThanOrEqual(1);
+      expect(mine(email)).toHaveLength(1);
+      expect(mine(email)[0].subject).toContain('morgen');
+      expect(
+        Number(
+          (
+            await one(
+              `SELECT reminder_days FROM retention_notices WHERE id = $1`,
+              [noticeId],
+            )
+          ).reminder_days,
+        ),
+      ).toBe(1);
+      await run('deletion_reminders', { now: later(29.3, base) });
+      expect(mine(email)).toHaveLength(1);
+    });
+
+    it('dry run only counts', async () => {
+      const base = new Date();
+      const { email, noticeId } = await announced('Probe e. V.', base);
+      sent.length = 0;
+      const result = await run('deletion_reminders', {
+        now: later(20, base),
+        dryRun: true,
+      });
+      expect(result.counts.remindersDue).toBeGreaterThanOrEqual(1);
+      expect(mine(email)).toHaveLength(0);
+      expect(
+        (
+          await one(
+            `SELECT reminder_days FROM retention_notices WHERE id = $1`,
+            [noticeId],
+          )
+        ).reminder_days,
+      ).toBeNull();
+    });
+
+    it('skips cancelled, executed and restored deletions', async () => {
+      const base = new Date();
+      const cancelled = await announced('Abgesagt e. V.', base);
+      const executed = await announced('Erledigt e. V.', base);
+      const restored = await announced('Zurück e. V.', base);
+      await sql(
+        `UPDATE retention_notices SET cancelled_at = now(), cancel_reason = 'restored' WHERE id = $1`,
+        [cancelled.noticeId],
+      );
+      await sql(
+        `UPDATE retention_notices SET executed_at = now() WHERE id = $1`,
+        [executed.noticeId],
+      );
+      await sql(`UPDATE organizations SET deleted_at = NULL WHERE id = $1`, [
+        restored.orgId,
+      ]);
+      sent.length = 0;
+      const result = await run('deletion_reminders', { now: later(20, base) });
+      expect(mine(cancelled.email)).toHaveLength(0);
+      expect(mine(executed.email)).toHaveLength(0);
+      expect(mine(restored.email)).toHaveLength(0);
+      expect(result.counts.remindersSkippedOutdated).toBeGreaterThanOrEqual(1);
+    });
+
+    it('reminds before a closure for inactivity, too', async () => {
+      const base = new Date();
+      const orgId = await org({ name: 'Ruhig e. V.', createdAt: ago(800) });
+      const adminId = await user();
+      await member(adminId, orgId);
+      const email = (
+        await one(`SELECT email FROM users WHERE id = $1`, [adminId])
+      ).email;
+      await sql(
+        `INSERT INTO retention_notices (subject_type, subject_id, kind, sent_at, recipient_count, due_at, activity_at)
+         VALUES ('organization', $1, 'organization_inactivity', $2, 1, $3, $4)`,
+        [orgId, base, later(30, base), ago(800)],
+      );
+      sent.length = 0;
+      await run('deletion_reminders', { now: later(20, base) });
+      expect(mine(email)).toHaveLength(1);
+      expect(mine(email)[0].subject).toBe(
+        'Erinnerung: Deine Organisation „Ruhig e. V.“ wird in 10 Tagen geschlossen',
+      );
+      expect(mine(email)[0].text).toContain('Veranstaltung');
+    });
+
+    it('a failed delivery is retried by the next run', async () => {
+      const base = new Date();
+      const { email, noticeId } = await announced('Postfach e. V.', base);
+      failFor.add(email);
+      const result = await run('deletion_reminders', { now: later(20, base) });
+      expect(result.counts.remindersFailed).toBeGreaterThanOrEqual(1);
+      expect(
+        (
+          await one(
+            `SELECT reminder_days FROM retention_notices WHERE id = $1`,
+            [noticeId],
+          )
+        ).reminder_days,
+      ).toBeNull();
+      failFor.delete(email);
+      sent.length = 0;
+      await run('deletion_reminders', { now: later(20.1, base) });
+      expect(mine(email)).toHaveLength(1);
+    });
+  });
+
+  // ------------------------------------------ Loeschungen durch den Verein
+
+  describe('deletion log for club-initiated deletions', () => {
+    let organizations: OrganizationsService;
+    let shifts: ShiftsService;
+
+    beforeAll(() => {
+      const none = undefined as never;
+      organizations = new OrganizationsService(
+        ds.getRepository(Organization),
+        ds.getRepository(User),
+        ds.getRepository(UserOrganization),
+        ds.getRepository(Invitation),
+        ds,
+        none,
+        none,
+        none,
+        none,
+        none,
+      );
+      shifts = new ShiftsService(
+        ds.getRepository(ShiftPlan),
+        ds.getRepository(ShiftJob),
+        ds.getRepository(Shift),
+        ds.getRepository(ShiftRegistration),
+        none,
+        none,
+        none,
+      );
+    });
+
+    const actor = async (userId: string) =>
+      await ds.getRepository(User).findOneByOrFail({ id: userId });
+    const logOf = (organizationId: string) =>
+      sql(
+        `SELECT category, trigger, counts, total, executed_by_user_id, details, dry_run, status
+           FROM retention_runs WHERE organization_id = $1 ORDER BY started_at, created_at`,
+        [organizationId],
+      );
+
+    it('logs deleting and restoring the organization by its admin', async () => {
+      const orgId = await org({ name: 'Selbst e. V.' });
+      const adminId = await user();
+      await member(adminId, orgId);
+      await organizations.remove(orgId, await actor(adminId));
+      expect(
+        (
+          await one(`SELECT deleted_at FROM organizations WHERE id = $1`, [
+            orgId,
+          ])
+        ).deleted_at,
+      ).not.toBeNull();
+
+      const restored = await organizations.restore(orgId, await actor(adminId));
+      expect(restored.deletedAt).toBeNull();
+      const log = await logOf(orgId);
+      expect(log).toHaveLength(2);
+      expect(log[0]).toMatchObject({
+        category: 'organization_closure',
+        trigger: 'club',
+        executed_by_user_id: adminId,
+        dry_run: false,
+        status: 'succeeded',
+      });
+      expect(log[0].counts).toEqual({ organizationsClosed: 1 });
+      expect(Number(log[0].total)).toBe(1);
+      expect(log[1].counts).toEqual({ organizationsRestored: 1 });
+      expect(Number(log[1].total)).toBe(0);
+      // Das Wiederherstellen zaehlt als Nutzung und haelt fest, wann.
+      const marker = await one(
+        `SELECT cancel_reason FROM retention_notices WHERE subject_id = $1 AND kind = 'organization_deletion'`,
+        [orgId],
+      );
+      expect(marker.cancel_reason).toBe('restored');
+      // Nicht geloescht: nichts wiederherzustellen.
+      await expect(
+        organizations.restore(orgId, await actor(adminId)),
+      ).rejects.toThrow('nicht gelöscht');
+    });
+
+    it('logs removing a member with ids but no names or addresses', async () => {
+      const orgId = await org();
+      const adminId = await user();
+      const memberId = await user();
+      await member(adminId, orgId);
+      await member(memberId, orgId, 'member');
+      const membership = await one(
+        `SELECT id FROM user_organizations WHERE user_id = $1 AND organization_id = $2`,
+        [memberId, orgId],
+      );
+      await organizations.removeMember(
+        orgId,
+        membership.id,
+        await actor(adminId),
+      );
+      const [entry] = await logOf(orgId);
+      expect(entry).toMatchObject({
+        category: 'memberships',
+        trigger: 'club',
+        executed_by_user_id: adminId,
+      });
+      expect(entry.counts).toEqual({ membershipsDeleted: 1 });
+      expect(entry.details).toEqual({
+        membershipId: membership.id,
+        userId: memberId,
+      });
+      expect(JSON.stringify(entry)).not.toMatch(/erika|@example/i);
+    });
+
+    it('logs deleted shift registrations, also when they go with a plan', async () => {
+      const orgId = await org();
+      const adminId = await user();
+      await member(adminId, orgId);
+      const [p] = await sql(
+        `INSERT INTO shift_plans (organization_id, name, public_slug) VALUES ($1, 'Helfer', $2) RETURNING id`,
+        [orgId, `plan-${randomUUID()}`],
+      );
+      const [j] = await sql(
+        `INSERT INTO shift_jobs (shift_plan_id, name) VALUES ($1, 'Grill') RETURNING id`,
+        [p.id],
+      );
+      const [sh] = await sql(
+        `INSERT INTO shifts (shift_job_id, date, start_time, end_time) VALUES ($1, now()::date, '10:00', '14:00') RETURNING id`,
+        [j.id],
+      );
+      const group = randomUUID();
+      const regs: string[] = [];
+      for (const name of ['Hanna Helfer', 'Hanna Helfer', 'Paul Plan']) {
+        const [r] = await sql(
+          `INSERT INTO shift_registrations (shift_id, registration_group_id, name, email, verification_token)
+           VALUES ($1, $2, $3, 'hanna@example.test', $4) RETURNING id`,
+          [
+            sh.id,
+            name === 'Paul Plan' ? randomUUID() : group,
+            name,
+            randomUUID().replace(/-/g, ''),
+          ],
+        );
+        regs.push(r.id);
+      }
+
+      await shifts.deleteRegistration(orgId, regs[0], adminId);
+      await shifts.deletePlan(orgId, p.id, adminId);
+      const log = await logOf(orgId);
+      expect(log).toHaveLength(2);
+      expect(log[0]).toMatchObject({
+        category: 'helper_data',
+        trigger: 'club',
+        executed_by_user_id: adminId,
+      });
+      expect(log[0].counts).toEqual({ registrationsDeleted: 2 });
+      expect(log[0].details).toMatchObject({ registrationGroupId: group });
+      expect(
+        (
+          log[0].details as unknown as { registrationIds: string[] }
+        ).registrationIds.sort(),
+      ).toEqual([regs[0], regs[1]].sort());
+      expect(log[1].counts).toEqual({
+        shiftPlansDeleted: 1,
+        registrationsDeleted: 1,
+      });
+      expect(JSON.stringify(log)).not.toMatch(/Hanna|Paul|hanna@/);
+      expect(
+        await sql(
+          `SELECT 1 FROM shift_registrations WHERE id = ANY($1::uuid[])`,
+          [regs],
+        ),
+      ).toHaveLength(0);
+    });
+
+    it('the super admin lists them with the other erasures (trigger club)', async () => {
+      const orgId = await org({ name: 'Liste e. V.' });
+      const adminId = await user();
+      await member(adminId, orgId);
+      await organizations.remove(orgId, await actor(adminId));
+      const { items } = await service.listRuns({
+        trigger: 'club',
+        organizationId: orgId,
+      });
+      expect(items).toHaveLength(1);
+      expect(items[0].organizationName).toBe('Liste e. V.');
+      expect(items[0].executedBy).toMatchObject({
+        id: adminId,
+        name: 'Erika Muster',
+      });
     });
   });
 });

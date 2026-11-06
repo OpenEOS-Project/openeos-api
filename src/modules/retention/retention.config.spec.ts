@@ -1,5 +1,7 @@
 import {
   MIN_EXPORT_OFFER_DAYS,
+  daysLeft,
+  dueReminder,
   exportOfferHonoured,
   loadRetentionConfig,
   monthsBefore,
@@ -118,5 +120,59 @@ describe('monthsBefore', () => {
     expect(
       monthsBefore(new Date('2026-11-04T00:00:00Z'), 24).toISOString(),
     ).toBe('2024-11-04T00:00:00.000Z');
+  });
+});
+
+describe('dueReminder', () => {
+  // Ankuendigung im naechtlichen Lauf um 03:30, Termin 30 Tage spaeter.
+  const sentAt = new Date('2026-11-06T02:30:05Z');
+  const dueAt = new Date(sentAt.getTime() + 30 * DAY);
+  /** Naechtlicher Lauf `days` Tage nach der Ankuendigung, ein paar Sekunden frueher. */
+  const night = (days: number) =>
+    new Date(sentAt.getTime() + days * DAY - 5000);
+  const step = (now: Date, last: number | null = null) =>
+    dueReminder({ sentAt, dueAt, now, lastReminderDays: last });
+
+  it('treats the notice itself as the 30-day reminder', () => {
+    expect(step(night(0))).toBeNull();
+    expect(step(night(1))).toBeNull();
+    expect(step(night(19))).toBeNull();
+  });
+
+  it('sends 10 days and 1 day before, even if the run starts a few seconds early', () => {
+    expect(step(night(20))).toBe(10);
+    expect(step(night(21), 10)).toBeNull();
+    expect(step(night(28), 10)).toBeNull();
+    expect(step(night(29), 10)).toBe(1);
+    expect(step(night(29), 1)).toBeNull();
+  });
+
+  it('catches up with the most recent stage only', () => {
+    expect(step(night(25))).toBe(10);
+    expect(step(night(29))).toBe(1);
+    expect(step(night(29.9))).toBe(1);
+  });
+
+  it('sends nothing on or after the due date', () => {
+    expect(step(dueAt)).toBeNull();
+    expect(step(new Date(dueAt.getTime() + DAY))).toBeNull();
+  });
+
+  it('sends the 30-day reminder when the notice came earlier than that', () => {
+    const early = new Date(dueAt.getTime() - 45 * DAY);
+    expect(
+      dueReminder({
+        sentAt: early,
+        dueAt,
+        now: new Date(dueAt.getTime() - 30 * DAY),
+        lastReminderDays: null,
+      }),
+    ).toBe(30);
+  });
+
+  it('counts whole days left for the mail text', () => {
+    expect(daysLeft(dueAt, night(20))).toBe(10);
+    expect(daysLeft(dueAt, night(29))).toBe(1);
+    expect(daysLeft(dueAt, new Date(dueAt.getTime() - 3600_000))).toBe(1);
   });
 });

@@ -730,6 +730,8 @@ Beginn/Ende, Probelauf und Fehler in `retention_runs` – ohne Inhalte.
 | `organization_inactivity` | Organisationen ohne Nutzung | Ankündigung nach 24 Monaten, Schließung frühestens 30 Tage später | Mail an die Admins mit Exportlink, dann wie „Organisation löschen“ |
 | `organization_purge` | gelöschte bzw. geschlossene Organisationen | Ankündigung, endgültig nach Exportfrist (30 Tage) und frühestens 30 Tage nach der Ankündigung | Kundendaten löschen; Steuerarchiv, Abrechnungsdaten des Betreibers und die Organisation als gesperrte Hülle (Name, Anschrift, Steuernummer) bleiben |
 | `user_accounts` | Benutzerkonten ohne bestehende Organisation | Ankündigung nach 24 Monaten ohne Nutzung, Löschung frühestens 30 Tage später | anonymisieren (Name, E-Mail, Zugangsdaten, Tokens, Avatar) |
+| `user_accounts` | geplante Kontolöschung (einziges Mitglied einer Organisation hat sein Konto gelöscht) | zum Termin der endgültigen Löschung der Organisation, erst nachdem sie endgültig gelöscht ist | anonymisieren wie oben, Bestätigungsmail |
+| `deletion_reminders` | Erinnerungen vor Schließung bzw. endgültiger Löschung | 30, 10 und 1 Tag vor dem Termin (die Ankündigung ist die 30-Tage-Mail) | Mail an die Admins bzw. an das Konto; jede Stufe höchstens einmal |
 | `fiscal_archive` | Steuerarchiv | 10 Jahre ab Ende des Kalenderjahres | nur zählen, nie löschen |
 
 Regeln, die für alle Läufe gelten:
@@ -746,6 +748,17 @@ Regeln, die für alle Läufe gelten:
   wiederhergestellte Organisation hebt die Ankündigung auf.
 - Datensicherungen werden nicht einzeln bereinigt; gelöschte Daten laufen
   mit dem Sicherungszyklus aus.
+- **Erinnerungen** (`deletion_reminders`): Vor jeder angekündigten
+  Schließung wegen Inaktivität, jeder endgültigen Löschung einer
+  Organisation und jeder geplanten Kontolöschung gehen Erinnerungen 30, 10
+  und 1 Tag vor dem Termin raus. Die Ankündigung selbst zählt als
+  30-Tage-Erinnerung. Verschickt wird jede Stufe höchstens einmal
+  (`retention_notices.reminder_days`); hat der Lauf Tage verpasst, kommt nur
+  die jüngste fällige Stufe. Aufgehobene oder ausgeführte Ankündigungen
+  und wiederhergestellte Organisationen bekommen keine Erinnerung.
+  Organisationen, deren Admins ihr Konto mitlöschen lassen, bekommen keine
+  eigene Mail: Die Erinnerung zur Kontolöschung nennt sie. Probelauf: nur
+  zählen (`remindersDue`).
 
 **Probelauf.** `RETENTION_DRY_RUN=true` führt jeden Lauf vollständig aus
 und rollt ihn am Ende zurück: Die Zahlen im Protokoll stimmen, geändert
@@ -757,7 +770,9 @@ einschalten.
 **Super-Admin-API** (`/api/admin/retention`):
 
 - `GET config` – wirksame Fristen und Modus
-- `GET runs?category=&trigger=&organizationId=` – Protokoll
+- `GET runs?category=&trigger=&organizationId=` – Protokoll, mit Namen der
+  Organisation und der ausführenden Person (`organizationName`,
+  `executedBy`)
 - `POST runs { categories?, dryRun? }` – Lauf von Hand (ohne `dryRun` gilt
   die Einstellung der Instanz)
 - `GET notices?open=true` – angekündigte Schließungen und Löschungen
@@ -790,6 +805,30 @@ Seiten (Shop, Bestellung am Tisch): 404; Geräte und API-Tokens der
 Organisation werden abgewiesen. `finalDeletionAt` ist der Termin der
 Ankündigung, sonst Löschzeitpunkt plus `RETENTION_EXPORT_PERIOD_DAYS`.
 
+**„Löschung abbrechen“ für Vereine.** `POST /organizations/:id/restore`
+(Admins, auch in der Exportfrist erlaubt) holt eine gelöschte bzw.
+geschlossene Organisation zurück, solange sie nicht endgültig gelöscht ist.
+Die Ankündigung verfällt (`cancel_reason = restored`), der Zeitpunkt zählt
+als Nutzung. Wer sein Konto mitlöschen lässt, bricht stattdessen die
+Kontolöschung ab.
+
+**Protokoll der Löschungen durch den Verein** (Löschkonzept 1.5/5.3). Auch
+Löschungen, die der Verein selbst auslöst, stehen in `retention_runs` – mit
+ausführender Person, Zeitpunkt, Datenart, Anzahl und Kennungen
+(`details`), nie mit Namen, E-Mail-Adressen oder Notizen:
+
+| Vorgang | `category` | `trigger` | Zahlen / Kennungen |
+|---|---|---|---|
+| Organisation löschen bzw. Löschung abbrechen | `organization_closure` | `club` | `organizationsClosed` bzw. `organizationsRestored` |
+| Mitglied entfernen | `memberships` | `club` | `membershipsDeleted`; `membershipId`, `userId` |
+| Schichtanmeldung löschen, auch mit Schichtplan, Job oder Schicht | `helper_data` | `club` | `registrationsDeleted` (+ `shiftPlansDeleted` …); `registrationIds` |
+| Helfer meldet sich über seinen Link selbst ab | `helper_data` | `self_service` | `registrationsDeleted`; `registrationIds` |
+| Konto löschen, geplante Löschung, Abbruch | `user_accounts` | `self_service` | `accountsAnonymised`, `accountDeletionsScheduled`, `accountDeletionsCancelled`; `organizationIds` |
+
+Der Super-Admin sieht sie mit den übrigen Läufen und Einzellöschungen unter
+`GET /api/admin/retention/runs?trigger=club` bzw. in der App unter
+„Löschprotokoll“.
+
 **Selbstbedienung für Benutzer:**
 
 - `GET /users/me/deletion` – was „Konto löschen“ bewirkt: sperrende
@@ -798,10 +837,26 @@ Ankündigung, sonst Löschzeitpunkt plus `RETENTION_EXPORT_PERIOD_DAYS`.
   mitgelöscht werden (einziges Mitglied), offene Kassenvorgänge, Weg der
   Bestätigung (Passwort oder Code per E-Mail).
 - `POST /users/me/deletion/code`, `POST /users/me/deletion { password | code }`
-  – anonymisiert das Konto wie der Lauf `user_accounts`, schließt die
-  Organisationen ohne weitere Mitglieder, schickt eine Bestätigung an die
-  bisherige Adresse und meldet ab. Protokoll mit `trigger = self_service`.
-  Super-Admins können sich nicht selbst löschen.
+  – anonymisiert das Konto wie der Lauf `user_accounts`, schickt eine
+  Bestätigung an die bisherige Adresse und meldet ab. Protokoll mit
+  `trigger = self_service`. Super-Admins können sich nicht selbst löschen.
+- Ist der Benutzer **einziges Mitglied** einer Organisation, geht sie mit –
+  und damit jemand die 30-tägige Exportfrist nutzen kann, wird das Konto
+  dann nicht sofort gelöscht, sondern **geplant** (Antwort `scheduled: true,
+  dueAt`): Organisation geschlossen (nur lesend), Ankündigungen
+  `organization_deletion` und `account_deletion` mit demselben Termin,
+  `users.deletion_due_at` gesetzt, Mitgliedschaften in anderen
+  Organisationen und API-Tokens sofort entfernt. Bis zum Termin kann sich
+  der Benutzer anmelden und exportieren, aber keine Organisation anlegen
+  und keiner beitreten (403/409 `ACCOUNT_DELETION_SCHEDULED`). Er bekommt
+  die Bestätigung (= 30-Tage-Mail) und die Erinnerungen 10 und 1 Tag
+  vorher; nach der endgültigen Löschung der Organisation anonymisiert der
+  Lauf `user_accounts` das Konto. `GET /users/me/deletion` liefert dann
+  `scheduled: { requestedAt, dueAt, organizations }`.
+- `POST /users/me/deletion/cancel` – „Löschung abbrechen“: holt Konto und
+  Organisationen zurück, solange keine endgültig gelöscht ist (409
+  `ORGANIZATION_ALREADY_PURGED`). Entfernte Mitgliedschaften und API-Tokens
+  bleiben weg. Protokoll mit `trigger = self_service`.
 - `GET|PUT /users/me/newsletter { subscribed }` – Einwilligung in
   Neuigkeiten geben bzw. widerrufen. `newsletter_opt_in_at` (letzte
   Einwilligung) bleibt beim Widerruf stehen, `newsletter_opt_out_at` hält
