@@ -53,6 +53,9 @@ export const validationSchema = Joi.object({
     then: Joi.required(),
     otherwise: Joi.string().allow('').default(''),
   }),
+  // Zugangsdaten der Zahlungsanbieter (SumUp, PayPal) in den
+  // Organisationseinstellungen. Leer: TWO_FACTOR_ENCRYPTION_KEY.
+  INTEGRATION_ENCRYPTION_KEY: Joi.string().allow(''),
 
   // CORS
   CORS_ORIGINS: Joi.string().default(

@@ -467,6 +467,8 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `JWT_SECRET` | JWT Secret Key | - |
 | `JWT_EXPIRES_IN` | JWT Ablaufzeit | 30m |
 | `REFRESH_TOKEN_EXPIRES_IN` | Refresh Token Ablauf | 7d |
+| `TWO_FACTOR_ENCRYPTION_KEY` | Schlüssel für 2FA-Geheimnisse, in Produktion Pflicht — sichern! | – |
+| `INTEGRATION_ENCRYPTION_KEY` | Schlüssel für die Zugangsdaten der Zahlungsanbieter (leer: `TWO_FACTOR_ENCRYPTION_KEY`), siehe „Zugangsdaten der Zahlungsanbieter“ — sichern! | – |
 | `CORS_ORIGINS` | Erlaubte Origins | http://localhost:3001 |
 | `TRUST_PROXY` | Vertrauenswürdige Reverse-Proxys für X-Forwarded-For (Hop-Anzahl, IPs/CIDRs oder `false`) | loopback, linklocal, uniquelocal |
 | `UPLOAD_DIR` | Upload-Verzeichnis — muss dem Container-Nutzer (uid 1001) gehören, siehe „Uploads“ | ./uploads |
@@ -499,6 +501,32 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `TSE_TX_TIMEOUT_MS` / `TSE_SIGN_BUDGET_MS` / `TSE_ADMIN_TIMEOUT_MS` | Zeitlimit je Transaktionsaufruf / Gesamtbudget je Vorgang / Verwaltung | 5000 / 8000 / 15000 |
 
 Siehe `.env.example` für alle verfügbaren Variablen.
+
+### Zugangsdaten der Zahlungsanbieter
+
+Die SumUp- und PayPal-Zugangsdaten der Vereine (`sumup.apiKey`,
+`sumup.affiliateKey`, `paypal.clientSecret` in `organizations.settings`)
+liegen verschlüsselt in der Datenbank (AES-256-GCM, Präfix `enc:v1:`). Die
+API entschlüsselt sie beim Laden und gibt sie nach außen weiterhin nur
+maskiert heraus (`****1234`).
+
+- **Schlüssel**: `INTEGRATION_ENCRYPTION_KEY`, leer `TWO_FACTOR_ENCRYPTION_KEY`.
+  Eine bestehende Installation braucht also nichts Neues. Ohne beide startet
+  die API in Produktion nicht (wie bisher); außerhalb der Produktion gilt ein
+  Entwicklungsschlüssel mit Warnung.
+- **Bestand**: Fünf Minuten nach dem Start verschlüsselt die API noch im
+  Klartext gespeicherte Werte (beim Rollout sind die alten Instanzen dann
+  ersetzt). Der Abgleich läuft bei jedem Start, schreibt nur, was noch nicht
+  mit dem aktuellen Schlüssel verschlüsselt ist, und ist mit mehreren
+  Instanzen gleichzeitig unbedenklich.
+- **Eigenen Schlüssel nachträglich setzen**: geht jederzeit. Gelesen wird mit
+  beiden Schlüsseln, der Abgleich beim nächsten Start schreibt die Werte mit
+  `INTEGRATION_ENCRYPTION_KEY` neu. Danach diesen Schlüssel nicht mehr ändern
+  — Werte, die sich mit keinem Schlüssel öffnen lassen, bleiben stehen
+  (Fehler im Log), die Vereine müssen sie dann neu eingeben.
+- **Zurück auf eine ältere Version** (vor der Verschlüsselung): die liest die
+  verschlüsselten Werte nicht. SumUp und PayPal funktionieren dann erst
+  wieder, wenn die Zugangsdaten neu eingegeben werden.
 
 ### Stripe-Webhook (SaaS)
 
