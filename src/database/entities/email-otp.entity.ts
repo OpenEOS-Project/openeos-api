@@ -6,6 +6,7 @@ export enum EmailOtpPurpose {
   TWO_FACTOR_SETUP = 'two_factor_setup',
   TWO_FACTOR_LOGIN = 'two_factor_login',
   EMAIL_CHANGE = 'email_change',
+  ACCOUNT_DELETION = 'account_deletion',
 }
 
 @Entity('email_otps')

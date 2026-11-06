@@ -4,8 +4,13 @@ import {
   ForbiddenException,
   Logger,
   Inject,
+  Optional,
   forwardRef,
 } from '@nestjs/common';
+import {
+  OrganizationClosureService,
+  type OrganizationClosure,
+} from '../../common/organization-closure/organization-closure.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, MoreThanOrEqual } from 'typeorm';
 import {
@@ -117,24 +122,32 @@ export class AdminService {
     private readonly gatewayService: GatewayService,
     @Inject(forwardRef(() => PrinterAgentsService))
     private readonly printerAgentsService: PrinterAgentsService,
+    @Optional()
+    private readonly closures?: OrganizationClosureService,
   ) {}
 
   // === Organizations ===
 
   async findAllOrganizations(queryDto: QueryOrganizationsDto): Promise<{
-    data: Organization[];
+    data: Array<Organization & { closure: OrganizationClosure | null }>;
     total: number;
     page: number;
     limit: number;
   }> {
-    const { search, page = 1, limit = 20 } = queryDto;
+    const { search, page = 1, limit = 20, status = 'active' } = queryDto;
 
     const queryBuilder = this.organizationRepository.createQueryBuilder('org');
 
+    // Geloeschte Organisationen (Exportfrist bzw. gesperrte Huelle) nur auf
+    // Nachfrage, mit ihrem Loeschzustand.
+    if (status !== 'active') queryBuilder.withDeleted();
+    if (status === 'closed') queryBuilder.where('org.deletedAt IS NOT NULL');
+
     if (search) {
-      queryBuilder.where('(org.name ILIKE :search OR org.slug ILIKE :search)', {
-        search: `%${search}%`,
-      });
+      queryBuilder.andWhere(
+        '(org.name ILIKE :search OR org.slug ILIKE :search)',
+        { search: `%${search}%` },
+      );
     }
 
     const total = await queryBuilder.getCount();
@@ -145,7 +158,15 @@ export class AdminService {
       .take(limit)
       .getMany();
 
-    const data = rohdaten.map(redigiereAdminOrganisation);
+    const closures = this.closures
+      ? await this.closures.closures(
+          rohdaten.filter((o) => o.deletedAt).map((o) => o.id),
+        )
+      : new Map<string, OrganizationClosure>();
+    const data = rohdaten.map((o) => ({
+      ...redigiereAdminOrganisation(o),
+      closure: closures.get(o.id) ?? null,
+    }));
 
     return { data, total, page, limit };
   }

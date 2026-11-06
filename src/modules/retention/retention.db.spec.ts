@@ -1,3 +1,4 @@
+import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -23,6 +24,10 @@ import { SupportMessagesJob } from './jobs/support-messages.job';
 import { UserAccountsJob } from './jobs/user-accounts.job';
 import { loadRetentionConfig } from './retention.config';
 import { RetentionErasureService } from './retention-erasure.service';
+import { AccountDeletionService } from './account-deletion.service';
+import { EncryptionService } from '../../common/services/encryption.service';
+import { OrganizationClosureService } from '../../common/organization-closure/organization-closure.service';
+import type { ConfigService } from '@nestjs/config';
 import { RetentionNoticeService } from './retention-notice.service';
 import { RetentionService } from './retention.service';
 import type { RetentionCategory } from './retention.types';
@@ -53,8 +58,11 @@ describeWithDb('Retention jobs against Postgres', () => {
   let ds: DataSource;
   let service: RetentionService;
   let erasure: RetentionErasureService;
+  let deletion: AccountDeletionService;
+  let closures: OrganizationClosureService;
+  let encryption: EncryptionService;
   let uploadDir: string;
-  const sent: { to: string; subject: string }[] = [];
+  const sent: { to: string; subject: string; text?: string }[] = [];
   const orgIds: string[] = [];
   const userIds: string[] = [];
   const contactIds: string[] = [];
@@ -99,8 +107,8 @@ describeWithDb('Retention jobs against Postgres', () => {
     const config = loadRetentionConfig({ RETENTION_DRY_RUN: 'false' });
     const email = {
       appUrl: 'https://app.example.test',
-      sendEmail: (o: { to: string; subject: string }) => {
-        sent.push({ to: o.to, subject: o.subject });
+      sendEmail: (o: { to: string; subject: string; text?: string }) => {
+        sent.push({ to: o.to, subject: o.subject, text: o.text });
         return Promise.resolve(true);
       },
     } as unknown as EmailService;
@@ -110,25 +118,26 @@ describeWithDb('Retention jobs against Postgres', () => {
       fiscalExportDir: path.join(uploadDir, 'tse-exports'),
       contactEmail: 'export@example.test',
     };
+    const jobs = [
+      new GuestDataJob(),
+      new HelperDataJob(),
+      new AuthRecordsJob(),
+      new AuditLogsJob(),
+      new SupportMessagesJob(),
+      new ContactRequestsJob(),
+      new AssistantImportsJob({
+        cleanupNow,
+      } as unknown as MenuImportWorkerService),
+      new OrganizationInactivityJob(notices),
+      new OrganizationPurgeJob(notices, options),
+      new UserAccountsJob(notices, options),
+      new FiscalArchiveJob(),
+    ];
     service = new RetentionService(
       ds,
       ds.getRepository(RetentionRun),
       config,
-      [
-        new GuestDataJob(),
-        new HelperDataJob(),
-        new AuthRecordsJob(),
-        new AuditLogsJob(),
-        new SupportMessagesJob(),
-        new ContactRequestsJob(),
-        new AssistantImportsJob({
-          cleanupNow,
-        } as unknown as MenuImportWorkerService),
-        new OrganizationInactivityJob(notices),
-        new OrganizationPurgeJob(notices, options),
-        new UserAccountsJob(notices, options),
-        new FiscalArchiveJob(),
-      ],
+      jobs,
       {
         runExclusive: async (_n: string, job: () => Promise<void>) => {
           await job();
@@ -136,7 +145,15 @@ describeWithDb('Retention jobs against Postgres', () => {
         },
       } as unknown as CronLockService,
     );
-    erasure = new RetentionErasureService(service);
+    erasure = new RetentionErasureService(service, notices, jobs);
+    encryption = new EncryptionService({
+      get: (key: string, fallback?: string) =>
+        key === 'TWO_FACTOR_ENCRYPTION_KEY'
+          ? 'a'.repeat(64)
+          : (fallback ?? undefined),
+    } as unknown as ConfigService);
+    deletion = new AccountDeletionService(service, notices, encryption, jobs);
+    closures = new OrganizationClosureService(ds);
   }, 120_000);
 
   afterAll(async () => {
@@ -1115,6 +1132,333 @@ describeWithDb('Retention jobs against Postgres', () => {
           executedByUserId: randomUUID(),
         }),
       ).rejects.toThrow('Kein passender Datensatz');
+    });
+  });
+
+  describe('read-only closure state', () => {
+    it('reports closed organizations with their final deletion date', async () => {
+      const open = await org();
+      const closed = await org({ deletedAt: ago(5) });
+      const map = await closures.closures([open, closed]);
+      expect(map.has(open)).toBe(false);
+      const c = map.get(closed)!;
+      expect(c.readOnly).toBe(true);
+      expect(c.purged).toBe(false);
+      // Ohne Ankuendigung: Loeschzeitpunkt plus Exportfrist (30 Tage).
+      expect(
+        Math.round((c.finalDeletionAt.getTime() - c.closedAt.getTime()) / DAY),
+      ).toBe(30);
+
+      // Mit Ankuendigung: deren Termin.
+      await run('organization_purge');
+      const notice = await one(
+        `SELECT due_at FROM retention_notices WHERE subject_id = $1 AND kind = 'organization_deletion'`,
+        [closed],
+      );
+      expect((await closures.closure(closed))!.finalDeletionAt.getTime()).toBe(
+        new Date(notice.due_at).getTime(),
+      );
+    });
+
+    it('finds the organization of an event', async () => {
+      const orgId = await org();
+      const ev = await event(orgId);
+      expect(await closures.organizationOfEvent(ev.eventId)).toBe(orgId);
+      expect(await closures.organizationOfEvent('nope')).toBeNull();
+    });
+  });
+
+  describe('immediate purge on request (super admin)', () => {
+    it('refuses a wrong confirmation name', async () => {
+      const orgId = await org({ name: 'SV Blau-Weiß' });
+      await expect(
+        erasure.purgeOrganization({
+          organizationId: orgId,
+          confirmName: 'SV Blau Weiss',
+          reason: 'Löschverlangen per E-Mail vom 06.11.2026',
+          executedByUserId: randomUUID(),
+        }),
+      ).rejects.toThrow('stimmt nicht');
+      expect(
+        await one(`SELECT deleted_at FROM organizations WHERE id = $1`, [
+          orgId,
+        ]),
+      ).toEqual({ deleted_at: null });
+    });
+
+    it('closes and purges at once, keeps the fiscal archive, logs and confirms', async () => {
+      const orgId = await org({ name: 'SV Sofort e. V.' });
+      const adminId = await user();
+      await member(adminId, orgId);
+      const ev = await event(orgId, { endDate: ago(2) });
+      const fiscalOrder = await order(orgId, ev, { createdAt: ago(2) });
+      const plainOrder = await order(orgId, ev, { createdAt: ago(2) });
+      await fiscal(orgId, fiscalOrder);
+      const before = await fiscalSnapshot(orgId);
+      const executor = randomUUID();
+      sent.length = 0;
+
+      const result = await erasure.purgeOrganization({
+        organizationId: orgId,
+        confirmName: '  SV Sofort e. V. ',
+        reason: 'Löschverlangen per E-Mail vom 06.11.2026 (AVV 10.2)',
+        executedByUserId: executor,
+      });
+
+      expect(result.status).toBe('succeeded');
+      expect(result.trigger).toBe('instruction');
+      expect(result.category).toBe('organization_purge');
+      expect(result.counts.organizationsPurged).toBe(1);
+      expect(result.counts.organizationsClosed).toBe(1);
+      const logged = await one(
+        `SELECT executed_by_user_id, reason, organization_id FROM retention_runs WHERE id = $1`,
+        [result.id],
+      );
+      expect(logged).toEqual({
+        executed_by_user_id: executor,
+        reason: 'Löschverlangen per E-Mail vom 06.11.2026 (AVV 10.2)',
+        organization_id: orgId,
+      });
+      expect(await fiscalSnapshot(orgId)).toBe(before);
+      expect(
+        await sql(`SELECT 1 FROM orders WHERE id = $1`, [plainOrder]),
+      ).toHaveLength(0);
+      expect(
+        await sql(`SELECT 1 FROM orders WHERE id = $1`, [fiscalOrder]),
+      ).toHaveLength(1);
+      expect(
+        await sql(
+          `SELECT 1 FROM user_organizations WHERE organization_id = $1`,
+          [orgId],
+        ),
+      ).toHaveLength(0);
+      const shell = await one(
+        `SELECT slug, deleted_at FROM organizations WHERE id = $1`,
+        [orgId],
+      );
+      expect(shell.slug).toBe(`purged-${orgId}`);
+      expect(shell.deleted_at).not.toBeNull();
+      // Bestaetigung an den Administrator (vor dem Loeschen ermittelt).
+      expect(sent.find((m) => m.to.includes(adminId))?.subject).toContain(
+        'endgültig gelöscht',
+      );
+      // Ausgefuehrt vermerkt: kein zweites Ankuendigen, kein zweites Loeschen.
+      expect((await closures.closure(orgId))!.purged).toBe(true);
+      sent.length = 0;
+      await run('organization_purge');
+      expect(sent.filter((m) => m.subject.includes('SV Sofort'))).toHaveLength(
+        0,
+      );
+      await expect(
+        erasure.purgeOrganization({
+          organizationId: orgId,
+          confirmName: 'SV Sofort e. V.',
+          reason: 'Noch einmal versucht',
+          executedByUserId: executor,
+        }),
+      ).rejects.toThrow('bereits endgültig gelöscht');
+    });
+
+    it('refuses while the Cloud-TSE is active (same rules as the nightly purge)', async () => {
+      const orgId = await org({ name: 'TSE aktiv', deletedAt: ago(3) });
+      await fiscal(orgId, null, { unitState: 'active', deactivatedAt: null });
+      await expect(
+        erasure.purgeOrganization({
+          organizationId: orgId,
+          confirmName: 'TSE aktiv',
+          reason: 'Löschverlangen per E-Mail',
+          executedByUserId: randomUUID(),
+        }),
+      ).rejects.toThrow('Cloud-TSE');
+      expect((await closures.closure(orgId))!.purged).toBe(false);
+    });
+
+    it('dry run changes nothing', async () => {
+      const orgId = await org({ name: 'Nur zählen' });
+      const ev = await event(orgId);
+      const orderId = await order(orgId, ev);
+      const result = await erasure.purgeOrganization({
+        organizationId: orgId,
+        confirmName: 'Nur zählen',
+        reason: 'Probelauf vor dem Löschen',
+        executedByUserId: randomUUID(),
+        dryRun: true,
+      });
+      expect(result.dryRun).toBe(true);
+      expect(result.counts.organizationsPurged).toBe(1);
+      expect(
+        await sql(`SELECT 1 FROM orders WHERE id = $1`, [orderId]),
+      ).toHaveLength(1);
+      expect(
+        await one(`SELECT deleted_at FROM organizations WHERE id = $1`, [
+          orgId,
+        ]),
+      ).toEqual({ deleted_at: null });
+    });
+  });
+
+  describe('account deletion (self service)', () => {
+    async function withPassword(userId: string, password: string) {
+      await sql(`UPDATE users SET password_hash = $2 WHERE id = $1`, [
+        userId,
+        await bcrypt.hash(password, 4),
+      ]);
+    }
+
+    it('blocks the last admin of an organization with other members', async () => {
+      const orgId = await org({ name: 'Mit Mitgliedern' });
+      const adminId = await user();
+      const otherId = await user();
+      await member(adminId, orgId, 'admin');
+      await member(otherId, orgId, 'member');
+      await withPassword(adminId, 'geheim123');
+
+      const status = await deletion.status(adminId);
+      expect(status.allowed).toBe(false);
+      expect(status.blockers).toEqual([
+        { organizationId: orgId, name: 'Mit Mitgliedern', reason: 'members' },
+      ]);
+      await expect(
+        deletion.deleteAccount(adminId, { password: 'geheim123' }),
+      ).rejects.toThrow('letzte Administrator');
+
+      // Mit einem zweiten Admin ist der Weg frei.
+      await sql(
+        `UPDATE user_organizations SET role = 'admin' WHERE user_id = $1`,
+        [otherId],
+      );
+      expect((await deletion.status(adminId)).allowed).toBe(true);
+    });
+
+    it('blocks the last admin while an event is active', async () => {
+      const orgId = await org({ name: 'Fest läuft' });
+      const adminId = await user();
+      await member(adminId, orgId);
+      const ev = await event(orgId);
+      await sql(`UPDATE events SET status = 'active' WHERE id = $1`, [
+        ev.eventId,
+      ]);
+      const status = await deletion.status(adminId);
+      expect(status.blockers[0]?.reason).toBe('active_events');
+    });
+
+    it('rejects a wrong password, then anonymises like the retention job and closes sole organizations', async () => {
+      const soleOrg = await org({ name: 'Nur ich' });
+      const sharedOrg = await org({ name: 'Mit Anderen' });
+      const userId = await user();
+      const otherAdmin = await user();
+      await member(userId, soleOrg);
+      await member(userId, sharedOrg);
+      await member(otherAdmin, sharedOrg);
+      await withPassword(userId, 'richtig123');
+      await sql(`UPDATE users SET newsletter_opt_in_at = now() WHERE id = $1`, [
+        userId,
+      ]);
+      const email = (
+        await one(`SELECT email FROM users WHERE id = $1`, [userId])
+      ).email;
+
+      const status = await deletion.status(userId);
+      expect(status.confirmation).toBe('password');
+      expect(status.closesOrganizations).toEqual([
+        { organizationId: soleOrg, name: 'Nur ich' },
+      ]);
+
+      await expect(deletion.deleteAccount(userId, {})).rejects.toThrow(
+        'Passwort',
+      );
+      await expect(
+        deletion.deleteAccount(userId, { password: 'falsch' }),
+      ).rejects.toThrow('stimmt nicht');
+      sent.length = 0;
+
+      const result = await deletion.deleteAccount(userId, {
+        password: 'richtig123',
+      });
+
+      expect(result.trigger).toBe('self_service');
+      expect(result.executedByUserId).toBe(userId);
+      expect(result.counts.accountsAnonymised).toBe(1);
+      expect(result.counts.organizationsClosed).toBe(1);
+      const row = await one(
+        `SELECT email, first_name, last_name, password_hash, is_active, newsletter_opt_in_at, deleted_at FROM users WHERE id = $1`,
+        [userId],
+      );
+      expect(row.email).toBe(`deleted-${userId}@deleted.invalid`);
+      expect(row.first_name).toBe('Gelöschtes');
+      expect(row.password_hash).toBeNull();
+      expect(row.is_active).toBe(false);
+      expect(row.newsletter_opt_in_at).toBeNull();
+      expect(row.deleted_at).not.toBeNull();
+      expect(
+        await sql(`SELECT 1 FROM user_organizations WHERE user_id = $1`, [
+          userId,
+        ]),
+      ).toHaveLength(0);
+      expect(
+        (
+          await one(`SELECT deleted_at FROM organizations WHERE id = $1`, [
+            soleOrg,
+          ])
+        ).deleted_at,
+      ).not.toBeNull();
+      expect(
+        (
+          await one(`SELECT deleted_at FROM organizations WHERE id = $1`, [
+            sharedOrg,
+          ])
+        ).deleted_at,
+      ).toBeNull();
+      const mail = sent.find((m) => m.to === email);
+      expect(mail?.subject).toBe('Dein OpenEOS-Konto wurde gelöscht');
+      expect(mail?.text).toContain('„Nur ich“');
+    });
+
+    it('accounts without password confirm with an e-mail code', async () => {
+      const userId = await user();
+      await sql(`UPDATE users SET password_hash = NULL WHERE id = $1`, [
+        userId,
+      ]);
+      const email = (
+        await one(`SELECT email FROM users WHERE id = $1`, [userId])
+      ).email;
+      expect((await deletion.status(userId)).confirmation).toBe('email_code');
+      sent.length = 0;
+      await deletion.sendCode(userId);
+      const code = /\b(\d{6})\b/.exec(
+        sent.find((m) => m.to === email)?.text ?? '',
+      )?.[1];
+      expect(code).toBeDefined();
+      await expect(
+        deletion.deleteAccount(userId, {
+          code: '000000' === code ? '111111' : '000000',
+        }),
+      ).rejects.toThrow('Code');
+      const result = await deletion.deleteAccount(userId, { code: code! });
+      expect(result.status).toBe('succeeded');
+      // Der Code ist verbraucht.
+      expect(
+        await sql(
+          `SELECT 1 FROM email_otps WHERE user_id = $1 AND used_at IS NULL`,
+          [userId],
+        ),
+      ).toHaveLength(0);
+    });
+
+    it('refuses while the user has transactions without a cash point closing', async () => {
+      const orgId = await org();
+      const userId = await user();
+      const other = await user();
+      await member(userId, orgId);
+      await member(other, orgId);
+      const { txId } = await fiscal(orgId, null, { closed: false });
+      await sql(`UPDATE tse_transactions SET user_id = $2 WHERE id = $1`, [
+        txId,
+        userId,
+      ]);
+      const status = await deletion.status(userId);
+      expect(status.unclosedTransactions).toBe(true);
+      expect(status.allowed).toBe(false);
     });
   });
 });

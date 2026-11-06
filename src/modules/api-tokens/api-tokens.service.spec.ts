@@ -3,6 +3,7 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
+import type { OrganizationClosureService } from '../../common/organization-closure/organization-closure.service';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 
@@ -25,7 +26,13 @@ import { TokenScope } from './api-scopes';
 const ORG = '7d0c7a52-4f43-4a3e-9f8e-0f2b8f3f1a11';
 const OTHER_ORG = '1b1b1b1b-4f43-4a3e-9f8e-0f2b8f3f1a22';
 
-function setup(options: { active?: number; membership?: boolean } = {}) {
+function setup(
+  options: {
+    active?: number;
+    membership?: boolean;
+    organizationClosed?: boolean;
+  } = {},
+) {
   const saved: ApiToken[] = [];
   const apiTokenRepository = {
     create: jest.fn((entry: Partial<ApiToken>) => ({
@@ -69,6 +76,11 @@ function setup(options: { active?: number; membership?: boolean } = {}) {
     userOrganizationRepository as unknown as Repository<UserOrganization>,
     eventRepository as unknown as Repository<Event>,
     auditLogRepository as unknown as Repository<AdminAuditLog>,
+    {
+      closure: jest.fn(() =>
+        Promise.resolve(options.organizationClosed ? { purged: false } : null),
+      ),
+    } as unknown as OrganizationClosureService,
   );
   return {
     service,
@@ -253,6 +265,14 @@ describe('ApiTokensService', () => {
 
     it('rejects a token whose owner left the organization', async () => {
       const { service, apiTokenRepository } = setup({ membership: false });
+      apiTokenRepository.findOne.mockResolvedValue(storedToken());
+      expect(await service.pruefe('oeos_secret')).toBeNull();
+    });
+
+    it('rejects a token of a deleted organization (read-only export period)', async () => {
+      const { service, apiTokenRepository } = setup({
+        organizationClosed: true,
+      });
       apiTokenRepository.findOne.mockResolvedValue(storedToken());
       expect(await service.pruefe('oeos_secret')).toBeNull();
     });

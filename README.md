@@ -750,6 +750,47 @@ einschalten.
   `shift_registration` (eine Anmeldung), `helper_email` (alle Anmeldungen
   zu einer Adresse). Steht mit ausführender Person und Anlass im Protokoll
   (`trigger = instruction`).
+- `POST organizations/:id/purge { confirmName, reason, dryRun? }` – sofortige
+  endgültige Löschung auf Verlangen des Kunden (AVV 10.2, AGB 20.5), vor
+  Ablauf der Exportfrist. Exakter Name zur Bestätigung, Anlass mindestens
+  10 Zeichen. Gleiche Regeln wie der nächtliche Lauf: Steuerarchiv bleibt,
+  409 `ORGANIZATION_PURGE_BLOCKED` bei aktiver Cloud-TSE, laufender Abholung
+  der Rest-Exporte oder Vorgängen ohne Kassenabschluss. Noch nicht gelöschte
+  Organisationen werden im selben Schritt geschlossen. Protokoll mit
+  `trigger = instruction`, die Admins bekommen eine Bestätigung.
+
+**Nur-lesen-Zugang in der Exportfrist** (AGB 10.4, AVV 10.2). Eine
+gelöschte bzw. geschlossene Organisation bleibt bis zur endgültigen Löschung
+für ihre Administratoren sichtbar (`GET /organizations`, `/auth/me`, jeweils
+mit `closure: { closedAt, finalDeletionAt, purged, readOnly }`). Der globale
+`OrganizationClosureGuard` lässt für sie nur GET/HEAD/OPTIONS zu (403
+`ORGANIZATION_READ_ONLY`), außer an Export-Endpunkten mit
+`@ClosedOrganizationAccess()` (TSE-Export anstoßen, Kassenabschluss für den
+DSFinV-K-Export). Andere Mitglieder: 403 `ORGANIZATION_CLOSED`; öffentliche
+Seiten (Shop, Bestellung am Tisch): 404; Geräte und API-Tokens der
+Organisation werden abgewiesen. `finalDeletionAt` ist der Termin der
+Ankündigung, sonst Löschzeitpunkt plus `RETENTION_EXPORT_PERIOD_DAYS`.
+
+**Selbstbedienung für Benutzer:**
+
+- `GET /users/me/deletion` – was „Konto löschen“ bewirkt: sperrende
+  Organisationen (letzter Admin bei weiteren Mitgliedern, laufender oder
+  bezahlter kommender Veranstaltung, aktiver Cloud-TSE), Organisationen, die
+  mitgelöscht werden (einziges Mitglied), offene Kassenvorgänge, Weg der
+  Bestätigung (Passwort oder Code per E-Mail).
+- `POST /users/me/deletion/code`, `POST /users/me/deletion { password | code }`
+  – anonymisiert das Konto wie der Lauf `user_accounts`, schließt die
+  Organisationen ohne weitere Mitglieder, schickt eine Bestätigung an die
+  bisherige Adresse und meldet ab. Protokoll mit `trigger = self_service`.
+  Super-Admins können sich nicht selbst löschen.
+- `GET|PUT /users/me/newsletter { subscribed }` – Einwilligung in
+  Neuigkeiten geben bzw. widerrufen. `newsletter_opt_in_at` (letzte
+  Einwilligung) bleibt beim Widerruf stehen, `newsletter_opt_out_at` hält
+  den Widerruf fest. `POST /public/newsletter/unsubscribe { token }` (auch
+  `?token=` für RFC 8058 One-Click) widerruft über einen signierten
+  Abmeldelink ohne Ablauf; den Link für künftige Mails baut
+  `NewsletterService.unsubscribeUrl(userId)` (`/newsletter/abmelden?token=…`).
+  Versendet wird noch nichts.
 
 **Konfiguration** (leer = Standard):
 

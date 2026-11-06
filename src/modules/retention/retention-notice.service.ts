@@ -86,26 +86,11 @@ export class RetentionNoticeService {
     recipients: string[],
     compose: (to: string) => RetentionMail,
   ): Promise<{ recorded: boolean; delivered: number }> {
-    let delivered = 0;
-    for (const to of recipients) {
-      const mail = compose(to);
-      try {
-        if (
-          await this.emailService.sendEmail({
-            to,
-            subject: mail.subject,
-            html: mail.html,
-            text: mail.text,
-          })
-        ) {
-          delivered++;
-        }
-      } catch (error) {
-        this.logger.warn(
-          `Notice ${notice.kind} ${notice.subjectId}: send failed (${error instanceof Error ? error.message : String(error)})`,
-        );
-      }
-    }
+    const delivered = await this.deliver(
+      recipients,
+      compose,
+      `Notice ${notice.kind} ${notice.subjectId}`,
+    );
     if (recipients.length > 0 && delivered === 0) {
       return { recorded: false, delivered };
     }
@@ -124,6 +109,35 @@ export class RetentionNoticeService {
       ],
     );
     return { recorded: true, delivered };
+  }
+
+  /** Sendet eine Mail je Empfaenger; liefert die Anzahl der Zustellungen. */
+  async deliver(
+    recipients: string[],
+    compose: (to: string) => RetentionMail,
+    label: string,
+  ): Promise<number> {
+    let delivered = 0;
+    for (const to of recipients) {
+      const mail = compose(to);
+      try {
+        if (
+          await this.emailService.sendEmail({
+            to,
+            subject: mail.subject,
+            html: mail.html,
+            text: mail.text,
+          })
+        ) {
+          delivered++;
+        }
+      } catch (error) {
+        this.logger.warn(
+          `${label}: send failed (${error instanceof Error ? error.message : String(error)})`,
+        );
+      }
+    }
+    return delivered;
   }
 
   async cancel(

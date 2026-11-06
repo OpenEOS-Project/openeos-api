@@ -1,10 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import type { RetentionRun } from '../../database/entities';
+import type { OrganizationPurgeJob } from './jobs/organization-purge.job';
+import { organizationPurgedMail } from './retention-mails';
+import { RetentionNoticeService } from './retention-notice.service';
 import { affected, select } from './retention-sql';
 import { RetentionService } from './retention.service';
-import type { RetentionJob, RetentionRunContext } from './retention.types';
+import {
+  RETENTION_JOBS,
+  type RetentionJob,
+  type RetentionRunContext,
+} from './retention.types';
 
 export type ErasureKind =
   | 'order'
@@ -18,6 +31,26 @@ export const ERASURE_KINDS: ErasureKind[] = [
   'shift_registration',
   'helper_email',
 ];
+
+export interface PurgeRequest {
+  organizationId: string;
+  /** Name der Organisation zur Bestaetigung. */
+  confirmName: string;
+  /** Anlass, z. B. Datum und Weg des Verlangens. Ohne Inhalte. */
+  reason: string;
+  executedByUserId: string;
+  dryRun?: boolean;
+}
+
+/** Texte fuer die Gruende, aus denen nicht (sofort) geloescht werden darf. */
+const PURGE_BLOCKERS: Record<string, string> = {
+  skippedTseActive:
+    'Die Cloud-TSE der Organisation ist noch aktiv. Deaktiviere sie zuerst.',
+  skippedTseExportWindow:
+    'Die Cloud-TSE wurde vor weniger als 35 Tagen deaktiviert; ihre letzten Exporte werden noch abgeholt.',
+  skippedUnclosedTransactions:
+    'Es gibt Kassenvorgänge ohne Kassenabschluss. Erstelle zuerst den Kassenabschluss.',
+};
 
 export interface ErasureRequest {
   organizationId: string;
@@ -156,7 +189,167 @@ async function deleteRegistrations(
  */
 @Injectable()
 export class RetentionErasureService {
-  constructor(private readonly retention: RetentionService) {}
+  constructor(
+    private readonly retention: RetentionService,
+    private readonly notices: RetentionNoticeService,
+    @Inject(RETENTION_JOBS) private readonly jobs: RetentionJob[],
+  ) {}
+
+  private get purgeJob(): OrganizationPurgeJob {
+    const job = this.jobs.find((j) => j.category === 'organization_purge');
+    if (!job) throw new Error('organization_purge job missing');
+    return job as OrganizationPurgeJob;
+  }
+
+  /**
+   * Sofortige endgueltige Loeschung einer Organisation auf Verlangen des
+   * Kunden (AVV 10.2 Satz 3, AGB 20.5), vor Ablauf der Exportfrist. Es
+   * gelten dieselben Regeln wie bei der regulaeren Loeschung: das
+   * Steuerarchiv bleibt, bei aktiver Cloud-TSE, laufender Abholung der
+   * Rest-Exporte oder Vorgaengen ohne Kassenabschluss wird nicht geloescht.
+   * Ist die Organisation noch nicht geloescht, wird sie im selben Schritt
+   * geschlossen.
+   *
+   * Protokoll: `retention_runs` (Ausloeser `instruction`, ausfuehrende
+   * Person, Anlass); die Ankuendigung `organization_deletion` gilt als
+   * ausgefuehrt. Die Administratoren bekommen eine Bestaetigung (AVV 10.5).
+   */
+  async purgeOrganization(request: PurgeRequest): Promise<RetentionRun> {
+    const [org] = await this.retention.query<{
+      id: string;
+      name: string;
+      deleted_at: Date | null;
+      purged: boolean;
+    }>(
+      `SELECT o.id, o.name, o.deleted_at,
+              (o.slug LIKE 'purged-%' OR EXISTS (
+                 SELECT 1 FROM retention_notices n
+                  WHERE n.subject_type = 'organization' AND n.subject_id = o.id
+                    AND n.kind = 'organization_deletion'
+                    AND n.executed_at IS NOT NULL)) AS purged
+         FROM organizations o WHERE o.id = $1`,
+      [request.organizationId],
+    );
+    if (!org) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
+        message: 'Organisation nicht gefunden',
+      });
+    }
+    if (org.purged) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.ORGANIZATION_ALREADY_PURGED,
+        message: 'Diese Organisation ist bereits endgültig gelöscht.',
+      });
+    }
+    if (request.confirmName.trim() !== org.name.trim()) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.ORGANIZATION_PURGE_CONFIRMATION_MISMATCH,
+        message:
+          'Der eingegebene Name stimmt nicht mit dem Namen der Organisation überein.',
+      });
+    }
+
+    const job = this.purgeJob;
+    const dryRun = request.dryRun ?? false;
+    // Empfaenger vor dem Loeschen der Mitgliedschaften festhalten.
+    const recipients = await this.notices.organizationRecipients(
+      this.retention.manager,
+      org.id,
+    );
+    const state: { blocked: string | null } = { blocked: null };
+    const run = await this.retention.runJob(
+      {
+        category: 'organization_purge',
+        run: async (ctx) => {
+          state.blocked = await job.blocker(ctx, org.id);
+          if (state.blocked) {
+            ctx.note(state.blocked, 1);
+            return;
+          }
+          ctx.removed(
+            'organizationsClosed',
+            await affected(
+              ctx.manager,
+              `UPDATE organizations SET deleted_at = $2
+                WHERE id = $1 AND deleted_at IS NULL`,
+              [org.id, ctx.now],
+            ),
+          );
+          await job.purge(ctx, org.id);
+          await this.recordExecuted(ctx, org.id);
+          ctx.removed('organizationsPurged', 1);
+        },
+      },
+      {
+        trigger: 'instruction',
+        dryRun,
+        organizationId: org.id,
+        executedByUserId: request.executedByUserId,
+        reason: request.reason,
+      },
+    );
+    if (state.blocked) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.ORGANIZATION_PURGE_BLOCKED,
+        message:
+          PURGE_BLOCKERS[state.blocked] ??
+          'Die Organisation kann noch nicht gelöscht werden.',
+        params: { blocker: state.blocked, runId: run.id },
+      });
+    }
+    if (run.status === 'succeeded' && !dryRun) {
+      await this.notices.deliver(
+        recipients,
+        (to) =>
+          organizationPurgedMail({
+            to,
+            appUrl: this.notices.appUrl,
+            organizationName: org.name,
+            purgedAt: run.finishedAt ?? new Date(),
+          }),
+        `Purge confirmation ${org.id}`,
+      );
+    }
+    return run;
+  }
+
+  /** Offene Ankuendigungen der Organisation abschliessen bzw. nachtragen. */
+  private async recordExecuted(
+    ctx: RetentionRunContext,
+    organizationId: string,
+  ): Promise<void> {
+    const { manager, now } = ctx;
+    await manager.query(
+      `UPDATE retention_notices SET cancelled_at = $2, cancel_reason = 'deleted'
+        WHERE subject_type = 'organization' AND subject_id = $1
+          AND kind = 'organization_inactivity'
+          AND executed_at IS NULL AND cancelled_at IS NULL`,
+      [organizationId, now],
+    );
+    const updated = await affected(
+      manager,
+      `UPDATE retention_notices SET executed_at = $2
+        WHERE subject_type = 'organization' AND subject_id = $1
+          AND kind = 'organization_deletion'
+          AND executed_at IS NULL AND cancelled_at IS NULL`,
+      [organizationId, now],
+    );
+    if (updated === 0) {
+      // Ohne vorherige Ankuendigung: als ausgefuehrt nachtragen, damit der
+      // naechtliche Lauf die Huelle nicht noch einmal ankuendigt.
+      await manager.query(
+        `INSERT INTO retention_notices
+           (subject_type, subject_id, kind, sent_at, recipient_count, due_at, executed_at)
+         VALUES ('organization', $1, 'organization_deletion', $2, 0, $2, $2)`,
+        [organizationId, now],
+      );
+    }
+  }
 
   async erase(request: ErasureRequest): Promise<RetentionRun> {
     const job = await this.buildJob(request);

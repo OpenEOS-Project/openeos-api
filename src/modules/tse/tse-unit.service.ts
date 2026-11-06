@@ -153,8 +153,11 @@ export class TseUnitService {
 
   /** Org-Admin oder Super-Admin, sonst 403. Liefert die Organisation. */
   async assertAdmin(organizationId: string, user: User): Promise<Organization> {
+    // Auch geloeschte: deren Admins exportieren bis zur endgueltigen
+    // Loeschung (Schreibzugriffe sperrt der OrganizationClosureGuard).
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
+      withDeleted: true,
     });
     if (!organization) {
       throw new NotFoundException({

@@ -28,9 +28,11 @@ export class ListRetentionRunsQueryDto {
   @IsIn(RETENTION_CATEGORIES)
   category?: RetentionCategory;
 
-  @ApiPropertyOptional({ enum: ['scheduled', 'manual', 'instruction'] })
+  @ApiPropertyOptional({
+    enum: ['scheduled', 'manual', 'instruction', 'self_service'],
+  })
   @IsOptional()
-  @IsIn(['scheduled', 'manual', 'instruction'])
+  @IsIn(['scheduled', 'manual', 'instruction', 'self_service'])
   trigger?: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
@@ -131,4 +133,51 @@ export class EraseRecordDto {
   @IsOptional()
   @IsBoolean()
   dryRun?: boolean;
+}
+
+/** Sofortige endgueltige Loeschung einer Organisation auf Verlangen. */
+export class PurgeOrganizationDto {
+  @ApiProperty({
+    description:
+      'Name der Organisation zur Bestätigung, genau wie gespeichert (Leerzeichen am Rand werden ignoriert).',
+    maxLength: 255,
+  })
+  @IsString()
+  @MaxLength(255)
+  confirmName: string;
+
+  @ApiProperty({
+    description:
+      'Anlass für das Protokoll, z. B. „Löschverlangen per E-Mail vom 06.11.2026 (AVV 10.2)“. Keine Namen oder Inhalte.',
+    minLength: 10,
+    maxLength: 500,
+  })
+  @IsString()
+  @MinLength(10)
+  @MaxLength(500)
+  reason: string;
+
+  @ApiPropertyOptional({ description: 'Nur zählen, nichts ändern' })
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean;
+}
+
+/** Bestaetigung fuer „Konto löschen“: Passwort oder Code aus der E-Mail. */
+export class DeleteAccountDto {
+  @ApiPropertyOptional({
+    description: 'Aktuelles Passwort (Konten mit Passwort)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  password?: string;
+
+  @ApiPropertyOptional({
+    description: 'Code aus der E-Mail (Konten ohne Passwort)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  code?: string;
 }
