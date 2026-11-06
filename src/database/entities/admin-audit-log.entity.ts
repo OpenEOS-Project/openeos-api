@@ -67,6 +67,10 @@ export enum AdminAction {
   TSE_DEACTIVATION_POSTPONED = 'tse_deactivation_postponed',
   /** Monatsende: Abmeldung um 22:00 noch nicht gelungen, Betreiber gewarnt. */
   TSE_DEACTIVATION_OVERDUE = 'tse_deactivation_overdue',
+  /** Monatsende: TSE bleibt, weil im Folgemonat schon eine bezahlte Veranstaltung gebucht ist. */
+  TSE_KEPT_FOR_NEXT_MONTH = 'tse_kept_for_next_month',
+  /** Behalten widerrufen (Veranstaltung im Folgemonat vor dem Monatswechsel storniert/erstattet). */
+  TSE_KEEP_REVOKED = 'tse_keep_revoked',
   // DSFinV-K (openeos-api#102)
   DSFINVK_CLOSING_REQUESTED = 'dsfinvk_closing_requested',
   DSFINVK_EXPORTED = 'dsfinvk_exported',

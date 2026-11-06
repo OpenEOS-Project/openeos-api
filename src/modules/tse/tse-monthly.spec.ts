@@ -3,11 +3,14 @@ import {
   backoffMs,
   blockingEvents,
   businessDayStart,
+  currentKeep,
+  deactivationOutlook,
   eventsInMonth,
   isDeactivationOverdue,
   localMonthRange,
   monthKey,
   monthlyPhase,
+  nextMonthEvents,
   plannedDeactivationFor,
   postponedDeactivation,
 } from './tse-monthly';
@@ -226,5 +229,127 @@ describe('business days and blocking events', () => {
     // Geschaeftstag des 30.11. endet am 1.12. um 06:00 → beruehrt Dezember.
     expect(eventsInMonth([spill], now).map((e) => e.id)).toEqual(['spill']);
     expect(eventsInMonth([dec], now).map((e) => e.id)).toEqual(['dec']);
+  });
+});
+
+describe('next month already booked (decision 2026-11-06)', () => {
+  const planned = berlinTime(2026, 11, 30, 20);
+
+  it('counts events with a business day starting in the next month', () => {
+    const dec = event(
+      'dec',
+      berlinTime(2026, 12, 12, 15),
+      berlinTime(2026, 12, 12, 23),
+    );
+    const firstMorning = event(
+      'first',
+      berlinTime(2026, 12, 1, 7),
+      berlinTime(2026, 12, 1, 12),
+    );
+    const crossing = event(
+      'crossing',
+      berlinTime(2026, 11, 29, 10),
+      berlinTime(2026, 12, 2, 22),
+    );
+    const jan = event('jan', berlinTime(2027, 1, 9, 10));
+    expect(
+      nextMonthEvents([dec, firstMorning, crossing, jan], planned).map(
+        (e) => e.id,
+      ),
+    ).toEqual(['dec', 'first', 'crossing']);
+  });
+
+  it('does not count the overhang until 06:00 on the 1st (that stays the postponement rule)', () => {
+    const lastDay = event(
+      'last',
+      berlinTime(2026, 11, 30, 10),
+      berlinTime(2026, 11, 30, 19),
+    );
+    const pastMidnight = event(
+      'party',
+      berlinTime(2026, 11, 30, 18),
+      berlinTime(2026, 12, 1, 3),
+    );
+    const nov = event(
+      'nov',
+      berlinTime(2026, 11, 14, 14),
+      berlinTime(2026, 11, 15, 2),
+    );
+    expect(nextMonthEvents([lastDay, pastMidnight, nov], planned)).toEqual([]);
+  });
+
+  it('works across the year change', () => {
+    const jan = event('jan', berlinTime(2027, 1, 2, 10));
+    expect(
+      nextMonthEvents([jan], berlinTime(2026, 12, 31, 20)).map((e) => e.id),
+    ).toEqual(['jan']);
+    expect(nextMonthEvents([jan], planned)).toEqual([]);
+  });
+
+  it('outlook: chains booked months and running events until a month end has no reason', () => {
+    const dec = event(
+      'dec',
+      berlinTime(2026, 12, 12, 15),
+      berlinTime(2026, 12, 12, 23),
+    );
+    const newYear = event(
+      'newyear',
+      berlinTime(2026, 12, 31, 20),
+      berlinTime(2027, 1, 1, 3),
+    );
+    const outlook = deactivationOutlook([dec, newYear], planned);
+    expect(
+      outlook.months.map((m) => [m.month, m.reason, m.events.map((e) => e.id)]),
+    ).toEqual([
+      ['2026-12', 'paid_event_next_month', ['dec', 'newyear']],
+      ['2027-01', 'paid_event_running', ['newyear']],
+    ]);
+    expect(outlook.at).toEqual(berlinTime(2027, 1, 31, 20));
+  });
+
+  it('outlook: nothing booked → the planned date stays', () => {
+    const nov = event(
+      'nov',
+      berlinTime(2026, 11, 14, 14),
+      berlinTime(2026, 11, 15, 2),
+    );
+    expect(deactivationOutlook([nov], planned)).toEqual({
+      at: planned,
+      months: [],
+    });
+  });
+
+  it('outlook: a month gap ends the chain (only the directly following month counts)', () => {
+    const jan = event('jan', berlinTime(2027, 1, 9, 10));
+    expect(deactivationOutlook([jan], planned).months).toEqual([]);
+  });
+
+  it('currentKeep: only the latest, not revoked entry that led to the current date', () => {
+    const entry = {
+      at: planned.toISOString(),
+      from: planned.toISOString(),
+      to: berlinTime(2026, 12, 31, 20).toISOString(),
+      reason: 'paid_event_next_month' as const,
+      month: '2026-12',
+      events: [],
+      recheckUntil: berlinTime(2026, 12, 1).toISOString(),
+      revokedAt: null,
+    };
+    const unit = (plannedAt: Date, keeps: unknown[]) => ({
+      plannedDeactivationAt: plannedAt,
+      metadata: { keeps },
+    });
+    expect(currentKeep(unit(berlinTime(2026, 12, 31, 20), [entry]))).toEqual(
+      entry,
+    );
+    expect(currentKeep(unit(planned, [entry]))).toBeNull();
+    expect(
+      currentKeep(
+        unit(berlinTime(2026, 12, 31, 20), [{ ...entry, revokedAt: 'x' }]),
+      ),
+    ).toBeNull();
+    expect(
+      currentKeep({ plannedDeactivationAt: planned, metadata: {} }),
+    ).toBeNull();
   });
 });

@@ -17,6 +17,7 @@ import { berlinTime } from './tse-dates';
 import type { TseExportService } from './tse-export.service';
 import { TseMonthlyCycleService } from './tse-monthly-cycle.service';
 import type { TseNotifyService } from './tse-notify.service';
+import { lifecycleOutlookOf } from './tse-status.service';
 import { TseUnitService } from './tse-unit.service';
 
 /**
@@ -224,7 +225,10 @@ describeWithDb('Cloud-TSE monthly lifecycle (database)', () => {
           deactivation_next_attempt_at: Date | null;
           deactivation_alerted_at: Date | null;
           last_error_code: string | null;
-          metadata: { postponements?: Array<Record<string, unknown>> };
+          metadata: {
+            postponements?: Array<Record<string, unknown>>;
+            keeps?: Array<Record<string, unknown>>;
+          };
         }[]
       >(`SELECT * FROM tse_units WHERE id = $1`, [id])
     )[0];
@@ -493,5 +497,268 @@ describeWithDb('Cloud-TSE monthly lifecycle (database)', () => {
     expect(kinds).toContainEqual([badUnit, 'no_paid_event_this_month']);
     expect(kinds.find(([id]) => id === okUnit)).toBeUndefined();
     expect(notify.notifyPlatformAdmins).toHaveBeenCalledTimes(1);
+  });
+
+  describe('paid event already booked next month (decision 2026-11-06)', () => {
+    const setBilling = (id: string, status: string) =>
+      ds.query(`UPDATE events SET billing_status = $2 WHERE id = $1`, [
+        id,
+        status,
+      ]);
+    const finalExports = async (unitId: string) =>
+      Number(
+        (
+          await ds.query<{ n: string }[]>(
+            `SELECT count(*) AS n FROM tse_exports WHERE tse_unit_id = $1 AND trigger = 'final'`,
+            [unitId],
+          )
+        )[0].n,
+      );
+
+    it('keeps the TSE into December (no final export), no false alerts, deactivates at the end of December', async () => {
+      const o = await org();
+      await event(o, berlinTime(2026, 11, 14, 14), berlinTime(2026, 11, 15, 2));
+      const dec = await event(
+        o,
+        berlinTime(2026, 12, 12, 15),
+        berlinTime(2026, 12, 12, 23),
+        'invoice',
+        'Weihnachtsmarkt',
+      );
+      const u = await activeUnit(o, planned);
+
+      // Prognose schon vorher (Status, /admin/tse).
+      const outlook = lifecycleOutlookOf(
+        await ds.getRepository(TseUnit).findOneByOrFail({ id: u }),
+        await units.paidEventsAround(o, planned),
+      );
+      expect(outlook).toMatchObject({
+        expectedDeactivationAt: '2026-12-31T19:00:00.000Z',
+        months: [
+          {
+            month: '2026-12',
+            reason: 'paid_event_next_month',
+            decided: false,
+            events: [
+              expect.objectContaining({ id: dec, name: 'Weihnachtsmarkt' }),
+            ],
+          },
+        ],
+      });
+
+      expect((await runAt(berlinTime(2026, 11, 30, 18)))[u]).toBe('keeping');
+      expect((await runAt(berlinTime(2026, 11, 30, 20)))[u]).toBe('kept');
+      const row = await unitRow(u);
+      expect(row.state).toBe('active');
+      expect(row.planned_deactivation_at?.toISOString()).toBe(
+        '2026-12-31T19:00:00.000Z',
+      );
+      expect(row.metadata.keeps).toEqual([
+        expect.objectContaining({
+          reason: 'paid_event_next_month',
+          month: '2026-12',
+          events: [expect.objectContaining({ id: dec })],
+        }),
+      ]);
+      expect(row.metadata.postponements).toBeUndefined();
+      expect(await finalExports(u)).toBe(0);
+      expect(client.disableSecureElement).not.toHaveBeenCalled();
+      const audit = (await actions(o)).find(
+        (a) => a.action === 'tse_kept_for_next_month',
+      );
+      expect(audit?.details).toMatchObject({ eventId: dec, month: '2026-12' });
+      expect(audit?.reason).toContain('Weihnachtsmarkt');
+      expect(notify.notifyAdmins).not.toHaveBeenCalled();
+
+      // Nach Entscheidung: bis Monatswechsel nachgeprueft, nichts passiert.
+      expect((await runAt(berlinTime(2026, 11, 30, 22)))[u]).toBe('kept');
+      expect(notify.notifyPlatformAdmins).not.toHaveBeenCalled();
+      expect((await runAt(berlinTime(2026, 12, 1, 0, 15)))[u]).toBeUndefined();
+      // Keine Fehlalarme im Dezember (Gesundheitspruefung, /admin/tse/alerts).
+      for (const at of [
+        berlinTime(2026, 11, 30, 22, 30),
+        berlinTime(2026, 12, 1, 7),
+        berlinTime(2026, 12, 20, 7),
+      ]) {
+        const issues = await cycle.healthCheck(at);
+        expect(issues.filter((i) => i.unitId === u)).toEqual([]);
+      }
+      const keptOutlook = lifecycleOutlookOf(
+        await ds.getRepository(TseUnit).findOneByOrFail({ id: u }),
+        await units.paidEventsAround(o, berlinTime(2026, 12, 31, 20)),
+      );
+      expect(keptOutlook).toMatchObject({
+        expectedDeactivationAt: '2026-12-31T19:00:00.000Z',
+        months: [{ month: '2026-12', decided: true }],
+      });
+
+      expect((await runAt(berlinTime(2026, 12, 31, 18)))[u]).toBe('prepared');
+      expect((await runAt(berlinTime(2026, 12, 31, 20)))[u]).toBe(
+        'deactivated',
+      );
+      expect(await finalExports(u)).toBe(1);
+    });
+
+    it('only unpaid or cancelled events next month: deactivates normally', async () => {
+      const o = await org();
+      await event(
+        o,
+        berlinTime(2026, 12, 5, 15),
+        berlinTime(2026, 12, 5, 23),
+        'none',
+      );
+      await event(
+        o,
+        berlinTime(2026, 12, 6, 15),
+        berlinTime(2026, 12, 6, 23),
+        'pending',
+      );
+      const cancelled = await event(
+        o,
+        berlinTime(2026, 12, 7, 15),
+        null,
+        'paid',
+      );
+      await setBilling(cancelled, 'none'); // storniert/erstattet → 'none'
+      const u = await activeUnit(o, planned);
+      expect((await runAt(berlinTime(2026, 11, 30, 18)))[u]).toBe('prepared');
+      expect((await runAt(berlinTime(2026, 11, 30, 20)))[u]).toBe(
+        'deactivated',
+      );
+      expect((await actions(o)).map((a) => a.action)).not.toContain(
+        'tse_kept_for_next_month',
+      );
+    });
+
+    it('event refunded after the decision but before the month change: keep revoked, deactivated the same evening', async () => {
+      const o = await org();
+      const dec = await event(
+        o,
+        berlinTime(2026, 12, 12, 15),
+        berlinTime(2026, 12, 12, 23),
+      );
+      const u = await activeUnit(o, planned);
+      expect((await runAt(berlinTime(2026, 11, 30, 20)))[u]).toBe('kept');
+      await setBilling(dec, 'none');
+      // Naechster Lauf: Abschlussexport (jetzt doch) und Abmeldung.
+      expect((await runAt(berlinTime(2026, 11, 30, 20, 15)))[u]).toBe(
+        'deactivated',
+      );
+      expect(await finalExports(u)).toBe(1);
+      const row = await unitRow(u);
+      expect(row.state).toBe('deactivated');
+      expect(row.metadata.keeps?.[0]).toMatchObject({
+        revokedAt: expect.any(String) as unknown,
+      });
+      expect((await actions(o)).map((a) => a.action)).toEqual(
+        expect.arrayContaining([
+          'tse_kept_for_next_month',
+          'tse_keep_revoked',
+          'tse_deactivated',
+        ]),
+      );
+    });
+
+    it('event refunded after 22:00: revoked and deactivated in the same run (before the overdue alert)', async () => {
+      exportSucceeds = false;
+      const o = await org();
+      const dec = await event(o, berlinTime(2026, 12, 12, 15), null);
+      const u = await activeUnit(o, planned);
+      expect((await runAt(berlinTime(2026, 11, 30, 20)))[u]).toBe('kept');
+      await setBilling(dec, 'none');
+      expect((await runAt(berlinTime(2026, 11, 30, 22, 15)))[u]).toBe(
+        'deactivated',
+      );
+      expect(notify.notifyPlatformAdmins).toHaveBeenCalledTimes(0);
+    });
+
+    it('event refunded after the month change: TSE runs the month, health check reports it', async () => {
+      const o = await org();
+      const dec = await event(o, berlinTime(2026, 12, 12, 15), null);
+      const u = await activeUnit(o, planned);
+      expect((await runAt(berlinTime(2026, 11, 30, 20)))[u]).toBe('kept');
+      await setBilling(dec, 'none');
+      expect((await runAt(berlinTime(2026, 12, 1, 0, 15)))[u]).toBeUndefined();
+      expect((await unitRow(u)).state).toBe('active');
+      const issues = await cycle.healthCheck(berlinTime(2026, 12, 1, 7));
+      expect(issues.map((i) => [i.unitId, i.kind])).toContainEqual([
+        u,
+        'no_paid_event_this_month',
+      ]);
+    });
+
+    it('event booked late on the last day (after 18:00): kept at 20:00', async () => {
+      const o = await org();
+      const u = await activeUnit(o, planned);
+      expect((await runAt(berlinTime(2026, 11, 30, 18)))[u]).toBe('prepared');
+      await event(o, berlinTime(2026, 12, 3, 18), null);
+      expect((await runAt(berlinTime(2026, 11, 30, 20)))[u]).toBe('kept');
+    });
+
+    it('multi-month: December and January booked → kept twice, deactivated end of January', async () => {
+      const o = await org();
+      await event(
+        o,
+        berlinTime(2026, 12, 12, 15),
+        null,
+        'paid',
+        'Weihnachtsmarkt',
+      );
+      await event(
+        o,
+        berlinTime(2027, 1, 16, 18),
+        null,
+        'waived',
+        'Neujahrsempfang',
+      );
+      const u = await activeUnit(o, planned);
+      const outlook = lifecycleOutlookOf(
+        await ds.getRepository(TseUnit).findOneByOrFail({ id: u }),
+        await units.paidEventsAround(o, planned),
+      );
+      expect(outlook?.expectedDeactivationAt).toBe('2027-01-31T19:00:00.000Z');
+      expect(outlook?.months.map((m) => m.month)).toEqual([
+        '2026-12',
+        '2027-01',
+      ]);
+
+      expect((await runAt(berlinTime(2026, 11, 30, 20)))[u]).toBe('kept');
+      expect((await runAt(berlinTime(2026, 12, 31, 20)))[u]).toBe('kept');
+      expect((await unitRow(u)).planned_deactivation_at?.toISOString()).toBe(
+        '2027-01-31T19:00:00.000Z',
+      );
+      expect((await unitRow(u)).metadata.keeps?.map((k) => k.month)).toEqual([
+        '2026-12',
+        '2027-01',
+      ]);
+      expect((await runAt(berlinTime(2027, 1, 31, 20)))[u]).toBe('deactivated');
+    });
+
+    it('event spanning December into January: kept for December, then postponed (running) into January', async () => {
+      const o = await org();
+      await event(
+        o,
+        berlinTime(2026, 12, 28, 10),
+        berlinTime(2027, 1, 3, 22),
+        'paid',
+        'Winterdorf',
+      );
+      const u = await activeUnit(o, planned);
+      expect((await runAt(berlinTime(2026, 11, 30, 20)))[u]).toBe('kept');
+      expect((await runAt(berlinTime(2026, 12, 31, 18)))[u]).toBe('postponed');
+      expect((await unitRow(u)).planned_deactivation_at?.toISOString()).toBe(
+        '2027-01-31T19:00:00.000Z',
+      );
+      expect((await runAt(berlinTime(2027, 1, 31, 20)))[u]).toBe('deactivated');
+    });
+
+    it('a gap month ends the chain: event in January only → deactivated end of November', async () => {
+      const o = await org();
+      await event(o, berlinTime(2027, 1, 16, 18), null);
+      const u = await activeUnit(o, planned);
+      expect((await runAt(berlinTime(2026, 11, 30, 20)))[u]).toBe(
+        'deactivated',
+      );
+    });
   });
 });

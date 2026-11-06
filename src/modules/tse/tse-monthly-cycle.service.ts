@@ -23,14 +23,19 @@ import {
   PREPARE_BEFORE_MS,
   backoffMs,
   blockingEvents,
+  currentKeep,
   eventsInMonth,
   isDeactivationOverdue,
+  keepsOf,
   localMonthRange,
   monthKey,
   monthlyPhase,
+  nextMonthEvents,
   plannedDeactivationFor,
+  plannedDeactivationOfNextMonth,
   postponedDeactivation,
   type PaidEventSpan,
+  type TseKeep,
 } from './tse-monthly';
 import { TseNotifyService } from './tse-notify.service';
 import { rowsOf } from './tse-sql.util';
@@ -56,6 +61,9 @@ export type MonthlyOutcome =
   | 'idle'
   | 'locked'
   | 'postponed'
+  | 'keeping'
+  | 'kept'
+  | 'keep_revoked'
   | 'prepared'
   | 'waiting_for_export'
   | 'backoff'
@@ -106,6 +114,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  *   bezahlten Veranstaltung (auch ueber den Monatswechsel), bleibt die TSE
  *   und bekommt den Termin am Ende des Folgemonats (Protokoll
  *   `tse_deactivation_postponed` mit Kostenhinweis, `metadata.postponements`).
+ * - **Folgemonat** (Entscheidung 2026-11-06): hat der Verein im Folgemonat
+ *   schon eine bezahlte Veranstaltung (Geschaeftstag beginnt dort), bleibt
+ *   die TSE ebenfalls (spart Aktivierung und Mitteilung ans Finanzamt):
+ *   ab 18:00 nur Kassenabschluesse, kein Abschlussexport; um 20:00 neuer
+ *   Termin Ende des Folgemonats (`tse_kept_for_next_month`,
+ *   `metadata.keeps`). Bis zum Monatswechsel prueft jeder Lauf nach — ist
+ *   die Veranstaltung storniert/erstattet, wird doch abgemeldet
+ *   (`tse_keep_revoked`).
  * - **Garantie**: Fehler → Wiederholung mit Backoff; um 22:00 noch aktiv →
  *   Mail an den Betreiber (`tse_deactivation_overdue`) und roter Hinweis in
  *   der Super-Admin-Liste. Mehrere Instanzen: CronLockService je Lauf,
@@ -173,12 +189,19 @@ export class TseMonthlyCycleService {
       })
       .orderBy('unit.plannedDeactivationAt', 'ASC')
       .getMany();
+    const kept = await this.keptAwaitingMonthChange(now);
     const outcomes: Record<string, MonthlyOutcome> = {};
-    for (let i = 0; i < due.length; i += CONCURRENCY) {
-      const batch = due.slice(i, i + CONCURRENCY);
+    const work: Array<{ unit: TseUnit; recheck: boolean }> = [
+      ...due.map((unit) => ({ unit, recheck: false })),
+      ...kept
+        .filter((unit) => !due.some((d) => d.id === unit.id))
+        .map((unit) => ({ unit, recheck: true })),
+    ];
+    for (let i = 0; i < work.length; i += CONCURRENCY) {
+      const batch = work.slice(i, i + CONCURRENCY);
       await Promise.all(
-        batch.map(async (unit) => {
-          outcomes[unit.id] = await this.processUnitLocked(unit, now);
+        batch.map(async ({ unit, recheck }) => {
+          outcomes[unit.id] = await this.processUnitLocked(unit, now, recheck);
         }),
       );
     }
@@ -199,11 +222,35 @@ export class TseMonthlyCycleService {
     );
   }
 
+  /**
+   * Behaltene TSEs, deren urspruenglicher Termin vorbei ist, deren Monat
+   * aber noch laeuft: bis zum Monatswechsel kann eine Stornierung die
+   * Entscheidung noch kippen.
+   */
+  private keptAwaitingMonthChange(now: Date): Promise<TseUnit[]> {
+    return this.unitRepository
+      .createQueryBuilder('unit')
+      .addSelect('unit.accessTokenEnc')
+      .where(`unit.state = 'active'`)
+      .andWhere(`jsonb_typeof(unit.metadata -> 'keeps') = 'array'`)
+      .andWhere(`(unit.metadata -> 'keeps' -> -1 ->> 'revokedAt') IS NULL`)
+      .andWhere(
+        `(unit.metadata -> 'keeps' -> -1 ->> 'from')::timestamptz <= :now`,
+        { now },
+      )
+      .andWhere(
+        `(unit.metadata -> 'keeps' -> -1 ->> 'recheckUntil')::timestamptz > :now`,
+        { now },
+      )
+      .getMany();
+  }
+
   // ------------------------------------------------------------ je TSE
 
   private async processUnitLocked(
     unit: TseUnit,
     now: Date,
+    recheck = false,
   ): Promise<MonthlyOutcome> {
     const claimed = rowsOf<{ id: string }>(
       await this.unitRepository.query(
@@ -216,7 +263,9 @@ export class TseMonthlyCycleService {
     );
     if (claimed.length === 0) return 'locked';
     try {
-      return await this.processUnit(unit, now);
+      return recheck
+        ? await this.recheckKeep(unit, now)
+        : await this.processUnit(unit, now);
     } catch (error) {
       this.logger.error(
         `Monthly cycle for TSE unit ${unit.id} failed: ${errorMessageOf(error)}`,
@@ -246,6 +295,18 @@ export class TseMonthlyCycleService {
     if (blocking.length > 0) {
       await this.postpone(unit, planned, at, blocking);
       return 'postponed';
+    }
+
+    // Folgemonat schon gebucht: TSE behalten. Entschieden wird erst zum
+    // Termin (20:00) — bis dahin kann die Veranstaltung noch storniert oder
+    // kurzfristig gebucht werden. Kein Abschlussexport, die taeglichen
+    // Exporte laufen weiter; Kassenabschluesse wie sonst.
+    const booked = nextMonthEvents(events, planned, businessDayStartHour());
+    if (booked.length > 0) {
+      await this.closeBusinessDays(unit, now);
+      if (phase === 'prepare') return 'keeping';
+      await this.keep(unit, planned, booked, now);
+      return 'kept';
     }
 
     // Vorbereitung (ab 18:00) und vor der Abmeldung: Abschlussexport.
@@ -321,6 +382,114 @@ export class TseMonthlyCycleService {
       `Month-end deactivation of TSE ${unit.serialNumber ?? unit.id} failed (attempt ${attempts}): ${code}`,
     );
     return 'failed';
+  }
+
+  private async keep(
+    unit: TseUnit,
+    planned: Date,
+    booked: PaidEventSpan[],
+    now: Date,
+  ): Promise<void> {
+    const to = plannedDeactivationOfNextMonth(planned);
+    const entry: TseKeep = {
+      at: now.toISOString(),
+      from: planned.toISOString(),
+      to: to.toISOString(),
+      reason: 'paid_event_next_month',
+      month: monthKey(to),
+      events: booked.map((e) => ({
+        id: e.id,
+        name: e.name,
+        startDate: e.startDate.toISOString(),
+        endDate: e.endDate ? e.endDate.toISOString() : null,
+      })),
+      recheckUntil: localMonthRange(planned).to.toISOString(),
+      revokedAt: null,
+    };
+    const keeps = [...keepsOf(unit), entry].slice(-24);
+    await this.writePlan(unit, to, 'keeps', keeps);
+    const names = booked.map((e) => `„${e.name}“`).join(', ');
+    await this.units.audit(
+      AdminAction.TSE_KEPT_FOR_NEXT_MONTH,
+      unit.organizationId,
+      unit.id,
+      {
+        details: {
+          serialNumber: unit.serialNumber,
+          plannedDeactivationAt: entry.from,
+          newPlannedDeactivationAt: entry.to,
+          month: entry.month,
+          eventId: booked[0].id,
+          events: entry.events,
+        },
+        reason: `Bezahlte Veranstaltung im ${germanMonth(to)} schon gebucht (${names}) – die TSE bleibt aktiv, keine neue Aktivierung.`,
+      },
+    );
+    this.logger.log(
+      `TSE ${unit.serialNumber ?? unit.id} of org ${unit.organizationId}: kept for ${entry.month} (paid event booked: ${names}), next deactivation ${entry.to}`,
+    );
+  }
+
+  /**
+   * Nach der Behalten-Entscheidung bis zum Monatswechsel: gibt es die
+   * bezahlte Veranstaltung im Folgemonat noch? Sonst Entscheidung widerrufen
+   * und wie sonst zum Monatsende abmelden.
+   */
+  async recheckKeep(unit: TseUnit, now: Date): Promise<MonthlyOutcome> {
+    const keep = currentKeep(unit);
+    if (!keep) return 'idle';
+    const from = new Date(keep.from);
+    const events = await this.units.paidEventsAround(unit.organizationId, from);
+    const booked = nextMonthEvents(events, from, businessDayStartHour());
+    if (booked.length > 0) return 'kept';
+
+    const keeps = keepsOf(unit).map((k, i, all) =>
+      i === all.length - 1 ? { ...k, revokedAt: now.toISOString() } : k,
+    );
+    await this.writePlan(unit, from, 'keeps', keeps);
+    await this.units.audit(
+      AdminAction.TSE_KEEP_REVOKED,
+      unit.organizationId,
+      unit.id,
+      {
+        details: {
+          serialNumber: unit.serialNumber,
+          plannedDeactivationAt: keep.from,
+          month: keep.month,
+          events: keep.events,
+        },
+        reason: `Keine bezahlte Veranstaltung mehr im ${germanMonth(new Date(keep.to))} – die TSE wird doch zum Monatsende abgemeldet.`,
+      },
+    );
+    this.logger.warn(
+      `TSE ${unit.serialNumber ?? unit.id} of org ${unit.organizationId}: keep for ${keep.month} revoked (paid event gone) – deactivating at month end`,
+    );
+    const outcome = await this.processUnit(unit, now);
+    return outcome === 'idle' ? 'keep_revoked' : outcome;
+  }
+
+  /** Neuer Termin + Liste in `metadata` (Fehlversuche/Warnung zurueckgesetzt). */
+  private async writePlan(
+    unit: TseUnit,
+    planned: Date,
+    key: 'keeps' | 'postponements',
+    list: unknown[],
+  ): Promise<void> {
+    await this.unitRepository.query(
+      `UPDATE tse_units
+          SET planned_deactivation_at = $2,
+              deactivation_attempts = 0,
+              deactivation_next_attempt_at = NULL,
+              deactivation_alerted_at = NULL,
+              metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), $4::text[], $3::jsonb, true),
+              updated_at = now()
+        WHERE id = $1`,
+      [unit.id, planned, JSON.stringify(list), `{${key}}`],
+    );
+    unit.plannedDeactivationAt = planned;
+    unit.deactivationAttempts = 0;
+    unit.deactivationNextAttemptAt = null;
+    unit.metadata = { ...(unit.metadata ?? {}), [key]: list };
   }
 
   private async postpone(
