@@ -1,5 +1,6 @@
 import {
   absatz,
+  codeBlock,
   datenblock,
   ersatzlink,
   hinweis,
@@ -167,5 +168,102 @@ export function userInactivityMail(o: {
     ),
   });
   const text = [intro, '', keep, `Anmelden: ${loginUrl}`].join('\n');
+  return { subject, html, text };
+}
+
+/** Bestaetigung: Organisation auf Verlangen sofort endgueltig geloescht (AGB 10.4, AVV 10.5). */
+export function organizationPurgedMail(o: {
+  to: string;
+  appUrl: string;
+  organizationName: string;
+  purgedAt: Date;
+}): RetentionMail {
+  const subject = `Deine Organisation „${o.organizationName}“ wurde endgültig gelöscht`;
+  const intro = `Wie verlangt haben wir die Daten deiner Organisation „${o.organizationName}“ am ${formatDate(o.purgedAt)} endgültig gelöscht: Artikel, Einstellungen, Bestellungen, Schichtpläne, Geräte, Zugänge und Mitgliedschaften.`;
+  const backups =
+    'In unseren Datensicherungen sind die Daten noch bis zu acht Wochen enthalten; sie werden dort nicht mehr verarbeitet und laufen dann automatisch aus.';
+  const html = rahmen({
+    kontext: 'Konto',
+    titel: `OpenEOS — ${subject}`,
+    preheader: `Gelöscht am ${formatDate(o.purgedAt)}`,
+    empfaenger: o.to,
+    appUrl: o.appUrl,
+    inhalt: stapeln(
+      ueberschrift(subject),
+      absatz(intro),
+      datenblock('Details', [
+        ['Organisation', o.organizationName],
+        ['Endgültig gelöscht am', formatDate(o.purgedAt)],
+      ]),
+      absatz(backups),
+      absatz(FISCAL_NOTE),
+    ),
+  });
+  const text = [intro, '', backups, '', FISCAL_NOTE].join('\n');
+  return { subject, html, text };
+}
+
+/** Code fuer „Konto löschen“ bei Konten ohne Passwort. */
+export function accountDeletionCodeMail(o: {
+  to: string;
+  appUrl: string;
+  code: string;
+  validMinutes: number;
+}): RetentionMail {
+  const subject = 'Dein Code zum Löschen deines OpenEOS-Kontos';
+  const intro = `Mit diesem Code bestätigst du, dass du dein Konto ${o.to} löschen willst. Er gilt ${o.validMinutes} Minuten.`;
+  const ignore =
+    'Du hast das nicht angefordert? Dann ignoriere diese E-Mail – dein Konto bleibt bestehen. Ändere zur Sicherheit dein Passwort bzw. melde dich ab.';
+  const html = rahmen({
+    kontext: 'Konto',
+    titel: `OpenEOS — ${subject}`,
+    preheader: `Code gültig für ${o.validMinutes} Minuten`,
+    empfaenger: o.to,
+    appUrl: o.appUrl,
+    inhalt: stapeln(
+      ueberschrift(subject),
+      absatz(intro),
+      codeBlock(o.code),
+      absatz(ignore),
+    ),
+  });
+  const text = [intro, '', o.code, '', ignore].join('\n');
+  return { subject, html, text };
+}
+
+/** Bestaetigung: Benutzer hat sein Konto selbst geloescht. */
+export function accountDeletedMail(o: {
+  to: string;
+  appUrl: string;
+  deletedAt: Date;
+  closedOrganizations: string[];
+}): RetentionMail {
+  const subject = 'Dein OpenEOS-Konto wurde gelöscht';
+  const intro = `Du hast dein Konto ${o.to} am ${formatDate(o.deletedAt)} gelöscht. Name, E-Mail-Adresse, Anmeldedaten, Sitzungen und Mitgliedschaften sind entfernt; du kannst dich nicht mehr anmelden.`;
+  const orgs =
+    o.closedOrganizations.length > 0
+      ? `Mit deinem Konto wurden diese Organisationen gelöscht, weil du ihr einziges Mitglied warst: ${o.closedOrganizations.map((n) => `„${n}“`).join(', ')}. Ihre Daten löschen wir nach Ablauf der Exportfrist endgültig.`
+      : null;
+  const fiscal =
+    'Hast du Kassenvorgänge gebucht, bleibt dein Name als Bediener im Steuerarchiv der jeweiligen Organisation für die gesetzliche Frist von zehn Jahren erhalten.';
+  const backups =
+    'In unseren Datensicherungen sind die Daten noch bis zu acht Wochen enthalten und laufen dann automatisch aus.';
+  const html = rahmen({
+    kontext: 'Konto',
+    titel: `OpenEOS — ${subject}`,
+    preheader: `Gelöscht am ${formatDate(o.deletedAt)}`,
+    empfaenger: o.to,
+    appUrl: o.appUrl,
+    inhalt: stapeln(
+      ueberschrift(subject),
+      absatz(intro),
+      orgs ? absatz(orgs) : null,
+      absatz(fiscal),
+      absatz(backups),
+    ),
+  });
+  const text = [intro, '', orgs, orgs ? '' : null, fiscal, '', backups]
+    .filter((line): line is string => line !== null)
+    .join('\n');
   return { subject, html, text };
 }

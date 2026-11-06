@@ -229,8 +229,10 @@ export class CashbookService {
     businessDate?: string,
     deviceId?: string | null,
   ): Promise<CashbookDay> {
+    // Auch geloeschte (Export bis zur endgueltigen Loeschung, AGB 10.4).
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
+      withDeleted: true,
     });
     if (!organization) {
       throw new NotFoundException({

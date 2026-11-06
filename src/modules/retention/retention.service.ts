@@ -235,6 +235,11 @@ export class RetentionService {
     return repo.save(notice);
   }
 
+  /** Fuer lesende Vorpruefungen ausserhalb eines Laufs. */
+  get manager() {
+    return this.dataSource.manager;
+  }
+
   /** Lesende Abfrage ausserhalb eines Laufs (Vorpruefungen). */
   async query<T = Record<string, unknown>>(
     sql: string,

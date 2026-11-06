@@ -21,6 +21,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { CurrentUser } from '../../common/decorators';
+import { ClosedOrganizationAccess } from '../../common/organization-closure/organization-closure.guard';
 import type { User } from '../../database/entities';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import {
@@ -127,6 +128,8 @@ export class TseController {
   }
 
   @Post('exports')
+  // Dient dem Export: auch in einer geloeschten Organisation (AGB 10.4).
+  @ClosedOrganizationAccess()
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary: 'Export now (admins)',

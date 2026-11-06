@@ -171,6 +171,7 @@ export class UserAccountsJob implements RetentionJob {
           pending_email_token = NULL,
           pending_email_expires_at = NULL,
           newsletter_opt_in_at = NULL,
+          newsletter_opt_out_at = NULL,
           preferences = DEFAULT,
           deleted_at = $2
         WHERE id = $1`,

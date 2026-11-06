@@ -2,6 +2,7 @@ import {
   Injectable,
   ExecutionContext,
   UnauthorizedException,
+  ForbiddenException,
   CanActivate,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -52,6 +53,17 @@ export class DeviceAuthGuard implements CanActivate {
         code: ErrorCodes.UNAUTHORIZED,
         reason: ErrorReasons.DEVICE_NOT_VERIFIED,
         message: 'Gerät ist nicht verifiziert',
+      });
+    }
+
+    /* Geloeschte Organisation: die Relation laedt sie nicht mehr. Bis zur
+       endgueltigen Loeschung ist sie nur noch zum Export im Kundenportal
+       offen (AGB 10.4) — Kassen und andere Geraete buchen nichts mehr. */
+    if (!device.organization || device.organization.deletedAt) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.ORGANIZATION_CLOSED,
+        message: 'Diese Organisation wurde gelöscht.',
       });
     }
 

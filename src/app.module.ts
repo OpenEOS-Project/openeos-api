@@ -68,6 +68,10 @@ import { McpModule } from './modules/mcp';
 import { TseModule } from './modules/tse';
 import { DsfinvkModule } from './modules/dsfinvk';
 import { RetentionModule } from './modules/retention';
+import {
+  OrganizationClosureGuard,
+  OrganizationClosureModule,
+} from './common/organization-closure';
 
 @Module({
   imports: [
@@ -210,6 +214,7 @@ import { RetentionModule } from './modules/retention';
     // DSFinV-K (Kassenabschluss, Export) und Kassenbuch, openeos-api#102
     DsfinvkModule,
     RetentionModule,
+    OrganizationClosureModule,
   ],
   controllers: [],
   providers: [
@@ -238,6 +243,12 @@ import { RetentionModule } from './modules/retention';
     {
       provide: APP_GUARD,
       useClass: DeploymentModeGuard,
+    },
+    // Geloeschte Organisationen bis zur endgueltigen Loeschung nur lesend
+    // (AGB 10.4); nach der Anmeldung, damit der Benutzer feststeht.
+    {
+      provide: APP_GUARD,
+      useClass: OrganizationClosureGuard,
     },
   ],
 })

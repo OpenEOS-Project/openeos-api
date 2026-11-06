@@ -5,12 +5,16 @@ import {
   type OperatingModeOrg,
   type OperatingModeView,
 } from '../../common/utils/operating-mode.util';
+import {
+  OrganizationClosureService,
+  type OrganizationClosure,
+} from '../../common/organization-closure/organization-closure.service';
 import type { Organization } from '../../database/entities/organization.entity';
 import { TseStatusService, type TseSummary } from '../tse/tse-status.service';
 
 /** Was die Ansicht von einer Organisation braucht. */
 export type OrganizationLike = OperatingModeOrg &
-  Pick<Organization, 'id' | 'settings'>;
+  Pick<Organization, 'id' | 'settings'> & { deletedAt?: Date | null };
 
 /**
  * Organisation, wie sie jede Antwort an Oberflaeche und Kasse traegt:
@@ -21,7 +25,14 @@ export type OrganizationLike = OperatingModeOrg &
  * clientId }`, tse-swissbit-plan.md §8).
  */
 export type OrganizationView<T extends OrganizationLike = Organization> = T &
-  OperatingModeView & { tse: TseSummary | null };
+  OperatingModeView & {
+    tse: TseSummary | null;
+    /**
+     * Nur bei geloeschten Organisationen: bis zur endgueltigen Loeschung
+     * nur noch lesend nutzbar (AGB 10.4), sonst `null`.
+     */
+    closure: OrganizationClosure | null;
+  };
 
 /**
  * Eine Stelle fuer die Organisations-Antworten: `GET/PATCH /organizations…`,
@@ -38,6 +49,8 @@ export class OrganizationViewService {
   constructor(
     @Optional()
     private readonly tseStatus?: TseStatusService,
+    @Optional()
+    private readonly closures?: OrganizationClosureService,
   ) {}
 
   async view<T extends OrganizationLike>(
@@ -66,8 +79,17 @@ export class OrganizationViewService {
     const summaries = this.tseStatus
       ? await this.tseStatus.summaries(organizations)
       : new Map<string, TseSummary>();
+    const deleted = organizations.filter((o) => o.deletedAt).map((o) => o.id);
+    const closures =
+      this.closures && deleted.length > 0
+        ? await this.closures.closures(deleted)
+        : new Map<string, OrganizationClosure>();
     return organizations.map((organization) =>
-      organizationView(organization, summaries.get(organization.id) ?? null),
+      organizationView(
+        organization,
+        summaries.get(organization.id) ?? null,
+        closures.get(organization.id) ?? null,
+      ),
     );
   }
 
@@ -76,14 +98,45 @@ export class OrganizationViewService {
    * in derselben Form wie `GET /organizations/:id`. Gibt eine Kopie zurueck;
    * das geladene Entity bleibt unveraendert (es koennte noch gespeichert
    * werden).
+   *
+   * Geloeschte Organisationen (die Relation laedt sie nicht) bleiben bis zur
+   * endgueltigen Loeschung fuer Administratoren sichtbar, mit `closure`
+   * (Nur-lesen-Zugang zum Export, AGB 10.4); fuer alle anderen Mitglieder
+   * und nach der endgueltigen Loeschung entfallen sie.
    */
   async forMemberships<
     U extends {
-      userOrganizations?: Array<{ organization?: Organization | null }> | null;
+      userOrganizations?: Array<{
+        organizationId?: string;
+        role?: string;
+        organization?: Organization | null;
+      }> | null;
     },
   >(user: U): Promise<U> {
-    const memberships = user.userOrganizations;
+    let memberships = user.userOrganizations;
     if (!memberships?.length) return user;
+    const missing = memberships
+      .filter((m) => !m.organization || m.organization.deletedAt)
+      .map((m) => m.organizationId ?? m.organization?.id)
+      .filter((id): id is string => !!id);
+    if (missing.length > 0) {
+      const deleted = this.closures
+        ? await this.closures.deletedOrganizations(missing)
+        : [];
+      const closures = this.closures
+        ? await this.closures.closures(deleted.map((o) => o.id))
+        : new Map<string, OrganizationClosure>();
+      const byId = new Map(deleted.map((o) => [o.id, o]));
+      memberships = memberships.flatMap((m) => {
+        if (m.organization && !m.organization.deletedAt) return [m];
+        const id = m.organizationId ?? m.organization?.id;
+        const organization = id ? byId.get(id) : undefined;
+        const closure = id ? closures.get(id) : undefined;
+        if (!organization || !closure || closure.purged) return [];
+        if (m.role !== 'admin') return [];
+        return [{ ...m, organization }];
+      });
+    }
     const organizations = memberships
       .map((m) => m.organization)
       .filter((o): o is Organization => !!o);
@@ -114,6 +167,7 @@ function derivedFields(
 export function organizationView<T extends OrganizationLike>(
   organization: T,
   tse: TseSummary | null,
+  closure: OrganizationClosure | null = null,
 ): OrganizationView<T> {
-  return { ...organization, ...derivedFields(organization, tse) };
+  return { ...organization, ...derivedFields(organization, tse), closure };
 }

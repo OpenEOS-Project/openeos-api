@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { EncryptionService } from '../../common/services/encryption.service';
 import { RetentionNotice, RetentionRun } from '../../database/entities';
 import { AssistantModule } from '../assistant';
 import { MenuImportWorkerService } from '../assistant/menu-import/menu-import-worker.service';
@@ -17,6 +18,8 @@ import { OrganizationInactivityJob } from './jobs/organization-inactivity.job';
 import { OrganizationPurgeJob } from './jobs/organization-purge.job';
 import { SupportMessagesJob } from './jobs/support-messages.job';
 import { UserAccountsJob } from './jobs/user-accounts.job';
+import { AccountDeletionController } from './account-deletion.controller';
+import { AccountDeletionService } from './account-deletion.service';
 import { RetentionAdminController } from './retention-admin.controller';
 import { RETENTION_CONFIG, loadRetentionConfig } from './retention.config';
 import { RetentionErasureService } from './retention-erasure.service';
@@ -34,7 +37,7 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
     TypeOrmModule.forFeature([RetentionRun, RetentionNotice]),
     AssistantModule,
   ],
-  controllers: [RetentionAdminController],
+  controllers: [RetentionAdminController, AccountDeletionController],
   providers: [
     { provide: RETENTION_CONFIG, useFactory: () => loadRetentionConfig() },
     RetentionNoticeService,
@@ -72,6 +75,8 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
     },
     RetentionService,
     RetentionErasureService,
+    EncryptionService,
+    AccountDeletionService,
   ],
   exports: [RetentionService],
 })
