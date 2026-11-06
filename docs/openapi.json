@@ -1513,7 +1513,7 @@
     },
     "/api/admin/tse/units": {
       "get": {
-        "description": "Alle TSEs aller Organisationen mit Zustand, Auslöser (`manual`, `auto`, `super_admin`), auslösender Veranstaltung, Anlage-/Aktiv-/Deaktivierungszeit und aktiven Monaten.",
+        "description": "Alle TSEs aller Organisationen mit Zustand, Auslöser (`manual`, `auto`, `super_admin`), auslösender Veranstaltung, Anlage-/Aktiv-/Deaktivierungszeit und aktiven Monaten. Lebenszyklus `monthly`: `lifecycleOutlook` (voraussichtliche Abmeldung, Monate, in denen die TSE wegen einer gebuchten Veranstaltung im Folgemonat oder einer über das Monatsende laufenden Veranstaltung aktiv bleibt) und `keeps` (Entscheidungen „bleibt im Folgemonat“).",
         "operationId": "tseAdmin_units",
         "parameters": [],
         "responses": {
@@ -1534,7 +1534,7 @@
     },
     "/api/admin/tse/alerts": {
       "get": {
-        "description": "Lebenszyklus `monthly`: ueberfaellige Abmeldungen zum Monatsende (nach 22:00 noch aktiv) und Ergebnisse der Gesundheitspruefung (aktive TSE in einem Monat ohne bezahlte Veranstaltung, fehlender Abmeldetermin). Leere Liste bei `persistent`.",
+        "description": "Lebenszyklus `monthly`: ueberfaellige Abmeldungen zum Monatsende (nach 22:00 noch aktiv) und Ergebnisse der Gesundheitspruefung (aktive TSE in einem Monat ohne bezahlte Veranstaltung, fehlender Abmeldetermin). Eine TSE, die wegen einer gebuchten Veranstaltung im Folgemonat aktiv bleibt, hat einen neuen Termin (Ende des Folgemonats) und erscheint deshalb nicht als überfällig. Leere Liste bei `persistent`.",
         "operationId": "tseAdmin_alerts",
         "parameters": [],
         "responses": {
@@ -12173,6 +12173,8 @@
                 "tse_export_requested",
                 "tse_deactivation_postponed",
                 "tse_deactivation_overdue",
+                "tse_kept_for_next_month",
+                "tse_keep_revoked",
                 "dsfinvk_closing_requested",
                 "dsfinvk_exported"
               ]

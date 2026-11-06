@@ -15,6 +15,14 @@ import { TseSigningService } from './tse-signing.service';
 import { TseUnitService } from './tse-unit.service';
 import type { TseReceiptView } from './tse-view';
 import type { TsePostponement } from './tse-monthly-cycle.service';
+import {
+  currentKeep,
+  deactivationOutlook,
+  keepsOf,
+  type KeepReason,
+  type PaidEventSpan,
+} from './tse-monthly';
+import { businessDayStartHour } from '../dsfinvk/dsfinvk-master';
 
 /** Kurzfassung fuer `GET /organizations/:id` und `GET /device-api/organization`. */
 export interface TseSummary {
@@ -54,6 +62,65 @@ export function postponementsOf(unit: Pick<TseUnit, 'metadata'>) {
   return Array.isArray(list) ? (list as TsePostponement[]) : [];
 }
 
+/**
+ * Lebenszyklus `monthly`: wie lange die aktive TSE voraussichtlich laeuft.
+ * `months` = Monate, in denen sie ueber ihren Monat hinaus aktiv bleibt —
+ * zuerst eine schon getroffene Entscheidung (`decided`), dann die Prognose
+ * aus den bezahlten Veranstaltungen (Folgemonat gebucht bzw. Veranstaltung
+ * laeuft zum Termin). Kann sich bis zum Monatsende noch aendern
+ * (Stornierung, neue Buchung).
+ */
+export interface TseLifecycleOutlook {
+  expectedDeactivationAt: string;
+  months: {
+    month: string;
+    reason: KeepReason;
+    decided: boolean;
+    events: {
+      id: string;
+      name: string;
+      startDate: string;
+      endDate: string | null;
+    }[];
+  }[];
+}
+
+export function lifecycleOutlookOf(
+  unit: Pick<TseUnit, 'state' | 'plannedDeactivationAt' | 'metadata'>,
+  events: readonly PaidEventSpan[],
+): TseLifecycleOutlook | null {
+  if (unit.state !== 'active' || !unit.plannedDeactivationAt) return null;
+  const planned = new Date(unit.plannedDeactivationAt);
+  const decided = currentKeep(unit);
+  const outlook = deactivationOutlook(events, planned, businessDayStartHour());
+  return {
+    expectedDeactivationAt: outlook.at.toISOString(),
+    months: [
+      ...(decided
+        ? [
+            {
+              month: decided.month,
+              reason: decided.reason,
+              decided: true,
+              events: decided.events,
+            },
+          ]
+        : []),
+      ...outlook.months.map((m) => ({
+        month: m.month,
+        reason: m.reason,
+        decided: false,
+        events: m.events.map((e) => ({
+          id: e.id,
+          name: e.name,
+          startDate: e.startDate.toISOString(),
+          endDate: e.endDate ? e.endDate.toISOString() : null,
+        })),
+      })),
+    ],
+  };
+}
+
 export function unitView(unit: TseUnit) {
   const iso = (d: Date | null | undefined) =>
     d ? new Date(d).toISOString() : null;
@@ -78,6 +145,8 @@ export function unitView(unit: TseUnit) {
         ? iso(unit.plannedDeactivationAt)
         : null,
     postponements: postponementsOf(unit),
+    /* Behalten wegen gebuchter Veranstaltung im Folgemonat (2026-11-06). */
+    keeps: keepsOf(unit),
     certificationId: unit.certificationId,
     certificateExpiresAt: iso(unit.certificateExpiresAt),
     signatureAlgorithm: unit.signatureAlgorithm,
@@ -205,6 +274,7 @@ export class TseStatusService {
       ? await this.units.transactionCounts(unit.id, since)
       : null;
     const lastExport = await this.exports.lastDownloaded(organizationId);
+    const outlook = await this.lifecycleOutlook(unit);
     const info = live?.value ?? null;
     const { qualifying: _qualifying, ...eligibilityView } = eligibility;
     return {
@@ -217,7 +287,7 @@ export class TseStatusService {
       lifecycle: this.config.lifecycle,
       country: organization.country ?? null,
       eligibility: eligibilityView,
-      unit: unit ? unitView(unit) : null,
+      unit: unit ? { ...unitView(unit), lifecycleOutlook: outlook } : null,
       live: info
         ? {
             fetchedAt: live?.fetchedAt ?? null,
@@ -255,6 +325,25 @@ export class TseStatusService {
       },
       history: history.map(unitView),
     };
+  }
+
+  /** Prognose der Abmeldung (nur `monthly`, nur aktive TSE). */
+  async lifecycleOutlook(
+    unit: TseUnit | null,
+  ): Promise<TseLifecycleOutlook | null> {
+    if (
+      !unit ||
+      this.config.lifecycle !== 'monthly' ||
+      unit.state !== 'active' ||
+      !unit.plannedDeactivationAt
+    ) {
+      return null;
+    }
+    const events = await this.units.paidEventsAround(
+      unit.organizationId,
+      new Date(unit.plannedDeactivationAt),
+    );
+    return lifecycleOutlookOf(unit, events);
   }
 
   async transactions(
