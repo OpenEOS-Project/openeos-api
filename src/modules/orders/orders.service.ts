@@ -1318,10 +1318,10 @@ export class OrdersService {
 
   /**
    * Applies the shared QueryOrdersDto filters (everything except pagination
-   * and includeItems) to a query builder. Used by both findAll and getStats
-   * so their result sets can never diverge.
+   * and includeItems) to a query builder. Used by findAll, getStats and the
+   * CSV export (OrdersExportService) so their result sets can never diverge.
    */
-  private applyOrderFilters(
+  applyOrderFilters(
     queryBuilder: SelectQueryBuilder<Order>,
     alias: string,
     query: QueryOrdersDto,
@@ -1376,6 +1376,12 @@ export class OrdersService {
     if (query.deviceId) {
       queryBuilder.andWhere(`${alias}.createdByDeviceId = :filterDeviceId`, {
         filterDeviceId: query.deviceId,
+      });
+    }
+
+    if (query.isTest !== undefined) {
+      queryBuilder.andWhere(`${alias}.isTest = :filterIsTest`, {
+        filterIsTest: query.isTest,
       });
     }
 

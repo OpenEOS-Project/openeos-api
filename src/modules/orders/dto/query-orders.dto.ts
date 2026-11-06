@@ -5,6 +5,7 @@ import {
   IsUUID,
   IsEnum,
   IsDateString,
+  IsBoolean,
   IsInt,
   Min,
   Max,
@@ -139,4 +140,24 @@ export class QueryOrdersDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   deviceId?: string;
+
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'Testbestellungen (Veranstaltung im Testmodus): `true` nur Testbestellungen, `false` nur echte; ohne Angabe beide',
+  })
+  @IsOptional()
+  // Rohwert lesen: enableImplicitConversion macht aus dem String 'false'
+  // vorher Boolean('false') === true.
+  @Transform(({ obj }) => queryBoolean((obj as Record<string, unknown>).isTest))
+  @IsBoolean()
+  isTest?: boolean;
+}
+
+/** 'true'/'false' aus der Query; alles andere bleibt und faellt bei @IsBoolean durch. */
+function queryBoolean(raw: unknown): unknown {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  if (raw === true || raw === 'true') return true;
+  if (raw === false || raw === 'false') return false;
+  return raw;
 }

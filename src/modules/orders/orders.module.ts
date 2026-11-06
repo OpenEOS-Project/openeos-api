@@ -3,6 +3,7 @@ import { TseModule } from '../tse/tse.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
+import { OrdersExportService } from './orders-export.service';
 import {
   Order,
   OrderItem,
@@ -35,7 +36,7 @@ import { RefundsModule } from '../refunds/refunds.module';
     TseModule,
   ],
   controllers: [OrdersController],
-  providers: [OrdersService],
+  providers: [OrdersService, OrdersExportService],
   exports: [OrdersService],
 })
 export class OrdersModule {}

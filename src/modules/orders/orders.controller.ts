@@ -10,15 +10,20 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  Logger,
+  Res,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiProduces,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { OrdersService } from './orders.service';
+import { OrdersExportService } from './orders-export.service';
 import { RefundsService } from '../refunds/refunds.service';
 import { OrderHistoryService } from '../refunds/order-history.service';
 import { CancelItemsDto, CreateRefundDto } from '../refunds/dto/refund.dto';
@@ -32,8 +37,9 @@ import {
   UpdateOrderItemDto,
   QueryOrdersDto,
   CancelOrderDto,
+  ExportOrdersDto,
 } from './dto';
-import { ORDERS_LIST_RESPONSE } from './orders.openapi';
+import { ORDERS_EXPORT_RESPONSE, ORDERS_LIST_RESPONSE } from './orders.openapi';
 
 @ApiTags('Orders')
 @ApiParam({
@@ -44,8 +50,11 @@ import { ORDERS_LIST_RESPONSE } from './orders.openapi';
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/orders')
 export class OrdersController {
+  private readonly logger = new Logger(OrdersController.name);
+
   constructor(
     private readonly ordersService: OrdersService,
+    private readonly ordersExportService: OrdersExportService,
     private readonly refundsService: RefundsService,
     private readonly orderHistoryService: OrderHistoryService,
   ) {}
@@ -92,6 +101,57 @@ export class OrdersController {
     @CurrentUser() user: User,
   ) {
     return this.ordersService.getStats(organizationId, user, query);
+  }
+
+  // Wie 'stats' vor ':orderId' registriert.
+  @ApiTokenAccess(TokenScope.READ)
+  @Get('export')
+  @ApiOperation({
+    operationId: 'exportOrders',
+    summary: 'Bestellungen als CSV exportieren',
+    description:
+      'Alle Bestellungen, die zu den Filtern passen (dieselben wie bei `GET …/orders`, ohne Seiten), als CSV-Download für Excel: Semikolon, UTF-8 mit BOM, Dezimalkomma, Datum und Uhrzeit in deutscher Zeit (Europe/Berlin), älteste zuerst. `variant=orders` liefert eine Zeile je Bestellung, `variant=items` eine Zeile je Position. In der Betriebsart „Nur Bons“ (`orders_only`) nur Mengen, keine Beträge. Gastname und Anmerkungen stehen nur, solange sie gespeichert sind (sie werden 30 Tage nach der Veranstaltung gelöscht); Telefonnummern nie. Scope `read`; der Token-Besitzer braucht Admin oder das Recht „Bestellungen“.',
+  })
+  @ApiProduces('text/csv')
+  @ApiResponse(ORDERS_EXPORT_RESPONSE)
+  async exportCsv(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Query() query: ExportOrdersDto,
+    @CurrentUser() user: User,
+    @Res() res: Response,
+  ): Promise<void> {
+    // Rechte und Filter vor der ersten Zeile pruefen — bis hierhin laufen
+    // Fehler als normale JSON-Antwort.
+    const file = await this.ordersExportService.prepare(
+      organizationId,
+      user,
+      query,
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${file.filename}"`,
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      for await (const chunk of file.chunks) {
+        if (res.destroyed) return;
+        if (!res.write(chunk)) {
+          await new Promise<void>((resolve) => {
+            res.once('drain', resolve);
+            res.once('close', resolve);
+          });
+        }
+      }
+      res.end();
+    } catch (error) {
+      // Kopfzeilen sind schon raus: abbrechen statt halbe Datei als fertig
+      // auszugeben.
+      this.logger.error(
+        `Order export failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      res.destroy(error instanceof Error ? error : undefined);
+    }
   }
 
   @ApiTokenAccess(TokenScope.READ)

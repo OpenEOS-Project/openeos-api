@@ -4,3 +4,4 @@ export * from './add-order-item.dto';
 export * from './update-order-item.dto';
 export * from './query-orders.dto';
 export * from './cancel-order.dto';
+export * from './export-orders.dto';

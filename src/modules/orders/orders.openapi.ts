@@ -84,3 +84,18 @@ export const ORDERS_LIST_RESPONSE = paginatedResponse(
   ],
   50,
 );
+
+/** CSV-Download von `GET …/orders/export` (Beispiel: `variant=orders`, ohne das BOM am Anfang). */
+export const ORDERS_EXPORT_RESPONSE = {
+  status: 200,
+  description:
+    'CSV-Datei als Download (`Content-Disposition: attachment; filename="bestellungen_JJJJ-MM-TT.csv"`)',
+  content: {
+    'text/csv': {
+      schema: { type: 'string' as const },
+      example:
+        'Bestellnummer;Tagesnummer;Datum;Uhrzeit;Veranstaltung;Status;Kanal;Ausgabe;Tisch;Gerät;Artikel;Zahlart;Zwischensumme;Rabatt;Pfand;Trinkgeld;Gesamt;Bezahlt;Erstattet;Enthaltene MwSt;Testbestellung;Gastname;Anmerkung\r\n' +
+        'SF-0042;42;11.07.2026;20:04:58;Sommerfest;Abgeschlossen;Kasse;Am Tisch;A03;Kasse Festzelt 1;3;Bar;12,50;0,00;2,00;0,00;14,50;14,50;0,00;1,49;Nein;;\r\n',
+    },
+  },
+};
