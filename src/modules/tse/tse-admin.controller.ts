@@ -12,7 +12,7 @@ import { TseConfig } from './tse.config';
 import { localParts } from './tse-dates';
 import { isDeactivationOverdue } from './tse-monthly';
 import { TseMonthlyCycleService } from './tse-monthly-cycle.service';
-import { unitView } from './tse-status.service';
+import { TseStatusService, unitView } from './tse-status.service';
 
 /**
  * Betreiber-Sicht (Super-Admins): alle TSEs mit Anlass und Laufzeit und
@@ -29,13 +29,14 @@ export class TseAdminController {
     private readonly swissbit: SwissbitClientProvider,
     private readonly config: TseConfig,
     private readonly monthly: TseMonthlyCycleService,
+    private readonly status: TseStatusService,
   ) {}
 
   @Get('units')
   @ApiOperation({
     summary: 'All Cloud-TSE units (super admin)',
     description:
-      'Alle TSEs aller Organisationen mit Zustand, Auslöser (`manual`, `auto`, `super_admin`), auslösender Veranstaltung, Anlage-/Aktiv-/Deaktivierungszeit und aktiven Monaten.',
+      'Alle TSEs aller Organisationen mit Zustand, Auslöser (`manual`, `auto`, `super_admin`), auslösender Veranstaltung, Anlage-/Aktiv-/Deaktivierungszeit und aktiven Monaten. Lebenszyklus `monthly`: `lifecycleOutlook` (voraussichtliche Abmeldung, Monate, in denen die TSE wegen einer gebuchten Veranstaltung im Folgemonat oder einer über das Monatsende laufenden Veranstaltung aktiv bleibt) und `keeps` (Entscheidungen „bleibt im Folgemonat“).',
   })
   async units() {
     const units = await this.unitRepository.find({
@@ -45,9 +46,21 @@ export class TseAdminController {
     });
     const now = new Date();
     const monthly = this.config.lifecycle === 'monthly';
+    /* Nur aktive TSEs (wenige): voraussichtliche Abmeldung mit Grund. */
+    const outlooks = new Map(
+      await Promise.all(
+        units
+          .filter((unit) => unit.state === 'active')
+          .map(
+            async (unit) =>
+              [unit.id, await this.status.lifecycleOutlook(unit)] as const,
+          ),
+      ),
+    );
     return {
       data: units.map((unit) => ({
         ...unitView(unit),
+        lifecycleOutlook: outlooks.get(unit.id) ?? null,
         publicKey: undefined,
         organization: unit.organization
           ? { id: unit.organization.id, name: unit.organization.name }
@@ -71,7 +84,7 @@ export class TseAdminController {
   @ApiOperation({
     summary: 'Cloud-TSE alerts for the super-admin list (super admin)',
     description:
-      'Lebenszyklus `monthly`: ueberfaellige Abmeldungen zum Monatsende (nach 22:00 noch aktiv) und Ergebnisse der Gesundheitspruefung (aktive TSE in einem Monat ohne bezahlte Veranstaltung, fehlender Abmeldetermin). Leere Liste bei `persistent`.',
+      'Lebenszyklus `monthly`: ueberfaellige Abmeldungen zum Monatsende (nach 22:00 noch aktiv) und Ergebnisse der Gesundheitspruefung (aktive TSE in einem Monat ohne bezahlte Veranstaltung, fehlender Abmeldetermin). Eine TSE, die wegen einer gebuchten Veranstaltung im Folgemonat aktiv bleibt, hat einen neuen Termin (Ende des Folgemonats) und erscheint deshalb nicht als überfällig. Leere Liste bei `persistent`.',
   })
   async alerts() {
     const issues = await this.monthly.healthCheck(new Date());

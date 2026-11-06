@@ -166,3 +166,133 @@ export function isDeactivationOverdue(
 ): boolean {
   return !!planned && now.getTime() >= planned.getTime() + ALERT_AFTER_MS;
 }
+
+// ------------------------------------------------ Folgemonat (2026-11-06)
+
+/**
+ * Beginn (`startHour` Uhr Berlin) des ersten Geschaeftstags im Monat nach
+ * dem Monat von `at` und des ersten Geschaeftstags im Monat danach.
+ */
+function nextMonthBusinessRange(
+  at: Date,
+  startHour: number,
+): { from: Date; to: Date } {
+  const next = localParts(localMonthRange(at).to);
+  const afterYear = next.month === 12 ? next.year + 1 : next.year;
+  const afterMonth = next.month === 12 ? 1 : next.month + 1;
+  return {
+    from: berlinTime(next.year, next.month, 1, startHour),
+    to: berlinTime(afterYear, afterMonth, 1, startHour),
+  };
+}
+
+/**
+ * Bezahlte Veranstaltungen mit mindestens einem Geschaeftstag (6–6 Uhr),
+ * der im **Folgemonat** von `at` beginnt (Entscheidung 2026-11-06: dann
+ * bleibt die TSE statt abgemeldet und neu angelegt zu werden — spart die
+ * Aktivierung und eine Mitteilung ans Finanzamt).
+ *
+ * Nicht dazu zaehlt der Ueberhang bis 6 Uhr am 1. (Fest am Monatsletzten,
+ * Party nach Mitternacht): das ist die Ausnahme „laeuft zum Termin“
+ * (`blockingEvents`), deren Zusatzmonat OpenEOS traegt.
+ */
+export function nextMonthEvents<T extends PaidEventSpan>(
+  events: readonly T[],
+  at: Date,
+  startHour = 6,
+): T[] {
+  const next = nextMonthBusinessRange(at, startHour);
+  return events.filter((event) => {
+    const span = businessSpan(event, startHour);
+    return (
+      span.from.getTime() < next.to.getTime() &&
+      span.to.getTime() > next.from.getTime()
+    );
+  });
+}
+
+/** Warum die TSE ueber einen Monatswechsel hinaus aktiv bleibt. */
+export type KeepReason = 'paid_event_next_month' | 'paid_event_running';
+
+export interface OutlookMonth<T extends PaidEventSpan = PaidEventSpan> {
+  /** Monat, in dem die TSE zusaetzlich aktiv bleibt (`YYYY-MM`). */
+  month: string;
+  reason: KeepReason;
+  events: T[];
+}
+
+/**
+ * Voraussichtliche Abmeldung ab dem Termin `planned` nach den Regeln des
+ * Monatslaufs: laeuft zum Termin eine bezahlte Veranstaltung oder hat der
+ * Folgemonat eine, bleibt die TSE einen Monat laenger — so lange, bis ein
+ * Monatsende keinen Grund mehr hat (hoechstens `maxMonths` Monate).
+ */
+export function deactivationOutlook<T extends PaidEventSpan>(
+  events: readonly T[],
+  planned: Date,
+  startHour = 6,
+  maxMonths = 24,
+): { at: Date; months: OutlookMonth<T>[] } {
+  const months: OutlookMonth<T>[] = [];
+  let current = planned;
+  for (let i = 0; i < maxMonths; i++) {
+    const running = blockingEvents(events, current, startHour);
+    const booked = running.length
+      ? []
+      : nextMonthEvents(events, current, startHour);
+    if (running.length === 0 && booked.length === 0) break;
+    current = plannedDeactivationOfNextMonth(current);
+    months.push({
+      month: monthKey(current),
+      reason: running.length ? 'paid_event_running' : 'paid_event_next_month',
+      events: running.length ? running : booked,
+    });
+  }
+  return { at: current, months };
+}
+
+/**
+ * Eintrag in `tse_units.metadata.keeps` (Entscheidung 2026-11-06): die TSE
+ * bleibt zum Monatsende, weil der Verein im Folgemonat schon eine bezahlte
+ * Veranstaltung hat. Bis `recheckUntil` (Monatswechsel) prueft jeder Lauf
+ * nach; ist die Veranstaltung bis dahin storniert/erstattet, wird der
+ * Eintrag widerrufen (`revokedAt`) und die TSE doch abgemeldet.
+ */
+export interface TseKeep {
+  at: string;
+  /** Termin, zu dem die TSE sonst abgemeldet worden waere. */
+  from: string;
+  /** Neuer Termin (Ende des Folgemonats). */
+  to: string;
+  reason: 'paid_event_next_month';
+  /** Monat, in dem die TSE dadurch weiterlaeuft (`YYYY-MM`). */
+  month: string;
+  events: {
+    id: string;
+    name: string;
+    startDate: string;
+    endDate: string | null;
+  }[];
+  recheckUntil: string;
+  revokedAt?: string | null;
+}
+
+export function keepsOf(unit: {
+  metadata?: Record<string, unknown> | null;
+}): TseKeep[] {
+  const list = unit.metadata?.keeps;
+  return Array.isArray(list) ? (list as TseKeep[]) : [];
+}
+
+/** Die Behalten-Entscheidung, die zum aktuellen Termin gefuehrt hat. */
+export function currentKeep(unit: {
+  metadata?: Record<string, unknown> | null;
+  plannedDeactivationAt: Date | null;
+}): TseKeep | null {
+  const last = keepsOf(unit).at(-1);
+  if (!last || last.revokedAt || !unit.plannedDeactivationAt) return null;
+  return new Date(last.to).getTime() ===
+    new Date(unit.plannedDeactivationAt).getTime()
+    ? last
+    : null;
+}
