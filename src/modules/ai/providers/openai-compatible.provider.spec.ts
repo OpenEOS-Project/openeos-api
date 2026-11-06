@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { OpenAiCompatibleProvider } from './openai-compatible.provider';
+import { Logger } from '@nestjs/common';
 import { AiProviderError } from '../ai-provider.error';
 
 function fakeClient(overrides: Record<string, unknown> = {}) {
@@ -89,7 +90,7 @@ describe('OpenAiCompatibleProvider', () => {
     });
   });
 
-  it('rejects PDF input with a clear error', async () => {
+  it('rejects raw PDF input (pages must arrive as images) with a clear error', async () => {
     const provider = new OpenAiCompatibleProvider({
       apiKey: 'k',
       client: fakeClient().client,
@@ -150,5 +151,193 @@ describe('OpenAiCompatibleProvider', () => {
         client: cut.client,
       }).complete({ purpose: 'classify', system: 's', text: 't' }),
     ).rejects.toThrow(/abgeschnitten/);
+  });
+
+  it('sends reasoning_effort per purpose and leaves it out when not configured', async () => {
+    const { client, create } = fakeClient();
+    const provider = new OpenAiCompatibleProvider({
+      apiKey: 'k',
+      client,
+      reasoningEffort: { extract: 'medium', classify: 'none' },
+    });
+    await provider.extractStructured({
+      purpose: 'extract',
+      system: 's',
+      text: 't',
+      schemaName: 'x',
+      schema,
+    });
+    await provider.classify({ system: 's', text: 't', choices: ['a'] });
+    await provider.complete({ purpose: 'classify', system: 's', text: 't' });
+    const sent = create.mock.calls.map(
+      (call) =>
+        (
+          call as unknown[]
+        )[0] as OpenAI.Chat.Completions.ChatCompletionCreateParams,
+    );
+    expect(sent.map((params) => params.reasoning_effort)).toEqual([
+      'medium',
+      'none',
+      'none',
+    ]);
+    expect(provider.reasoningEffortFor('extract')).toBe('medium');
+
+    const plain = fakeClient();
+    await new OpenAiCompatibleProvider({
+      apiKey: 'k',
+      client: plain.client,
+      reasoningEffort: { extract: '', classify: undefined },
+    }).extractStructured({
+      purpose: 'extract',
+      system: 's',
+      text: 't',
+      schemaName: 'x',
+      schema,
+    });
+    expect(
+      Object.keys(
+        (plain.create.mock.calls[0] as unknown[])[0] as Record<string, unknown>,
+      ),
+    ).not.toContain('reasoning_effort');
+  });
+
+  it('puts reasoning_effort and the page images into the HTTP request body', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetch = jest.fn((_url: string, init: { body: string }) => {
+      bodies.push(JSON.parse(init.body) as Record<string, unknown>);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'c1',
+            object: 'chat.completion',
+            created: 0,
+            model: 'Qwen/Qwen3.8-27B',
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: '{"ok":true}' },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    });
+    const client = new OpenAI({
+      apiKey: 'test-key',
+      baseURL: 'https://inference.example.test/v1',
+      fetch: fetch as unknown as typeof globalThis.fetch,
+      maxRetries: 0,
+    });
+    const provider = new OpenAiCompatibleProvider({
+      apiKey: 'test-key',
+      client,
+      modelExtract: 'Qwen/Qwen3.8-27B',
+      reasoningEffort: { extract: 'medium' },
+      maxImagesPerRequest: 4,
+    });
+    const result = await provider.extractStructured<{ ok: boolean }>({
+      purpose: 'extract',
+      system: 's',
+      text: 't',
+      files: [
+        { mediaType: 'image/jpeg', data: Buffer.from('p1') },
+        { mediaType: 'image/jpeg', data: Buffer.from('p2') },
+      ],
+      schemaName: 'menu',
+      schema,
+    });
+    expect(result.value).toEqual({ ok: true });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect((fetch.mock.calls[0] as unknown[])[0]).toBe(
+      'https://inference.example.test/v1/chat/completions',
+    );
+    expect(bodies[0]).toMatchObject({
+      model: 'Qwen/Qwen3.8-27B',
+      reasoning_effort: 'medium',
+      max_completion_tokens: 16000,
+    });
+    const content = (
+      bodies[0].messages as { content: { type: string }[] | string }[]
+    )[1].content as { type: string }[];
+    expect(content.map((part) => part.type)).toEqual([
+      'image_url',
+      'image_url',
+      'text',
+    ]);
+  });
+
+  it('refuses more images than AI_MAX_IMAGES_PER_REQUEST before calling the service', async () => {
+    const { client, create } = fakeClient();
+    const provider = new OpenAiCompatibleProvider({
+      apiKey: 'k',
+      client,
+      maxImagesPerRequest: 4,
+    });
+    expect(provider.maxImagesPerRequest()).toBe(4);
+    const image = { mediaType: 'image/png' as const, data: Buffer.from('x') };
+    await expect(
+      provider.extractStructured({
+        purpose: 'extract',
+        system: 's',
+        text: 't',
+        files: [image, image, image, image, image],
+        schemaName: 'menu',
+        schema,
+      }),
+    ).rejects.toThrow(/Zu viele Bilder.*5.*4/);
+    expect(create).not.toHaveBeenCalled();
+    expect(
+      new OpenAiCompatibleProvider({
+        apiKey: 'k',
+        client,
+      }).maxImagesPerRequest(),
+    ).toBeNull();
+  });
+
+  it('logs a warning with finish reason and reasoning tokens when reasoning eats the limit', async () => {
+    const cut = fakeClient({
+      choices: [
+        { message: { content: '', refusal: null }, finish_reason: 'length' },
+      ],
+      usage: {
+        prompt_tokens: 1462,
+        completion_tokens: 4096,
+        completion_tokens_details: { reasoning_tokens: 4096 },
+      },
+    });
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      const error = (await new OpenAiCompatibleProvider({
+        apiKey: 'k',
+        client: cut.client,
+        modelClassify: 'Qwen/Qwen3.8-27B',
+      })
+        .extractStructured({
+          purpose: 'classify',
+          system: 's',
+          text: 't',
+          schemaName: 'x',
+          schema,
+          maxOutputTokens: 4096,
+        })
+        .catch((e: unknown) => e)) as AiProviderError;
+      expect(error).toBeInstanceOf(AiProviderError);
+      expect(error.kind).toBe('invalid_output');
+      expect(error.message).toMatch(
+        /finish=length, 4096\/4096 Tokens, davon 4096 Reasoning/,
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /Qwen\/Qwen3\.8-27B \(classify\).*finish=length.*AI_REASONING_EFFORT_CLASSIFY senken \(z\. B\. none\)/,
+        ),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

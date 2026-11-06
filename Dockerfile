@@ -42,16 +42,22 @@ WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
 
-# Install only production dependencies
-RUN pnpm install --frozen-lockfile --prod
+# Install only production dependencies. The lockfile lists sharp's
+# prebuilt libvips for glibc and musl; this image is alpine (musl), so the
+# glibc copies (~19 MB) go.
+RUN pnpm install --frozen-lockfile --prod \
+    && rm -rf node_modules/.pnpm/@img+sharp-linux-* node_modules/.pnpm/@img+sharp-libvips-linux-*
 
 # ============================================
 # Stage 4: Runner (Production)
 # ============================================
 FROM node:20-alpine AS runner
 
-# Install dumb-init for proper signal handling + tzdata so we can pin TZ
-RUN apk add --no-cache dumb-init tzdata
+# Install dumb-init for proper signal handling + tzdata so we can pin TZ.
+# poppler-utils (pdfinfo/pdftoppm, GPL, called as a separate process): the
+# menu import turns PDFs into page images for AI providers without PDF
+# input (AI_PROVIDER=openai, e.g. IONOS AI Model Hub). ~21 MB.
+RUN apk add --no-cache dumb-init tzdata poppler-utils
 
 # Default container timezone — all toLocaleString / Date.now formatting on
 # the server will read 'Europe/Berlin' unless an env override is supplied.

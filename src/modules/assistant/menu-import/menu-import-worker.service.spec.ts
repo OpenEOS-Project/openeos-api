@@ -14,6 +14,9 @@ import { GatewayService } from '../../gateway/gateway.service';
 import { AiProvider } from '../../ai/ai-provider.interface';
 import { AiQuotaService } from '../../ai/ai-quota.service';
 import { AiProviderError } from '../../ai/ai-provider.error';
+import { AiInputFilesService } from '../../ai/ai-input-files.service';
+import { PdfRasterizer, PdfReadError } from '../../ai/pdf-rasterizer';
+import { MENU_IMPORT_PDF_UNREADABLE_TEXT } from './menu-import-errors';
 import { IconSuggestionService } from '../icon-suggestion.service';
 import { importDir, storeFiles } from './menu-import-files';
 import { MenuImportWorkerService } from './menu-import-worker.service';
@@ -24,7 +27,15 @@ const EVENT = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
 
 type Stored = MenuImport & { id: string };
 
-function setup(options: { extraction?: unknown; fail?: Error }) {
+function setup(options: {
+  extraction?: unknown;
+  /** Je Aufruf eine eigene Antwort (Aufteilung nach Bildgrenze). */
+  extractions?: unknown[];
+  fail?: Error;
+  supportsPdf?: boolean;
+  maxImages?: number | null;
+  rasterizer?: PdfRasterizer;
+}) {
   const uploadDir = mkdtempSync(join(tmpdir(), 'menu-worker-'));
   const imports = new Map<string, Stored>();
   const updates: [unknown, Partial<MenuImport>][] = [];
@@ -65,11 +76,14 @@ function setup(options: { extraction?: unknown; fail?: Error }) {
     find: jest.fn(() => Promise.resolve([])),
     delete: deleteImport,
   } as unknown as Repository<MenuImport>;
+  let call = 0;
   const extractStructured = jest.fn(() =>
     options.fail
       ? Promise.reject(options.fail)
       : Promise.resolve({
-          value: options.extraction,
+          value: options.extractions
+            ? options.extractions[call++]
+            : options.extraction,
           model: 'claude-sonnet-5-5',
           inputTokens: 900,
           outputTokens: 250,
@@ -79,8 +93,17 @@ function setup(options: { extraction?: unknown; fail?: Error }) {
   const provider = {
     name: 'anthropic',
     isAvailable: () => false,
+    supportsPdf: () => options.supportsPdf ?? true,
+    maxImagesPerRequest: () => options.maxImages ?? null,
     extractStructured,
   } as unknown as AiProvider;
+  const inputFiles = new AiInputFilesService(
+    provider,
+    options.rasterizer ??
+      new PdfRasterizer({
+        exec: () => Promise.reject(new Error('pdftoppm not expected')),
+      }),
+  );
   const settle = jest.fn(() => Promise.resolve());
   const quota = {
     settle,
@@ -115,6 +138,7 @@ function setup(options: { extraction?: unknown; fail?: Error }) {
     gateway,
     cronLock,
     { get: () => uploadDir } as unknown as ConfigService,
+    inputFiles,
   );
   const add = (entry: Partial<MenuImport>): Stored => {
     const stored = {
@@ -428,5 +452,150 @@ describe('MenuImportWorkerService', () => {
     });
     expect(ctx.settle).toHaveBeenCalledWith('usage-stuck', { status: 'error' });
     expect(ctx.imports.get('forgotten')!.status).toBe('done');
+  });
+
+  it('splits a long menu by AI_MAX_IMAGES_PER_REQUEST, passes context on and merges the parts', async () => {
+    const page = (name: string, category: string, warnings: string[] = []) => ({
+      categories: [{ name: category, position: 1 }],
+      products: [
+        {
+          name,
+          category,
+          description: null,
+          price: 3,
+          taxRate: 19,
+          deposit: { suggested: true, amount: 2 },
+          variants: null,
+          confidence: 'high',
+          note: null,
+        },
+      ],
+      warnings,
+    });
+    const ctx = setup({
+      maxImages: 4,
+      extractions: [
+        page('Pils', 'Getränke', ['Pfand aus dem Hinweis für alle Getränke']),
+        page('Radler', 'Getränke'),
+      ],
+    });
+    cleanups.push(ctx.uploadDir);
+    const png = readFileSync(join(FIXTURES, 'getraenke.png'));
+    const stored = await storeFiles(
+      ctx.uploadDir,
+      'import-batch',
+      Array.from({ length: 5 }, () => ({
+        buffer: png,
+        mediaType: 'image/png' as const,
+      })),
+    );
+    ctx.add({
+      id: 'import-batch',
+      files: stored.map((file) => file.relativePath),
+    });
+
+    await ctx.service.process('import-batch');
+
+    expect(ctx.extractStructured).toHaveBeenCalledTimes(2);
+    const [first, second] = ctx.extractStructured.mock.calls.map(
+      (call) => (call as unknown[])[0] as { files: unknown[]; text: string },
+    );
+    expect(first.files).toHaveLength(3);
+    expect(second.files).toHaveLength(2);
+    expect(first.text).toContain('Seiten 1 bis 3');
+    expect(first.text).not.toContain('previous-pages');
+    expect(second.text).toContain('Seiten 4 bis 5');
+    expect(second.text).toMatch(
+      /<untrusted source="previous-pages">[\s\S]*Getränke[\s\S]*Pfand aus dem Hinweis[\s\S]*<\/untrusted>/,
+    );
+
+    const result = ctx.imports.get('import-batch')!;
+    expect(result.status).toBe('done');
+    expect(result.usage).toEqual({ inputTokens: 1800, outputTokens: 500 });
+    expect(ctx.settle).toHaveBeenCalledTimes(1);
+    expect(ctx.settle).toHaveBeenCalledWith(
+      'usage-1',
+      expect.objectContaining({ status: 'ok', inputTokens: 1800 }),
+    );
+    expect(result.suggestion!.categories.map((c) => c.name)).toEqual([
+      'Getränke',
+    ]);
+    expect(result.suggestion!.products.map((p) => p.name)).toEqual([
+      'Pils',
+      'Radler',
+    ]);
+    expect(result.suggestion!.warnings).toContain(
+      'Pfand aus dem Hinweis für alle Getränke',
+    );
+  });
+
+  it('sends a PDF as page images to a provider without PDF input', async () => {
+    const render = jest.fn(() =>
+      Promise.resolve([Buffer.from('jpeg-1'), Buffer.from('jpeg-2')]),
+    );
+    const ctx = setup({
+      extraction,
+      supportsPdf: false,
+      maxImages: 4,
+      rasterizer: { render } as unknown as PdfRasterizer,
+    });
+    cleanups.push(ctx.uploadDir);
+    const stored = await storeFiles(ctx.uploadDir, 'import-pdf', [
+      {
+        buffer: Buffer.from('%PDF-1.4 two pages'),
+        mediaType: 'application/pdf',
+      },
+    ]);
+    ctx.add({
+      id: 'import-pdf',
+      source: 'pdf',
+      files: stored.map((file) => file.relativePath),
+    });
+
+    await ctx.service.process('import-pdf');
+
+    expect(render).toHaveBeenCalledWith(Buffer.from('%PDF-1.4 two pages'), {
+      maxPages: 6,
+      longEdgePx: 1600,
+    });
+    const request = (ctx.extractStructured.mock.calls[0] as unknown[])[0] as {
+      files: { mediaType: string }[];
+      text: string;
+    };
+    expect(request.files.map((file) => file.mediaType)).toEqual([
+      'image/jpeg',
+      'image/jpeg',
+    ]);
+    expect(request.text).toContain('die 2 angehängten Seiten');
+    expect(ctx.imports.get('import-pdf')!.status).toBe('done');
+  });
+
+  it('fails with a clear text when the PDF cannot be turned into images', async () => {
+    const ctx = setup({
+      extraction,
+      supportsPdf: false,
+      rasterizer: {
+        render: () =>
+          Promise.reject(new PdfReadError('pdftoppm: Incorrect password')),
+      } as unknown as PdfRasterizer,
+    });
+    cleanups.push(ctx.uploadDir);
+    const stored = await storeFiles(ctx.uploadDir, 'import-bad-pdf', [
+      { buffer: Buffer.from('%PDF-1.4 locked'), mediaType: 'application/pdf' },
+    ]);
+    ctx.add({
+      id: 'import-bad-pdf',
+      source: 'pdf',
+      files: stored.map((file) => file.relativePath),
+    });
+
+    await ctx.service.process('import-bad-pdf');
+
+    const result = ctx.imports.get('import-bad-pdf')!;
+    expect(result.status).toBe('failed');
+    expect(result.error).toBe(MENU_IMPORT_PDF_UNREADABLE_TEXT);
+    expect(result.errorDetail).toContain('Incorrect password');
+    expect(ctx.extractStructured).not.toHaveBeenCalled();
+    expect(ctx.settle).toHaveBeenCalledWith('usage-1', { status: 'error' });
   });
 });

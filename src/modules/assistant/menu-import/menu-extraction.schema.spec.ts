@@ -4,6 +4,8 @@ import { AiProviderError } from '../../ai/ai-provider.error';
 import {
   MENU_EXTRACTION_SCHEMA,
   MENU_EXTRACTION_SYSTEM_PROMPT,
+  NO_PRODUCTS_WARNING,
+  mergeExtractions,
   validateExtraction,
 } from './menu-extraction.schema';
 
@@ -23,6 +25,105 @@ describe('MENU_EXTRACTION_SYSTEM_PROMPT', () => {
     expect(MENU_EXTRACTION_SYSTEM_PROMPT).toContain(
       'dann darf nicht jede Zeile high sein',
     );
+  });
+
+  it('applies a global deposit note to every affected product and asks for a short warning', () => {
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).toContain(
+      'setze deposit bei JEDEM betroffenen Produkt',
+    );
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).toMatch(
+      /in warnings in einem kurzen Satz/,
+    );
+  });
+
+  it('contains no example warning text that models copy verbatim', () => {
+    // Mistral-Small hat „Pfand wurde nur bei Flaschen erkannt“ woertlich
+    // uebernommen, auch fuer Karten ohne Flaschen.
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).not.toContain('nur bei Flaschen');
+    expect(MENU_EXTRACTION_SYSTEM_PROMPT).toContain('keine Beispielsätze');
+  });
+});
+
+describe('mergeExtractions', () => {
+  const product = (name: string, category: string) =>
+    validateExtraction({
+      categories: [],
+      products: [
+        {
+          name,
+          category,
+          description: null,
+          price: 2,
+          taxRate: 19,
+          deposit: null,
+          variants: null,
+          confidence: 'high',
+          note: null,
+        },
+      ],
+      warnings: [],
+    }).products[0];
+
+  it('keeps page order, renumbers categories and drops duplicate warnings', () => {
+    const merged = mergeExtractions([
+      {
+        categories: [
+          { name: 'Getränke', position: 2 },
+          { name: 'Vom Grill', position: 1 },
+        ],
+        products: [
+          product('Bratwurst', 'Vom Grill'),
+          product('Pils', 'Getränke'),
+        ],
+        warnings: ['Alle Getränke zzgl. 2 € Pfand'],
+      },
+      {
+        categories: [
+          { name: 'Getränke', position: 1 },
+          { name: 'Kuchen', position: 2 },
+        ],
+        products: [
+          product('Radler', 'Getränke'),
+          product('Apfelkuchen', 'Kuchen'),
+        ],
+        warnings: ['Alle Getränke zzgl. 2 € Pfand', 'Seite 2 unscharf'],
+      },
+    ]);
+    expect(merged.categories.map((c) => [c.name, c.position])).toEqual([
+      ['Vom Grill', 1],
+      ['Getränke', 2],
+      ['Getränke', 3],
+      ['Kuchen', 4],
+    ]);
+    expect(merged.products.map((p) => p.name)).toEqual([
+      'Bratwurst',
+      'Pils',
+      'Radler',
+      'Apfelkuchen',
+    ]);
+    expect(merged.warnings).toEqual([
+      'Alle Getränke zzgl. 2 € Pfand',
+      'Seite 2 unscharf',
+    ]);
+  });
+
+  it('drops "no products" from a part when another part has products', () => {
+    const empty = validateExtraction({
+      categories: [],
+      products: [],
+      warnings: [],
+    });
+    expect(empty.warnings).toEqual([NO_PRODUCTS_WARNING]);
+    const full = {
+      categories: [],
+      products: [product('Pils', 'Getränke')],
+      warnings: [],
+    };
+    expect(mergeExtractions([full, empty]).warnings).toEqual([]);
+    expect(mergeExtractions([empty, empty]).warnings).toEqual([
+      NO_PRODUCTS_WARNING,
+    ]);
+    expect(mergeExtractions([full])).toBe(full);
   });
 });
 

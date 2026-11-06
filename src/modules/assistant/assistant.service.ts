@@ -19,12 +19,16 @@ import { OrganizationsService } from '../organizations/organizations.service';
 import { AI_PROVIDER } from '../ai/ai-provider.interface';
 import type { AiProvider } from '../ai/ai-provider.interface';
 import { AiQuotaService, QuotaStatus } from '../ai/ai-quota.service';
+import { AiInputFilesService } from '../ai/ai-input-files.service';
 
 export interface AssistantStatus {
   enabled: boolean;
   /** Ein Anbieter ist konfiguriert (AI_PROVIDER + Schluessel). */
   available: boolean;
-  /** Der Anbieter liest PDF-Seiten direkt; sonst nimmt der Import nur Bilder. */
+  /**
+   * Der Import nimmt PDFs: der Anbieter liest sie direkt oder die API wandelt
+   * sie in Seitenbilder (poppler-utils). Sonst nur Bilder und Text.
+   */
   pdfSupported: boolean;
   quotas: {
     menuImports: QuotaStatus;
@@ -53,6 +57,7 @@ export class AssistantService {
     private readonly organizationsService: OrganizationsService,
     @Inject(AI_PROVIDER) private readonly provider: AiProvider,
     private readonly quota: AiQuotaService,
+    private readonly inputFiles: AiInputFilesService,
   ) {}
 
   isEnabled(organization: Pick<Organization, 'settings'>): boolean {
@@ -197,7 +202,7 @@ export class AssistantService {
     return {
       enabled: this.isEnabled(organization),
       available: this.provider.isAvailable(),
-      pdfSupported: this.provider.supportsPdf(),
+      pdfSupported: this.inputFiles.pdfSupported(),
       quotas: { menuImports, classifications },
     };
   }

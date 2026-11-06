@@ -1,4 +1,5 @@
 import * as Joi from 'joi';
+import { AI_REASONING_EFFORTS } from '../modules/ai/ai-provider.interface';
 
 export const validationSchema = Joi.object({
   // Application
@@ -152,6 +153,22 @@ export const validationSchema = Joi.object({
   AI_MENU_PAGES_PER_IMPORT: Joi.number().integer().min(1).max(20).default(6),
   AI_CLASSIFY_PER_DAY: Joi.number().integer().min(0).default(500),
   AI_MAX_UPLOAD_MB: Joi.number().integer().min(1).max(50).default(10),
+  // Nur AI_PROVIDER=openai; leer = `reasoning_effort` nicht senden.
+  AI_REASONING_EFFORT_EXTRACT: Joi.string()
+    .valid(...AI_REASONING_EFFORTS)
+    .empty('')
+    .default(''),
+  AI_REASONING_EFFORT_CLASSIFY: Joi.string()
+    .valid(...AI_REASONING_EFFORTS)
+    .empty('')
+    .default(''),
+  // 0 = unbegrenzt; leer (`${AI_MAX_IMAGES_PER_REQUEST:-}`) gilt wie 0.
+  AI_MAX_IMAGES_PER_REQUEST: Joi.number()
+    .integer()
+    .min(0)
+    .max(100)
+    .empty('')
+    .default(0),
 
   // Cloud-TSE (tse-swissbit-plan.md §8, README „Cloud-TSE“). Leere Werte
   // (z. B. `${SWISSBIT_BASE_URL:-}` in docker-compose) gelten wie nicht

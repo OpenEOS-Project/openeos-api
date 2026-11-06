@@ -1,4 +1,5 @@
 import { AiProviderError } from '../ai-provider.error';
+import type { AiInputFile } from '../ai-provider.interface';
 
 /**
  * Antworttext eines Modells als JSON lesen. Strukturierte Ausgabe liefert
@@ -17,6 +18,29 @@ export function parseStructuredJson<T>(text: string): T {
       undefined,
       false,
       'invalid_output',
+    );
+  }
+}
+
+/**
+ * Mehr Bilder, als der Anbieter je Aufruf nimmt (AI_MAX_IMAGES_PER_REQUEST)?
+ * Der Speisekarten-Import teilt vorher in passende Aufrufe; das hier faengt
+ * nur ab, was trotzdem ankommt — bevor der Dienst mit 400 antwortet.
+ */
+export function assertImageLimit(
+  files: AiInputFile[] | undefined,
+  max: number | null,
+): void {
+  if (!max) return;
+  const images = (files ?? []).filter(
+    (file) => file.mediaType !== 'application/pdf',
+  ).length;
+  if (images > max) {
+    throw new AiProviderError(
+      `Zu viele Bilder für einen Aufruf (${images}, erlaubt ${max}, AI_MAX_IMAGES_PER_REQUEST)`,
+      undefined,
+      false,
+      'other',
     );
   }
 }

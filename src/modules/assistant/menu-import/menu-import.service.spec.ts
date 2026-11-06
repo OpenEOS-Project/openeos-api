@@ -18,7 +18,7 @@ import {
   UserOrganization,
 } from '../../../database/entities';
 import { GatewayService } from '../../gateway/gateway.service';
-import { AiProvider } from '../../ai/ai-provider.interface';
+import { AiInputFilesService } from '../../ai/ai-input-files.service';
 import { AiQuotaService } from '../../ai/ai-quota.service';
 import { AssistantService } from '../assistant.service';
 import { importDir, storeFiles } from './menu-import-files';
@@ -37,6 +37,9 @@ const user = { id: 'user-1' } as User;
 function setup(
   options: {
     supportsPdf?: boolean;
+    /** PDF geht als Seitenbilder (Anbieter ohne PDF, pdftoppm da). */
+    rasterizes?: boolean;
+    pdfPages?: number | Error;
     vatExempt?: boolean;
     importStatus?: MenuImport['status'];
   } = {},
@@ -147,9 +150,16 @@ function setup(
   const reserve = jest.fn(() => Promise.resolve({ id: 'usage-1' }));
   const settle = jest.fn(() => Promise.resolve());
   const quota = { reserve, settle } as unknown as AiQuotaService;
-  const provider = {
-    supportsPdf: () => options.supportsPdf ?? true,
-  } as unknown as AiProvider;
+  const pdfPageCount = jest.fn(() =>
+    options.pdfPages instanceof Error
+      ? Promise.reject(options.pdfPages)
+      : Promise.resolve(options.pdfPages ?? 1),
+  );
+  const inputFiles = {
+    pdfSupported: () => (options.supportsPdf ?? true) || !!options.rasterizes,
+    rasterizesPdf: () => !!options.rasterizes,
+    pdfPageCount,
+  } as unknown as AiInputFilesService;
   const kick = jest.fn();
   const notifyMenuImportUpdated = jest.fn();
   const notifyMenuRefresh = jest.fn();
@@ -172,7 +182,7 @@ function setup(
     dataSource,
     assistantService,
     quota,
-    provider,
+    inputFiles,
     { kick } as unknown as MenuImportWorkerService,
     gateway,
     configService,
@@ -193,6 +203,7 @@ function setup(
     notifyMenuRefresh,
     importRepository,
     deleteImport,
+    pdfPageCount,
   };
 }
 
@@ -329,6 +340,57 @@ describe('MenuImportService.create', () => {
       files: [{ buffer: Buffer.from('%PDF-1.4 fake pdf') }],
     });
     expect(ctx.saved[0]).toMatchObject({ source: 'pdf' });
+    expect(ctx.pdfPageCount).not.toHaveBeenCalled();
+  });
+
+  it('accepts a PDF as page images when it has no more pages than allowed', async () => {
+    const ctx = setup({ supportsPdf: false, rasterizes: true, pdfPages: 2 });
+    dirs.push(ctx.uploadDir);
+    await ctx.service.create(ORG, EVENT, user, {
+      files: [{ buffer: Buffer.from('%PDF-1.4 fake pdf') }],
+    });
+    expect(ctx.pdfPageCount).toHaveBeenCalledTimes(1);
+    expect(ctx.saved[0]).toMatchObject({ source: 'pdf' });
+    expect(ctx.kick).toHaveBeenCalledWith(IMPORT);
+  });
+
+  it('rejects a rasterised PDF with too many pages or that cannot be read, before the quota', async () => {
+    const tooLong = setup({
+      supportsPdf: false,
+      rasterizes: true,
+      pdfPages: 3,
+    });
+    dirs.push(tooLong.uploadDir);
+    await expect(
+      tooLong.service.create(ORG, EVENT, user, {
+        files: [{ buffer: Buffer.from('%PDF-1.4 fake pdf') }],
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'MENU_IMPORT_INVALID_FILES',
+        reason: 'MENU_IMPORT_TOO_MANY_PAGES',
+        params: { max: 2, pages: 3 },
+      },
+    });
+    expect(tooLong.reserve).not.toHaveBeenCalled();
+
+    const broken = setup({
+      supportsPdf: false,
+      rasterizes: true,
+      pdfPages: new Error('pdfinfo: Incorrect password'),
+    });
+    dirs.push(broken.uploadDir);
+    await expect(
+      broken.service.create(ORG, EVENT, user, {
+        files: [{ buffer: Buffer.from('%PDF-1.4 fake pdf') }],
+      }),
+    ).rejects.toMatchObject({
+      message: expect.stringMatching(
+        /PDF-Datei konnte nicht gelesen werden/,
+      ) as unknown,
+      response: { reason: 'MENU_IMPORT_PDF_UNREADABLE' },
+    });
+    expect(broken.reserve).not.toHaveBeenCalled();
   });
 });
 

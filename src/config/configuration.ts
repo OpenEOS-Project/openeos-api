@@ -179,6 +179,18 @@ export default () => ({
     ),
     classifyPerDay: parseInt(process.env.AI_CLASSIFY_PER_DAY || '500', 10),
     maxUploadMb: parseInt(process.env.AI_MAX_UPLOAD_MB || '10', 10),
+    // Nur AI_PROVIDER=openai: `reasoning_effort` je Zweck (leer: nicht
+    // senden, der Dienst entscheidet). Fuer Qwen3.8-27B auf IONOS:
+    // Extraktion `medium`, Klassifikation `none` (sonst frisst das
+    // Nachdenken das Token-Limit der Icon-Vorschlaege).
+    reasoningEffortExtract: process.env.AI_REASONING_EFFORT_EXTRACT || '',
+    reasoningEffortClassify: process.env.AI_REASONING_EFFORT_CLASSIFY || '',
+    // Hoechstens so viele Bilder je Modellaufruf (0/leer: unbegrenzt).
+    // Mehr Seiten wertet der Import in mehreren Aufrufen aus.
+    maxImagesPerRequest: parseInt(
+      process.env.AI_MAX_IMAGES_PER_REQUEST || '0',
+      10,
+    ),
   },
 
   support: {

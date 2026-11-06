@@ -167,4 +167,56 @@ describe('AnthropicProvider', () => {
       }),
     ).rejects.toThrow(/strukturierte Antwort/);
   });
+
+  it('has no image limit by default and enforces AI_MAX_IMAGES_PER_REQUEST when set (PDFs do not count)', async () => {
+    const unlimited = fakeClient({});
+    const provider = new AnthropicProvider({
+      apiKey: 'k',
+      client: unlimited.client,
+    });
+    expect(provider.maxImagesPerRequest()).toBeNull();
+    const image = { mediaType: 'image/png' as const, data: Buffer.from('x') };
+    await provider.extractStructured({
+      purpose: 'extract',
+      system: 's',
+      text: 't',
+      files: [image, image, image, image, image, image],
+      schemaName: 'x',
+      schema,
+    });
+    expect(unlimited.create).toHaveBeenCalledTimes(1);
+
+    const limited = fakeClient({});
+    const capped = new AnthropicProvider({
+      apiKey: 'k',
+      client: limited.client,
+      maxImagesPerRequest: 2,
+    });
+    expect(capped.maxImagesPerRequest()).toBe(2);
+    await expect(
+      capped.extractStructured({
+        purpose: 'extract',
+        system: 's',
+        text: 't',
+        files: [image, image, image],
+        schemaName: 'x',
+        schema,
+      }),
+    ).rejects.toThrow(AiProviderError);
+    await capped.extractStructured({
+      purpose: 'extract',
+      system: 's',
+      text: 't',
+      files: [{ mediaType: 'application/pdf', data: Buffer.from('pdf') }],
+      schemaName: 'x',
+      schema,
+    });
+    expect(limited.create).toHaveBeenCalledTimes(1);
+    const params = (limited.create.mock.calls[0] as unknown[])[0] as Record<
+      string,
+      unknown
+    >;
+    // Anthropic kennt kein reasoning_effort.
+    expect(Object.keys(params)).not.toContain('reasoning_effort');
+  });
 });

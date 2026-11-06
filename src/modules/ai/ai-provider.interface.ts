@@ -15,6 +15,20 @@ export type AiProviderName = 'anthropic' | 'openai' | 'none';
 /** Welches Modell: Extraktion mit Bildern oder billige Klassifikation. */
 export type AiPurpose = 'extract' | 'classify';
 
+/**
+ * `reasoning_effort` fuer OpenAI-kompatible Modelle (AI_REASONING_EFFORT_*).
+ * Anthropic kennt den Parameter nicht und ignoriert die Einstellung.
+ */
+export const AI_REASONING_EFFORTS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+] as const;
+export type AiReasoningEffort = (typeof AI_REASONING_EFFORTS)[number];
+
 export type AiImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp';
 
 export interface AiInputFile {
@@ -61,8 +75,17 @@ export interface AiProvider {
   readonly name: AiProviderName;
   /** Schluessel vorhanden und Anbieter nicht `none`. */
   isAvailable(): boolean;
-  /** Kann der Anbieter PDF-Seiten direkt lesen? Sonst nur Bilder. */
+  /**
+   * Kann der Anbieter PDF-Seiten direkt lesen? Sonst wandelt
+   * AiInputFilesService eine PDF vorher in Seitenbilder (poppler-utils).
+   */
   supportsPdf(): boolean;
+  /**
+   * Hoechstens so viele Bilder je Aufruf (AI_MAX_IMAGES_PER_REQUEST),
+   * `null` = keine eigene Grenze. Der Speisekarten-Import teilt laengere
+   * Karten in mehrere Aufrufe.
+   */
+  maxImagesPerRequest(): number | null;
   modelFor(purpose: AiPurpose): string;
   complete(request: AiCompletionRequest): Promise<AiResult<string>>;
   extractStructured<T>(request: AiStructuredRequest): Promise<AiResult<T>>;

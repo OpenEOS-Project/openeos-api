@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -29,8 +28,7 @@ import {
 } from '../../../common/constants/error-codes';
 import { taxRatesFor } from '../../../common/constants/tax-rates';
 import { GatewayService } from '../../gateway/gateway.service';
-import { AI_PROVIDER } from '../../ai/ai-provider.interface';
-import type { AiProvider } from '../../ai/ai-provider.interface';
+import { AiInputFilesService } from '../../ai/ai-input-files.service';
 import { AiQuotaService } from '../../ai/ai-quota.service';
 import { readAiConfig } from '../../ai/ai-provider.factory';
 import { AssistantService, AuditClient } from '../assistant.service';
@@ -103,7 +101,7 @@ export class MenuImportService implements OnApplicationBootstrap {
     private readonly dataSource: DataSource,
     private readonly assistantService: AssistantService,
     private readonly quota: AiQuotaService,
-    @Inject(AI_PROVIDER) private readonly provider: AiProvider,
+    private readonly inputFiles: AiInputFilesService,
     private readonly worker: MenuImportWorkerService,
     private readonly gatewayService: GatewayService,
     configService: ConfigService,
@@ -139,7 +137,7 @@ export class MenuImportService implements OnApplicationBootstrap {
     await this.assistantService.assertUsable(organizationId);
 
     const text = input.text?.trim() ?? '';
-    const prepared = this.prepareInput(input.files, text);
+    const prepared = await this.prepareInput(input.files, text);
 
     const usage = await this.quota.reserve(
       organizationId,
@@ -480,13 +478,13 @@ export class MenuImportService implements OnApplicationBootstrap {
     return { byKey, created };
   }
 
-  private prepareInput(
+  private async prepareInput(
     files: UploadedMenuFile[],
     text: string,
-  ): {
+  ): Promise<{
     source: MenuImportSource;
     files: { buffer: Buffer; mediaType: MenuFileMediaType }[];
-  } {
+  }> {
     const invalid = (
       message: string,
       params?: Record<string, string | number>,
@@ -539,7 +537,7 @@ export class MenuImportService implements OnApplicationBootstrap {
       if (prepared.length > 1) {
         throw invalid('Eine PDF-Datei kann nur allein hochgeladen werden');
       }
-      if (!this.provider.supportsPdf()) {
+      if (!this.inputFiles.pdfSupported()) {
         // Die Web-App blendet PDF anhand von `pdfSupported` im Status vorher
         // aus; der Reason faengt ab, was trotzdem ankommt.
         throw invalid(
@@ -547,6 +545,30 @@ export class MenuImportService implements OnApplicationBootstrap {
           undefined,
           ErrorReasons.MENU_IMPORT_PDF_UNSUPPORTED,
         );
+      }
+      if (this.inputFiles.rasterizesPdf()) {
+        // Die Seiten gehen als Bilder an den Anbieter: dieselbe Grenze wie
+        // fuer Fotos (AI_MENU_PAGES_PER_IMPORT), schon beim Hochladen.
+        let pages: number;
+        try {
+          pages = await this.inputFiles.pdfPageCount(prepared[0].buffer);
+        } catch (error) {
+          this.logger.warn(
+            `PDF nicht lesbar: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          throw invalid(
+            'Die PDF-Datei konnte nicht gelesen werden — bitte lade Fotos der Seiten hoch',
+            undefined,
+            ErrorReasons.MENU_IMPORT_PDF_UNREADABLE,
+          );
+        }
+        if (pages > this.maxPages) {
+          throw invalid(
+            `Die PDF hat ${pages} Seiten — bitte höchstens ${this.maxPages} Seiten je Import`,
+            { max: this.maxPages, pages },
+            ErrorReasons.MENU_IMPORT_TOO_MANY_PAGES,
+          );
+        }
       }
       return { source: 'pdf', files: prepared };
     }

@@ -5,9 +5,12 @@ import { AiUsage } from '../../database/entities';
 import { AI_PROVIDER } from './ai-provider.interface';
 import { createAiProvider, readAiConfig } from './ai-provider.factory';
 import { AiQuotaService } from './ai-quota.service';
+import { AiInputFilesService } from './ai-input-files.service';
+import { PdfRasterizer } from './pdf-rasterizer';
 
 /**
- * Modellanbieter und Kontingente. Global, weil der Anbieter an einer
+ * Modellanbieter, Kontingente und die Vorbereitung der Eingabedateien
+ * (Fotos verkleinern, PDF → Seitenbilder). Global, weil der Anbieter an einer
  * Stelle aus `AI_PROVIDER` gebaut wird und jedes Assistent-Feature ihn
  * braucht — der Assistent selbst (Import, Icons) liegt in AssistantModule.
  */
@@ -22,7 +25,9 @@ import { AiQuotaService } from './ai-quota.service';
       inject: [ConfigService],
     },
     AiQuotaService,
+    { provide: PdfRasterizer, useFactory: () => new PdfRasterizer() },
+    AiInputFilesService,
   ],
-  exports: [AI_PROVIDER, AiQuotaService],
+  exports: [AI_PROVIDER, AiQuotaService, AiInputFilesService],
 })
 export class AiModule {}

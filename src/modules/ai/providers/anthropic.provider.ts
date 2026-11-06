@@ -10,12 +10,18 @@ import {
   AiStructuredRequest,
 } from '../ai-provider.interface';
 import { AiProviderError } from '../ai-provider.error';
-import { choiceSchema, parseStructuredJson } from './structured-output.util';
+import {
+  assertImageLimit,
+  choiceSchema,
+  parseStructuredJson,
+} from './structured-output.util';
 
 export interface AnthropicProviderOptions {
   apiKey: string;
   modelExtract?: string;
   modelClassify?: string;
+  /** AI_MAX_IMAGES_PER_REQUEST; leer/0 = keine eigene Grenze. */
+  maxImagesPerRequest?: number;
   /** Nur fuer Tests: fertiger Client statt eines echten. */
   client?: Pick<Anthropic, 'messages'>;
 }
@@ -43,8 +49,13 @@ export class AnthropicProvider implements AiProvider {
   private readonly logger = new Logger(AnthropicProvider.name);
   private readonly client: Pick<Anthropic, 'messages'> | null;
   private readonly models: Record<AiPurpose, string>;
+  private readonly maxImages: number | null;
 
   constructor(options: AnthropicProviderOptions) {
+    this.maxImages =
+      options.maxImagesPerRequest && options.maxImagesPerRequest > 0
+        ? options.maxImagesPerRequest
+        : null;
     this.models = {
       extract: options.modelExtract || ANTHROPIC_DEFAULT_MODELS.extract,
       classify: options.modelClassify || ANTHROPIC_DEFAULT_MODELS.classify,
@@ -60,6 +71,10 @@ export class AnthropicProvider implements AiProvider {
 
   supportsPdf(): boolean {
     return true;
+  }
+
+  maxImagesPerRequest(): number | null {
+    return this.maxImages;
   }
 
   modelFor(purpose: AiPurpose): string {
@@ -88,6 +103,7 @@ export class AnthropicProvider implements AiProvider {
   async extractStructured<T>(
     request: AiStructuredRequest,
   ): Promise<AiResult<T>> {
+    assertImageLimit(request.files, this.maxImages);
     const model = this.modelFor(request.purpose);
     const started = Date.now();
     const content: Anthropic.ContentBlockParam[] = [
