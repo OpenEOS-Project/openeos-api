@@ -6,6 +6,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { randomInt } from 'crypto';
@@ -14,9 +15,18 @@ import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { EncryptionService } from '../../common/services/encryption.service';
 import type { RetentionRun } from '../../database/entities';
 import type { UserAccountsJob } from './jobs/user-accounts.job';
-import { accountDeletedMail, accountDeletionCodeMail } from './retention-mails';
+import {
+  ORGANIZATION_PURGED_SQL,
+  restoreOrganization,
+} from './organization-restore';
+import { daysAfter } from './retention.config';
+import {
+  accountDeletedMail,
+  accountDeletionCodeMail,
+  accountDeletionScheduledMail,
+} from './retention-mails';
 import { RetentionNoticeService } from './retention-notice.service';
-import { affected } from './retention-sql';
+import { affected, select } from './retention-sql';
 import { RetentionService } from './retention.service';
 import { RETENTION_JOBS, type RetentionJob } from './retention.types';
 
@@ -49,9 +59,29 @@ export interface AccountDeletionStatus {
   }>;
   /**
    * Organisationen ohne weitere Mitglieder, deren einziger Administrator er
-   * ist: sie werden mit dem Konto geloescht (Exportfrist, dann endgueltig).
+   * ist: sie werden mit dem Konto geloescht. Dann wird auch das Konto erst
+   * mit ihnen endgueltig geloescht (`scheduledDeletionAt`).
    */
   closesOrganizations: Array<{ organizationId: string; name: string }>;
+  /**
+   * Termin der endgueltigen Loeschung, wenn jetzt geloescht wird und
+   * Organisationen mitgehen; sonst `null` (sofortige Loeschung).
+   */
+  scheduledDeletionAt: Date | null;
+  /** Bereits geplante Loeschung (Konto und Organisationen), sonst `null`. */
+  scheduled: ScheduledAccountDeletion | null;
+}
+
+export interface ScheduledAccountDeletion {
+  requestedAt: Date;
+  dueAt: Date;
+  organizations: Array<{ organizationId: string; name: string }>;
+}
+
+export interface AccountDeletionResult {
+  run: RetentionRun;
+  /** Gesetzt, wenn das Konto erst mit den Organisationen geloescht wird. */
+  scheduled: ScheduledAccountDeletion | null;
 }
 
 interface MembershipRow {
@@ -69,6 +99,7 @@ interface UserRow {
   email: string;
   password_hash: string | null;
   is_superadmin: boolean;
+  deletion_due_at: Date | null;
 }
 
 /**
@@ -79,6 +110,17 @@ interface UserRow {
  * Sitzungen, Tokens, Mitgliedschaften und Avatar entfallen; Bedienernamen in
  * bestehenden Kassenabschluessen bleiben. Der Vorgang steht im Protokoll der
  * Loeschlaeufe (Ausloeser `self_service`).
+ *
+ * Ist der Benutzer einziges Mitglied einer Organisation, geht sie mit. Damit
+ * jemand die 30-taegige Exportfrist nutzen kann (AGB 10.4), wird das Konto
+ * dann nicht sofort anonymisiert, sondern zum Termin der endgueltigen
+ * Loeschung der Organisation (`users.deletion_due_at`, Ankuendigung
+ * `account_deletion`). Bis dahin kann sich der Benutzer anmelden und die
+ * Organisation lesend nutzen und exportieren, aber nichts anlegen und keiner
+ * Organisation beitreten; Mitgliedschaften in anderen Organisationen und
+ * API-Tokens entfallen sofort. „Löschung abbrechen“ holt Konto und
+ * Organisation zurueck, solange nicht endgueltig geloescht ist. Die
+ * Anonymisierung erledigt der naechtliche Lauf `user_accounts`.
  *
  * Gesperrt ist das Loeschen, solange der Benutzer der letzte Administrator
  * einer Organisation mit weiteren Mitgliedern, laufenden Veranstaltungen
@@ -105,7 +147,7 @@ export class AccountDeletionService {
 
   private async user(userId: string): Promise<UserRow> {
     const [user] = await this.retention.query<UserRow>(
-      `SELECT id, email, password_hash, is_superadmin FROM users
+      `SELECT id, email, password_hash, is_superadmin, deletion_due_at FROM users
         WHERE id = $1 AND deleted_at IS NULL`,
       [userId],
     );
@@ -174,14 +216,67 @@ export class AccountDeletionService {
       [userId],
     );
     const unclosedTransactions = unclosed?.unclosed === true;
+    const scheduled = user.deletion_due_at
+      ? await this.scheduledDeletion(user.id)
+      : null;
     return {
       allowed:
-        !user.is_superadmin && blockers.length === 0 && !unclosedTransactions,
+        !user.is_superadmin &&
+        !scheduled &&
+        blockers.length === 0 &&
+        !unclosedTransactions,
       confirmation: user.password_hash ? 'password' : 'email_code',
       superAdmin: user.is_superadmin,
       unclosedTransactions,
       blockers,
       closesOrganizations,
+      scheduledDeletionAt:
+        closesOrganizations.length > 0
+          ? this.finalDeletionDate(new Date())
+          : null,
+      scheduled,
+    };
+  }
+
+  /** Termin der endgueltigen Loeschung einer jetzt geloeschten Organisation. */
+  private finalDeletionDate(now: Date): Date {
+    const { exportPeriodDays, noticeDays } = this.retention.config;
+    return daysAfter(now, Math.max(exportPeriodDays, noticeDays));
+  }
+
+  /** Offene geplante Loeschung des Kontos mit ihren Organisationen. */
+  async scheduledDeletion(
+    userId: string,
+  ): Promise<ScheduledAccountDeletion | null> {
+    const [notice] = await this.retention.query<{
+      sent_at: Date;
+      due_at: Date;
+      details: { organizationIds?: string[] } | null;
+    }>(
+      `SELECT n.sent_at, n.due_at, n.details FROM retention_notices n
+         JOIN users u ON u.id = n.subject_id
+        WHERE n.subject_type = 'user' AND n.subject_id = $1
+          AND n.kind = 'account_deletion'
+          AND n.executed_at IS NULL AND n.cancelled_at IS NULL
+          AND u.deletion_due_at IS NOT NULL`,
+      [userId],
+    );
+    if (!notice) return null;
+    const ids = notice.details?.organizationIds ?? [];
+    const organizations = await this.retention.query<{
+      id: string;
+      name: string;
+    }>(
+      `SELECT id, name FROM organizations WHERE id = ANY($1::uuid[]) ORDER BY name`,
+      [ids],
+    );
+    return {
+      requestedAt: new Date(notice.sent_at),
+      dueAt: new Date(notice.due_at),
+      organizations: organizations.map((o) => ({
+        organizationId: o.id,
+        name: o.name,
+      })),
     };
   }
 
@@ -256,15 +351,23 @@ export class AccountDeletionService {
   }
 
   /**
-   * Loescht (anonymisiert) das Konto nach Bestaetigung. Liefert den
-   * Protokolleintrag; die Bestaetigungsmail geht an die bisherige Adresse.
+   * Loescht (anonymisiert) das Konto nach Bestaetigung bzw. plant die
+   * Loeschung, wenn Organisationen mitgehen. Liefert den Protokolleintrag;
+   * die Bestaetigungsmail geht an die bisherige Adresse.
    */
   async deleteAccount(
     userId: string,
     confirmation: { password?: string; code?: string },
-  ): Promise<RetentionRun> {
+  ): Promise<AccountDeletionResult> {
     const user = await this.user(userId);
     const status = await this.status(userId);
+    if (status.scheduled) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.ACCOUNT_DELETION_SCHEDULED,
+        message: 'Die Löschung deines Kontos ist bereits geplant.',
+      });
+    }
     if (status.superAdmin) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
@@ -329,23 +432,15 @@ export class AccountDeletionService {
       }
     }
 
+    if (status.closesOrganizations.length > 0) {
+      return this.scheduleDeletion(user, status.closesOrganizations);
+    }
+
     const job = this.userJob;
-    const closes = status.closesOrganizations.map((o) => o.organizationId);
     const run = await this.retention.runJob(
       {
         category: 'user_accounts',
         run: async (ctx) => {
-          if (closes.length > 0) {
-            ctx.removed(
-              'organizationsClosed',
-              await affected(
-                ctx.manager,
-                `UPDATE organizations SET deleted_at = $2
-                  WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
-                [closes, ctx.now],
-              ),
-            );
-          }
           await job.anonymise(ctx, user.id);
           await ctx.manager.query(
             `UPDATE retention_notices SET executed_at = $2
@@ -379,10 +474,202 @@ export class AccountDeletionService {
           to,
           appUrl: this.notices.appUrl,
           deletedAt: run.finishedAt ?? new Date(),
-          closedOrganizations: status.closesOrganizations.map((o) => o.name),
         }),
       `Account deleted ${user.id}`,
     );
+    return { run, scheduled: null };
+  }
+
+  /**
+   * Konto mit Organisation(en) des einzigen Mitglieds: Organisationen
+   * schliessen (nur lesend), endgueltige Loeschung fuer Organisationen und
+   * Konto gemeinsam ankuendigen, Mitgliedschaften in anderen Organisationen
+   * und API-Tokens sofort entfernen. Die Bestaetigungsmail ist zugleich die
+   * Erinnerung 30 Tage vorher.
+   */
+  private async scheduleDeletion(
+    user: UserRow,
+    organizations: Array<{ organizationId: string; name: string }>,
+  ): Promise<AccountDeletionResult> {
+    const ids = organizations.map((o) => o.organizationId);
+    const state: { now: Date | null; dueAt: Date | null } = {
+      now: null,
+      dueAt: null,
+    };
+    const run = await this.retention.runJob(
+      {
+        category: 'user_accounts',
+        run: async (ctx) => {
+          const { manager, now } = ctx;
+          const dueAt = this.finalDeletionDate(now);
+          state.now = now;
+          state.dueAt = dueAt;
+          ctx.removed(
+            'organizationsClosed',
+            await affected(
+              manager,
+              `UPDATE organizations SET deleted_at = $2
+                WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
+              [ids, now],
+            ),
+          );
+          ctx.removed(
+            'membershipsDeleted',
+            await affected(
+              manager,
+              `DELETE FROM user_organizations
+                WHERE user_id = $1 AND NOT (organization_id = ANY($2::uuid[]))
+                  AND organization_id IN (SELECT id FROM organizations WHERE deleted_at IS NULL)`,
+              [user.id, ids],
+            ),
+          );
+          ctx.removed(
+            'apiTokensDeleted',
+            await affected(
+              manager,
+              `DELETE FROM api_tokens WHERE user_id = $1`,
+              [user.id],
+            ),
+          );
+          for (const id of ids) {
+            await manager.query(
+              `INSERT INTO retention_notices
+                 (subject_type, subject_id, kind, sent_at, recipient_count, due_at, activity_at)
+               SELECT 'organization', $1, 'organization_deletion', $2, 1, $3, $2
+                WHERE NOT EXISTS (SELECT 1 FROM retention_notices
+                                   WHERE subject_type = 'organization' AND subject_id = $1
+                                     AND kind = 'organization_deletion'
+                                     AND executed_at IS NULL AND cancelled_at IS NULL)`,
+              [id, now, dueAt],
+            );
+          }
+          await manager.query(
+            `UPDATE retention_notices SET cancelled_at = $2, cancel_reason = 'scheduled'
+              WHERE subject_type = 'user' AND subject_id = $1
+                AND kind = 'user_inactivity'
+                AND executed_at IS NULL AND cancelled_at IS NULL`,
+            [user.id, now],
+          );
+          await manager.query(
+            `INSERT INTO retention_notices
+               (subject_type, subject_id, kind, sent_at, recipient_count, due_at, activity_at, details)
+             VALUES ('user', $1, 'account_deletion', $2, 1, $3, $2, $4)`,
+            [user.id, now, dueAt, JSON.stringify({ organizationIds: ids })],
+          );
+          await manager.query(
+            `UPDATE users SET deletion_due_at = $2 WHERE id = $1`,
+            [user.id, dueAt],
+          );
+          ctx.note('accountDeletionsScheduled', 1);
+        },
+      },
+      {
+        trigger: 'self_service',
+        dryRun: false,
+        executedByUserId: user.id,
+        reason:
+          'Konto selbst gelöscht (mit Organisation, endgültig zum Termin)',
+        details: { organizationIds: ids },
+      },
+    );
+    if (run.status !== 'succeeded' || !state.now || !state.dueAt) {
+      throw new InternalServerErrorException({
+        code: ErrorCodes.INTERNAL_ERROR,
+        message:
+          'Dein Konto konnte gerade nicht gelöscht werden. Versuch es bitte später noch einmal.',
+      });
+    }
+    const scheduled: ScheduledAccountDeletion = {
+      requestedAt: state.now,
+      dueAt: state.dueAt,
+      organizations,
+    };
+    await this.notices.deliver(
+      [user.email],
+      (to) =>
+        accountDeletionScheduledMail({
+          to,
+          appUrl: this.notices.appUrl,
+          organizations: organizations.map((o) => o.name),
+          requestedAt: scheduled.requestedAt,
+          dueAt: scheduled.dueAt,
+        }),
+      `Account deletion scheduled ${user.id}`,
+    );
+    return { run, scheduled };
+  }
+
+  /**
+   * „Löschung abbrechen“: holt Konto und Organisationen einer geplanten
+   * Loeschung zurueck, solange keine Organisation endgueltig geloescht ist.
+   * Entfernte Mitgliedschaften in anderen Organisationen und API-Tokens
+   * bleiben weg. Steht im Protokoll (Ausloeser `self_service`).
+   */
+  async cancelScheduledDeletion(userId: string): Promise<RetentionRun> {
+    const user = await this.user(userId);
+    const scheduled = user.deletion_due_at
+      ? await this.scheduledDeletion(user.id)
+      : null;
+    if (!scheduled) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.ACCOUNT_DELETION_NOT_SCHEDULED,
+        message: 'Für dein Konto ist keine Löschung geplant.',
+      });
+    }
+    const ids = scheduled.organizations.map((o) => o.organizationId);
+    const purged = await select<{ id: string }>(
+      this.retention.manager,
+      `SELECT o.id FROM organizations o
+        WHERE o.id = ANY($1::uuid[]) AND ${ORGANIZATION_PURGED_SQL}`,
+      [ids],
+    );
+    if (purged.length > 0) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.ORGANIZATION_ALREADY_PURGED,
+        message:
+          'Die Organisation ist bereits endgültig gelöscht; die Löschung lässt sich nicht mehr abbrechen.',
+      });
+    }
+    const run = await this.retention.runJob(
+      {
+        category: 'user_accounts',
+        run: async (ctx) => {
+          for (const id of ids) {
+            if (await restoreOrganization(ctx.manager, id, ctx.now)) {
+              ctx.note('organizationsRestored', 1);
+            }
+          }
+          await ctx.manager.query(
+            `UPDATE retention_notices SET cancelled_at = $2, cancel_reason = 'cancelled'
+              WHERE subject_type = 'user' AND subject_id = $1
+                AND kind = 'account_deletion'
+                AND executed_at IS NULL AND cancelled_at IS NULL`,
+            [user.id, ctx.now],
+          );
+          await ctx.manager.query(
+            `UPDATE users SET deletion_due_at = NULL WHERE id = $1`,
+            [user.id],
+          );
+          ctx.note('accountDeletionsCancelled', 1);
+        },
+      },
+      {
+        trigger: 'self_service',
+        dryRun: false,
+        executedByUserId: user.id,
+        reason: 'Löschung des Kontos abgebrochen',
+        details: { organizationIds: ids },
+      },
+    );
+    if (run.status !== 'succeeded') {
+      throw new InternalServerErrorException({
+        code: ErrorCodes.INTERNAL_ERROR,
+        message:
+          'Die Löschung konnte gerade nicht abgebrochen werden. Versuch es bitte später noch einmal.',
+      });
+    }
     return run;
   }
 }

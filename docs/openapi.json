@@ -2057,6 +2057,35 @@
         ]
       }
     },
+    "/api/organizations/{id}/restore": {
+      "post": {
+        "operationId": "organizations_restore",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Cancel the deletion of an organization (admins, until the final deletion)",
+        "tags": [
+          "Organizations"
+        ]
+      }
+    },
     "/api/organizations/{id}/members": {
       "get": {
         "operationId": "organizations_getMembers",
@@ -17502,7 +17531,10 @@
                 "organization_inactivity",
                 "organization_purge",
                 "user_accounts",
-                "fiscal_archive"
+                "deletion_reminders",
+                "fiscal_archive",
+                "organization_closure",
+                "memberships"
               ]
             }
           },
@@ -17510,13 +17542,15 @@
             "name": "trigger",
             "required": false,
             "in": "query",
+            "description": "`club`: Loeschungen durch den Verein (Organisation, Mitglieder, Schichtanmeldungen), `self_service`: Konto bzw. Anmeldung selbst geloescht",
             "schema": {
               "type": "string",
               "enum": [
                 "scheduled",
                 "manual",
                 "instruction",
-                "self_service"
+                "self_service",
+                "club"
               ]
             }
           },
@@ -17836,6 +17870,26 @@
           }
         ],
         "summary": "Send a confirmation code by e-mail",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/users/me/deletion/cancel": {
+      "post": {
+        "operationId": "accountDeletion_cancel",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Cancel a scheduled account deletion (restores the account and the organizations deleted with it, until the final deletion)",
         "tags": [
           "Users"
         ]
@@ -23407,6 +23461,7 @@
                 "organization_inactivity",
                 "organization_purge",
                 "user_accounts",
+                "deletion_reminders",
                 "fiscal_archive"
               ]
             }

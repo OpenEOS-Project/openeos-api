@@ -193,6 +193,19 @@ export class User extends SoftDeleteEntity {
   newsletterOptOutAt: Date | null;
 
   /**
+   * Geplante Kontoloeschung: Der Benutzer hat sein Konto geloescht und war
+   * einziges Mitglied einer Organisation. Bis zu diesem Termin (der
+   * endgueltigen Loeschung der Organisation) kann er sich anmelden und
+   * exportieren, aber nichts anlegen und keiner Organisation beitreten.
+   */
+  @Column({
+    name: 'deletion_due_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  deletionDueAt: Date | null;
+
+  /**
    * Eigene Obergrenze fuer Organisationen (Anlegen und Einladungen
    * annehmen). NULL: es gilt ORGANIZATIONS_PER_USER_LIMIT; 0: unbegrenzt.
    * Setzt nur ein Super-Admin, etwa im Support-Fall.

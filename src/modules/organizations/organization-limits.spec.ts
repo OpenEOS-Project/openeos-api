@@ -26,6 +26,8 @@ interface Counts {
   orgOverride?: number | null;
   /** Organisation existiert nicht (Zeile fehlt). */
   orgMissing?: boolean;
+  /** Geplante Kontoloeschung (`users.deletion_due_at`). */
+  deletionDueAt?: Date | null;
 }
 
 /** Manager-Attrappe: `query` liefert die gesperrte Zeile, `count` die Zahlen. */
@@ -36,7 +38,10 @@ function fakeManager(counts: Counts) {
       queries.push(sql);
       if (sql.includes('FROM users')) {
         return Promise.resolve([
-          { organization_limit: counts.userOverride ?? null },
+          {
+            organization_limit: counts.userOverride ?? null,
+            deletion_due_at: counts.deletionDueAt ?? null,
+          },
         ]);
       }
       if (sql.includes('FROM organizations')) {
@@ -148,6 +153,22 @@ describe('OrganizationLimitsService: organizations per user', () => {
       ErrorCodes.ORGANIZATION_LIMIT_REACHED,
       { limit: 5, used: 5 },
     );
+  });
+
+  it('refuses new organizations and joining while the account deletion is scheduled', async () => {
+    const { manager, raw } = fakeManager({
+      memberships: 0,
+      deletionDueAt: new Date('2026-12-06T03:30:00Z'),
+    });
+    const promise = limitsService({ orgs: 0 }).assertCanJoinOrganization(
+      normalUser,
+      manager,
+    );
+    await expect(promise).rejects.toBeInstanceOf(ForbiddenException);
+    await promise.catch((error: { getResponse: () => { reason: string } }) =>
+      expect(error.getResponse().reason).toBe('ACCOUNT_DELETION_SCHEDULED'),
+    );
+    expect(raw.count).not.toHaveBeenCalled();
   });
 
   it('locks the user row before counting', async () => {

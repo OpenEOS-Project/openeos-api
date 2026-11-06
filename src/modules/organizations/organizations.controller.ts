@@ -45,6 +45,7 @@ import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 import { OperatingModeService } from './operating-mode/operating-mode.service';
 import { CountryService } from './country/country.service';
 import { OrganizationViewService } from './organization-view.service';
+import { ClosedOrganizationAccess } from '../../common/organization-closure/organization-closure.guard';
 
 @ApiTags('Organizations')
 @ApiBearerAuth('JWT-auth')
@@ -239,6 +240,21 @@ export class OrganizationsController {
     @CurrentUser() user: User,
   ) {
     await this.organizationsService.remove(id, user);
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @ClosedOrganizationAccess()
+  @ApiOperation({
+    summary:
+      'Cancel the deletion of an organization (admins, until the final deletion)',
+  })
+  async restore(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+  ) {
+    const organization = await this.organizationsService.restore(id, user);
+    return { data: await this.organizationView.view(organization) };
   }
 
   // Member Management

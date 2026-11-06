@@ -21,6 +21,11 @@ import {
   type RetentionTrigger,
 } from './retention.types';
 
+export type RetentionRunView = RetentionRun & {
+  organizationName: string | null;
+  executedBy: { id: string; name: string; email: string } | null;
+};
+
 /** Wird geworfen, um die Transaktion eines Probelaufs zurueckzurollen. */
 class DryRunRollback extends Error {}
 
@@ -31,6 +36,8 @@ export interface RunOptions {
   organizationId?: string | null;
   executedByUserId?: string | null;
   reason?: string | null;
+  /** Kennungen ohne Inhalte, z. B. `{ organizationIds: [...] }`. */
+  details?: Record<string, unknown> | null;
 }
 
 /** Fehlertext fuers Protokoll: Code und erste Zeile, ohne Datenwerte. */
@@ -109,6 +116,7 @@ export class RetentionService {
         organizationId: options.organizationId ?? null,
         executedByUserId: options.executedByUserId ?? null,
         reason: options.reason ?? null,
+        details: options.details ?? null,
       }),
     );
 
@@ -248,13 +256,18 @@ export class RetentionService {
     return select<T>(this.dataSource.manager, sql, params);
   }
 
+  /**
+   * Protokoll, neueste zuerst. Jeder Eintrag mit Namen der Organisation und
+   * der ausfuehrenden Person (nur fuer die Anzeige; gespeichert sind nur die
+   * Kennungen).
+   */
   async listRuns(filter: {
     category?: string;
     trigger?: string;
     organizationId?: string;
     limit?: number;
     offset?: number;
-  }): Promise<{ items: RetentionRun[]; total: number }> {
+  }): Promise<{ items: RetentionRunView[]; total: number }> {
     const qb = this.runs
       .createQueryBuilder('run')
       .orderBy('run.startedAt', 'DESC')
@@ -271,7 +284,52 @@ export class RetentionService {
         organizationId: filter.organizationId,
       });
     }
-    const [items, total] = await qb.getManyAndCount();
+    const [runs, total] = await qb.getManyAndCount();
+    const orgIds = [
+      ...new Set(runs.map((r) => r.organizationId).filter(Boolean)),
+    ] as string[];
+    const userIds = [
+      ...new Set(runs.map((r) => r.executedByUserId).filter(Boolean)),
+    ] as string[];
+    const [orgs, users] = await Promise.all([
+      orgIds.length
+        ? this.query<{ id: string; name: string }>(
+            `SELECT id, name FROM organizations WHERE id = ANY($1::uuid[])`,
+            [orgIds],
+          )
+        : [],
+      userIds.length
+        ? this.query<{
+            id: string;
+            email: string;
+            first_name: string;
+            last_name: string;
+          }>(
+            `SELECT id, email, first_name, last_name FROM users WHERE id = ANY($1::uuid[])`,
+            [userIds],
+          )
+        : [],
+    ]);
+    const orgNames = new Map(orgs.map((o) => [o.id, o.name]));
+    const people = new Map(users.map((u) => [u.id, u]));
+    const items = runs.map((run) => {
+      const person = run.executedByUserId
+        ? people.get(run.executedByUserId)
+        : undefined;
+      return {
+        ...run,
+        organizationName: run.organizationId
+          ? (orgNames.get(run.organizationId) ?? null)
+          : null,
+        executedBy: person
+          ? {
+              id: person.id,
+              name: `${person.first_name} ${person.last_name}`.trim(),
+              email: person.email,
+            }
+          : null,
+      };
+    });
     return { items, total };
   }
 }

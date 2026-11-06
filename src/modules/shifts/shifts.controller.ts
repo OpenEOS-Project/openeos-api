@@ -146,8 +146,9 @@ export class ShiftsController {
   async deletePlan(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('planId', ParseUUIDPipe) planId: string,
+    @CurrentUser() user: User,
   ) {
-    await this.shiftsService.deletePlan(organizationId, planId);
+    await this.shiftsService.deletePlan(organizationId, planId, user?.id);
   }
 
   @ApiTokenAccess(TokenScope.STAFF_WRITE)
@@ -292,8 +293,9 @@ export class ShiftsController {
   async deleteJob(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('jobId', ParseUUIDPipe) jobId: string,
+    @CurrentUser() user: User,
   ) {
-    await this.shiftsService.deleteJob(organizationId, jobId);
+    await this.shiftsService.deleteJob(organizationId, jobId, user?.id);
   }
 
   // ============ Shifts ============
@@ -401,8 +403,9 @@ export class ShiftsController {
   async deleteShift(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('shiftId', ParseUUIDPipe) shiftId: string,
+    @CurrentUser() user: User,
   ) {
-    await this.shiftsService.deleteShift(organizationId, shiftId);
+    await this.shiftsService.deleteShift(organizationId, shiftId, user?.id);
   }
 
   // ============ Registrations ============
@@ -527,8 +530,13 @@ export class ShiftsController {
   async deleteRegistration(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('registrationId', ParseUUIDPipe) registrationId: string,
+    @CurrentUser() user: User,
   ) {
-    await this.shiftsService.deleteRegistration(organizationId, registrationId);
+    await this.shiftsService.deleteRegistration(
+      organizationId,
+      registrationId,
+      user?.id,
+    );
   }
 
   @Delete('registrations/:registrationId/one')
@@ -536,10 +544,12 @@ export class ShiftsController {
   async removeSingleRegistration(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('registrationId', ParseUUIDPipe) registrationId: string,
+    @CurrentUser() user: User,
   ) {
     await this.shiftsService.removeSingleRegistration(
       organizationId,
       registrationId,
+      user?.id,
     );
   }
 

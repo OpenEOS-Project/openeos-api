@@ -11,6 +11,7 @@ import { AssistantImportsJob } from './jobs/assistant-imports.job';
 import { AuditLogsJob } from './jobs/audit-logs.job';
 import { AuthRecordsJob } from './jobs/auth-records.job';
 import { ContactRequestsJob } from './jobs/contact-requests.job';
+import { DeletionRemindersJob } from './jobs/deletion-reminders.job';
 import { FiscalArchiveJob } from './jobs/fiscal-archive.job';
 import { GuestDataJob } from './jobs/guest-data.job';
 import { HelperDataJob } from './jobs/helper-data.job';
@@ -29,8 +30,8 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
 
 /**
  * Aufbewahrung und Loeschung: ein naechtlicher Lauf je Datenart mit
- * Protokoll, Ankuendigungen vor Schliessung und Loeschung, Einzelloeschung
- * auf Weisung. Siehe README „Aufbewahrung und Löschung“.
+ * Protokoll, Ankuendigungen und Erinnerungen vor Schliessung und Loeschung,
+ * Einzelloeschung auf Weisung, „Konto löschen“. Siehe README „Aufbewahrung und Löschung“.
  */
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
           new OrganizationInactivityJob(notices),
           new OrganizationPurgeJob(notices, options),
           new UserAccountsJob(notices, options),
+          new DeletionRemindersJob(notices, options),
           new FiscalArchiveJob(),
         ];
       },

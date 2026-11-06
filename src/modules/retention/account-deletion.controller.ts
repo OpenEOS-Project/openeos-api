@@ -16,11 +16,15 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../database/entities';
 import { AccountDeletionService } from './account-deletion.service';
 import { DeleteAccountDto } from './dto';
+import { formatDate } from './retention-mails';
 
 /**
  * „Konto löschen“ in den Kontoeinstellungen (Loeschkonzept 5.1). Erst
  * `GET` (was passiert, was sperrt), bei Konten ohne Passwort `POST code`,
- * dann `POST` mit Passwort bzw. Code. Danach ist der Benutzer abgemeldet.
+ * dann `POST` mit Passwort bzw. Code. Danach ist der Benutzer abgemeldet —
+ * ausser es gehen Organisationen mit: dann ist die Loeschung geplant
+ * (`scheduled`), der Benutzer bleibt bis zum Termin angemeldet und kann sie
+ * mit `POST cancel` abbrechen.
  */
 @ApiTags('Users')
 @ApiBearerAuth('JWT-auth')
@@ -61,7 +65,19 @@ export class AccountDeletionController {
     @Body() dto: DeleteAccountDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const run = await this.deletion.deleteAccount(user.id, dto);
+    const { run, scheduled } = await this.deletion.deleteAccount(user.id, dto);
+    if (scheduled) {
+      return {
+        data: {
+          deleted: false,
+          scheduled: true,
+          dueAt: scheduled.dueAt,
+          organizations: scheduled.organizations,
+          runId: run.id,
+        },
+        message: `Dein Konto und ${scheduled.organizations.length > 1 ? 'die Organisationen' : 'die Organisation'} werden am ${formatDate(scheduled.dueAt)} endgültig gelöscht`,
+      };
+    }
     const cookie = {
       httpOnly: true,
       secure: this.configService.get('nodeEnv') === 'production',
@@ -71,8 +87,23 @@ export class AccountDeletionController {
     response.clearCookie('refreshToken', cookie);
     response.clearCookie('accessToken', cookie);
     return {
-      data: { deleted: true, runId: run.id },
+      data: { deleted: true, scheduled: false, runId: run.id },
       message: 'Dein Konto wurde gelöscht',
+    };
+  }
+
+  @Post('cancel')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 900000 } })
+  @ApiOperation({
+    summary:
+      'Cancel a scheduled account deletion (restores the account and the organizations deleted with it, until the final deletion)',
+  })
+  async cancel(@CurrentUser() user: User) {
+    const run = await this.deletion.cancelScheduledDeletion(user.id);
+    return {
+      data: { cancelled: true, runId: run.id },
+      message: 'Die Löschung wurde abgebrochen',
     };
   }
 }

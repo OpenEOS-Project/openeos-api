@@ -34,8 +34,9 @@ export async function select<T>(
 
 /**
  * Letzte Nutzung einer Organisation (`o` im umgebenden FROM): Anlage,
- * letzte Veranstaltung (Anlage, Ende, Bezahlung), letzte Bestellung und
- * ein „Behalten“ durch den Super-Admin. Bewusst grosszuegig — im Zweifel
+ * letzte Veranstaltung (Anlage, Ende, Bezahlung), letzte Bestellung, ein
+ * „Behalten“ durch den Super-Admin und das Wiederherstellen nach dem
+ * Loeschen („Löschung abbrechen“). Bewusst grosszuegig — im Zweifel
  * gilt eine Organisation als genutzt und wird nicht angekuendigt.
  */
 export const ORGANIZATION_ACTIVITY_SQL = `GREATEST(
@@ -45,7 +46,7 @@ export const ORGANIZATION_ACTIVITY_SQL = `GREATEST(
     COALESCE((SELECT max(ord.created_at) FROM orders ord WHERE ord.organization_id = o.id), o.created_at),
     COALESCE((SELECT max(n.cancelled_at) FROM retention_notices n
                WHERE n.subject_type = 'organization' AND n.subject_id = o.id
-                 AND n.cancel_reason = 'kept'), o.created_at)
+                 AND n.cancel_reason IN ('kept', 'restored')), o.created_at)
   )`;
 
 /**
