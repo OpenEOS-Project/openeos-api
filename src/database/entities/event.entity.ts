@@ -136,6 +136,16 @@ export interface EventSettings {
   enableTableService?: boolean;
   enableTakeaway?: boolean;
   maxOrdersPerHour?: number;
+  /**
+   * Verkaufsfenster (event-phase.util.ts). `earlyStartHours`: eigener
+   * Vorlauf vor dem ersten Geschaeftstag (0 bis EVENT_EARLY_START_MAX_HOURS),
+   * fehlt er, gilt EVENT_EARLY_START_HOURS. `presale`: der Shop nimmt schon
+   * im Zustand „Geplant“ echte Bestellungen an (Vorverkauf, Standard aus).
+   */
+  sales?: {
+    earlyStartHours?: number | null;
+    presale?: boolean;
+  };
   shop?: {
     enabled?: boolean;
     /**
@@ -334,6 +344,19 @@ export class Event extends SoftDeleteEntity {
     nullable: true,
   })
   unlockedStartDate: Date | null;
+
+  /**
+   * Zeitpunkt, zu dem das Verkaufsfenster begonnen hat und die
+   * Testbestellungen aus dem Zustand „Geplant“ entfernt wurden
+   * (EventPhaseTransitionService). `null`: noch nicht geschehen — oder nach
+   * einer Verschiebung zurueck in „Geplant“ wieder offen.
+   */
+  @Column({
+    name: 'sales_started_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  salesStartedAt: Date | null;
 
   // Relations
   @ManyToOne(() => Organization, (org) => org.events, { onDelete: 'CASCADE' })

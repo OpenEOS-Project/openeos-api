@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsDateString,
   IsDefined,
   IsEmail,
   IsNotEmpty,
@@ -140,4 +141,26 @@ export class PurchaseMasterDataDto {
   @IsString()
   @MaxLength(20)
   vatId?: string;
+}
+
+/**
+ * `POST /admin/events/:id/dates` (Support): Beginn/Ende verschieben, obwohl
+ * das Verkaufsfenster schon begonnen hat. Grund Pflicht, protokolliert als
+ * `event_dates_override`; die bezahlte Dauer gilt weiter.
+ */
+export class MoveEventDatesDto {
+  @ApiPropertyOptional({ example: '2026-11-21T00:00:00.000Z' })
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @ApiPropertyOptional({ example: '2026-11-22T00:00:00.000Z' })
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @ApiProperty({ example: 'Fest wegen Unwetter um eine Woche verschoben' })
+  @IsString()
+  @MaxLength(500)
+  reason: string;
 }

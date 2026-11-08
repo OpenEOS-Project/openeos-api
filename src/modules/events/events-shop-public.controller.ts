@@ -9,126 +9,27 @@ import {
   Param,
   ParseUUIDPipe,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Public } from '../../common/decorators/public.decorator';
-import {
-  Event,
-  EventStatus,
-  ShopOpeningHours,
-  ShopWeekday,
-} from '../../database/entities/event.entity';
+import { Event, EventStatus } from '../../database/entities/event.entity';
 import { Organization } from '../../database/entities/organization.entity';
-import {
-  ShopDayWindow,
-  ShopWindow,
-  dayWindowsToAbsolute,
-  listEventDayKeys,
-  deriveShopWindows,
-  isWithinShopWindows,
-} from '../../common/utils/event-schedule.util';
+import { EventPhaseService } from './event-phase.service';
+import { resolveShopHoursMode, shopAvailability } from './shop-availability';
 import { Category } from '../../database/entities/category.entity';
 import { Product } from '../../database/entities/product.entity';
 import { DeploymentService } from '../../common/services/deployment.service';
 import { toPublicLegalInfo } from '../organizations/legal/legal-settings.util';
 
-const WEEKDAY_KEYS: ShopWeekday[] = [
-  'sun',
-  'mon',
-  'tue',
-  'wed',
-  'thu',
-  'fri',
-  'sat',
-];
-
-function parseHHMM(value: string): number | null {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(value);
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-  return hours * 60 + minutes;
-}
-
-/**
- * Woraus sich die Oeffnungszeiten dieses Shops ergeben.
- *
- * Neue Shops leiten sie aus dem Veranstaltungszeitraum ab. Shops, die noch
- * eine ausgefuellte Wochentags-Tabelle mitbringen, bleiben darauf, bis sie
- * bewusst umgestellt werden — sonst wuerde ein Bestandsshop von heute auf
- * morgen zu anderen Zeiten oeffnen.
- */
-export function resolveShopHoursMode(
-  hoursMode: 'event' | 'weekly' | undefined,
-  hours: ShopOpeningHours | null | undefined,
-): 'event' | 'weekly' {
-  if (hoursMode) return hoursMode;
-  const hasWeeklyTable = hours
-    ? WEEKDAY_KEYS.some((k) => hours[k] !== undefined)
-    : false;
-  return hasWeeklyTable ? 'weekly' : 'event';
-}
-
-/** Die konkreten Zeitfenster dieses Shops, unabhaengig vom gewaehlten Modus. */
-export function resolveShopWindows(
-  event: Event,
-  timeZone: string,
-): ShopWindow[] {
-  const shop = event.settings?.shop;
-  const hours = shop?.openingHours ?? null;
-  if (resolveShopHoursMode(shop?.hoursMode, hours) === 'event') {
-    // Die eingetragenen Tagesfenster haben Vorrang. Nur wenn keine da sind
-    // — Shops aus der ersten Fassung — wird ersatzweise abgeleitet.
-    if (shop?.days && shop.days.length > 0) {
-      return dayWindowsToAbsolute(shop.days, timeZone);
-    }
-    return deriveShopWindows(event.startDate, event.endDate, timeZone);
-  }
-  return weeklyHoursToWindows(event, hours, timeZone);
-}
-
-/**
- * Die Wochentags-Tabelle in dieselben Fenster uebersetzen, die der
- * abgeleitete Modus liefert — so kennt der Shop nur noch eine Darstellung.
- * Erzeugt werden die Fenster fuer den Veranstaltungszeitraum, hoechstens
- * aber fuer 31 Tage.
- *
- * Tage und Uhrzeiten gelten in der Zeitzone der Organisation, nicht in der
- * des Servers: "Samstag 10 bis 18 Uhr" heisst 10 Uhr Ortszeit, auch auf
- * einem Server in UTC und auch in der Woche, in der die Sommerzeit endet.
- * Deshalb laeuft die Rechnung ueber dieselben Kalendertage und dieselbe
- * Umrechnung wie im Veranstaltungsmodus.
- */
-function weeklyHoursToWindows(
-  event: Event,
-  hours: ShopOpeningHours | null,
-  timeZone: string,
-): ShopWindow[] {
-  if (!hours || !event.startDate) return [];
-  const days: ShopDayWindow[] = [];
-
-  for (const date of listEventDayKeys(
-    event.startDate,
-    event.endDate,
-    timeZone,
-  ).slice(0, 31)) {
-    // Der Wochentag eines Kalendertags haengt nicht an der Zeitzone — der
-    // Tag selbst stammt schon aus der Ortszeit.
-    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-    const window = hours[WEEKDAY_KEYS[weekday]];
-    if (!window) continue;
-    const from = parseHHMM(window.start);
-    const until = parseHHMM(window.end);
-    // Anders als die Tagesfenster kennt die Wochentags-Tabelle keine
-    // Nacht ueber Mitternacht; solche Eintraege galten schon immer als leer.
-    if (from === null || until === null || until <= from) continue;
-    days.push({ date, start: window.start, end: window.end });
-  }
-  return dayWindowsToAbsolute(days, timeZone);
-}
+// Oeffnungszeiten: siehe shop-availability.ts (hier weiter exportiert).
+export {
+  resolveShopHoursMode,
+  resolveShopWindows,
+  weeklyHoursForDays,
+} from './shop-availability';
 
 @ApiTags('Shop (Public)')
 @Controller('public/shop')
@@ -144,7 +45,17 @@ export class EventsShopPublicController {
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
     private readonly deployment: DeploymentService,
+    // Optional mit Rueckfall fuer von Hand gebaute Tests (Standardwerte).
+    @Optional()
+    private readonly eventPhaseService?: EventPhaseService,
   ) {}
+
+  private get eventPhase(): EventPhaseService {
+    return (
+      this.eventPhaseService ??
+      EventPhaseService.standalone(this.organizationRepository)
+    );
+  }
 
   private async loadShopEvent(eventId: string): Promise<Event> {
     const event = await this.eventRepository.findOne({
@@ -182,17 +93,16 @@ export class EventsShopPublicController {
       event.settings?.shop?.hoursMode,
       openingHours,
     );
-    const windows = resolveShopWindows(event, timezone);
     const rawFee = event.settings?.shop?.serviceFee;
     const serviceFee =
       typeof rawFee === 'number' && rawFee > 0 ? Number(rawFee.toFixed(2)) : 0;
     const testMode = event.status === EventStatus.TEST;
     const now = new Date();
-    // Die Fenster tragen den Zeitraum bereits in sich — eine zusaetzliche
-    // Pruefung gegen Start- und Enddatum waere dieselbe Aussage doppelt.
-    const isOpenNow = testMode ? true : isWithinShopWindows(now, windows);
-    const nextOpening =
-      windows.map((w) => w.start).find((iso) => new Date(iso) > now) ?? null;
+    // Phase der Veranstaltung und Oeffnungszeiten zusammen: vor dem
+    // Verkaufsfenster nur mit Vorverkauf, danach gar nicht mehr.
+    const phase = this.eventPhase.resolveWith(event, organization, now);
+    const availability = shopAvailability(event, timezone, phase, now);
+    const { windows, isOpenNow, nextOpening } = availability;
 
     return {
       data: {
@@ -204,6 +114,9 @@ export class EventsShopPublicController {
           startDate: event.startDate,
           endDate: event.endDate,
           organizationName: organization?.name || '',
+          phase: phase.phase,
+          realSalesFrom: phase.realSalesFrom,
+          realSalesUntil: phase.realSalesUntil,
         },
         currency,
         shop: {
@@ -214,6 +127,14 @@ export class EventsShopPublicController {
           serviceFee,
           isOpenNow,
           testMode,
+          // test | presale | open | closed | not_started | ended
+          state: availability.state,
+          presale: {
+            enabled: phase.presaleEnabled,
+            active: availability.state === 'presale',
+            until: phase.presaleEnabled ? phase.realSalesFrom : null,
+            windows: availability.presaleWindows,
+          },
           // Betriebsart „Nur Bons“: keine Online-Bestellungen (keine
           // Vorkasse, keine Preise) — der Shop zeigt „Bestellungen nur vor
           // Ort“ statt der Karte.

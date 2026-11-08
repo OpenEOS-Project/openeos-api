@@ -3,7 +3,9 @@ import {
   BadRequestException,
   ForbiddenException,
   Logger,
+  Optional,
 } from '@nestjs/common';
+import { EventPhaseService } from '../events/event-phase.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -42,6 +44,8 @@ export class SumUpService {
     private readonly configService: ConfigService,
     @InjectRepository(Event)
     private readonly eventRepository: Repository<Event>,
+    @Optional()
+    private readonly eventPhaseService?: EventPhaseService,
   ) {}
 
   private async getCredentials(
@@ -207,14 +211,24 @@ export class SumUpService {
     });
     assertPaymentsAllowed(organization);
     // Testmodus: keine echte Kartenzahlung am Lesegeraet.
+    // Auch im Zustand „Geplant“: dort bucht die Kasse Testbestellungen.
     const events = await this.eventRepository.find({
       where: {
         organizationId,
         status: In([EventStatus.ACTIVE, EventStatus.TEST]),
       },
-      select: { id: true, status: true },
     });
-    assertSumUpAllowedInMode(currentEventStatus(events));
+    const phase =
+      this.eventPhaseService ??
+      EventPhaseService.standalone(this.organizationRepository);
+    const effective = await Promise.all(
+      events.map(async (event) => ({
+        status: (await phase.isTestModeNow(event))
+          ? EventStatus.TEST
+          : event.status,
+      })),
+    );
+    assertSumUpAllowedInMode(currentEventStatus(effective));
     const credentials = await this.getCredentials(organizationId);
 
     this.logger.log(

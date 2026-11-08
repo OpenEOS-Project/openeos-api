@@ -157,6 +157,26 @@ export default () => ({
     openRegisterApiKey: process.env.OPENREGISTER_API_KEY || '',
   },
 
+  // Phasen einer Veranstaltung (Geplant – Aktiv – Beendet), siehe
+  // event-phase.util.ts. Echte Verkaeufe beginnen EVENT_EARLY_START_HOURS
+  // vor dem ersten Geschaeftstag (je Veranstaltung bis
+  // EVENT_EARLY_START_MAX_HOURS einstellbar) und enden EVENT_GRACE_HOURS
+  // nach dem letzten. Vorher bucht die Kasse Testbestellungen (hoechstens
+  // EVENT_PLANNED_TEST_MAX_ORDERS; eigene Installation: unbegrenzt),
+  // danach nimmt sie keine neuen Bestellungen mehr an.
+  // EVENT_DATE_PHASES=false: wie frueher zaehlt nur der Status.
+  eventPhases: {
+    enabled: process.env.EVENT_DATE_PHASES !== 'false',
+    earlyStartHours: parseFloat(process.env.EVENT_EARLY_START_HOURS || '12'),
+    maxEarlyStartHours: parseFloat(
+      process.env.EVENT_EARLY_START_MAX_HOURS || '24',
+    ),
+    graceHours: parseFloat(process.env.EVENT_GRACE_HOURS || '6'),
+    plannedTestMaxOrders: IS_SELF_HOSTED
+      ? Number.MAX_SAFE_INTEGER
+      : parseInt(process.env.EVENT_PLANNED_TEST_MAX_ORDERS || '200', 10),
+  },
+
   ai: {
     // 'none' (Standard): alle Assistent-Endpunkte antworten 404 AI_DISABLED.
     // Self-Hoster bringen ihren eigenen Schluessel mit oder lassen es aus.

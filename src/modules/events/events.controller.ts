@@ -25,6 +25,7 @@ import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { EVENTS_LIST_RESPONSE } from './events.openapi';
+import { EventPhaseService } from './event-phase.service';
 
 @ApiTags('Events')
 @ApiParam({
@@ -35,7 +36,10 @@ import { EVENTS_LIST_RESPONSE } from './events.openapi';
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/events')
 export class EventsController {
-  constructor(private readonly eventsService: EventsService) {}
+  constructor(
+    private readonly eventsService: EventsService,
+    private readonly eventPhase: EventPhaseService,
+  ) {}
 
   @ApiTokenAccess(TokenScope.EVENTS_WRITE)
   @Post()
@@ -55,7 +59,7 @@ export class EventsController {
       createDto,
       user,
     );
-    return { data: event };
+    return { data: await this.eventPhase.decorate(event) };
   }
 
   @ApiTokenAccess(TokenScope.READ)
@@ -72,7 +76,15 @@ export class EventsController {
     @CurrentUser() user: User,
     @Query() pagination: PaginationDto,
   ) {
-    return this.eventsService.findAll(organizationId, user, pagination);
+    const result = await this.eventsService.findAll(
+      organizationId,
+      user,
+      pagination,
+    );
+    return {
+      ...result,
+      data: await this.eventPhase.decorateMany(result.data),
+    };
   }
 
   @ApiTokenAccess(TokenScope.READ)
@@ -91,7 +103,7 @@ export class EventsController {
       organizationId,
       user,
     );
-    return { data: event };
+    return { data: await this.eventPhase.decorate(event) };
   }
 
   @ApiTokenAccess(TokenScope.READ)
@@ -100,7 +112,7 @@ export class EventsController {
     operationId: 'getEvent',
     summary: 'Veranstaltung abrufen',
     description:
-      'Eine Veranstaltung mit Einstellungen und Abrechnungsstand. Scope `read`.',
+      'Eine Veranstaltung mit Einstellungen und Abrechnungsstand. Dazu die abgeleitete Phase: `phase` (`inactive`, `test`, `planned` = freigeschaltet, vor dem Verkaufsfenster – Kasse bucht Testbestellungen –, `active`, `ended` = keine neuen Bestellungen), `realSalesFrom`/`realSalesUntil` (Verkaufsfenster samt Vorlauf und Kulanz), `presaleEnabled` und `phaseDetails`. Scope `read`.',
   })
   @ApiParam({
     name: 'eventId',
@@ -117,7 +129,7 @@ export class EventsController {
       eventId,
       user,
     );
-    return { data: event };
+    return { data: await this.eventPhase.decorate(event) };
   }
 
   @ApiTokenAccess(TokenScope.EVENTS_WRITE)
@@ -126,7 +138,7 @@ export class EventsController {
     operationId: 'updateEvent',
     summary: 'Veranstaltung ändern',
     description:
-      'Ändert Name, Beschreibung, Zeitraum oder Einstellungen. Scope `events:write`; der Status (aktiv, Test) lässt sich hier nicht setzen.',
+      'Ändert Name, Beschreibung, Zeitraum oder Einstellungen. Scope `events:write`; der Status (aktiv, Test) lässt sich hier nicht setzen. Freigeschaltete Veranstaltungen lassen sich nur verschieben, solange sie „Geplant“ sind (`phase: planned`); danach ist der Beginn fest und das Ende kann nur noch vorgezogen werden (400 `EVENT_DATES_LOCKED`). `settings.sales`: `earlyStartHours` (Vorlauf vor dem ersten Geschäftstag, 0 bis `EVENT_EARLY_START_MAX_HOURS`, Standard `EVENT_EARLY_START_HOURS`) und `presale` (Vorverkauf im Shop schon vor dem Verkaufsfenster).',
   })
   @ApiParam({
     name: 'eventId',
@@ -145,7 +157,7 @@ export class EventsController {
       updateDto,
       user,
     );
-    return { data: event };
+    return { data: await this.eventPhase.decorate(event) };
   }
 
   @Delete(':eventId')
@@ -174,7 +186,7 @@ export class EventsController {
       eventId,
       user,
     );
-    return { data: event };
+    return { data: await this.eventPhase.decorate(event) };
   }
 
   @Post(':eventId/deactivate')
@@ -189,7 +201,7 @@ export class EventsController {
       eventId,
       user,
     );
-    return { data: event };
+    return { data: await this.eventPhase.decorate(event) };
   }
 
   @Post(':eventId/test')
@@ -207,7 +219,7 @@ export class EventsController {
       eventId,
       user,
     );
-    return { data: event };
+    return { data: await this.eventPhase.decorate(event) };
   }
 
   // Copy products from another event

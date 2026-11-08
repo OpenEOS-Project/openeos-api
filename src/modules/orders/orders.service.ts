@@ -31,9 +31,8 @@ import {
 } from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { StockMovementType } from '../../database/entities/stock-movement.entity';
-import { EventStatus } from '../../database/entities/event.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
-import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
+import { EventPhaseService } from '../events/event-phase.service';
 import {
   PaginatedResult,
   createPaginatedResult,
@@ -139,7 +138,21 @@ export class OrdersService {
     private readonly configService: ConfigService,
     @Optional()
     private readonly tseSigning?: TseSigningService,
+    // Optional mit Rueckfall fuer von Hand gebaute Tests (Standardwerte).
+    @Optional()
+    private readonly eventPhaseService?: EventPhaseService,
   ) {}
+
+  private get eventPhase(): EventPhaseService {
+    return (
+      this.eventPhaseService ??
+      EventPhaseService.standalone(
+        this.organizationRepository,
+        this.orderRepository,
+        this.configService,
+      )
+    );
+  }
 
   async create(
     organizationId: string,
@@ -149,6 +162,7 @@ export class OrdersService {
     await this.checkMembership(organizationId, user.id);
 
     // Validate event if provided
+    let plannedTest = false;
     if (createDto.eventId) {
       const event = await this.eventRepository.findOne({
         where: { id: createDto.eventId, organizationId },
@@ -162,33 +176,16 @@ export class OrdersService {
         });
       }
 
-      if (
-        event.status !== EventStatus.ACTIVE &&
-        event.status !== EventStatus.TEST
-      ) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          reason: ErrorReasons.EVENT_NOT_ACTIVE,
-          message: 'Event ist nicht aktiv',
-        });
-      }
-
-      if (event.status === EventStatus.TEST) {
-        const existingOrderCount = await this.orderRepository.count({
-          where: { eventId: event.id },
-        });
-        assertTestEventOrderLimitNotReached(
-          event.status,
-          existingOrderCount,
-          this.configService.get<number>('billing.testEventMaxOrders', 25),
-        );
-      }
+      // Phase der Veranstaltung (inaktiv/beendet: keine neue Bestellung;
+      // Testmodus und „Geplant“: Testbestellung mit Deckel).
+      plannedTest = (await this.eventPhase.prepareOrder(event, 'admin'))
+        .plannedTest;
     }
 
     // Order number and daily number are allocated together with the insert.
     const order = await saveOrderWithNumbers(
       this.orderRepository,
-      { organizationId, eventId: createDto.eventId || null },
+      { organizationId, eventId: createDto.eventId || null, plannedTest },
       {
         tableNumber: createDto.tableNumber || null,
         customerName: createDto.customerName || null,
@@ -524,6 +521,15 @@ export class OrdersService {
         message:
           'Abgeschlossene oder stornierte Bestellungen können nicht bearbeitet werden',
       });
+    }
+
+    // Nach dem Ende der Veranstaltung nichts mehr nachbuchen; Kassieren und
+    // Erstatten der offenen Bestellung gehen weiter.
+    if (order.eventId) {
+      const event = await this.eventRepository.findOne({
+        where: { id: order.eventId, organizationId },
+      });
+      if (event) await this.eventPhase.assertNotEnded(event);
     }
 
     const chargePfand = await this.shouldChargePfand(order);

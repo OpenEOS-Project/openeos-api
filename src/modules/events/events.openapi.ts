@@ -16,6 +16,7 @@ export const EVENT_EXAMPLE = {
     enableOnlineOrdering: false,
     enableTableService: true,
     enableTakeaway: true,
+    sales: { earlyStartHours: 12, presale: false },
   },
   billingStatus: 'paid',
   paidAt: '2026-06-01T09:12:44.000Z',
@@ -27,8 +28,26 @@ export const EVENT_EXAMPLE = {
   invoiceHostedUrl: null,
   invoicePdfUrl: null,
   unlockedStartDate: '2026-07-10T00:00:00.000Z',
+  salesStartedAt: '2026-07-09T16:00:00.000Z',
   createdAt: '2026-05-20T18:30:12.000Z',
   updatedAt: '2026-07-10T15:58:03.000Z',
+  // Phase (abgeleitet): inactive | test | planned | active | ended.
+  // Echte Verkaeufe von realSalesFrom (Vorlauf vor dem ersten
+  // Geschaeftstag) bis realSalesUntil (Kulanz nach dem letzten).
+  phase: 'active',
+  realSalesFrom: '2026-07-09T16:00:00.000Z',
+  realSalesUntil: '2026-07-13T10:00:00.000Z',
+  presaleEnabled: false,
+  phaseDetails: {
+    datePhases: true,
+    businessDaysFrom: '2026-07-10T04:00:00.000Z',
+    businessDaysUntil: '2026-07-13T04:00:00.000Z',
+    earlyStartHours: 12,
+    graceHours: 6,
+    earlyStartLimitedByMonth: false,
+    presaleActive: false,
+    datesLocked: true,
+  },
 };
 
 export const EVENTS_LIST_RESPONSE = paginatedResponse(
@@ -43,6 +62,7 @@ export const EVENTS_LIST_RESPONSE = paginatedResponse(
       startDate: '2025-12-06T14:00:00.000Z',
       endDate: '2025-12-07T20:00:00.000Z',
       status: 'inactive',
+      phase: 'inactive',
       settings: { orderNumberPrefix: 'WM', orderingMode: 'immediate' },
       paidAt: '2025-11-02T10:05:00.000Z',
       billedDays: 2,

@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
@@ -53,7 +54,9 @@ import type { TseInfo } from './swissbit/swissbit.types';
 import { missingMasterData } from '../dsfinvk/dsfinvk-master';
 import { TseConfig } from './tse.config';
 import { TseCryptoService } from './tse-crypto.service';
-import { autoCreateHorizon, localDate, startOfLocalMonth } from './tse-dates';
+import { localDate, startOfLocalMonth } from './tse-dates';
+import { EventPhaseService } from '../events/event-phase.service';
+import { salesWindow } from '../../common/utils/event-phase.util';
 import { plannedDeactivationFor, type PaidEventSpan } from './tse-monthly';
 import { TseNotifyService } from './tse-notify.service';
 import { TseOutageService } from './tse-outage.service';
@@ -147,7 +150,22 @@ export class TseUnitService {
     private readonly outages: TseOutageService,
     private readonly cronLock: CronLockService,
     private readonly deployment: DeploymentService,
+    // Optional mit Rueckfall fuer von Hand gebaute Tests (Standardwerte).
+    @Optional()
+    private readonly eventPhaseService?: EventPhaseService,
   ) {}
+
+  private get eventPhase(): EventPhaseService {
+    return (
+      this.eventPhaseService ??
+      EventPhaseService.standalone(
+        this.organizationRepository,
+        null,
+        null,
+        this.deployment,
+      )
+    );
+  }
 
   // ------------------------------------------------------------ Rechte
 
@@ -734,13 +752,22 @@ export class TseUnitService {
   // --------------------------------------------------- Automatik
 
   /**
-   * Stuendlich 5–22 Uhr (Berlin): TSE fuer Organisationen anlegen, deren
-   * bezahlte Veranstaltung heute (Geschaeftstag) beginnt oder laeuft — der
-   * Verein muss nichts tun. Bedingungen: DE, Integration an, Betriebsart
-   * nicht „Nur Bons“, keine laufende TSE, hoechstens 3 gescheiterte
-   * Versuche in 24 h.
+   * Alle 10 Minuten: TSE fuer Organisationen anlegen, deren bezahlte
+   * Veranstaltung bald echt verkauft — der Verein muss nichts tun.
+   * Bedingungen: DE, Integration an, Betriebsart nicht „Nur Bons“, keine
+   * laufende TSE, hoechstens 3 gescheiterte Versuche in 24 h.
+   *
+   * Wann (Phasen, 2026-11-08): ab `TSE_CREATE_LEAD_MS` (12 h) vor Beginn
+   * des Verkaufsfensters (`realSalesFrom`, also samt Vorlauf am Vorabend)
+   * bis zu seinem Ende — aber nie vor dem Kalendermonat des ersten
+   * Geschaeftstags (keine Kosten fuer einen Leermonat). Fuer
+   * Cloud-TSE-Organisationen beginnt das Verkaufsfenster deshalb auch nie
+   * im Vormonat (event-phase.util.ts): ein Fest am 1. verkauft ab 0 Uhr echt,
+   * die TSE entsteht mit dem Lauf um Mitternacht. Frueher lief die Automatik
+   * nur 5–22 Uhr und legte die TSE fuer ein Fest am 1. schon am
+   * Monatsletzten an (ein ganzer Zusatzmonat).
    */
-  @Cron('0 5-22 * * *', { name: 'tse-auto-create', timeZone: 'Europe/Berlin' })
+  @Cron('0 */10 * * * *', { name: 'tse-auto-create' })
   async autoCreateJob(): Promise<void> {
     if (!this.config.enabled) return;
     await this.cronLock.runExclusive('tse-auto-create', async () => {
@@ -757,11 +784,15 @@ export class TseUnitService {
     now = new Date(),
     organizationId: string | null = null,
   ): Promise<string[]> {
-    const horizon = autoCreateHorizon(now);
     const selfHosted = this.deployment.isSelfHosted;
-    const rows = rowsOf<{ organization_id: string; event_id: string }>(
+    // Vorfilter in SQL (grob), die genaue Entscheidung trifft das
+    // Verkaufsfenster der Veranstaltung.
+    const candidates = rowsOf<{
+      organization_id: string;
+      event_id: string;
+    }>(
       await this.dataSource.query(
-        `SELECT DISTINCT ON (o.id) o.id AS organization_id, e.id AS event_id
+        `SELECT o.id AS organization_id, e.id AS event_id
          FROM organizations o
          JOIN events e ON e.organization_id = o.id AND e.deleted_at IS NULL
         WHERE o.deleted_at IS NULL
@@ -770,7 +801,7 @@ export class TseUnitService {
           AND o.operating_mode <> 'orders_only'
           AND e.start_date IS NOT NULL
           AND e.start_date < $1
-          AND COALESCE(e.end_date, e.start_date + interval '1 day') > $2
+          AND COALESCE(e.end_date, e.start_date) + interval '2 days' > $2
           AND ($3::boolean OR e.billing_status::text = ANY($4))
           AND NOT EXISTS (
             SELECT 1 FROM tse_units u
@@ -781,7 +812,7 @@ export class TseUnitService {
           AND ($6::uuid IS NULL OR o.id = $6::uuid)
         ORDER BY o.id, e.start_date ASC`,
         [
-          horizon,
+          new Date(now.getTime() + 3 * 24 * 3600_000),
           now,
           selfHosted,
           [...EVENT_UNLOCKED_BILLING_STATUSES],
@@ -790,6 +821,26 @@ export class TseUnitService {
         ],
       ),
     );
+
+    const rows: { organization_id: string; event_id: string }[] = [];
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      if (seen.has(candidate.organization_id)) continue;
+      const [event, organization] = await Promise.all([
+        this.eventRepository.findOne({ where: { id: candidate.event_id } }),
+        this.organizationRepository.findOne({
+          where: { id: candidate.organization_id },
+          select: { id: true, settings: true },
+        }),
+      ]);
+      if (
+        !event ||
+        !isTseCreationDue(event, organization, this.eventPhase, now)
+      )
+        continue;
+      seen.add(candidate.organization_id);
+      rows.push(candidate);
+    }
 
     const created: string[] = [];
     for (const row of rows) {
@@ -1153,4 +1204,35 @@ function formatGermanDate(isoDate: string | null): string {
   if (!isoDate) return '';
   const [y, m, d] = isoDate.split('-');
   return `${d}.${m}.${y}`;
+}
+
+/** Vorlauf der automatischen Anlage vor dem Verkaufsfenster. */
+export const TSE_CREATE_LEAD_MS = 12 * 3600_000;
+
+/**
+ * Soll die Automatik jetzt eine TSE fuer diese Veranstaltung anlegen?
+ * Ab 12 h vor dem Verkaufsfenster bis zu seinem Ende, nie vor dem
+ * Kalendermonat (Berlin) des ersten Geschaeftstags.
+ */
+export function isTseCreationDue(
+  event: Pick<Event, 'startDate' | 'endDate' | 'settings'>,
+  organization: Pick<Organization, 'settings'> | null,
+  phase: Pick<EventPhaseService, 'settings'>,
+  now: Date,
+): boolean {
+  const window = salesWindow(
+    event,
+    {
+      timezone:
+        (organization?.settings as { timezone?: string } | null)?.timezone ||
+        'Europe/Berlin',
+      usesCloudTse: true,
+    },
+    phase.settings,
+  );
+  if (!window) return false;
+  if (now.getTime() >= window.realSalesUntil.getTime()) return false;
+  if (now.getTime() < startOfLocalMonth(window.businessDaysFrom).getTime())
+    return false;
+  return now.getTime() >= window.realSalesFrom.getTime() - TSE_CREATE_LEAD_MS;
 }

@@ -1343,6 +1343,9 @@ paths:
                       enableOnlineOrdering: false
                       enableTableService: true
                       enableTakeaway: true
+                      sales:
+                        earlyStartHours: 12
+                        presale: false
                     billingStatus: paid
                     paidAt: 2026-06-01T09:12:44.000Z
                     priceCharged: 29
@@ -1353,8 +1356,22 @@ paths:
                     invoiceHostedUrl: null
                     invoicePdfUrl: null
                     unlockedStartDate: 2026-07-10T00:00:00.000Z
+                    salesStartedAt: 2026-07-09T16:00:00.000Z
                     createdAt: 2026-05-20T18:30:12.000Z
                     updatedAt: 2026-07-10T15:58:03.000Z
+                    phase: active
+                    realSalesFrom: 2026-07-09T16:00:00.000Z
+                    realSalesUntil: 2026-07-13T10:00:00.000Z
+                    presaleEnabled: false
+                    phaseDetails: &a8
+                      datePhases: true
+                      businessDaysFrom: 2026-07-10T04:00:00.000Z
+                      businessDaysUntil: 2026-07-13T04:00:00.000Z
+                      earlyStartHours: 12
+                      graceHours: 6
+                      earlyStartLimitedByMonth: false
+                      presaleActive: false
+                      datesLocked: true
                   - id: a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d
                     organizationId: 8c1e2d3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f
                     copiedFromEventId: null
@@ -1376,8 +1393,14 @@ paths:
                     invoiceHostedUrl: null
                     invoicePdfUrl: null
                     unlockedStartDate: 2025-12-06T00:00:00.000Z
+                    salesStartedAt: 2026-07-09T16:00:00.000Z
                     createdAt: 2025-10-28T19:02:40.000Z
                     updatedAt: 2025-12-07T21:10:00.000Z
+                    phase: inactive
+                    realSalesFrom: 2026-07-09T16:00:00.000Z
+                    realSalesUntil: 2026-07-13T10:00:00.000Z
+                    presaleEnabled: false
+                    phaseDetails: *a8
                 meta:
                   page: 1
                   limit: 20
@@ -1386,7 +1409,7 @@ paths:
                   hasNext: false
                   hasPrev: false
       security:
-        - &a8
+        - &a9
           JWT-auth: []
         - API-token: []
       summary: Veranstaltungen auflisten
@@ -1414,7 +1437,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a8
+        - *a9
         - API-token: []
       summary: Veranstaltung anlegen
       tags:
@@ -1436,7 +1459,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a8
+        - *a9
         - API-token: []
       summary: Aktive Veranstaltung abrufen
       tags:
@@ -1444,7 +1467,7 @@ paths:
       x-api-token-scope: read
   /api/organizations/{organizationId}/events/{eventId}:
     get:
-      description: Eine Veranstaltung mit Einstellungen und Abrechnungsstand. Scope `read`.
+      description: "Eine Veranstaltung mit Einstellungen und Abrechnungsstand. Dazu die abgeleitete Phase: `phase` (`inactive`, `test`, `planned` = freigeschaltet, vor dem Verkaufsfenster – Kasse bucht Testbestellungen –, `active`, `ended` = keine neuen Bestellungen), `realSalesFrom`/`realSalesUntil` (Verkaufsfenster samt Vorlauf und Kulanz), `presaleEnabled` und `phaseDetails`. Scope `read`."
       operationId: getEvent
       parameters:
         - name: organizationId
@@ -1465,14 +1488,14 @@ paths:
         "200":
           description: ""
       security:
-        - *a8
+        - *a9
         - API-token: []
       summary: Veranstaltung abrufen
       tags:
         - Veranstaltungen
       x-api-token-scope: read
     patch:
-      description: Ändert Name, Beschreibung, Zeitraum oder Einstellungen. Scope `events:write`; der Status (aktiv, Test) lässt sich hier nicht setzen.
+      description: "Ändert Name, Beschreibung, Zeitraum oder Einstellungen. Scope `events:write`; der Status (aktiv, Test) lässt sich hier nicht setzen. Freigeschaltete Veranstaltungen lassen sich nur verschieben, solange sie „Geplant“ sind (`phase: planned`); danach ist der Beginn fest und das Ende kann nur noch vorgezogen werden (400 `EVENT_DATES_LOCKED`). `settings.sales`: `earlyStartHours` (Vorlauf vor dem ersten Geschäftstag, 0 bis `EVENT_EARLY_START_MAX_HOURS`, Standard `EVENT_EARLY_START_HOURS`) und `presale` (Vorverkauf im Shop schon vor dem Verkaufsfenster)."
       operationId: updateEvent
       parameters:
         - name: organizationId
@@ -1499,7 +1522,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a8
+        - *a9
         - API-token: []
       summary: Veranstaltung ändern
       tags:
@@ -1541,7 +1564,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a8
+        - *a9
         - API-token: []
       summary: Katalog aus anderer Veranstaltung kopieren
       tags:
@@ -1563,7 +1586,7 @@ paths:
         "200":
           description: ""
       security:
-        - &a9
+        - &a10
           JWT-auth: []
         - API-token: []
       summary: Kategorien auflisten (je Veranstaltung)
@@ -1591,7 +1614,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a9
+        - *a10
         - API-token: []
       summary: Kategorie anlegen
       tags:
@@ -1620,7 +1643,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a9
+        - *a10
         - API-token: []
       summary: Kategorie abrufen
       tags:
@@ -1654,7 +1677,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a9
+        - *a10
         - API-token: []
       summary: Kategorie ändern
       tags:
@@ -1682,7 +1705,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a9
+        - *a10
         - API-token: []
       summary: Kategorien sortieren
       tags:
@@ -1833,7 +1856,7 @@ paths:
                   hasNext: false
                   hasPrev: false
       security:
-        - &a10
+        - &a11
           JWT-auth: []
         - API-token: []
       summary: Produkte auflisten (je Veranstaltung)
@@ -1861,7 +1884,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a10
+        - *a11
         - API-token: []
       summary: Produkt anlegen
       tags:
@@ -1889,7 +1912,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a10
+        - *a11
         - API-token: []
       summary: Produkte importieren (CSV)
       tags:
@@ -1911,7 +1934,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a10
+        - *a11
         - API-token: []
       summary: Lagerbestand-Warnungen auflisten
       tags:
@@ -1940,7 +1963,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a10
+        - *a11
         - API-token: []
       summary: Produkt abrufen
       tags:
@@ -1974,7 +1997,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a10
+        - *a11
         - API-token: []
       summary: Produkt ändern
       tags:
@@ -2016,7 +2039,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a10
+        - *a11
         - API-token: []
       summary: Verfügbarkeit eines Produkts setzen
       tags:
@@ -2057,7 +2080,7 @@ paths:
         "200":
           description: ""
       security:
-        - &a11
+        - &a12
           JWT-auth: []
         - API-token: []
       summary: Bon-Vorlagen auflisten
@@ -2085,7 +2108,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a11
+        - *a12
         - API-token: []
       summary: Bon-Vorlage anlegen
       tags:
@@ -2114,7 +2137,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a11
+        - *a12
         - API-token: []
       summary: Bon-Vorlage abrufen
       tags:
@@ -2148,7 +2171,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a11
+        - *a12
         - API-token: []
       summary: Bon-Vorlage ändern
       tags:
@@ -2177,7 +2200,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a11
+        - *a12
         - API-token: []
       summary: Bon-Vorlage als Vorschau rendern
       tags:
@@ -2233,7 +2256,7 @@ paths:
         "200":
           description: ""
       security:
-        - &a12
+        - &a13
           JWT-auth: []
         - API-token: []
       summary: Umsatzbericht
@@ -2290,7 +2313,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Umsatzbericht je Produkt
       tags:
@@ -2346,7 +2369,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Zahlungsbericht je Zahlart
       tags:
@@ -2402,7 +2425,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Umsatz je Stunde
       tags:
@@ -2458,7 +2481,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Umsatz je Bestellkanal
       tags:
@@ -2514,7 +2537,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Umsatzbericht je Kategorie
       tags:
@@ -2570,7 +2593,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Netto-Abgleich Produkte und Kategorien
       tags:
@@ -2626,7 +2649,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Umsatz je Gerät
       tags:
@@ -2647,7 +2670,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Bestandsbericht
       tags:
@@ -2703,7 +2726,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Bestandsbewegungen
       tags:
@@ -2785,7 +2808,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Bericht exportieren (CSV, Excel, JSON)
       tags:
@@ -2806,7 +2829,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Systemstatus
       tags:
@@ -2827,7 +2850,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a12
+        - *a13
         - API-token: []
       summary: Letzte Aktivitäten
       tags:
@@ -2849,7 +2872,7 @@ paths:
         "200":
           description: ""
       security:
-        - &a13
+        - &a14
           JWT-auth: []
         - API-token: []
       summary: Schichtpläne auflisten
@@ -2877,7 +2900,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Schichtplan anlegen
       tags:
@@ -2906,7 +2929,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Schichtplan abrufen
       tags:
@@ -2940,7 +2963,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Schichtplan ändern
       tags:
@@ -2969,7 +2992,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Schichtplan veröffentlichen
       tags:
@@ -2998,7 +3021,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Schichtplan schließen
       tags:
@@ -3027,7 +3050,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Schichtplan als PDF exportieren
       tags:
@@ -3056,7 +3079,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Jobs auflisten (je Schichtplan)
       tags:
@@ -3090,7 +3113,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Job anlegen
       tags:
@@ -3125,7 +3148,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Job ändern
       tags:
@@ -3154,7 +3177,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Schichten auflisten (je Job)
       tags:
@@ -3188,7 +3211,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Schicht anlegen
       tags:
@@ -3231,7 +3254,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Mehrere Schichten anlegen
       tags:
@@ -3266,7 +3289,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Schicht ändern
       tags:
@@ -3295,7 +3318,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Helfer-Anmeldungen auflisten (je Schichtplan)
       tags:
@@ -3330,7 +3353,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Anmeldung annehmen
       tags:
@@ -3365,7 +3388,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Anmeldung ablehnen
       tags:
@@ -3400,7 +3423,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Anmeldung ändern
       tags:
@@ -3435,7 +3458,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Interne Notiz zur Anmeldung setzen
       tags:
@@ -3470,7 +3493,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a13
+        - *a14
         - API-token: []
       summary: Helfer in Schicht eintragen
       tags:
@@ -3492,7 +3515,7 @@ paths:
         "200":
           description: ""
       security:
-        - &a14
+        - &a15
           JWT-auth: []
         - API-token: []
       summary: Stationen auflisten (je Veranstaltung)
@@ -3520,7 +3543,7 @@ paths:
         "201":
           description: ""
       security:
-        - *a14
+        - *a15
         - API-token: []
       summary: Station anlegen
       tags:
@@ -3549,7 +3572,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a14
+        - *a15
         - API-token: []
       summary: Station abrufen
       tags:
@@ -3583,7 +3606,7 @@ paths:
         "200":
           description: ""
       security:
-        - *a14
+        - *a15
         - API-token: []
       summary: Station ändern
       tags:
@@ -3998,7 +4021,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: &a15
+          enum: &a16
             - rect
             - round
         x:
@@ -4082,7 +4105,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: *a15
+          enum: *a16
         x:
           type: number
         y:

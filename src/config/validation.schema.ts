@@ -133,6 +133,14 @@ export const validationSchema = Joi.object({
   // Cloud-TSE-Zuschlag je Veranstaltung (DE mit TSE); 0 = inklusive.
   TSE_EVENT_SURCHARGE_EUR: Joi.number().min(0).default(0),
   TEST_EVENT_MAX_ORDERS: Joi.number().default(25),
+  // Phasen einer Veranstaltung (Geplant – Aktiv – Beendet). Die Kulanz
+  // bleibt unter 14 Stunden: sie endet so vor der monatlichen Abmeldung der
+  // Cloud-TSE (Monatsletzter 20 Uhr), auch nach einem Fest bis 6 Uhr.
+  EVENT_DATE_PHASES: Joi.string().valid('true', 'false').default('true'),
+  EVENT_EARLY_START_HOURS: Joi.number().min(0).max(48).default(12),
+  EVENT_EARLY_START_MAX_HOURS: Joi.number().min(0).max(48).default(24),
+  EVENT_GRACE_HOURS: Joi.number().min(0).max(13).default(6),
+  EVENT_PLANNED_TEST_MAX_ORDERS: Joi.number().integer().min(0).default(200),
   OPENREGISTER_API_KEY: Joi.string().allow('').default(''),
 
   // Assistent (KI): Anbieter und Kontingente, siehe README „Assistent“.

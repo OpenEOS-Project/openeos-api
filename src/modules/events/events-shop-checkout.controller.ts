@@ -15,6 +15,7 @@ import {
   HttpStatus,
   Logger,
   Inject,
+  Optional,
   forwardRef,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
@@ -22,8 +23,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository, In } from 'typeorm';
 import { Public } from '../../common/decorators/public.decorator';
-import { isWithinShopWindows } from '../../common/utils/event-schedule.util';
-import { resolveShopWindows } from './events-shop-public.controller';
+import { shopAvailability } from './shop-availability';
+import { EventPhaseService } from './event-phase.service';
 import {
   Event,
   EventStatus,
@@ -117,7 +118,21 @@ export class EventsShopCheckoutController {
     private readonly configService: ConfigService,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
+    // Optional mit Rueckfall fuer von Hand gebaute Tests (Standardwerte).
+    @Optional()
+    private readonly eventPhaseService?: EventPhaseService,
   ) {}
+
+  private get eventPhase(): EventPhaseService {
+    return (
+      this.eventPhaseService ??
+      EventPhaseService.standalone(
+        this.organizationRepository,
+        this.orderRepository,
+        this.configService,
+      )
+    );
+  }
 
   private async loadShopEvent(eventId: string): Promise<Event> {
     const event = await this.eventRepository.findOne({
@@ -142,6 +157,10 @@ export class EventsShopCheckoutController {
    * sonst durch — und eine Bestellung, die um vier Uhr morgens in einer
    * leeren Kueche landet, ist niemandem geholfen. Im Test-Modus gilt die
    * Sperre nicht, sonst waere der Shop vor der Veranstaltung nicht pruefbar.
+   *
+   * Dazu die Phase der Veranstaltung (shopAvailability): vor dem
+   * Verkaufsfenster nur mit Vorverkauf (403 SHOP_PRESALE_DISABLED), nach dem
+   * Ende gar nicht mehr (403 EVENT_ENDED).
    */
   private async assertShopOpen(event: Event): Promise<void> {
     if (event.status === EventStatus.TEST) return;
@@ -149,15 +168,24 @@ export class EventsShopCheckoutController {
     const organization = await this.organizationRepository.findOne({
       where: { id: event.organizationId },
     });
-    const windows = resolveShopWindows(
+    const now = new Date();
+    const phase = this.eventPhase.resolveWith(event, organization, now);
+    if (phase.phase === 'ended' || phase.phase === 'planned') {
+      // Gleiche Pruefung und Meldung wie an der Kasse.
+      await this.eventPhase.prepareOrder(event, 'shop', { organization });
+    }
+    const availability = shopAvailability(
       event,
       organization?.settings?.timezone || 'Europe/Berlin',
+      phase,
+      now,
     );
 
-    if (!isWithinShopWindows(new Date(), windows)) {
+    if (!availability.isOpenNow) {
       throw new BadRequestException({
         code: 'SHOP_CLOSED',
         message: 'Der Shop ist derzeit geschlossen',
+        params: { nextOpening: availability.nextOpening },
       });
     }
   }

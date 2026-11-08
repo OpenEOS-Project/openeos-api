@@ -6,7 +6,13 @@
  *
  * Reine Zeitregeln (Europe/Berlin) — ohne Datenbank, gut testbar.
  */
-import { berlinTime, businessDayEnd, localParts } from './tse-dates';
+import {
+  TSE_TIME_ZONE,
+  berlinTime,
+  businessDayEnd,
+  localParts,
+} from './tse-dates';
+import { eventBusinessSpan } from '../../common/utils/event-schedule.util';
 
 /** Geplante Abmeldung: letzter Tag des Monats um 20:00 Uhr (Berlin). */
 export const DEACTIVATION_HOUR = 20;
@@ -104,11 +110,25 @@ export interface PaidEventSpan {
 /**
  * Geschaeftstage einer Veranstaltung: vom Beginn des Geschaeftstags ihres
  * Starts bis zum Ende des Geschaeftstags ihres Endes (6–6 Uhr).
+ *
+ * Reine Daten (Beginn und Ende auf Mitternacht, wie das Formular sie
+ * schickt) sind die Kalendertage selbst — dieselbe Lesart wie die Phasen
+ * der Veranstaltung (`eventBusinessSpan`, 2026-11-08). Vorher lag ein Fest
+ * „30.–31.“ fuer die TSE auf dem 29. und 30. (Ende am 31. um 6 Uhr) und
+ * waere am Abend des 31. um 20 Uhr abgemeldet worden; ein Fest am 1.
+ * zaehlte als laufend am Monatsletzten.
  */
 export function businessSpan(
   event: Pick<PaidEventSpan, 'startDate' | 'endDate'>,
   startHour = 6,
 ): { from: Date; to: Date } {
+  const span = eventBusinessSpan(
+    event.startDate,
+    event.endDate,
+    TSE_TIME_ZONE,
+    startHour,
+  );
+  if (span) return { from: span.from, to: span.to };
   return {
     from: businessDayStart(event.startDate, startHour),
     to: businessDayEnd(event.endDate ?? event.startDate, startHour),
