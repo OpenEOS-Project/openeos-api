@@ -279,6 +279,7 @@ describe('EventPhaseService.prepareOrder', () => {
     const { phase } = setup(makeEvent(), { orders });
     const response = await failure(phase.prepareOrder(makeEvent(), 'table'));
     expect(response.code).toBe('TEST_LIMIT_REACHED');
+    expect(response.reason).toBe('PLANNED_TEST_LIMIT_REACHED');
     expect(response.params).toMatchObject({ maxOrders: 200, phase: 'planned' });
   });
 

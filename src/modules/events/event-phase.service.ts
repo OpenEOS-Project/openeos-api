@@ -299,6 +299,7 @@ export class EventPhaseService {
       if (existing >= this.plannedTestMaxOrders) {
         throw new ForbiddenException({
           code: ErrorCodes.TEST_LIMIT_REACHED,
+          reason: ErrorReasons.PLANNED_TEST_LIMIT_REACHED,
           message: `Test-Limit im Testbetrieb erreicht (${this.plannedTestMaxOrders} Testbestellungen). Echte Verkäufe starten mit dem Verkaufsfenster der Veranstaltung.`,
           params: {
             maxOrders: this.plannedTestMaxOrders,
