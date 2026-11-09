@@ -1934,6 +1934,28 @@ paths:
           description: ""
       summary: Record a deposit payout (Pfand-Rückgabe) and open the cash drawer
       tags: *a20
+  /api/device-api/pfand-returns/{pfandReturnId}/print:
+    post:
+      description: "Druckt den Beleg „Pfandrückgabe“ einer gespeicherten Auszahlung auf dem Bon-Drucker dieser Kasse: gespeicherte Beträge, MwSt je Satz und TSE-Daten, keine neue TSE-Transaktion. `reprint: true` druckt den Vermerk „NACHDRUCK“."
+      operationId: deviceApi_printPfandReturn
+      parameters:
+        - *a19
+        - name: pfandReturnId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrintPfandReturnDto"
+      responses:
+        "201":
+          description: ""
+      summary: Beleg einer Pfand-Rückgabe drucken (auf Wunsch oder Nachdruck)
+      tags: *a20
   /api/device-api/printers:
     get:
       description: Nur übernommene (adoptierte) oder manuell angelegte Drucker — der Agent druckt ausschließlich auf diese. Neu laden bei `printerConfigUpdate`.
@@ -7764,6 +7786,61 @@ paths:
       tags: &a75
         - Reports
       x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/vat:
+    get:
+      description: "Je Steuersatz: Warenwert, Pfand aus Verkäufen, Pfand-Rückgaben (negativ), Brutto, enthaltene Umsatzsteuer und Netto im Zeitraum, optional je Veranstaltung. Pfand gehört zum Entgelt und steht beim Satz seiner Pfandart; Buchungen von vor 2026-11 ohne Satz stehen bei 0 %. Trinkgeld ist nicht enthalten. Steuerbefreite Organisationen (`vatExempt: true`): alles bei 0 % ohne Steuer. Scope `read` und Modulrecht Auswertung."
+      operationId: getVatReport
+      parameters:
+        - name: eventId
+          required: false
+          in: query
+          description: Filter nach Event-ID
+          schema:
+            example: 550e8400-e29b-41d4-a716-446655440000
+            type: string
+        - name: startDate
+          required: false
+          in: query
+          description: Startdatum für den Bericht
+          schema:
+            example: 2024-01-01T00:00:00.000Z
+            type: string
+        - name: endDate
+          required: false
+          in: query
+          description: Enddatum für den Bericht
+          schema:
+            example: 2024-12-31T23:59:59.000Z
+            type: string
+        - name: groupBy
+          required: false
+          in: query
+          description: Gruppierung der Berichtsdaten
+          schema:
+            example: day
+            type: string
+            enum:
+              - day
+              - week
+              - month
+              - category
+              - product
+              - payment_method
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a74
+        - API-token: []
+      summary: Umsatz und Umsatzsteuer je Steuersatz
+      tags: *a75
+      x-api-token-scope: read
   /api/organizations/{organizationId}/reports/products:
     get:
       description: Verkaufte Menge und Umsatz je Produkt im Zeitraum, optional je Veranstaltung. Scope `read` und Modulrecht Auswertung.
@@ -8289,6 +8366,7 @@ paths:
               - categories
               - devices
               - inventory
+              - vat
             type: string
         - name: organizationId
           required: true
@@ -11844,6 +11922,13 @@ components:
             $ref: "#/components/schemas/PfandReturnLineDto"
       required:
         - lines
+    PrintPfandReturnDto:
+      type: object
+      properties:
+        reprint:
+          type: boolean
+          example: false
+          description: "Nachdruck: druckt den Vermerk „NACHDRUCK“"
     DiscoveredPrinterDetailsDto:
       type: object
       properties:
@@ -12792,6 +12877,15 @@ components:
           type: number
           example: 2
           description: Pfandbetrag pro Einheit in EUR
+        vatRate:
+          type: number
+          example: 19
+          enum: &a111
+            - 19
+            - 7
+            - 0
+          default: 19
+          description: "Umsatzsteuersatz des Pfands in Prozent: der Satz der Getränke/Waren, für die dieses Pfand gilt (meist 19). Pfand gehört zum Entgelt; die Rückgabe mindert Umsatz und Umsatzsteuer zum selben Satz. Steuerbefreite Organisationen (Kleinunternehmer) weisen trotzdem keine MwSt aus."
         isActive:
           type: boolean
           example: true
@@ -12814,6 +12908,12 @@ components:
           type: number
           example: 2
           description: Pfandbetrag pro Einheit in EUR
+        vatRate:
+          type: number
+          example: 19
+          enum: *a111
+          default: 19
+          description: "Umsatzsteuersatz des Pfands in Prozent: der Satz der Getränke/Waren, für die dieses Pfand gilt (meist 19). Pfand gehört zum Entgelt; die Rückgabe mindert Umsatz und Umsatzsteuer zum selben Satz. Steuerbefreite Organisationen (Kleinunternehmer) weisen trotzdem keine MwSt aus."
         isActive:
           type: boolean
           example: true
@@ -13009,7 +13109,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: &a111
+          enum: &a112
             - rect
             - round
         x:
@@ -13093,7 +13193,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: *a111
+          enum: *a112
         x:
           type: number
         y:

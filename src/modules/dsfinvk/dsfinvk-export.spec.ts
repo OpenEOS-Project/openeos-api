@@ -56,6 +56,19 @@ function expectValid(result: ValidationResult) {
   expect(result.ok).toBe(true);
 }
 
+/** Positionen mit ihrem USt-Schluessel (lines.csv + lines_vat.csv). */
+function linesWithVat(zip: Buffer, gvTyp: string): [string, string][] {
+  const vat = rowsOf(zip, 'lines_vat.csv');
+  return rowsOf(zip, 'lines.csv')
+    .filter((l) => l.GV_TYP === gvTyp)
+    .map((l) => {
+      const v = vat.find(
+        (x) => x.BON_ID === l.BON_ID && x.POS_ZEILE === l.POS_ZEILE,
+      )!;
+      return [v.UST_SCHLUESSEL, v.POS_BRUTTO];
+    });
+}
+
 function rowsOf(zip: Buffer, file: string): Record<string, string>[] {
   const entry = readZip(zip).find((e) => e.name === file)!;
   const [header, ...records] = parseCsv(entry.data.toString('utf8')).records;
@@ -215,7 +228,7 @@ describe('DSFinV-K export (own validator)', () => {
     });
   });
 
-  it('Pfand and Pfand return: deposit lines and a PfandRueckzahlung bon', () => {
+  it('Pfand and Pfand return before 2026-11 (no rate stored): 0 % key as signed back then', () => {
     const seq = new Sequence();
     const s = sale(seq, VAT_LIABLE, {
       items: [
@@ -244,6 +257,164 @@ describe('DSFinV-K export (own validator)', () => {
     );
     expect(rowsOf(zip, 'cash_per_currency.csv')[0].ZAHLART_BETRAG_WAEH).toBe(
       '4,00',
+    );
+  });
+
+  it('Pfand with VAT (2026-11): deposit and Pfand return at the rate of the Pfand type', () => {
+    const seq = new Sequence();
+    const s1 = sale(seq, VAT_LIABLE, {
+      items: [
+        {
+          name: 'Apfelschorle',
+          quantity: 2,
+          price: 3,
+          rate: 19,
+          deposit: 2,
+          depositRate: 19,
+        },
+        {
+          name: 'Suppe',
+          quantity: 1,
+          price: 5,
+          rate: 7,
+          deposit: 1,
+          depositRate: 7,
+        },
+      ],
+    });
+    // TSE: Pfand im Slot seines Satzes (19 % → 1, 7 % → 2).
+    expect(s1.processData).toBe('Beleg^10.00_6.00_0.00_0.00_0.00^16.00:Bar');
+    const r = pfandReturn(seq, [
+      { name: 'Becher', unitAmount: 2, quantity: 3, vatRate: 19 },
+      { name: 'Teller', unitAmount: 1, quantity: 1, vatRate: 7 },
+    ]);
+    expect(r.processData).toBe('Beleg^-6.00_-1.00_0.00_0.00_0.00^-7.00:Bar');
+    const { zip, result } = exportOf([closingInput(1, Z1, [s1, r])]);
+    expectValid(result);
+    const z = rowsOf(zip, 'businesscases.csv');
+    expect(z).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          GV_TYP: 'Pfand',
+          UST_SCHLUESSEL: '1',
+          Z_UMS_BRUTTO: '4,00',
+          Z_UST: '0,64',
+        }),
+        expect.objectContaining({
+          GV_TYP: 'Pfand',
+          UST_SCHLUESSEL: '2',
+          Z_UMS_BRUTTO: '1,00',
+        }),
+        expect.objectContaining({
+          GV_TYP: 'PfandRueckzahlung',
+          UST_SCHLUESSEL: '1',
+          Z_UMS_BRUTTO: '-6,00',
+          Z_UST: '-0,96',
+        }),
+        expect.objectContaining({
+          GV_TYP: 'PfandRueckzahlung',
+          UST_SCHLUESSEL: '2',
+          Z_UMS_BRUTTO: '-1,00',
+        }),
+      ]),
+    );
+    // Kein Pfand mehr im 0-%-Schluessel.
+    expect(
+      z.filter(
+        (row) => row.GV_TYP.startsWith('Pfand') && row.UST_SCHLUESSEL === '5',
+      ),
+    ).toEqual([]);
+    expect(linesWithVat(zip, 'PfandRueckzahlung')).toEqual([
+      ['1', '-6,00'],
+      ['2', '-1,00'],
+    ]);
+  });
+
+  it('Pfand with VAT in a refund: deposit lines keep the rate of the sale', () => {
+    const seq = new Sequence();
+    const original = sale(seq, VAT_LIABLE, {
+      items: [
+        {
+          name: 'Bier',
+          quantity: 2,
+          price: 4,
+          rate: 19,
+          deposit: 2,
+          depositRate: 19,
+        },
+      ],
+    });
+    const closing1 = closingInput(1, Z1, [original]);
+    const storno = refund(seq, VAT_LIABLE, {
+      original,
+      closing: { zNr: 1, createdAt: Z1 },
+      items: [
+        {
+          name: 'Bier',
+          quantity: 2,
+          unitPrice: 4,
+          taxRate: 19,
+          amount: 8,
+          deposit: 2,
+          depositRate: 19,
+        },
+      ],
+    });
+    // Ware und Pfand zusammen im 19-%-Slot.
+    expect(storno.processData).toBe(
+      'Beleg^-12.00_0.00_0.00_0.00_0.00^-12.00:Bar',
+    );
+    const goodwill = refund(seq, VAT_LIABLE, {
+      original,
+      closing: { zNr: 1, createdAt: Z1 },
+      pfand: 2,
+      pfandRate: 19,
+      kind: 'refund',
+    });
+    const closing2 = closingInput(2, Z2, [storno, goodwill]);
+    const { zip, result } = exportOf([closing1, closing2]);
+    expectValid(result);
+    expect(linesWithVat(zip, 'Pfand')).toEqual([
+      ['1', '4,00'],
+      ['1', '-4,00'],
+      ['1', '-2,00'],
+    ]);
+  });
+
+  it('Pfand for a VAT-exempt organization (Kleinunternehmer): key 6, no VAT', () => {
+    const seq = new Sequence();
+    const s1 = sale(seq, VAT_EXEMPT, {
+      items: [
+        {
+          name: 'Apfelschorle',
+          quantity: 1,
+          price: 3,
+          rate: 0,
+          deposit: 2,
+          depositRate: 19,
+        },
+      ],
+    });
+    expect(s1.processData).toBe('Beleg^0.00_0.00_0.00_0.00_5.00^5.00:Bar');
+    const r = pfandReturn(
+      seq,
+      [{ name: 'Becher', unitAmount: 2, quantity: 1, vatRate: 19 }],
+      TERMINAL_2,
+      true,
+    );
+    expect(r.processData).toBe('Beleg^0.00_0.00_0.00_0.00_-2.00^-2.00:Bar');
+    const { zip, result } = exportOf([
+      closingInput(1, Z1, [s1, r], { settings: VAT_EXEMPT }),
+    ]);
+    expectValid(result);
+    const z = rowsOf(zip, 'businesscases.csv').filter((row) =>
+      row.GV_TYP.startsWith('Pfand'),
+    );
+    expect(z.map((row) => [row.GV_TYP, row.UST_SCHLUESSEL, row.Z_UST])).toEqual(
+      expect.arrayContaining([
+        ['Pfand', '6', '0,00'],
+        ['PfandRueckzahlung', '6', '0,00'],
+      ]),
     );
   });
 

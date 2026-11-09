@@ -144,6 +144,16 @@ describe('Alle Funktionen in Deutschland ohne TSE — Kasse (DeviceApiController
 
     const pfandReturnRepository = {
       manager: {
+        // Belegnummer: Vergabe und Insert in einer Transaktion.
+        transaction: jest.fn(
+          (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> =>
+            fn({
+              query: jest.fn(() => Promise.resolve([{ max: 0 }])),
+              findOne: jest.fn(() => Promise.resolve(null)),
+              save: (_entity: unknown, row: PfandReturn) =>
+                pfandReturnRepository.save(row),
+            }),
+        ),
         findOne: jest.fn((entity: unknown) =>
           Promise.resolve(entity === Organization ? organization(kind) : null),
         ),

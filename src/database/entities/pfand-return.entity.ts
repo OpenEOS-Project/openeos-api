@@ -8,6 +8,19 @@ export interface PfandReturnLine {
   /** Deposit amount per unit at the time of the return. */
   unitAmount: number;
   quantity: number;
+  /**
+   * Umsatzsteuersatz der Pfandart bei der Rueckgabe. Fehlt bei Auszahlungen
+   * von vor der Umstellung (2026-11): die galten als nicht steuerbar (0 %).
+   */
+  vatRate?: number;
+}
+
+/** MwSt-Zeile einer Auszahlung (Betraege negativ), wie auf dem Bon. */
+export interface PfandReturnTaxLine {
+  rate: number;
+  gross: number;
+  net: number;
+  tax: number;
 }
 
 /**
@@ -37,6 +50,19 @@ export class PfandReturn extends BaseEntity {
 
   @Column({ type: 'jsonb', default: [] })
   lines: PfandReturnLine[];
+
+  /** Belegnummer `P-JJJJMMTT-NNNN`; NULL bei Auszahlungen von vor 2026-11. */
+  @Column({
+    name: 'return_number',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
+  returnNumber: string | null;
+
+  /** MwSt je Satz (negativ); leer bei steuerbefreiten Organisationen und im Bestand. */
+  @Column({ name: 'tax_lines', type: 'jsonb', default: [] })
+  taxLines: PfandReturnTaxLine[];
 
   /** Im Testmodus gebucht; wird beim Aktivieren der Veranstaltung geloescht. */
   @Column({ name: 'is_test', type: 'boolean', default: false })

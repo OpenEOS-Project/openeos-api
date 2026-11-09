@@ -11,6 +11,7 @@ import {
   normalizePayments,
   paymentTypeFor,
   qrCodePayload,
+  depositReturnSlots,
   slotsFromComposition,
   slotsTotal,
   vatSlot,
@@ -153,12 +154,55 @@ describe('amounts per rate (rounding, several rates)', () => {
     expect(slots[2] + slots[3] + slots[4]).toBe(0);
   });
 
-  it('puts Pfand and tip into the 0 % slot like the paper receipt', () => {
+  it('before 2026-11 (no deposit rate stored): Pfand and tip in the 0 % slot', () => {
     const items = [item(19, 4, 2, { depositAmount: 2 })];
     // 8,00 Ware + 4,00 Pfand + 1,00 Trinkgeld
     const order = { items, discountAmount: 0, tipAmount: 1, total: 13 };
     const slots = slotsFromComposition(orderComposition(items, order), false);
     expect(slots).toEqual([800, 0, 0, 0, 500]);
+  });
+
+  it('puts Pfand into the slot of its Pfand type rate, tip stays at 0 %', () => {
+    const items = [
+      item(19, 4, 2, { depositAmount: 2, depositTaxRate: 19 }),
+      item(7, 5, 1, { depositAmount: 1, depositTaxRate: 7 }),
+    ];
+    // 8,00 + 4,00 Pfand (19 %), 5,00 + 1,00 Pfand (7 %), 1,00 Trinkgeld
+    const order = { items, discountAmount: 0, tipAmount: 1, total: 19 };
+    const slots = slotsFromComposition(orderComposition(items, order), false);
+    expect(slots).toEqual([1200, 600, 0, 0, 100]);
+    expect(
+      kassenbelegProcessData('Beleg', {
+        slots,
+        payments: [{ type: 'Bar', cents: 1900 }],
+      }),
+    ).toBe('Beleg^12.00_6.00_0.00_0.00_1.00^19.00:Bar');
+    // Kleinunternehmer: alles im 0-%-Slot.
+    expect(slotsFromComposition(orderComposition(items, order), true)).toEqual([
+      0, 0, 0, 0, 1900,
+    ]);
+  });
+
+  it('books a Pfand return negative at the rate of each Pfand type', () => {
+    const slots = depositReturnSlots(
+      [
+        { unitAmount: 2, quantity: 3, vatRate: 19 },
+        { unitAmount: 0.5, quantity: 2, vatRate: 7 },
+        // Bestand ohne Satz
+        { unitAmount: 1, quantity: 1 },
+      ],
+      false,
+    );
+    expect(slots).toEqual([-600, -100, 0, 0, -100]);
+    expect(
+      kassenbelegProcessData('Beleg', {
+        slots,
+        payments: [{ type: 'Bar', cents: -800 }],
+      }),
+    ).toBe('Beleg^-6.00_-1.00_0.00_0.00_-1.00^-8.00:Bar');
+    expect(
+      depositReturnSlots([{ unitAmount: 2, quantity: 3, vatRate: 19 }], true),
+    ).toEqual([0, 0, 0, 0, -600]);
   });
 
   it('scales the order to a partial payment and keeps the sum exact', () => {
@@ -214,6 +258,27 @@ describe('amounts per rate (rounding, several rates)', () => {
     );
     expect(slotsFromComposition(composition, false)).toEqual([
       400, 200, 0, 0, 0,
+    ]);
+  });
+
+  it('refund with Pfand per rate (2026-11): Pfand back in the slot of its rate', () => {
+    const composition = refundComposition({
+      metadata: {
+        composition: {
+          goods: { '19': 500 },
+          pfand: 200,
+          pfandByRate: { '19': 200 },
+          tip: 0,
+        },
+      },
+      taxLines: [],
+      amount: -7,
+      pfandAmount: -2,
+      tipAmount: 0,
+      items: [],
+    } as never);
+    expect(slotsFromComposition(composition, false, -1)).toEqual([
+      -700, 0, 0, 0, 0,
     ]);
   });
 

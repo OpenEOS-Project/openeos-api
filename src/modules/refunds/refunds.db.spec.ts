@@ -229,6 +229,8 @@ describeWithDb('RefundsService against Postgres', () => {
       tip?: number;
       createdAt?: Date;
       table?: string;
+      /** Steuersatz des Pfands (ab 2026-11); fehlt = Bestand ohne Satz. */
+      depositRate?: number;
     } = {},
   ) {
     daily += 1;
@@ -267,10 +269,11 @@ describeWithDb('RefundsService against Postgres', () => {
     );
     const [pils] = await q<{ id: string }>(
       `INSERT INTO order_items (order_id, product_id, category_id, product_name, category_name,
-         quantity, unit_price, tax_rate, total_price, status, paid_quantity, deposit_amount, sort_order)
-       SELECT $1, p.id, p.category_id, 'Pils', 'Essen', 2, 4, 19, 8, 'pending', $2, 2, 1
+         quantity, unit_price, tax_rate, total_price, status, paid_quantity, deposit_amount,
+         deposit_tax_rate, sort_order)
+       SELECT $1, p.id, p.category_id, 'Pils', 'Essen', 2, 4, 19, 8, 'pending', $2, 2, $4, 1
        FROM products p WHERE p.id = $3 RETURNING id`,
-      [o.id, pay ? 2 : 0, w.pilsId],
+      [o.id, pay ? 2 : 0, w.pilsId, options.depositRate ?? null],
     );
     await q(
       `UPDATE products SET stock_quantity = stock_quantity - 3 WHERE id = $1`,
@@ -466,6 +469,147 @@ describeWithDb('RefundsService against Postgres', () => {
     ).rejects.toMatchObject({
       response: { reason: 'REFUND_EXCEEDS_REFUNDABLE' },
     });
+  });
+
+  it('Pfand with VAT (2026-11): refund reduces VAT of goods and deposit at the rate of the sale', async () => {
+    const w = await world();
+    const o = await order(w, { depositRate: 19 });
+    const outcome = await service.createRefund(w.actor, o.orderId, {
+      mode: 'items',
+      items: [{ orderItemId: o.pilsItemId, quantity: 1 }],
+      reasonCode: 'quality',
+    });
+    const [refund] = outcome.refunds;
+    // 4,00 Ware + 2,00 Pfand, beides 19 %: 6,00 * 19 / 119 = 0,96
+    expect(Number(refund.amount)).toBe(-6);
+    expect(refund.taxLines).toEqual([
+      { rate: 19, gross: -6, tax: -0.96, net: -5.04 },
+    ]);
+    expect(Number(refund.taxTotal)).toBe(-0.96);
+    expect(
+      (refund.metadata as { composition: Record<string, unknown> }).composition,
+    ).toMatchObject({ pfand: 200, pfandByRate: { '19': 200 } });
+    const [item] = await q<{
+      deposit_amount: string;
+      deposit_tax_rate: string;
+    }>(
+      `SELECT ri.deposit_amount, ri.deposit_tax_rate FROM refund_items ri WHERE ri.refund_id = $1`,
+      [refund.id],
+    );
+    expect([
+      Number(item.deposit_amount),
+      Number(item.deposit_tax_rate),
+    ]).toEqual([-2, 19]);
+
+    // Storno der ganzen Bestellung: taxTotal der Bestellung neu (Ware + Pfand).
+    const full = await order(w, { depositRate: 19, pay: null });
+    await service.cancelItems(w.actor, full.orderId, {
+      items: [{ orderItemId: full.burgerItemId, quantity: 3 }],
+    });
+    const [after] = await q<{ tax_total: string; total: string }>(
+      `SELECT tax_total, total FROM orders WHERE id = $1`,
+      [full.orderId],
+    );
+    // Uebrig: 8,00 Pils + 4,00 Pfand zu 19 % = 12,00 → 1,92
+    expect([Number(after.total), Number(after.tax_total)]).toEqual([12, 1.92]);
+  });
+
+  it('VAT report: goods, deposits and deposit returns per rate; old data stays at 0 %', async () => {
+    const w = await world();
+    const userId = randomUUID();
+    await q(
+      `INSERT INTO users (id, email, first_name, last_name) VALUES ($1, $2, 'Uwe', 'Steuer')`,
+      [userId, `v-${userId}@example.com`],
+    );
+    await q(
+      `INSERT INTO user_organizations (user_id, organization_id, role, permissions)
+       VALUES ($1, $2, 'admin', '{}')`,
+      [userId, w.orgId],
+    );
+    // Bestand (vor 2026-11): Pfand ohne Satz.
+    await order(w);
+    // Neu: Pfand 19 %, dazu 2,00 € Kulanz nach Betrag (nur Ware).
+    const fresh = await order(w, { depositRate: 19 });
+    await service.createRefund(w.actor, fresh.orderId, {
+      mode: 'amount',
+      amount: 2,
+      reasonCode: 'other',
+    });
+    await q(
+      `INSERT INTO pfand_returns (organization_id, event_id, total_amount, lines)
+       VALUES ($1, $2, 6, $3), ($1, $2, 2, $4)`,
+      [
+        w.orgId,
+        w.eventId,
+        JSON.stringify([
+          {
+            pfandTypeId: randomUUID(),
+            name: 'Becher',
+            unitAmount: 2,
+            quantity: 3,
+            vatRate: 19,
+          },
+        ]),
+        // Auszahlung von vor 2026-11 (ohne Satz)
+        JSON.stringify([
+          {
+            pfandTypeId: randomUUID(),
+            name: 'Becher',
+            unitAmount: 2,
+            quantity: 1,
+          },
+        ]),
+      ],
+    );
+    const reports = new ReportsService(
+      ds.getRepository(Order),
+      ds.getRepository(OrderItem),
+      ds.getRepository(Payment),
+      ds.getRepository(Product),
+      ds.getRepository(Category),
+      ds.getRepository(StockMovement),
+      ds.getRepository(PfandReturn),
+      ds.getRepository(UserOrganization),
+      ds.getRepository(Device),
+      ds.getRepository(Printer),
+      ds.getRepository(PrintJob),
+      { get: () => undefined } as never,
+      ds.getRepository(Organization),
+    );
+    const report = await reports.getVatReport(w.orgId, { eventId: w.eventId }, {
+      id: userId,
+    } as User);
+    expect(report.vatExempt).toBe(false);
+    expect(report.rows).toEqual([
+      {
+        rate: 19,
+        // 2 x 38,00 Ware − 2,00 Kulanz
+        goods: 74,
+        deposits: 4,
+        depositReturns: -6,
+        gross: 72,
+        tax: 11.5,
+        net: 60.5,
+      },
+      {
+        rate: 0,
+        goods: 0,
+        deposits: 4,
+        depositReturns: -2,
+        gross: 2,
+        tax: 0,
+        net: 2,
+      },
+    ]);
+    // Umsatz im Verkaufsbericht bleibt ohne Pfand (Ware + Trinkgeld).
+    const sales = await reports.getSalesReport(
+      w.orgId,
+      { eventId: w.eventId },
+      { id: userId } as User,
+    );
+    expect(sales.totalRevenue).toBe(74);
+    expect(sales.pfandCollected).toBe(8);
+    expect(sales.pfandReturned).toBe(8);
   });
 
   it('ended event (phases): refunds and cancellations of existing orders still work', async () => {

@@ -18,6 +18,8 @@ import type { Composition } from '../refunds/refund-calc';
  *   - Zahlungen: `<Betrag>:<Bar|Unbar>[:<Waehrung>]` mit `_`, Bar vor
  *     Unbar, Waehrung nur wenn nicht EUR.
  *   Beispiel: `Beleg^75.33_7.99_0.00_0.00_0.00^10.00:Bar_73.32:Unbar`
+ *   Pfand zaehlt zum Satz seiner Pfandart (Becher 2 € zu 19 % → Slot 1),
+ *   eine Pfand-Auszahlung steht negativ im selben Slot.
  *
  * Bestellung-V1: je Position `<Menge>;"<Bezeichnung>";<Stueckpreis brutto>`,
  * Zeilen mit CR (`\r`) getrennt; Storno mit negativer Menge.
@@ -64,10 +66,10 @@ export function vatSlot(rate: number, vatExempt: boolean): number {
 }
 
 /**
- * Slots aus einer Zusammensetzung (refund-calc). Pfand und Trinkgeld
- * gehen wie auf dem heutigen Bon in den 0-%-Slot (nicht steuerbar) —
- * offene Steuerberater-Fragen S1/S2 (fiskaly-spec.md §10), Bon und TSE
- * aendern sich dann gemeinsam.
+ * Slots aus einer Zusammensetzung (refund-calc). Pfand steht im Slot des
+ * Satzes seiner Pfandart (Teil des Entgelts, Abschn. 10.1 Abs. 8 UStAE;
+ * Bestand von vor 2026-11 ohne Satz: 0-%-Slot wie damals). Trinkgeld ist
+ * kein Entgelt und bleibt im 0-%-Slot (offene Frage S2).
  */
 export function slotsFromComposition(
   composition: Composition,
@@ -78,7 +80,29 @@ export function slotsFromComposition(
   for (const [rate, cents] of composition.goods) {
     slots[vatSlot(rate, vatExempt)] += sign * cents;
   }
-  slots[4] += sign * (composition.pfand + composition.tip);
+  for (const [rate, cents] of composition.pfand) {
+    slots[vatSlot(rate, vatExempt)] += sign * cents;
+  }
+  slots[4] += sign * composition.tip;
+  return slots;
+}
+
+/**
+ * Slots einer Pfand-Auszahlung: je Position Betrag (negativ) im Slot ihres
+ * Satzes. Ohne Satz (Bestand) 0-%-Slot.
+ * Beispiel 3 Becher à 2 € zu 19 %: `Beleg^-6.00_0.00_0.00_0.00_0.00^-6.00:Bar`.
+ */
+export function depositReturnSlots(
+  lines: { unitAmount: number; quantity: number; vatRate?: number | null }[],
+  vatExempt: boolean,
+): VatSlots {
+  const slots = emptySlots();
+  for (const line of lines) {
+    const amount = -Math.abs(
+      Math.round(Number(line.unitAmount) * 100) * Number(line.quantity),
+    );
+    slots[vatSlot(Number(line.vatRate ?? 0) || 0, vatExempt)] += amount;
+  }
   return slots;
 }
 

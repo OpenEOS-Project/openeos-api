@@ -18,6 +18,7 @@ import { PrintJobsService } from './print-jobs.service';
 import { PrintRoutingService } from './print-routing.service';
 import { buildReceiptTax, cashChange } from './receipt-tax.util';
 import type { Refund } from '../../database/entities/refund.entity';
+import type { PfandReturn } from '../../database/entities/pfand-return.entity';
 import { tsePrintBlock, type TseReceiptView } from '../tse/tse-view';
 import { organizationPrintBlock, paymentMethodLabel } from './receipt-labels';
 import {
@@ -28,6 +29,7 @@ import {
 } from './order-staff';
 import {
   CANCELLATION_TICKET_TEMPLATE,
+  PFAND_RETURN_RECEIPT_TEMPLATE,
   REFUND_RECEIPT_TEMPLATE,
 } from './builtin-templates';
 
@@ -707,6 +709,78 @@ export class OrderPrintService {
   }
 
   /**
+   * Druckt die Kasse Kassenbons automatisch nach der Zahlung
+   * (Einstellung „Kassenbon“, Ausloeser Zahlung)? Dieselbe Regel gilt fuer
+   * den Beleg einer Pfand-Auszahlung — sonst druckt die Kasse ihn auf
+   * Wunsch („Bon drucken“), wie beim Verkauf.
+   */
+  async autoPrintsReceipts(organizationId: string): Promise<boolean> {
+    const receipt = (await this.getOrderFlow(organizationId))?.receiptPrinting;
+    return (
+      !!receipt?.enabled &&
+      (receipt.trigger ?? 'payment_received') === 'payment_received'
+    );
+  }
+
+  /**
+   * Beleg einer Pfand-Auszahlung („Pfandrückgabe“) auf den Kassenbon-Drucker
+   * des Geraets (sonst Bon-Drucker der Organisation). Liefert, ob ein
+   * Druckauftrag entstanden ist.
+   */
+  async printPfandReturnReceipt(
+    organizationId: string,
+    data: {
+      pfandReturn: PfandReturn;
+      deviceName?: string | null;
+      actorName?: string | null;
+      reprint?: boolean;
+      /** TSE-Daten der Auszahlung (oder Ausfallvermerk). */
+      tse?: TseReceiptView | null;
+    },
+  ): Promise<boolean> {
+    try {
+      const { pfandReturn } = data;
+      const { printerId } = await this.printRoutingService.resolveOrderPrinter({
+        organizationId,
+        orderDeviceId: pfandReturn.deviceId ?? null,
+        workflow: 'receipt',
+      });
+      if (!printerId) return false;
+      const event = pfandReturn.eventId
+        ? await this.eventRepository.findOne({
+            where: { id: pfandReturn.eventId },
+            select: ['id', 'name'],
+          })
+        : null;
+      await this.printJobsService.createFromWorkflow(
+        organizationId,
+        printerId,
+        null,
+        null,
+        1,
+        {
+          organization: await this.buildOrgPayload(organizationId),
+          ...pfandReturnPrintData(pfandReturn),
+          event_name: event?.name ?? null,
+          device_name: data.deviceName ?? null,
+          actor_name: data.actorName ?? null,
+          reprint: data.reprint === true,
+          is_test: pfandReturn.isTest === true,
+          tse: tsePrintBlock(data.tse),
+        },
+        null,
+        PFAND_RETURN_RECEIPT_TEMPLATE,
+      );
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to print pfand return receipt for org ${organizationId}: ${(error as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  /**
    * Storno-Bon fuer die Kueche/Station: dieselben Drucker wie der
    * Kuechenbon (je Produktionsstandort), nur wenn auch Kuechenbons gedruckt
    * werden. So weiss die Kueche, dass ein schon gedruckter Bon nicht mehr
@@ -829,4 +903,35 @@ export class OrderPrintService {
     });
     return org?.settings?.orderFlow || null;
   }
+}
+
+/**
+ * Betraege und Positionen einer Pfand-Auszahlung fuer die Vorlage
+ * `pfand_return_receipt` (Betraege negativ, wie auf dem Gegenbeleg).
+ */
+export function pfandReturnPrintData(
+  pfandReturn: Pick<
+    PfandReturn,
+    'id' | 'returnNumber' | 'createdAt' | 'lines' | 'totalAmount' | 'taxLines'
+  >,
+): Record<string, unknown> {
+  const taxLines = pfandReturn.taxLines ?? [];
+  return {
+    pfand_return_id: pfandReturn.id,
+    return_number: pfandReturn.returnNumber ?? null,
+    created_at: pfandReturn.createdAt,
+    items: (pfandReturn.lines ?? []).map((line) => ({
+      quantity: line.quantity,
+      name: line.name,
+      unit_amount: Number(line.unitAmount),
+      total: -Math.round(Number(line.unitAmount) * line.quantity * 100) / 100,
+      vat_rate: line.vatRate ?? null,
+    })),
+    tax_lines: taxLines,
+    tax_amount:
+      Math.round(taxLines.reduce((sum, l) => sum + l.tax, 0) * 100) / 100,
+    total: -Math.abs(Number(pfandReturn.totalAmount)),
+    payment_method: 'cash',
+    payment_label: paymentMethodLabel('cash'),
+  };
 }

@@ -9,9 +9,10 @@ import type { RefundTaxLine } from '../../database/entities/refund.entity';
  * Cent gerechnet, damit Summen exakt aufgehen).
  *
  * Eine Bestellung setzt sich zusammen aus Warenwert je MwSt-Satz (nach
- * anteiligem Rabatt), Pfand (nicht steuerbar) und Trinkgeld (kein
- * Entgelt). Eine Erstattung nimmt von diesen Teilen etwas zurueck; ihr
- * Gegenbeleg weist dieselben Teile negativ aus.
+ * anteiligem Rabatt), Pfand je MwSt-Satz (Teil des Entgelts, Satz der
+ * Pfandart; Bestand von vor 2026-11 nicht steuerbar = 0 %) und Trinkgeld
+ * (kein Entgelt). Eine Erstattung nimmt von diesen Teilen etwas zurueck;
+ * ihr Gegenbeleg weist dieselben Teile negativ aus.
  */
 
 export const round2 = (value: number): number => Math.round(value * 100) / 100;
@@ -26,23 +27,96 @@ type ItemLike = Pick<
   | 'taxRate'
   | 'status'
   | 'depositAmount'
->;
+> &
+  Partial<Pick<OrderItem, 'depositTaxRate'>>;
 
-/** Zusammensetzung in Cent: Warenwert je Satz, Pfand, Trinkgeld. */
+/**
+ * Steuersatz des Pfands einer Position. NULL (Bestand von vor der
+ * Umstellung, 2026-11) heisst: nicht steuerbar, also 0 % — so stand es
+ * damals auf Bon, TSE und im Bericht, und so bleibt es fuer diese Daten.
+ */
+export function depositRateOf(
+  item: { depositTaxRate?: number | string | null } | null | undefined,
+): number {
+  const raw = item?.depositTaxRate;
+  if (raw === null || raw === undefined || raw === '') return 0;
+  const rate = Number(raw);
+  return Number.isFinite(rate) ? rate : 0;
+}
+
+/**
+ * Zusammensetzung in Cent: Warenwert je Satz, Pfand je Satz, Trinkgeld.
+ * Pfand-Schluessel 0 = nicht steuerbar (Bestand) bzw. Pfandart mit 0 %.
+ */
 export interface Composition {
   goods: Map<number, number>;
-  pfand: number;
+  pfand: Map<number, number>;
   tip: number;
 }
 
 export function emptyComposition(): Composition {
-  return { goods: new Map(), pfand: 0, tip: 0 };
+  return { goods: new Map(), pfand: new Map(), tip: 0 };
+}
+
+/** Summe der Werte einer Satz-Map (Cent). */
+export function mapSum(map: Map<number, number>): number {
+  let sum = 0;
+  for (const value of map.values()) sum += value;
+  return sum;
+}
+
+/** Pfand gesamt (Cent). */
+export function pfandSum(c: Pick<Composition, 'pfand'>): number {
+  return mapSum(c.pfand);
+}
+
+/** Pfand-Map aus einem einzelnen Betrag (Bestand ohne Satz: 0 %). */
+export function pfandMap(cents: number, rate = 0): Map<number, number> {
+  return cents
+    ? new Map<number, number>([[rate, cents]])
+    : new Map<number, number>();
+}
+
+function addTo(map: Map<number, number>, rate: number, value: number) {
+  map.set(rate, (map.get(rate) ?? 0) + value);
 }
 
 export function compositionTotal(c: Composition): number {
-  let sum = c.pfand + c.tip;
-  for (const value of c.goods.values()) sum += value;
-  return sum;
+  return mapSum(c.goods) + mapSum(c.pfand) + c.tip;
+}
+
+/** Fuer `metadata`/TSE-Kopie: `{ "19": 200 }` (Schluessel als Text). */
+export function rateRecord(map: Map<number, number>): Record<string, number> {
+  return Object.fromEntries([...map.entries()].map(([r, v]) => [String(r), v]));
+}
+
+/** Gegenstueck zu `rateRecord`; `sign` 1 = wie gespeichert, `abs` = Betrag. */
+export function rateMapFrom(
+  record: Record<string, unknown> | null | undefined,
+  abs = false,
+): Map<number, number> {
+  const map = new Map<number, number>();
+  for (const [rate, value] of Object.entries(record ?? {})) {
+    const v = Number(value) || 0;
+    if (v) addTo(map, Number(rate), abs ? Math.abs(v) : v);
+  }
+  return map;
+}
+
+/**
+ * Pfand aus einer gespeicherten Zusammensetzung (`metadata.composition`
+ * bzw. TSE-Kopie): `pfandByRate` ab 2026-11, sonst der Gesamtbetrag
+ * `pfand` als nicht steuerbar (0 %).
+ */
+export function pfandFromRecord(
+  raw: { pfand?: unknown; pfandByRate?: unknown } | null | undefined,
+  abs = false,
+): Map<number, number> {
+  if (raw?.pfandByRate && typeof raw.pfandByRate === 'object') {
+    return rateMapFrom(raw.pfandByRate as Record<string, unknown>, abs);
+  }
+  const total = Number(raw?.pfand) || 0;
+  return pfandMap(abs ? Math.abs(total) : total);
 }
 
 /** Stueckpreis brutto inkl. Optionen. */
@@ -75,14 +149,15 @@ export function orderComposition(
   const active = items.filter((i) => i.status !== OrderItemStatus.CANCELLED);
   const factor = discountFactor(active, order.discountAmount);
   const goods = new Map<number, number>();
-  let pfand = 0;
+  const pfand = new Map<number, number>();
   for (const item of active) {
     const rate = Number(item.taxRate) || 0;
     goods.set(
       rate,
       (goods.get(rate) ?? 0) + Math.round(cents(item.totalPrice) * factor),
     );
-    pfand += cents(item.depositAmount || 0) * item.quantity;
+    const deposit = cents(item.depositAmount || 0) * item.quantity;
+    if (deposit) addTo(pfand, depositRateOf(item), deposit);
   }
   const composition: Composition = {
     goods,
@@ -102,20 +177,32 @@ export function subtractComposition(
   b: Composition,
 ): Composition {
   const goods = new Map(a.goods);
-  for (const [rate, value] of b.goods) {
-    goods.set(rate, (goods.get(rate) ?? 0) - value);
-  }
-  return {
-    goods,
-    pfand: a.pfand - b.pfand,
-    tip: a.tip - b.tip,
-  };
+  for (const [rate, value] of b.goods) addTo(goods, rate, -value);
+  const pfand = new Map(a.pfand);
+  for (const [rate, value] of b.pfand) addTo(pfand, rate, -value);
+  return { goods, pfand, tip: a.tip - b.tip };
+}
+
+export function addComposition(a: Composition, b: Composition): Composition {
+  const goods = new Map(a.goods);
+  for (const [rate, value] of b.goods) addTo(goods, rate, value);
+  const pfand = new Map(a.pfand);
+  for (const [rate, value] of b.pfand) addTo(pfand, rate, value);
+  return { goods, pfand, tip: a.tip + b.tip };
+}
+
+function positiveOnly(map: Map<number, number>): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const [rate, value] of map) if (value > 0) out.set(rate, value);
+  return out;
 }
 
 function clampComposition(c: Composition): Composition {
-  const goods = new Map<number, number>();
-  for (const [rate, value] of c.goods) if (value > 0) goods.set(rate, value);
-  return { goods, pfand: Math.max(0, c.pfand), tip: Math.max(0, c.tip) };
+  return {
+    goods: positiveOnly(c.goods),
+    pfand: positiveOnly(c.pfand),
+    tip: Math.max(0, c.tip),
+  };
 }
 
 /**
@@ -131,7 +218,9 @@ export function scaleComposition(
     ...[...clean.goods.entries()]
       .sort((a, b) => b[0] - a[0])
       .map(([rate, value]) => ({ key: `g:${rate}`, value })),
-    { key: 'pfand', value: clean.pfand },
+    ...[...clean.pfand.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([rate, value]) => ({ key: `p:${rate}`, value })),
     { key: 'tip', value: clean.tip },
   ].filter((p) => p.value > 0);
   const total = parts.reduce((sum, p) => sum + p.value, 0);
@@ -144,11 +233,10 @@ export function scaleComposition(
         ? amountCents - assigned
         : Math.round((amountCents * part.value) / total);
     assigned += share;
-    if (part.key === 'pfand') out.pfand += share;
-    else if (part.key === 'tip') out.tip += share;
+    if (part.key === 'tip') out.tip += share;
     else {
       const rate = Number(part.key.slice(2));
-      out.goods.set(rate, (out.goods.get(rate) ?? 0) + share);
+      addTo(part.key.startsWith('p:') ? out.pfand : out.goods, rate, share);
     }
   });
   return out;
@@ -166,12 +254,16 @@ export function amountComposition(
   const goodsTotal = [...clean.goods.values()].reduce((s, v) => s + v, 0);
   const fromGoods = Math.min(goodsTotal, amountCents);
   const goodsPart = scaleComposition(
-    { goods: clean.goods, pfand: 0, tip: 0 },
+    { goods: clean.goods, pfand: new Map(), tip: 0 },
     fromGoods,
   );
   let rest = amountCents - fromGoods;
-  const pfand = Math.min(clean.pfand, rest);
-  rest -= pfand;
+  const fromPfand = Math.min(mapSum(clean.pfand), rest);
+  const pfand = scaleComposition(
+    { goods: new Map(), pfand: clean.pfand, tip: 0 },
+    fromPfand,
+  ).pfand;
+  rest -= fromPfand;
   const tip = Math.min(clean.tip, rest);
   rest -= tip;
   // Was dann noch bleibt (nur bei Rundung), zaehlt zum Warenwert.
@@ -182,13 +274,24 @@ export function amountComposition(
   return { goods: goodsPart.goods, pfand, tip };
 }
 
+/**
+ * Brutto je Satz einer Zusammensetzung: Ware und Pfand zusammen (Pfand ist
+ * Teil des Entgelts und traegt den Satz seiner Pfandart). Trinkgeld zaehlt
+ * nicht zum Entgelt.
+ */
+export function taxableByRate(c: Composition): Map<number, number> {
+  const out = new Map(c.goods);
+  for (const [rate, value] of c.pfand) addTo(out, rate, value);
+  return out;
+}
+
 /** MwSt-Zeilen (negativ) aus einer Zusammensetzung (Cent, positiv). */
 export function refundTaxLines(
   c: Composition,
   vatExempt: boolean | undefined,
 ): RefundTaxLine[] {
   if (vatExempt !== false) return [];
-  return [...c.goods.entries()]
+  return [...taxableByRate(c).entries()]
     .filter(([rate, value]) => rate > 0 && value > 0)
     .sort(([a], [b]) => b - a)
     .map(([rate, value]) => {
@@ -237,7 +340,7 @@ export function itemsRefund<T extends ItemLike>(
       : 0;
     const rate = Number(item.taxRate) || 0;
     composition.goods.set(rate, (composition.goods.get(rate) ?? 0) + goods);
-    composition.pfand += deposit;
+    if (deposit) addTo(composition.pfand, depositRateOf(item), deposit);
     return { item, quantity, goods, deposit };
   });
   return { lines, composition };

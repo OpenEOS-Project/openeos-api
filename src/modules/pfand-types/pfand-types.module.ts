@@ -10,11 +10,13 @@ import {
   UserOrganization,
 } from '../../database/entities';
 import { GatewayModule } from '../gateway/gateway.module';
+import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([PfandType, PfandReturn, UserOrganization]),
     forwardRef(() => GatewayModule),
+    forwardRef(() => PrintJobsModule),
     TseModule,
   ],
   controllers: [PfandTypesController],

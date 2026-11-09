@@ -829,6 +829,7 @@ describe('catalog', () => {
       id: PFAND,
       name: 'Becher',
       amount: 2,
+      vatRate: 19,
       isActive: true,
       sortOrder: 0,
     });
@@ -1483,6 +1484,7 @@ describe('reports and orders', () => {
       totalPrice: 9,
       taxRate: 19,
       deposit: 2,
+      depositTaxRate: null,
       status: 'delivered',
       options: ['groß'],
     });

@@ -21,6 +21,11 @@ import {
   cents,
   emptyComposition,
   orderComposition,
+  pfandFromRecord,
+  pfandMap,
+  pfandSum,
+  rateMapFrom,
+  rateRecord,
   scaleComposition,
   unitGross,
   type Composition,
@@ -41,6 +46,7 @@ import {
   PROCESS_TYPE_RECEIPT,
   bestellungProcessData,
   cashbookProcessData,
+  depositReturnSlots,
   emptySlots,
   kassenbelegProcessData,
   paymentTypeFor,
@@ -502,8 +508,12 @@ export class TseSigningService {
             taxRate: Number(item.taxRate),
             amount: Number(item.amount),
             deposit: Number(item.depositAmount),
+            ...(item.depositTaxRate != null
+              ? { depositTaxRate: Number(item.depositTaxRate) }
+              : {}),
           })),
           pfand: Number(refund.pfandAmount),
+          pfandByRate: rateRecord(composition.pfand),
           tip: Number(refund.tipAmount),
           paymentMethod: refund.paymentMethod,
         },
@@ -523,15 +533,22 @@ export class TseSigningService {
     }
   }
 
-  /** Pfand-Auszahlung (bar, negativ, nicht steuerbar wie auf dem Bon). */
+  /**
+   * Pfand-Auszahlung (bar, negativ): je Position im Slot des Satzes ihrer
+   * Pfandart — die Rueckgabe mindert das Entgelt (§ 17 UStG). Auszahlungen
+   * ohne Satz (Bestand) im 0-%-Slot.
+   */
   async signPfandReturn(
     pfandReturn: PfandReturn,
   ): Promise<TseReceiptView | null> {
     try {
       if (!(await this.isActive(pfandReturn.organizationId))) return null;
+      const vatExempt = await this.vatExempt(pfandReturn.organizationId);
       const amountCents = -Math.abs(cents(pfandReturn.totalAmount));
-      const slots = emptySlots();
-      slots[4] = amountCents;
+      const slots = fitSlots(
+        depositReturnSlots(pfandReturn.lines ?? [], vatExempt),
+        amountCents,
+      );
       const training = pfandReturn.isTest === true;
       return this.sign({
         organizationId: pfandReturn.organizationId,
@@ -543,7 +560,10 @@ export class TseSigningService {
         }),
         training,
         amountCents,
-        lines: { pfandLines: pfandReturn.lines ?? [] },
+        lines: {
+          pfandLines: pfandReturn.lines ?? [],
+          returnNumber: pfandReturn.returnNumber ?? null,
+        },
         eventId: pfandReturn.eventId,
         pfandReturnId: pfandReturn.id,
         terminal: pfandReturn.deviceId,
@@ -739,6 +759,15 @@ export class TseSigningService {
     return tx ? (await this.viewsFor([tx]))[0] : null;
   }
 
+  /** Kassenbeleg einer Pfand-Auszahlung (Beleg drucken, Nachdruck). */
+  async forPfandReturn(pfandReturnId: string): Promise<TseReceiptView | null> {
+    const tx = await this.txRepository.findOne({
+      where: { pfandReturnId },
+      order: { createdAt: 'DESC' },
+    });
+    return tx ? (await this.viewsFor([tx]))[0] : null;
+  }
+
   /** Alle Vorgaenge einer Bestellung (Bestellung, Belege, Gegenbelege). */
   async forOrder(
     orderId: string,
@@ -817,7 +846,7 @@ export function paymentComposition(
           cents(unitGross(item)) * (Number(entry.quantity) || 0),
       );
     }
-    return scaleComposition({ goods, pfand: 0, tip: 0 }, amountCents);
+    return scaleComposition({ goods, pfand: new Map(), tip: 0 }, amountCents);
   }
   if (payment.itemPayments?.length) {
     const goods = new Map<number, number>();
@@ -825,7 +854,7 @@ export function paymentComposition(
       const rate = Number(ip.orderItem?.taxRate) || 0;
       goods.set(rate, (goods.get(rate) ?? 0) + cents(ip.amount));
     }
-    return scaleComposition({ goods, pfand: 0, tip: 0 }, amountCents);
+    return scaleComposition({ goods, pfand: new Map(), tip: 0 }, amountCents);
   }
   const whole = orderComposition(items, {
     discountAmount: Number(order.discountAmount) || 0,
@@ -845,16 +874,17 @@ export function refundComposition(
 ): Composition {
   const raw = (refund.metadata as { composition?: unknown } | null)
     ?.composition as
-    | { goods?: Record<string, number>; pfand?: number; tip?: number }
+    | {
+        goods?: Record<string, number>;
+        pfand?: number;
+        pfandByRate?: Record<string, number>;
+        tip?: number;
+      }
     | undefined;
   if (raw && typeof raw === 'object') {
-    const goods = new Map<number, number>();
-    for (const [rate, value] of Object.entries(raw.goods ?? {})) {
-      goods.set(Number(rate), Math.abs(Number(value) || 0));
-    }
     return {
-      goods,
-      pfand: Math.abs(Number(raw.pfand) || 0),
+      goods: rateMapFrom(raw.goods, true),
+      pfand: pfandFromRecord(raw, true),
       tip: Math.abs(Number(raw.tip) || 0),
     };
   }
@@ -863,7 +893,7 @@ export function refundComposition(
     const rate = Number(item.taxRate) || 0;
     c.goods.set(rate, (c.goods.get(rate) ?? 0) + Math.abs(cents(item.amount)));
   }
-  c.pfand = Math.abs(cents(refund.pfandAmount ?? 0));
+  c.pfand = pfandMap(Math.abs(cents(refund.pfandAmount ?? 0)));
   c.tip = Math.abs(cents(refund.tipAmount ?? 0));
   return c;
 }
@@ -906,6 +936,10 @@ export function snapshotItems(
       unitPrice: unitGross(i),
       taxRate: Number(i.taxRate),
       deposit: Number(i.depositAmount || 0),
+      // Satz des Pfands (fehlt = nicht steuerbar, Bestand von vor 2026-11).
+      ...(i.depositTaxRate != null
+        ? { depositTaxRate: Number(i.depositTaxRate) }
+        : {}),
       productId: i.productId ?? null,
       categoryId: i.categoryId ?? null,
       categoryName: i.categoryName ?? null,
@@ -934,10 +968,9 @@ export function receiptLines(
     discount: Number(order.discountAmount) || 0,
     tip: Number(order.tipAmount) || 0,
     composition: {
-      goods: Object.fromEntries(
-        [...composition.goods.entries()].map(([r, v]) => [String(r), v]),
-      ),
-      pfand: composition.pfand,
+      goods: rateRecord(composition.goods),
+      pfand: pfandSum(composition),
+      pfandByRate: rateRecord(composition.pfand),
       tip: composition.tip,
     },
     ...(payment.metadata && 'splitItems' in payment.metadata

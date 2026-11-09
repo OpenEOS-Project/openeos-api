@@ -37,18 +37,20 @@ Eigene Umsetzung der **Digitalen Schnittstelle der Finanzverwaltung für Kassens
 
 | OpenEOS (`tse_transactions.kind`) | BON_TYP | Positionen (GV_TYP) | Zahlart |
 |---|---|---|---|
-| `receipt` (Zahlung, Einzel/Split/Sammel/Tisch/Verwaltung) | `Beleg` (Testmodus: `AVTraining`) | `Umsatz` je Position (Varianten/Optionen in `Bonpos_Zusatzinfo`), `Pfand` je Position mit Pfand, `TrinkgeldAG`/`TrinkgeldAN`, `Rabatt` je USt-Schlüssel für Bestellrabatte (gesonderte Zeile, Tz. 4.2.4) | `Bar`; Karte → `Unbar` „Kartenzahlung“ (Debit/Kredit unbekannt); PayPal/SumUp Online/Google Pay/Apple Pay → `ElZahlungsdienstleister` |
+| `receipt` (Zahlung, Einzel/Split/Sammel/Tisch/Verwaltung) | `Beleg` (Testmodus: `AVTraining`) | `Umsatz` je Position (Varianten/Optionen in `Bonpos_Zusatzinfo`), `Pfand` je Position mit Pfand (USt-Schlüssel des Satzes der Pfandart), `TrinkgeldAG`/`TrinkgeldAN`, `Rabatt` je USt-Schlüssel für Bestellrabatte (gesonderte Zeile, Tz. 4.2.4) | `Bar`; Karte → `Unbar` „Kartenzahlung“ (Debit/Kredit unbekannt); PayPal/SumUp Online/Google Pay/Apple Pay → `ElZahlungsdienstleister` |
 | Teilzahlung nach Betrag | `Beleg` | je Satz „Teilzahlung Bestellung N“ (`Umsatz`), Positionen der Bestellung zur Erläuterung in `Bonpos_Zusatzinfo` | wie oben |
 | Beleg über 0,00 | `Beleg` | Positionen + `Rabatt` auf 0 | `Bar` 0,00 |
 | `refund` (Erstattung/Storno) | `Beleg`, `BON_STORNO = 1` bei vollständigem Storno, sonst 0; Verweis in `Bon_Referenzen` (`Transaktion`) | negative Mengen (Tz. 4.2.5); rabattierter Erstattungspreis mit Entstehung in `Bonpos_Preisfindung`; Kulanz ohne Positionen → `Rabatt` (nachträgliche Entgeltminderung) | wie die Erstattung |
-| `deposit_return` (Pfand-Auszahlung) | `Beleg` | `PfandRueckzahlung` | `Bar` negativ |
+| `deposit_return` (Pfand-Auszahlung) | `Beleg` | `PfandRueckzahlung` je Pfandart, negativ, USt-Schlüssel des Satzes der Pfandart | `Bar` negativ |
 | `order` / `order_cancellation` (Tischbetrieb, Bestellung-V1) | `AVBestellung` | `Umsatz` (Storno mit negativer Menge, Tz. 4.2.3) | `Keine` |
 | `abort` (Abgleich, AVBelegabbruch) | `AVBelegabbruch`, Verweis auf den abgebrochenen Vorgang | – | `Keine` |
 | `cashbook` (Kassenbuch) | `Beleg` | `Anfangsbestand` (GV_NAME „Wechselgeld“), `Geldtransit` („Einlage“/„Entnahme“), `DifferenzSollIst` („Kassensturz“), USt-Schlüssel 5 | `Bar` |
 
 - **Abrechnungskreis** (`Bonkopf_AbrKreis`): `Tisch <nr> / Bestellung <nr> (<8 Zeichen Bestell-ID>)` für alle Vorgänge einer Bestellung (Tz. 2.7, 3.1.2.2); die Zahlung verweist zusätzlich auf die Bestellvorgänge (`Bon_Referenzen`).
 - **Beträge**: Bonkopf_USt und Bonkopf_Zahlarten kommen aus den signierten Prozessdaten (Rechnungsdoppel); die Positionen werden je USt-Schlüssel exakt darauf abgestimmt (Differenzen als `Rabatt`/`Aufschlag`, kleine Rundungen mit `GV_NAME` „Rundung“). USt = brutto × Satz / (100 + Satz), gerundet wie auf dem Bon.
-- **USt-Schlüssel**: 19 % → 1, 7 % → 2, 0 % → 5 (nicht steuerbar); steuerbefreite Organisationen (`settings.vatExempt`, Kleinunternehmer) → 6 (umsatzsteuerfrei). Pfand und Trinkgeld stehen wie auf dem Bon und in der TSE im 0-%-Slot (offene Steuerberater-Fragen S1/S2). Kassenbuch immer 5.
+- **USt-Schlüssel**: 19 % → 1, 7 % → 2, 0 % → 5 (nicht steuerbar); steuerbefreite Organisationen (`settings.vatExempt`, Kleinunternehmer) → 6 (umsatzsteuerfrei). Kassenbuch immer 5.
+- **Pfand** (ab 2026-11, openeos-web#116): Pfand gehört zum Entgelt (Abschn. 10.1 Abs. 8 UStAE), die Rückgabe mindert es (§ 17 UStG). Jede Pfandart hat einen Steuersatz (`pfand_types.vat_rate`, Standard 19 %); Verkauf, Erstattung und Auszahlung halten ihn als Snapshot fest (`order_items.deposit_tax_rate`, `refund_items.deposit_tax_rate`, `pfand_returns.lines[].vatRate`) und geben ihn in der TSE-Kopie weiter (`items[].depositTaxRate`, `composition.pfandByRate`, `pfandLines[].vatRate`). `Pfand`- und `PfandRueckzahlung`-Zeilen stehen beim USt-Schlüssel dieses Satzes, in den Prozessdaten im Slot des Satzes (Becher 2 € zu 19 %: `Beleg^2.00_…^2.00:Bar`, Rückgabe `Beleg^-2.00_0.00_0.00_0.00_0.00^-2.00:Bar`). Ein Satz je Pfandart; Pfand für Waren mit anderem Satz bekommt eine eigene Pfandart. Vorgänge von vor der Umstellung haben keinen Satz in der Kopie und bleiben, wie sie signiert wurden, im 0-%-Schlüssel 5. Steuerbefreite Organisationen: Schlüssel 6 wie alles andere.
+- **Trinkgeld** steht im 0-%-Slot (kein Entgelt; offene Steuerberater-Frage S2).
 - **TSE-Ausfall**: Vorgang bleibt `Beleg`; `TSE_Transaktionen` mit `TSE_TA_FEHLER` „TSE ausgefallen: <Code> – <Text>“ (≤ 200 Zeichen), ohne Signatur; `BON_NOTIZ` „TSE ausgefallen“. Nachträglich gefundene Signaturen (`recovered_at`) werden signiert geführt (Hinweis in `BON_NOTIZ`).
 - **TSE-Wechsel**: alle im Abschluss genutzten TSEs in `Stamm_TSE` (`TSE_ID` 1…n je Abschluss), Zertifikat aus Swissbit `certificateChain` (`tse_units.certificate`).
 - **Online-Vorkasse** (Shop, QR mit PayPal): nicht über die Kasse erfasst und nicht signiert (BMF-FAQ Anwendungsbereich 10) → nicht in der DSFinV-K.
@@ -85,7 +87,7 @@ Die Tests (`dsfinvk-export.spec.ts`, `dsfinvk.db.spec.ts`) prüfen erzeugte Expo
 
 ## Offene Fragen (Steuerberatung)
 
-- **S1 Pfand**: Mehrwegbecher als Warenumschließung (Satz der Ware) oder eigenständig? Bisher 0-%-Slot wie auf dem Bon.
+- **S1 Pfand**: entschieden 2026-11-09 — Pfand ist Teil des Entgelts und trägt den Satz seiner Pfandart (Standard 19 %), die Rückgabe mindert Umsatz und USt zum selben Satz (siehe oben). Rest-Frage für die Steuerberatung: Rückgaben von Bechern, die vor der Umstellung ohne USt verkauft wurden, werden mit dem Satz der Pfandart gebucht (nur im Übergang nach der Umstellung).
 - **S2 Trinkgeld**: an den Verein (`TrinkgeldAG`, Steuersatz?) oder an Helfer (`TrinkgeldAN`)? Einstellbar, Standard Verein.
 - **S3 Kleinunternehmer**: Schlüssel 6 (umsatzsteuerfrei, § 19 UStG n. F.) oder 5?
 - **Erstattung über mehrere Sätze**: Aufteilung anteilig nach dem Ursprungsbeleg — so umgesetzt.

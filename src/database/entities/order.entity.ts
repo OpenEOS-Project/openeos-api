@@ -225,7 +225,7 @@ export class Order extends BaseEntity {
   })
   refundedAmount: number;
 
-  /** Total deposit ("Pfand") charged on this order. Part of `total`, excluded from revenue/tax. */
+  /** Total deposit ("Pfand") charged on this order. Part of `total` and of `taxTotal` (rate of the Pfand type; before 2026-11: not taxed), shown apart from goods revenue. */
   @Column({
     name: 'pfand_total',
     type: 'decimal',

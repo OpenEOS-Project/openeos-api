@@ -40,13 +40,23 @@ import {
   localDateKey,
   startOfDay,
 } from '../../common/utils/date-range.util';
+import type { PfandReturnLine } from '../../database/entities/pfand-return.entity';
+import {
+  buildVatReport,
+  type RefundCompositionRecord,
+  type VatReport,
+} from './vat-report';
 
 export interface SalesReport {
   totalRevenue: number;
   totalOrders: number;
   averageOrderValue: number;
   totalItemsSold: number;
-  /** Deposits (Pfand) collected with sales — pass-through, not revenue. */
+  /**
+   * Deposits (Pfand) collected with sales — shown apart from revenue
+   * (goods). VAT-wise Pfand is part of the consideration: see the VAT
+   * report (`getVatReport`).
+   */
   pfandCollected: number;
   /** Deposits paid back to guests on return. */
   pfandReturned: number;
@@ -191,6 +201,11 @@ export const REPORT_MONEY_KEYS = new Set([
   'pfandCollected',
   'pfandReturned',
   'pfandBalance',
+  'goods',
+  'deposits',
+  'depositReturns',
+  'gross',
+  'net',
   'goodwillGoods',
   'attributedRefunds',
   'unassignedRefunds',
@@ -350,7 +365,8 @@ export class ReportsService {
 
     const result = await queryBuilder
       .select([
-        // Revenue excludes Pfand (deposits are a pass-through, not turnover).
+        // Revenue = goods (+ tips); Pfand is shown separately (and with its
+        // VAT rate in the VAT report).
         // Aliases are quoted so Postgres preserves their camelCase.
         // Kulanz-Erstattungen (Gegenbelege ohne Storno) mindern den Umsatz;
         // Storno-Erstattungen stecken schon in der gesunkenen Summe.
@@ -543,6 +559,111 @@ export class ReportsService {
       itemsRevenue: Number(itemTotals?.itemsRevenue || 0),
       attributedRefunds: Number(itemTotals?.attributed || 0),
     });
+  }
+
+  /**
+   * Umsatz und Umsatzsteuer je Steuersatz (siehe `buildVatReport`): Ware
+   * und Pfand aus nicht stornierten Bestellungen (Bestelldatum, Rabatt
+   * anteilig auf die Ware), Kulanz-Erstattungen dieser Bestellungen ab,
+   * Pfand-Rueckgaben im Zeitraum negativ beim Satz ihrer Pfandart.
+   * Gespeicherte Saetze sind Snapshots: alte Buchungen bleiben, wie sie
+   * waren (Pfand ohne Satz = 0 %).
+   */
+  async getVatReport(
+    organizationId: string,
+    queryDto: QueryReportsDto,
+    user: User,
+  ): Promise<VatReport> {
+    await this.checkPermission(organizationId, user.id);
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: { id: true, settings: true },
+    });
+    const vatExempt = organization?.settings?.vatExempt !== false;
+
+    const goodsRows = await this.soldItemsQuery(organizationId, queryDto)
+      .select('item.taxRate', 'rate')
+      .addSelect(`SUM(item.totalPrice * ${NET_FACTOR})`, 'gross')
+      .groupBy('item.taxRate')
+      .getRawMany<{ rate: string; gross: string | null }>();
+    const depositRows = await this.soldItemsQuery(organizationId, queryDto)
+      .select('COALESCE(item.depositTaxRate, 0)', 'rate')
+      .addSelect('SUM(item.depositAmount * item.quantity)', 'gross')
+      .andWhere('item.depositAmount <> 0')
+      .groupBy('COALESCE(item.depositTaxRate, 0)')
+      .getRawMany<{ rate: string; gross: string | null }>();
+    const toMap = (rows: { rate: string; gross: string | null }[]) =>
+      new Map(
+        rows.map((r) => [
+          Number(r.rate) || 0,
+          Math.round(Number(r.gross || 0) * 100),
+        ]),
+      );
+
+    // Kulanz-Erstattungen (ohne Storno) der Bestellungen im Bericht.
+    const ordersQb = this.orderRepository
+      .createQueryBuilder('order')
+      .select('order.id', 'id')
+      .where('order.organizationId = :organizationId', { organizationId })
+      .andWhere('order.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: [OrderStatus.CANCELLED],
+      });
+    this.applyOrderFilters(ordersQb, queryDto);
+    const refundRows = await this.orderRepository.manager
+      .createQueryBuilder()
+      .select('rf.metadata', 'metadata')
+      .from('refunds', 'rf')
+      .where(`rf.order_id IN (${ordersQb.getQuery()})`)
+      .andWhere(`rf.kind = 'refund'`)
+      .setParameters(ordersQb.getParameters())
+      .getRawMany<{ metadata: Record<string, unknown> | null }>();
+
+    const returnsQb = this.pfandReturnRepository
+      .createQueryBuilder('ret')
+      .select('ret.lines', 'lines')
+      .where('ret.organizationId = :organizationId', { organizationId });
+    this.applyReturnFilters(returnsQb, queryDto);
+    const returnRows = await returnsQb.getRawMany<{
+      lines: PfandReturnLine[] | null;
+    }>();
+
+    return buildVatReport({
+      vatExempt,
+      sales: {
+        goodsByRate: toMap(goodsRows),
+        depositsByRate: toMap(depositRows),
+      },
+      goodwillRefunds: refundRows.map(
+        (r) =>
+          (r.metadata?.composition as RefundCompositionRecord | undefined) ??
+          null,
+      ),
+      pfandReturnLines: returnRows.flatMap((r) => r.lines ?? []),
+    });
+  }
+
+  /** Veranstaltung und Zeitraum fuer Pfand-Auszahlungen (Auszahlungsdatum). */
+  private applyReturnFilters(
+    queryBuilder: SelectQueryBuilder<PfandReturn>,
+    { eventId, startDate, endDate }: QueryReportsDto,
+  ): void {
+    if (eventId) {
+      queryBuilder.andWhere('ret.eventId = :eventId', { eventId });
+    }
+    if (startDate && endDate) {
+      queryBuilder.andWhere('ret.createdAt BETWEEN :startDate AND :endDate', {
+        startDate: startOfDay(startDate),
+        endDate: endOfDay(endDate),
+      });
+    } else if (startDate) {
+      queryBuilder.andWhere('ret.createdAt >= :startDate', {
+        startDate: startOfDay(startDate),
+      });
+    } else if (endDate) {
+      queryBuilder.andWhere('ret.createdAt <= :endDate', {
+        endDate: endOfDay(endDate),
+      });
+    }
   }
 
   async getPaymentsReport(
@@ -971,6 +1092,11 @@ export class ReportsService {
           queryDto,
           user,
         );
+        break;
+      case 'vat':
+        // Eine Zeile je Steuersatz (Summe bildet die Tabelle selbst).
+        reportData = (await this.getVatReport(organizationId, queryDto, user))
+          .rows;
         break;
       case 'categories':
         reportData = await this.getCategoriesReport(

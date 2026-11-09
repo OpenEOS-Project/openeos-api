@@ -385,6 +385,89 @@ describeWithDb('DSFinV-K closings against Postgres', () => {
     );
   });
 
+  it('Pfand with VAT (2026-11): sale, refund and Pfand return close and export at the rate of the Pfand type', async () => {
+    const w = await world();
+    const seq = new Sequence();
+    const at = new Date('2026-11-09T18:00:00Z');
+    const s1 = sale(seq, VAT_LIABLE, {
+      items: [
+        {
+          name: 'Pils',
+          quantity: 2,
+          price: 4,
+          rate: 19,
+          deposit: 2,
+          depositRate: 19,
+        },
+      ],
+    });
+    const r1 = await insert(w, s1, at);
+    await insert(
+      w,
+      refund(seq, VAT_LIABLE, {
+        original: s1,
+        closing: { zNr: 1, createdAt: at },
+        items: [
+          {
+            name: 'Pils',
+            quantity: 1,
+            unitPrice: 4,
+            taxRate: 19,
+            amount: 4,
+            deposit: 2,
+            depositRate: 19,
+          },
+        ],
+        kind: 'refund',
+      }),
+      at,
+      { referencesId: r1.id! },
+    );
+    // Rueckgabe eines Bechers von vor der Umstellung (ohne Satz) und eines neuen.
+    await insert(
+      w,
+      pfandReturn(seq, [
+        { name: 'Becher', unitAmount: 2, quantity: 1, vatRate: 19 },
+      ]),
+      at,
+    );
+    await insert(
+      w,
+      pfandReturn(seq, [{ name: 'Becher', unitAmount: 2, quantity: 1 }]),
+      at,
+    );
+    await closings.closeUpTo(w.orgId, new Date('2026-11-10T05:00:00Z'), {
+      trigger: 'scheduled',
+    });
+    const file = await closings.exportZip(
+      w.orgId,
+      admin,
+      { from: '2026-11-09', to: '2026-11-09' },
+      {},
+    );
+    const result = validateZip(file.data);
+    expect(result.errors.map((e) => `${e.code} ${e.message}`)).toEqual([]);
+    const csv = (name: string) => {
+      const [header, ...records] = parseCsv(
+        readZip(file.data)
+          .find((e) => e.name === name)!
+          .data.toString('utf8'),
+      ).records;
+      return records.map((r) =>
+        Object.fromEntries(header.values.map((h, i) => [h, r.values[i]])),
+      );
+    };
+    const cases = csv('businesscases.csv')
+      .filter((r) => r.GV_TYP.startsWith('Pfand'))
+      .map((r) => [r.GV_TYP, r.UST_SCHLUESSEL, r.Z_UMS_BRUTTO])
+      .sort();
+    expect(cases).toEqual([
+      ['Pfand', '1', '2,00'],
+      ['PfandRueckzahlung', '1', '-2,00'],
+      ['PfandRueckzahlung', '5', '-2,00'],
+    ]);
+  });
+
   it('waits for pending TSE transactions before closing', async () => {
     const w = await world();
     const seq = new Sequence();

@@ -166,7 +166,18 @@ describe('Kasse (DeviceApiController)', () => {
     };
     const pfandReturnsService = new PfandReturnsService(
       {
-        manager: { findOne: jest.fn(() => Promise.resolve(organization())) },
+        manager: {
+          findOne: jest.fn(() => Promise.resolve(organization())),
+          transaction: jest.fn(
+            (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> =>
+              fn({
+                query: jest.fn(() => Promise.resolve([{ max: 4 }])),
+                findOne: jest.fn(() => Promise.resolve(null)),
+                save: (_entity: unknown, row: PfandReturn) =>
+                  Promise.resolve(row),
+              }),
+          ),
+        },
         create: jest.fn((data: Partial<PfandReturn>) => ({
           id: 'pr-1',
           ...data,
@@ -265,6 +276,9 @@ describe('Kasse (DeviceApiController)', () => {
     expect((result.data as { tse: TseReceiptView }).tse.kind).toBe(
       'deposit_return',
     );
+    // Belegnummer je Tag fortlaufend, Satz der Pfandart (Standard 19 %).
+    expect(result.data.returnNumber).toMatch(/^P-\d{8}-0005$/);
+    expect(result.data.lines[0].vatRate).toBe(19);
   });
 });
 

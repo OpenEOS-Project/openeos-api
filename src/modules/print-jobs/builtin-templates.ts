@@ -15,6 +15,8 @@ export const RECEIPT_TEMPLATE = 'receipt';
 export const REFUND_RECEIPT_TEMPLATE = 'refund_receipt';
 export const CANCELLATION_TICKET_TEMPLATE = 'cancellation_ticket';
 export const ORDER_TICKET_TEMPLATE = 'order_ticket';
+/** Beleg einer Pfand-Auszahlung („Pfandrückgabe“, openeos-web#116). */
+export const PFAND_RETURN_RECEIPT_TEMPLATE = 'pfand_return_receipt';
 
 /**
  * Bestellbon wie die Vorlage `order_ticket.jinja2` des Drucker-Agenten,
@@ -196,6 +198,13 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 {% if subtotal is defined %}
 {{ row("Zwischensumme:", subtotal|currency) }}
 {% endif %}
+{% if discount_amount is defined and discount_amount and discount_amount|float > 0 %}
+{{ row("Rabatt:", (0 - discount_amount|float)|currency) }}
+{% endif %}
+{# Pfand gehoert zum Entgelt und steckt in GESAMT und in der MwSt. #}
+{% if pfand_total is defined and pfand_total and pfand_total|float > 0 %}
+{{ row("Pfand:", pfand_total|float|currency) }}
+{% endif %}
 {# Preise sind brutto: ausgewiesen wird die enthaltene MwSt, je Satz eine
    Zeile. Bei gemischten Saetzen schickt die API keinen \`tax_rate\` — die alte
    Einzelzeile haette dann pauschal "19%" neben die Gesamtsumme geschrieben. #}
@@ -318,10 +327,84 @@ vom {{ original_created_at|strftime("%d.%m.%Y %H:%M") }}
 <<CUT>>
 `;
 
+/**
+ * Beleg einer Pfand-Auszahlung: negative Betraege je Pfandart, MwSt je
+ * Satz (Rueckgabe mindert das Entgelt, § 17 UStG; fehlt bei
+ * steuerbefreiten Organisationen), Zahlart Bar, Kasse/Bediener, Datum,
+ * Belegnummer und — mit Cloud-TSE — der TSE-Block. Nur vom Server
+ * ausgeliefert (der Agent kennt die Vorlage nicht selbst).
+ */
+const PFAND_RETURN_RECEIPT_SOURCE =
+  `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
+   Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
+{% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}
+{% set sep = "=" * cols %}
+{% set line = "-" * cols %}
+{% macro row(label, value) %}{{ label }}{{ value|rjust(cols - label|length) }}{% endmacro %}
+{% if is_test %}
+<<CENTER>><<BOLD>><<BIG>>** TESTMODUS **<</BIG>><</BOLD>><</CENTER>>
+
+{% endif %}
+<<CENTER>><<BIG>>{{ organization.name|default("OpenEOS")|wordwrap(cols // 2, true, "\\n") }}<</BIG>><</CENTER>>
+{% if organization.address is defined and organization.address %}
+<<CENTER>>{{ organization.address|wordwrap(cols, true, "\\n") }}<</CENTER>>
+{% endif %}
+{% if organization.phone is defined and organization.phone %}
+<<CENTER>>{{ ("Tel: " ~ organization.phone)|wordwrap(cols, true, "\\n") }}<</CENTER>>
+{% endif %}
+<<CENTER>>{{ sep }}<</CENTER>>
+<<CENTER>><<BOLD>><<BIG>>PFAND<</BIG>><</BOLD>><</CENTER>>
+<<CENTER>><<BOLD>>Rueckgabe / Auszahlung<</BOLD>><</CENTER>>
+{% if reprint %}
+<<CENTER>><<BOLD>>-- NACHDRUCK --<</BOLD>><</CENTER>>
+{% endif %}
+{{ line }}
+<<BOLD>>{{ ("Beleg " ~ return_number|default("---", true))|wordwrap(cols, true, "\\n") }}<</BOLD>>
+Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
+{{ line }}
+{% for item in items|default([]) %}
+{% set qty = "%-4s"|format("-" ~ item.quantity ~ "x") %}
+{% set amount = item.total|currency %}
+{% set name_width = cols - qty|length - amount|length - 2 %}
+{% set name_lines = (item.name|wordwrap(name_width, true, "\\n")).split("\\n") %}
+{{ qty }} {{ name_lines[0].ljust(name_width) }} {{ amount }}
+{% for rest in name_lines[1:] %}
+{{ " " * (qty|length + 1) }}{{ rest }}
+{% endfor %}
+{{ " " * (qty|length + 1) }}{{ ("je " ~ item.unit_amount|currency)|wordwrap(cols - qty|length - 1, true, "\\n") }}
+{% endfor %}
+{{ sep }}
+{% if tax_lines is defined and tax_lines %}
+{% for tl in tax_lines %}
+{{ row("enth. MwSt " ~ (tl.rate|int if tl.rate == tl.rate|int else tl.rate) ~ "%:", tl.tax|currency) }}
+{% endfor %}
+{% endif %}
+<<BOLD>>{{ row("AUSGEZAHLT:", total|default(0)|currency) }}<</BOLD>>
+{{ line }}
+{{ ("Zahlungsart: " ~ payment_label|default("Bar"))|wordwrap(cols, true, "\\n") }}
+{% if actor_name is defined and actor_name %}
+{{ ("Bediener: " ~ actor_name)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if device_name is defined and device_name %}
+{{ ("Kasse: " ~ device_name)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if event_name is defined and event_name %}
+{{ ("Veranstaltung: " ~ event_name)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+` +
+  TSE_PRINT_BLOCK +
+  `{{ line }}
+<<CENTER>>Danke fuers Zurueckbringen!<</CENTER>>
+<<CENTER>>{{ created_at|strftime("%d.%m.%Y %H:%M") }}<</CENTER>>
+<<FEED:3>>
+<<CUT>>
+`;
+
 /** Vorlagen, auf denen die TSE-Angaben stehen muessen. */
 export const TSE_RECEIPT_TEMPLATES: readonly string[] = [
   RECEIPT_TEMPLATE,
   REFUND_RECEIPT_TEMPLATE,
+  PFAND_RETURN_RECEIPT_TEMPLATE,
 ];
 
 /** Leerzeilen, Vorschub und Schnitt am Ende einer Vorlage. */
@@ -366,6 +449,7 @@ export const BUILTIN_PRINT_TEMPLATES: Record<string, string> = {
   [ORDER_TICKET_TEMPLATE]: ORDER_TICKET_SOURCE,
   [REFUND_RECEIPT_TEMPLATE]: REFUND_RECEIPT_SOURCE,
   [RECEIPT_TEMPLATE]: RECEIPT_SOURCE,
+  [PFAND_RETURN_RECEIPT_TEMPLATE]: PFAND_RETURN_RECEIPT_SOURCE,
   [CANCELLATION_TICKET_TEMPLATE]: `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
    Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
 {% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}
@@ -409,3 +493,38 @@ Storniert: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 <<CUT>>
 `,
 };
+
+/**
+ * Vorlagen fuer den Drucker-Agenten (`GET /device-api/templates`, Push beim
+ * Verbinden und nach dem Speichern): eigene Vorlagen der Organisation als
+ * Jinja2-Quelltext (Designer: `generatedTemplate`), Zahlart als
+ * Anzeigename, Bons mit TSE-Block; mitgelieferte Vorlagen, wo die
+ * Organisation keine eigene hat (aeltere Agenten kennen sie bzw. den
+ * TSE-Block noch nicht, z. B. `pfand_return_receipt`).
+ */
+export function agentTemplateMap(
+  templates: { type: string; template: unknown }[],
+): Record<string, string> {
+  const templateMap: Record<string, string> = {};
+  for (const t of templates) {
+    const tpl = t.template as { generatedTemplate?: string } | string | null;
+    // Zahlart als Anzeigename („Bar“) statt Rohwert („cash“), auch in
+    // Vorlagen aus der Zeit vor `payment_label`.
+    if (typeof tpl === 'string') {
+      templateMap[t.type] = withPaymentLabel(tpl);
+    } else if (tpl && typeof tpl.generatedTemplate === 'string') {
+      templateMap[t.type] = withPaymentLabel(tpl.generatedTemplate);
+    }
+    // sonst: Agent nimmt seine eigene Vorlage dieses Typs.
+  }
+  // Eigene Bons bekommen die TSE-Angaben angehaengt: bei aktiver TSE
+  // Pflicht und nicht abwaehlbar (ohne `tse` im Auftrag druckt der Block
+  // nichts).
+  for (const name of TSE_RECEIPT_TEMPLATES) {
+    if (templateMap[name]) templateMap[name] = withTseBlock(templateMap[name]);
+  }
+  for (const [name, source] of Object.entries(BUILTIN_PRINT_TEMPLATES)) {
+    if (!templateMap[name]) templateMap[name] = source;
+  }
+  return templateMap;
+}

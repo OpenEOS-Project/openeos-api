@@ -19,6 +19,7 @@ import {
 } from '../../common/dto/pagination.dto';
 import { CreatePrintTemplateDto, UpdatePrintTemplateDto } from './dto';
 import { GatewayService } from '../gateway/gateway.service';
+import { agentTemplateMap } from '../print-jobs/builtin-templates';
 
 @Injectable()
 export class PrintTemplatesService {
@@ -40,18 +41,10 @@ export class PrintTemplatesService {
       const all = await this.printTemplateRepository.find({
         where: { organizationId },
       });
-      const templates: Record<string, string> = {};
-      for (const t of all) {
-        const tpl = t.template as
-          | { generatedTemplate?: string }
-          | string
-          | null;
-        if (typeof tpl === 'string') {
-          templates[t.type] = tpl;
-        } else if (tpl && typeof tpl.generatedTemplate === 'string') {
-          templates[t.type] = tpl.generatedTemplate;
-        }
-      }
+      // Wie GET /device-api/templates: mit TSE-Block, Zahlart-Anzeigename
+      // und den mitgelieferten Vorlagen (sonst fehlte eigenen Bons bis zum
+      // Neustart des Agenten der TSE-Block).
+      const templates = agentTemplateMap(all);
       this.gatewayService.pushTemplatesToAgents(organizationId, templates);
     } catch (err) {
       this.logger.warn(

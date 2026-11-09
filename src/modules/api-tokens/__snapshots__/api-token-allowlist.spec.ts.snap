@@ -60,6 +60,7 @@ exports[`API token allowlist matches the documented matrix (ki-plan.md section 8
   "read GET /organizations/:organizationId/reports/sales",
   "read GET /organizations/:organizationId/reports/stock-movements",
   "read GET /organizations/:organizationId/reports/system-status",
+  "read GET /organizations/:organizationId/reports/vat",
   "read GET /organizations/:organizationId/shift-plans",
   "staff:write POST /organizations/:organizationId/shift-plans",
   "read GET /organizations/:organizationId/shift-plans/:planId",

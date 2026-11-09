@@ -136,6 +136,7 @@ export interface OrderItemExportRow {
   options_price: string | number;
   tax_rate: string | number;
   deposit_amount: string | number;
+  deposit_tax_rate: string | number | null;
   total_price: string | number;
   status: string;
   notes: string | null;
@@ -268,6 +269,16 @@ export const ITEM_COLUMNS: ReadonlyArray<CsvColumn<OrderItemExportRow>> = [
     value: (r) => csvMoney(r.deposit_amount),
   },
   {
+    // Satz des Pfands (Teil des Entgelts). Leer: kein Pfand bzw. Buchung
+    // von vor 2026-11 — damals nicht steuerbar (0 %).
+    header: 'Pfand MwSt-Satz (%)',
+    money: true,
+    value: (r) =>
+      Number(r.deposit_amount) !== 0 && r.deposit_tax_rate !== null
+        ? csvNumber(r.deposit_tax_rate)
+        : '',
+  },
+  {
     header: 'Positionssumme',
     money: true,
     value: (r) => csvMoney(r.total_price),
@@ -332,7 +343,7 @@ const ITEM_SQL = `
          e.name AS event_name,
          oi.product_name, oi.category_name, oi.options, oi.quantity,
          oi.refunded_quantity, oi.unit_price, oi.options_price, oi.tax_rate,
-         oi.deposit_amount, oi.total_price, oi.status, oi.notes,
+         oi.deposit_amount, oi.deposit_tax_rate, oi.total_price, oi.status, oi.notes,
          ps.name AS station_name
     FROM order_items oi
     JOIN orders o ON o.id = oi.order_id

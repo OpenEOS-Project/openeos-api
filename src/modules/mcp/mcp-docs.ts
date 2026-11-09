@@ -29,7 +29,7 @@ Unter **Produkte** verwaltest du das Sortiment einer Veranstaltung – alles, wa
 - Optional ein **Produkt-Icon** (\`pos-icon:<id>\`, Vorschläge über \`suggest_icons\`) oder ein Bild; ohne beides nimmt die Kasse das Icon der Kategorie.
 - **Favorit**: Favoriten erscheinen an der Kasse ganz oben in der Kategorie „Favoriten“.
 - **Optionsgruppen** (Varianten wie 0,3 l / 0,5 l, Beilagen): je Gruppe Name, Typ (single/multiple/ingredients), Pflicht, Optionen mit Aufpreis gegenüber dem Grundpreis.
-- **Pfand**: einem Produkt wird eine Pfandart der Organisation zugeordnet (z. B. „Becher“ 2,00 €); der Betrag kommt aus der Pfandart.
+- **Pfand**: einem Produkt wird eine Pfandart der Organisation zugeordnet (z. B. „Becher“ 2,00 €); der Betrag kommt aus der Pfandart. Jede Pfandart hat einen Steuersatz (\`vatRate\`, Standard 19 %): Pfand gehört zum Entgelt, die Rückgabe mindert Umsatz und Umsatzsteuer zum selben Satz. Organisationen ohne Umsatzsteuer (Kleinunternehmer) weisen keine MwSt aus.
 
 ## Produktliste und Status
 Die Liste zeigt Name, Kategorie, Preis, Bestand und Status. **Verfügbar/ausverkauft** schaltet ein Produkt an der Kasse ab, ohne es zu löschen. **Aktiv** blendet es ganz aus.

@@ -138,6 +138,20 @@ export class OrderItem extends BaseEntity {
   })
   depositAmount: number;
 
+  /**
+   * Umsatzsteuersatz des Pfands (Snapshot der Pfandart beim Verkauf).
+   * NULL = Bestand von vor der Umstellung (2026-11) bzw. kein Pfand: das
+   * Pfand gilt dann als nicht steuerbar (0-%-Slot) wie damals auf dem Bon.
+   */
+  @Column({
+    name: 'deposit_tax_rate',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+  })
+  depositTaxRate: number | null;
+
   /** True = "Nachfüllen": guest reuses their cup, so no new deposit is charged. */
   @Column({ name: 'is_refill', type: 'boolean', default: false })
   isRefill: boolean;

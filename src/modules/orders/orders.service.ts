@@ -22,7 +22,10 @@ import {
   ProductionStation,
   Organization,
 } from '../../database/entities';
-import { isPfandChargedForFulfillment } from '../../common/utils/pfand-policy';
+import {
+  isPfandChargedForFulfillment,
+  pfandVatRate,
+} from '../../common/utils/pfand-policy';
 import {
   OrderStatus,
   PaymentStatus,
@@ -1481,6 +1484,9 @@ export class OrdersService {
         ? Number(product.pfandType.amount)
         : 0;
     const pfandTypeId = depositAmount > 0 ? product.pfandTypeId : null;
+    // Steuersatz des Pfands festhalten (Teil des Entgelts, Satz der Pfandart).
+    const depositTaxRate =
+      depositAmount > 0 ? pfandVatRate(product.pfandType) : null;
 
     // Determine the next sort order
     const existingItems = await this.orderItemRepository.count({
@@ -1513,6 +1519,7 @@ export class OrdersService {
       productionStationId,
       pfandTypeId,
       depositAmount,
+      depositTaxRate,
       isRefill,
     });
 
@@ -1764,7 +1771,8 @@ export class OrdersService {
 
     // Cap the discount at the subtotal so the order total can never go negative —
     // any voucher value beyond the order amount is forfeited (not paid out).
-    // Pfand (deposit) is added on top and is tax-free (not part of subtotal/taxTotal).
+    // Pfand (deposit) is added on top and is never discounted. It is part of
+    // the consideration: taxTotal includes it at the rate of its Pfand type.
     const effectiveDiscount = Math.min(Number(order.discountAmount), subtotal);
     order.discountAmount = effectiveDiscount;
 

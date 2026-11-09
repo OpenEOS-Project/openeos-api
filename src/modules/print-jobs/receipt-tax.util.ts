@@ -1,4 +1,5 @@
 import { PaymentMethod } from '../../database/entities/payment.entity';
+import { depositRateOf } from '../refunds/refund-calc';
 import {
   OrderItem,
   OrderItemStatus,
@@ -31,23 +32,35 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
  * wird hier trotzdem aus den Positionen, weil der Bon die Saetze einzeln
  * braucht.
  *
- * - Pfand steckt nicht in `totalPrice` (es liegt in `depositAmount`) und ist
- *   keine Lieferung, also auch nicht steuerbar — es bleibt hier aussen vor.
- * - Ein Rabatt mindert das Entgelt. Er gilt fuer die ganze Bestellung, also
- *   wird er anteilig auf die Saetze verteilt.
+ * - Pfand steckt nicht in `totalPrice` (es liegt in `depositAmount`), gehoert
+ *   aber zum Entgelt (Abschn. 10.1 Abs. 8 UStAE): es zaehlt zum Satz seiner
+ *   Pfandart (`depositTaxRate`, Snapshot beim Verkauf). Positionen von vor
+ *   der Umstellung (2026-11) haben keinen Satz — ihr Pfand bleibt wie
+ *   damals nicht steuerbar (0 %), ein Nachdruck sieht also aus wie das
+ *   Original.
+ * - Ein Rabatt mindert das Entgelt. Er gilt fuer die Waren der Bestellung
+ *   (wie `order.total`: Rabatt hoechstens bis zur Zwischensumme, Pfand
+ *   bleibt voll), also wird er anteilig auf die Warensaetze verteilt.
  * - Trinkgeld geht an das Personal und zaehlt nicht zum Entgelt.
  * - Steuerbefreite Organisationen (Kleinunternehmer, viele Vereine) duerfen
  *   keine MwSt ausweisen. Wie bei `taxRatesFor` gilt nur ein ausdrueckliches
  *   `vatExempt: false` als steuerpflichtig.
  */
+export type ReceiptTaxItem = Pick<
+  OrderItem,
+  'totalPrice' | 'taxRate' | 'status'
+> &
+  Partial<Pick<OrderItem, 'quantity' | 'depositAmount' | 'depositTaxRate'>>;
+
 export function buildReceiptTax(
-  items: Pick<OrderItem, 'totalPrice' | 'taxRate' | 'status'>[],
+  items: ReceiptTaxItem[],
   discountAmount: number | null | undefined,
   vatExempt: boolean | undefined,
 ): ReceiptTax {
   if (vatExempt !== false) return {};
 
   const grossByRate = new Map<number, number>();
+  const depositByRate = new Map<number, number>();
   let subtotal = 0;
   for (const item of items) {
     if (item.status === OrderItemStatus.CANCELLED) continue;
@@ -55,17 +68,28 @@ export function buildReceiptTax(
     const rate = Number(item.taxRate) || 0;
     subtotal += gross;
     grossByRate.set(rate, (grossByRate.get(rate) ?? 0) + gross);
+    const deposit = (Number(item.depositAmount) || 0) * (item.quantity ?? 0);
+    if (deposit) {
+      const depositRate = depositRateOf(item);
+      depositByRate.set(
+        depositRate,
+        (depositByRate.get(depositRate) ?? 0) + deposit,
+      );
+    }
   }
 
   const discount = Math.min(Math.max(Number(discountAmount) || 0, 0), subtotal);
   const factor = subtotal > 0 ? (subtotal - discount) / subtotal : 0;
 
-  const lines: ReceiptTaxLine[] = [...grossByRate.entries()]
+  const rates = new Set([...grossByRate.keys(), ...depositByRate.keys()]);
+  const lines: ReceiptTaxLine[] = [...rates]
     // Positionen mit 0 % tragen keine Steuer und brauchen keine eigene Zeile.
-    .filter(([rate]) => rate > 0)
-    .sort(([a], [b]) => b - a)
-    .map(([rate, sum]) => {
-      const gross = round2(sum * factor);
+    .filter((rate) => rate > 0)
+    .sort((a, b) => b - a)
+    .map((rate) => {
+      const gross = round2(
+        (grossByRate.get(rate) ?? 0) * factor + (depositByRate.get(rate) ?? 0),
+      );
       const tax = round2((gross * rate) / (100 + rate));
       return { rate, net: round2(gross - tax), tax, gross };
     })
@@ -119,12 +143,12 @@ export function cashReceivedMetadata(
 /**
  * `order.taxTotal` — dieselbe Rechnung wie auf dem Bon, damit Beleg und
  * gespeicherte Summe nicht auseinanderlaufen koennen: im Bruttopreis
- * enthaltene Steuer je Satz, Rabatt anteilig, Pfand und Trinkgeld aussen
- * vor, und 0 fuer jede Organisation, die nicht ausdruecklich
- * `vatExempt: false` hat.
+ * enthaltene Steuer je Satz, Rabatt anteilig, Pfand mit dem Satz seiner
+ * Pfandart (Bestand: 0 %), Trinkgeld aussen vor, und 0 fuer jede
+ * Organisation, die nicht ausdruecklich `vatExempt: false` hat.
  */
 export function orderTaxTotal(
-  items: Pick<OrderItem, 'totalPrice' | 'taxRate' | 'status'>[],
+  items: ReceiptTaxItem[],
   discountAmount: number | null | undefined,
   vatExempt: boolean | undefined,
 ): number {

@@ -2,8 +2,10 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
   Logger,
   Optional,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -24,14 +26,31 @@ import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { GatewayService } from '../gateway/gateway.service';
 import { TseSigningService } from '../tse/tse-signing.service';
 import type { TseReceiptView } from '../tse/tse-view';
+import { OrderPrintService } from '../print-jobs/order-print.service';
+import { pfandVatRate } from '../../common/utils/pfand-policy';
 import { CreatePfandReturnDto } from './dto';
+import {
+  pfandReturnTaxLines,
+  savePfandReturnWithNumber,
+} from './pfand-return-receipt';
 
 interface PfandReturnContext {
   eventId?: string | null;
   deviceId?: string | null;
+  /** Name der Kasse fuer den Beleg. */
+  deviceName?: string | null;
   userId?: string | null;
+  /** Bediener fuer den Beleg, falls bekannt. */
+  actorName?: string | null;
   cashDrawerPrinterId?: string | null;
 }
+
+/** Auszahlung mit TSE-Daten und ob der Beleg gedruckt wurde. */
+export type PfandReturnResult = PfandReturn & {
+  tse: TseReceiptView | null;
+  /** Beleg automatisch gedruckt (Einstellung „Kassenbon“ nach Zahlung). */
+  printed: boolean;
+};
 
 @Injectable()
 export class PfandReturnsService {
@@ -47,6 +66,9 @@ export class PfandReturnsService {
     private readonly tseSigning?: TseSigningService,
     @Optional()
     private readonly eventPhaseService?: EventPhaseService,
+    @Optional()
+    @Inject(forwardRef(() => OrderPrintService))
+    private readonly orderPrintService?: OrderPrintService,
   ) {}
 
   /**
@@ -62,7 +84,7 @@ export class PfandReturnsService {
     organizationId: string,
     dto: CreatePfandReturnDto,
     context: PfandReturnContext = {},
-  ): Promise<PfandReturn & { tse: TseReceiptView | null }> {
+  ): Promise<PfandReturnResult> {
     const organization = await this.pfandReturnRepository.manager.findOne(
       Organization,
       { where: { id: organizationId }, select: OPERATING_MODE_SELECT },
@@ -95,6 +117,8 @@ export class PfandReturnsService {
         name: type.name,
         unitAmount,
         quantity: line.quantity,
+        // Rueckgabe mindert das Entgelt zum Satz der Pfandart (Snapshot).
+        vatRate: pfandVatRate(type),
       });
       totalAmount += unitAmount * line.quantity;
     }
@@ -122,6 +146,7 @@ export class PfandReturnsService {
     const isTest =
       event?.status === EventStatus.TEST || (await phase.isTestModeNow(event));
 
+    totalAmount = Math.round(totalAmount * 100) / 100;
     const pfandReturn = this.pfandReturnRepository.create({
       organizationId,
       eventId: context.eventId ?? null,
@@ -130,8 +155,15 @@ export class PfandReturnsService {
       createdByUserId: context.userId ?? null,
       totalAmount,
       lines,
+      // MwSt je Satz (negativ) fuer Beleg und Nachdruck festhalten; leer bei
+      // steuerbefreiten Organisationen.
+      taxLines: pfandReturnTaxLines(lines, organization?.settings?.vatExempt),
     });
-    await this.pfandReturnRepository.save(pfandReturn);
+    // Belegnummer `P-JJJJMMTT-NNNN` und Insert in einer Transaktion.
+    await savePfandReturnWithNumber(
+      this.pfandReturnRepository.manager,
+      pfandReturn,
+    );
 
     this.logger.log(
       `Pfand return recorded: ${pfandReturn.id} (${totalAmount.toFixed(2)} €)`,
@@ -166,6 +198,68 @@ export class PfandReturnsService {
 
     // Cloud-TSE: Auszahlung als Kassenbeleg mit negativem Betrag (bar).
     const tse = (await this.tseSigning?.signPfandReturn(pfandReturn)) ?? null;
-    return Object.assign(pfandReturn, { tse });
+
+    // Beleg erst nach der Signatur (AEAO zu § 146a Nr. 2.5). Gedruckt wird
+    // nach derselben Regel wie der Kassenbon beim Verkauf: automatisch, wenn
+    // die Organisation Kassenbons nach der Zahlung druckt, sonst auf Wunsch
+    // an der Kasse (POST /device-api/pfand-returns/:id/print).
+    let printed = false;
+    if (
+      this.orderPrintService &&
+      (await this.orderPrintService.autoPrintsReceipts(organizationId))
+    ) {
+      printed = await this.orderPrintService.printPfandReturnReceipt(
+        organizationId,
+        {
+          pfandReturn,
+          deviceName: context.deviceName ?? null,
+          actorName: context.actorName ?? null,
+          tse,
+        },
+      );
+    }
+    return Object.assign(pfandReturn, { tse, printed });
+  }
+
+  /**
+   * Beleg einer Auszahlung (erneut) drucken — „Bon drucken“ an der Kasse
+   * bzw. Nachdruck. Nimmt die gespeicherten Betraege, MwSt-Zeilen und
+   * TSE-Daten; legt keine neue Transaktion an.
+   */
+  async printReceipt(
+    organizationId: string,
+    pfandReturnId: string,
+    context: {
+      deviceId?: string | null;
+      deviceName?: string | null;
+      reprint?: boolean;
+    } = {},
+  ): Promise<{ printed: boolean }> {
+    const pfandReturn = await this.pfandReturnRepository.findOne({
+      where: { id: pfandReturnId, organizationId },
+    });
+    if (!pfandReturn) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.DEPOSIT_RETURN_NOT_FOUND,
+        message: 'Pfand-Rückgabe nicht gefunden',
+      });
+    }
+    if (!this.orderPrintService) return { printed: false };
+    // Auf dem Drucker der Kasse, die druckt (sonst der der Auszahlung).
+    const target = {
+      ...pfandReturn,
+      deviceId: context.deviceId ?? pfandReturn.deviceId,
+    } as PfandReturn;
+    const printed = await this.orderPrintService.printPfandReturnReceipt(
+      organizationId,
+      {
+        pfandReturn: target,
+        deviceName: context.deviceName ?? null,
+        reprint: context.reprint === true,
+        tse: (await this.tseSigning?.forPfandReturn(pfandReturn.id)) ?? null,
+      },
+    );
+    return { printed };
   }
 }

@@ -84,8 +84,11 @@ import { OrdersService } from '../orders/orders.service';
 import { DiscountVouchersService } from '../discount-vouchers/discount-vouchers.service';
 import { PfandTypesService } from '../pfand-types/pfand-types.service';
 import { PfandReturnsService } from '../pfand-types/pfand-returns.service';
-import { CreatePfandReturnDto } from '../pfand-types/dto';
-import { isPfandChargedForFulfillment } from '../../common/utils/pfand-policy';
+import { CreatePfandReturnDto, PrintPfandReturnDto } from '../pfand-types/dto';
+import {
+  isPfandChargedForFulfillment,
+  pfandVatRate,
+} from '../../common/utils/pfand-policy';
 import {
   assertSumUpAllowedInMode,
   currentEventStatus,
@@ -115,12 +118,7 @@ import {
   CreateRefundDto,
   ReprintDto,
 } from '../refunds/dto/refund.dto';
-import {
-  BUILTIN_PRINT_TEMPLATES,
-  TSE_RECEIPT_TEMPLATES,
-  withPaymentLabel,
-  withTseBlock,
-} from '../print-jobs/builtin-templates';
+import { agentTemplateMap } from '../print-jobs/builtin-templates';
 
 /**
  * Helper to ensure device has an organization.
@@ -289,10 +287,35 @@ export class DeviceApiController {
       {
         eventId: dto.eventId ?? null,
         deviceId: device.id,
+        deviceName: device.name,
         cashDrawerPrinterId: cashDrawerPrinterId ?? null,
       },
     );
     return { data: pfandReturn };
+  }
+
+  @Post('pfand-returns/:pfandReturnId/print')
+  @ApiOperation({
+    summary: 'Beleg einer Pfand-Rückgabe drucken (auf Wunsch oder Nachdruck)',
+    description:
+      'Druckt den Beleg „Pfandrückgabe“ einer gespeicherten Auszahlung auf dem Bon-Drucker dieser Kasse: gespeicherte Beträge, MwSt je Satz und TSE-Daten, keine neue TSE-Transaktion. `reprint: true` druckt den Vermerk „NACHDRUCK“.',
+  })
+  async printPfandReturn(
+    @CurrentDevice() device: Device,
+    @Param('pfandReturnId', ParseUUIDPipe) pfandReturnId: string,
+    @Body() body: PrintPfandReturnDto,
+  ) {
+    const organizationId = requireOrganization(device);
+    const result = await this.pfandReturnsService.printReceipt(
+      organizationId,
+      pfandReturnId,
+      {
+        deviceId: device.id,
+        deviceName: device.name,
+        reprint: body?.reprint === true,
+      },
+    );
+    return { data: { success: true, printed: result.printed } };
   }
 
   @Get('printers')
@@ -372,35 +395,7 @@ export class DeviceApiController {
       where: { organizationId },
     });
 
-    // The printer agent expects the *rendered* Jinja2 source string, not the
-    // designer's design-object. We persisted both: `t.template` is the design
-    // shape `{ paperWidth, elements, generatedTemplate }`. Extract the source
-    // and fall back to skipping if not yet generated.
-    const templateMap: Record<string, string> = {};
-    for (const t of templates) {
-      const tpl = t.template as { generatedTemplate?: string } | string | null;
-      // Zahlart als Anzeigename („Bar“) statt Rohwert („cash“), auch in
-      // Vorlagen aus der Zeit vor `payment_label`.
-      if (typeof tpl === 'string') {
-        templateMap[t.type] = withPaymentLabel(tpl);
-      } else if (tpl && typeof tpl.generatedTemplate === 'string') {
-        templateMap[t.type] = withPaymentLabel(tpl.generatedTemplate);
-      }
-      // else: skip — agent falls back to its built-in template for this type.
-    }
-    // Eigene Bons bekommen die TSE-Angaben angehaengt: bei aktiver TSE
-    // Pflicht und nicht abwaehlbar (ohne `tse` im Auftrag druckt der Block
-    // nichts).
-    for (const name of TSE_RECEIPT_TEMPLATES) {
-      if (templateMap[name])
-        templateMap[name] = withTseBlock(templateMap[name]);
-    }
-    // Kassenbeleg (mit TSE-Block), Gegenbeleg und Storno-Bon: mitgelieferte
-    // Vorlage, solange die Organisation keine eigene hat (aeltere Agenten
-    // kennen sie bzw. den TSE-Block noch nicht).
-    for (const [name, source] of Object.entries(BUILTIN_PRINT_TEMPLATES)) {
-      if (!templateMap[name]) templateMap[name] = source;
-    }
+    const templateMap = agentTemplateMap(templates);
 
     return {
       data: {
@@ -1958,6 +1953,9 @@ export class DeviceApiController {
         ? Number(product.pfandType.amount)
         : 0;
     const pfandTypeId = depositAmount > 0 ? product.pfandTypeId : null;
+    // Steuersatz des Pfands festhalten (Teil des Entgelts, Satz der Pfandart).
+    const depositTaxRate =
+      depositAmount > 0 ? pfandVatRate(product.pfandType) : null;
 
     // Determine the next sort order
     const existingItems = await orderItemRepository.count({
@@ -1990,6 +1988,7 @@ export class DeviceApiController {
       productionStationId,
       pfandTypeId,
       depositAmount,
+      depositTaxRate,
       isRefill,
     });
 
@@ -2034,7 +2033,8 @@ export class DeviceApiController {
 
     // Cap the discount at the subtotal so the order total can never go negative —
     // any voucher value beyond the order amount is forfeited (not paid out).
-    // Pfand (deposit) is added on top and is tax-free (not part of subtotal/taxTotal).
+    // Pfand (deposit) is added on top and is never discounted. It is part of
+    // the consideration: taxTotal includes it at the rate of its Pfand type.
     const effectiveDiscount = Math.min(
       Number(order.discountAmount || 0),
       subtotal,
