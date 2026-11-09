@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsOptional,
   IsUUID,
   IsInt,
@@ -36,4 +37,14 @@ export class CreatePfandReturnDto {
   @ValidateNested({ each: true })
   @Type(() => PfandReturnLineDto)
   lines: PfandReturnLineDto[];
+}
+
+export class PrintPfandReturnDto {
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Nachdruck: druckt den Vermerk „NACHDRUCK“',
+  })
+  @IsOptional()
+  @IsBoolean()
+  reprint?: boolean;
 }

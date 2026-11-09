@@ -51,6 +51,50 @@ describe('orderTaxTotal', () => {
   });
 });
 
+describe('Pfand im Entgelt (2026-11)', () => {
+  // Bier 4,00 + Pfand 2,00 (19 %), Suppe 5,35 + Pfand 1,07 (7 %).
+  const items = [
+    item(4, 19, { depositAmount: 2, depositTaxRate: 19 }),
+    item(5.35, 7, { depositAmount: 1.07, depositTaxRate: 7 }),
+  ];
+
+  it('adds the deposit to the VAT line of its rate', () => {
+    expect(buildReceiptTax(items, 0, false)).toEqual({
+      // 6,00 * 19 / 119 = 0,96; 6,42 * 7 / 107 = 0,42
+      tax_amount: 1.38,
+      tax_lines: [
+        { rate: 19, gross: 6, tax: 0.96, net: 5.04 },
+        { rate: 7, gross: 6.42, tax: 0.42, net: 6 },
+      ],
+    });
+  });
+
+  it('a discount reduces the goods, never the deposit', () => {
+    const tax = buildReceiptTax(
+      [item(10, 19, { quantity: 2, depositAmount: 1, depositTaxRate: 19 })],
+      5,
+      false,
+    );
+    // 10 - 5 Rabatt + 2 Pfand = 7 brutto zu 19 %
+    expect(tax.tax_lines).toEqual([
+      { rate: 19, gross: 7, tax: 1.12, net: 5.88 },
+    ]);
+  });
+
+  it('keeps old positions (no deposit rate stored) as before: deposit not taxable', () => {
+    const legacy = [item(4, 19, { depositAmount: 2 })];
+    expect(buildReceiptTax(legacy, 0, false).tax_lines).toEqual([
+      { rate: 19, gross: 4, tax: 0.64, net: 3.36 },
+    ]);
+  });
+
+  it('shows no VAT for VAT-exempt organizations (Kleinunternehmer)', () => {
+    expect(buildReceiptTax(items, 0, true)).toEqual({});
+    expect(buildReceiptTax(items, 0, undefined)).toEqual({});
+    expect(orderTaxTotal(items, 0, true)).toBe(0);
+  });
+});
+
 /*
  * recalculateOrderTotals exists twice (OrdersService and
  * DeviceApiController). Both must store the same totals.

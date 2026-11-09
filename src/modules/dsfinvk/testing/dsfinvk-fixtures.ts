@@ -11,6 +11,7 @@ import {
   abortProcessData,
   bestellungProcessData,
   cashbookProcessData,
+  depositReturnSlots,
   emptySlots,
   kassenbelegProcessData,
   paymentTypeFor,
@@ -176,6 +177,8 @@ export interface ItemSpec {
   price: number;
   rate: number;
   deposit?: number;
+  /** Satz des Pfands (ab 2026-11); fehlt = Bestand, nicht steuerbar. */
+  depositRate?: number;
   options?: { group: string; option: string; priceModifier: number }[];
   category?: string;
 }
@@ -198,6 +201,7 @@ function orderItems(specs: ItemSpec[]): OrderItem[] {
       taxRate: s.rate,
       totalPrice: Math.round((s.price + optionsPrice) * s.quantity * 100) / 100,
       depositAmount: s.deposit ?? 0,
+      depositTaxRate: s.depositRate ?? null,
       status: OrderItemStatus.DELIVERED,
       options: { selected: s.options ?? [] },
     } as unknown as OrderItem;
@@ -344,8 +348,11 @@ export interface RefundSpec {
     taxRate: number;
     amount: number;
     deposit?: number;
+    depositRate?: number;
   }[];
   pfand?: number;
+  /** Satz des Pfands ohne Position (`pfand`); fehlt = Bestand (0 %). */
+  pfandRate?: number;
   tip?: number;
   /** Ohne Positionen: Betrag je Satz (Kulanz). */
   goods?: Record<string, number>;
@@ -373,14 +380,21 @@ export function refund(
     (s, i) => s + cents(i.deposit ?? 0) * i.quantity,
     0,
   );
-  const composition = {
-    goods,
-    pfand: cents(spec.pfand ?? 0) + depositFromItems,
-    tip: cents(spec.tip ?? 0),
+  const pfand = new Map<number, number>();
+  const addPfand = (rate: number, value: number) => {
+    if (value) pfand.set(rate, (pfand.get(rate) ?? 0) + value);
   };
+  for (const i of spec.items ?? []) {
+    addPfand(i.depositRate ?? 0, cents(i.deposit ?? 0) * i.quantity);
+  }
+  addPfand(spec.pfandRate ?? 0, cents(spec.pfand ?? 0));
+  const withRates =
+    spec.pfandRate !== undefined ||
+    (spec.items ?? []).some((i) => i.depositRate !== undefined);
+  const composition = { goods, pfand, tip: cents(spec.tip ?? 0) };
   const amountCents = -(
     [...goods.values()].reduce((a, b) => a + b, 0) +
-    composition.pfand +
+    [...pfand.values()].reduce((a, b) => a + b, 0) +
     composition.tip
   );
   const slots = fitSlots(
@@ -407,8 +421,18 @@ export function refund(
         taxRate: i.taxRate,
         amount: -Math.abs(i.amount),
         deposit: i.deposit ?? 0,
+        ...(i.depositRate !== undefined
+          ? { depositTaxRate: i.depositRate }
+          : {}),
       })),
       pfand: -(spec.pfand ?? 0) - depositFromItems / 100,
+      ...(withRates
+        ? {
+            pfandByRate: Object.fromEntries(
+              [...pfand.entries()].map(([r, v]) => [String(r), v]),
+            ),
+          }
+        : {}),
       tip: -(spec.tip ?? 0),
       paymentMethod: method,
     },
@@ -429,15 +453,21 @@ export function refund(
 /** Pfand-Auszahlung (TseSigningService.signPfandReturn). */
 export function pfandReturn(
   seq: Sequence,
-  lines: { name: string; unitAmount: number; quantity: number }[],
+  lines: {
+    name: string;
+    unitAmount: number;
+    quantity: number;
+    /** Satz der Pfandart (ab 2026-11); fehlt = Bestand, 0-%-Slot. */
+    vatRate?: number;
+  }[],
   terminal = TERMINAL_2,
+  vatExempt = false,
 ): DsfinvkTransaction {
   const amountCents = -lines.reduce(
     (s, l) => s + cents(l.unitAmount) * l.quantity,
     0,
   );
-  const slots = emptySlots();
-  slots[4] = amountCents;
+  const slots = depositReturnSlots(lines, vatExempt);
   return signed(seq, TSE_A, {
     kind: 'deposit_return',
     processType: PROCESS_TYPE_RECEIPT,

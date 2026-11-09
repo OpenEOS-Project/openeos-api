@@ -7,6 +7,7 @@ import {
   displayStatusOf,
   itemsRefund,
   orderComposition,
+  pfandSum,
   refundTaxLines,
   scaleComposition,
   subtractComposition,
@@ -43,7 +44,9 @@ describe('refund-calc', () => {
 
   it('splits an order into goods per rate, deposit and tip (exact total)', () => {
     const c = orderComposition(items, order);
-    expect(c.pfand).toBe(400);
+    expect(pfandSum(c)).toBe(400);
+    // Bestand ohne Satz: Pfand nicht steuerbar (0 %), wie vor 2026-11.
+    expect([...c.pfand.entries()]).toEqual([[0, 400]]);
     expect(c.tip).toBe(100);
     expect(c.goods.get(19)).toBe(3420); // 38 * 0.9
     expect(c.goods.get(7)).toBe(180); // 2 * 0.9
@@ -84,7 +87,7 @@ describe('refund-calc', () => {
       order.discountAmount,
       false,
     );
-    expect(composition.pfand).toBe(0);
+    expect(pfandSum(composition)).toBe(0);
     expect(compositionTotal(composition)).toBe(720);
   });
 
@@ -92,7 +95,7 @@ describe('refund-calc', () => {
     const remaining = orderComposition(items, order);
     const c = amountComposition(remaining, 1000);
     expect(compositionTotal(c)).toBe(1000);
-    expect(c.pfand).toBe(0);
+    expect(pfandSum(c)).toBe(0);
     expect(c.tip).toBe(0);
     expect(c.goods.get(19)! + c.goods.get(7)!).toBe(1000);
     expect(c.goods.get(7)).toBe(50); // 180/3600 of 1000
@@ -101,7 +104,7 @@ describe('refund-calc', () => {
   it('a free amount beyond the goods takes deposit, then tip', () => {
     const remaining = orderComposition(items, order);
     const c = amountComposition(remaining, 3900);
-    expect(c.pfand).toBe(300);
+    expect(pfandSum(c)).toBe(300);
     expect(c.tip).toBe(0);
     expect(compositionTotal(c)).toBe(3900);
   });
@@ -191,5 +194,71 @@ describe('refund-calc', () => {
         expected,
       );
     });
+  });
+});
+
+describe('refund-calc: Pfand mit Steuersatz (ab 2026-11)', () => {
+  const beer = item({
+    id: 'beer',
+    quantity: 2,
+    totalPrice: 8,
+    taxRate: 19,
+    depositAmount: 2,
+    depositTaxRate: 19,
+  });
+  const soup = item({
+    id: 'soup',
+    quantity: 1,
+    totalPrice: 5,
+    taxRate: 7,
+    depositAmount: 1,
+    depositTaxRate: 7,
+  });
+  // 13 Ware + 4 Pfand (19 %) + 1 Pfand (7 %) = 18
+  const order = { discountAmount: 0, tipAmount: 0, total: 18 };
+
+  it('keeps the deposit per VAT rate', () => {
+    const c = orderComposition([beer, soup], order);
+    expect(c.pfand.get(19)).toBe(400);
+    expect(c.pfand.get(7)).toBe(100);
+    expect(compositionTotal(c)).toBe(1800);
+  });
+
+  it('tax lines include the deposit at its rate', () => {
+    const c = orderComposition([beer, soup], order);
+    expect(refundTaxLines(c, false)).toEqual([
+      // 8 + 4 = 12 brutto, 12 * 19 / 119 = 1.92
+      { rate: 19, gross: -12, tax: -1.92, net: -10.08 },
+      // 5 + 1 = 6 brutto, 6 * 7 / 107 = 0.39
+      { rate: 7, gross: -6, tax: -0.39, net: -5.61 },
+    ]);
+    // Kleinunternehmer: keine MwSt.
+    expect(refundTaxLines(c, true)).toEqual([]);
+  });
+
+  it('a discount reduces goods only, the deposit stays whole', () => {
+    const c = orderComposition([beer, soup], {
+      discountAmount: 1.3,
+      tipAmount: 0,
+      total: 16.7,
+    });
+    expect(pfandSum(c)).toBe(500);
+    expect(c.goods.get(19)! + c.goods.get(7)!).toBe(1170);
+  });
+
+  it('a free amount beyond the goods takes the deposit proportionally per rate', () => {
+    const c = amountComposition(orderComposition([beer, soup], order), 1800);
+    expect(c.pfand.get(19)).toBe(400);
+    expect(c.pfand.get(7)).toBe(100);
+  });
+
+  it('item refunds carry the deposit at the rate of the item', () => {
+    const { composition } = itemsRefund(
+      [beer, soup],
+      [{ item: beer, quantity: 1 }],
+      0,
+      true,
+    );
+    expect([...composition.pfand.entries()]).toEqual([[19, 200]]);
   });
 });

@@ -88,6 +88,7 @@ export function compactPfandType(pfandType: PfandType) {
     id: pfandType.id,
     name: pfandType.name,
     amount: money(pfandType.amount),
+    vatRate: Number(pfandType.vatRate ?? 19),
     isActive: pfandType.isActive,
     sortOrder: pfandType.sortOrder,
   };
@@ -280,7 +281,7 @@ export class CatalogTools {
     return defineTool({
       name: 'list_pfand_types',
       description:
-        'Deposit (Pfand) types of the organization with amounts in EUR.',
+        'Deposit (Pfand) types of the organization with amounts in EUR and their VAT rate (vatRate, percent).',
       inputSchema: z.object({}).strict(),
       scope: TokenScope.READ,
       mutating: false,
@@ -723,11 +724,16 @@ export class CatalogTools {
   private createPfandType() {
     return defineTool({
       name: 'create_pfand_type',
-      description: 'Create a deposit (Pfand) type, e.g. "Becher" 2.00 EUR.',
+      description:
+        'Create a deposit (Pfand) type, e.g. "Becher" 2.00 EUR. vatRate = VAT rate of the drinks/goods this deposit belongs to (usually 19); Pfand is part of the consideration and its return reduces revenue and VAT at the same rate.',
       inputSchema: z
         .object({
           name: z.string().min(1).max(255),
           amount: z.number().min(0).multipleOf(0.01).describe('EUR'),
+          vatRate: z
+            .union([z.literal(19), z.literal(7), z.literal(0)])
+            .optional()
+            .describe('VAT rate in percent, default 19'),
           isActive: z.boolean().optional(),
           sortOrder: z.number().int().min(0).optional(),
           ...confirmInput,

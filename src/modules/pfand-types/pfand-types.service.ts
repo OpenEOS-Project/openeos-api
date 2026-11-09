@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { PfandType } from '../../database/entities/pfand-type.entity';
+import {
+  DEFAULT_PFAND_VAT_RATE,
+  PfandType,
+} from '../../database/entities/pfand-type.entity';
 import { User } from '../../database/entities/user.entity';
 import {
   UserOrganization,
@@ -37,6 +40,7 @@ export class PfandTypesService {
       organizationId,
       name: createDto.name,
       amount: createDto.amount,
+      vatRate: createDto.vatRate ?? DEFAULT_PFAND_VAT_RATE,
       isActive: createDto.isActive ?? true,
       sortOrder: createDto.sortOrder ?? 0,
     });
@@ -98,6 +102,9 @@ export class PfandTypesService {
 
     if (updateDto.name !== undefined) pfandType.name = updateDto.name;
     if (updateDto.amount !== undefined) pfandType.amount = updateDto.amount;
+    // Gilt nur fuer neue Buchungen: Positionen und Auszahlungen halten
+    // ihren Satz als Snapshot fest.
+    if (updateDto.vatRate !== undefined) pfandType.vatRate = updateDto.vatRate;
     if (updateDto.isActive !== undefined)
       pfandType.isActive = updateDto.isActive;
     if (updateDto.sortOrder !== undefined)

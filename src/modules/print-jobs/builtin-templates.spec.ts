@@ -1,9 +1,11 @@
 import {
   BUILTIN_PRINT_TEMPLATES,
+  PFAND_RETURN_RECEIPT_TEMPLATE,
   RECEIPT_TEMPLATE,
   REFUND_RECEIPT_TEMPLATE,
   TSE_PRINT_BLOCK,
   TSE_RECEIPT_TEMPLATES,
+  agentTemplateMap,
   withTseBlock,
 } from './builtin-templates';
 
@@ -12,6 +14,7 @@ describe('builtin print templates and the Cloud-TSE block', () => {
     expect(TSE_RECEIPT_TEMPLATES).toEqual([
       RECEIPT_TEMPLATE,
       REFUND_RECEIPT_TEMPLATE,
+      PFAND_RETURN_RECEIPT_TEMPLATE,
     ]);
     for (const name of TSE_RECEIPT_TEMPLATES) {
       const source = BUILTIN_PRINT_TEMPLATES[name];
@@ -91,5 +94,46 @@ describe('builtin print templates and the Cloud-TSE block', () => {
     expect(withTseBlock(BUILTIN_PRINT_TEMPLATES[RECEIPT_TEMPLATE])).toBe(
       BUILTIN_PRINT_TEMPLATES[RECEIPT_TEMPLATE],
     );
+  });
+
+  it('prints the deposit return receipt with number, lines, VAT and cash', () => {
+    const source = BUILTIN_PRINT_TEMPLATES[PFAND_RETURN_RECEIPT_TEMPLATE];
+    for (const part of [
+      'return_number',
+      'item.unit_amount|currency',
+      'tax_lines',
+      '"AUSGEZAHLT:"',
+      'payment_label|default("Bar")',
+      'device_name',
+      'actor_name',
+      '-- NACHDRUCK --',
+      '** TESTMODUS **',
+    ]) {
+      expect(source).toContain(part);
+    }
+  });
+
+  it('shows the deposit on the sales receipt (part of GESAMT and VAT)', () => {
+    const source = BUILTIN_PRINT_TEMPLATES[RECEIPT_TEMPLATE];
+    expect(source).toContain('{{ row("Pfand:", pfand_total|float|currency) }}');
+    expect(source).toContain(
+      '{{ row("Rabatt:", (0 - discount_amount|float)|currency) }}',
+    );
+  });
+
+  it('serves builtin templates to agents unless the org has its own', () => {
+    const map = agentTemplateMap([
+      {
+        type: RECEIPT_TEMPLATE,
+        template: { generatedTemplate: 'Bon {{ payment_method }}\n<<CUT>>' },
+      },
+    ]);
+    expect(map[PFAND_RETURN_RECEIPT_TEMPLATE]).toBe(
+      BUILTIN_PRINT_TEMPLATES[PFAND_RETURN_RECEIPT_TEMPLATE],
+    );
+    expect(map[RECEIPT_TEMPLATE]).toContain(
+      '{{ payment_label|default(payment_method) }}',
+    );
+    expect(map[RECEIPT_TEMPLATE]).toContain(TSE_PRINT_BLOCK);
   });
 });

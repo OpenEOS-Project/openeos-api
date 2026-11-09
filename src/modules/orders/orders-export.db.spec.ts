@@ -203,11 +203,11 @@ describeWithDb('OrdersExportService against Postgres', () => {
     await q(
       `INSERT INTO order_items (order_id, product_id, category_id, product_name, category_name,
          quantity, unit_price, options_price, tax_rate, total_price, status, options,
-         production_station_id, deposit_amount, refunded_quantity, notes, sort_order)
+         production_station_id, deposit_amount, deposit_tax_rate, refunded_quantity, notes, sort_order)
        VALUES ($1, $2, $3, 'Bratwurst', 'Essen', 3, 4.5, 0.5, 7, 15, 'delivered',
-               $4, $5, 0, 1, 'ohne Senf', 0),
+               $4, $5, 0, NULL, 1, 'ohne Senf', 0),
               ($1, $2, $3, 'Pils "Hell"', 'Getränke', 2, 3.75, 0, 19, 7.5, 'cancelled',
-               '{"selected": []}', NULL, 1, 0, NULL, 1)`,
+               '{"selected": []}', NULL, 1, 19, 0, NULL, 1)`,
       [
         o.id,
         w.productId,
@@ -343,6 +343,7 @@ describeWithDb('OrdersExportService against Postgres', () => {
       'Einzelpreis',
       'MwSt-Satz (%)',
       'Pfand je Stück',
+      'Pfand MwSt-Satz (%)',
       'Positionssumme',
       'Status',
       'Station',
@@ -351,10 +352,10 @@ describeWithDb('OrdersExportService against Postgres', () => {
     ]);
     // Winterzeit: 11:05 UTC = 12:05 Uhr.
     expect(wurst).toMatch(
-      /^SF-\d{4};15\.01\.2026;12:05:00;"Sommerfest; Zelt";A03;Bratwurst;Essen;Groß, mit Brötchen;3;1;5,00;7;0,00;15,00;Serviert;Grill;Nein;ohne Senf$/,
+      /^SF-\d{4};15\.01\.2026;12:05:00;"Sommerfest; Zelt";A03;Bratwurst;Essen;Groß, mit Brötchen;3;1;5,00;7;0,00;;15,00;Serviert;Grill;Nein;ohne Senf$/,
     );
     expect(pils).toMatch(
-      /;"Pils ""Hell""";Getränke;;2;0;3,75;19;1,00;7,50;Storniert;;Nein;$/,
+      /;"Pils ""Hell""";Getränke;;2;0;3,75;19;1,00;19;7,50;Storniert;;Nein;$/,
     );
   });
 

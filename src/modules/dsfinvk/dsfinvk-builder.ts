@@ -271,6 +271,8 @@ interface ItemSnapshot {
   unitCents: number;
   rate: number;
   depositCents: number;
+  /** Satz des Pfands; null = nicht steuerbar (Bestand von vor 2026-11). */
+  depositRate: number | null;
   productId: string;
   categoryId: string;
   categoryName: string;
@@ -285,6 +287,7 @@ function itemSnapshot(raw: Record<string, unknown>): ItemSnapshot {
     unitCents: cents(raw.unitPrice),
     rate: num(raw.taxRate),
     depositCents: cents(raw.deposit),
+    depositRate: optionalRate(raw.depositTaxRate),
     productId: str(raw.productId),
     categoryId: str(raw.categoryId),
     categoryName: str(raw.categoryName),
@@ -318,6 +321,22 @@ function itemLine(item: ItemSnapshot, quantity: number, ctx: Ctx): LineDraft {
   };
 }
 
+/** Satz aus der TSE-Kopie; fehlt er, ist es Bestand (nicht steuerbar). */
+function optionalRate(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const rate = Number(value);
+  return Number.isFinite(rate) ? rate : null;
+}
+
+/**
+ * USt-Schluessel fuer Pfand: Satz der Pfandart (Pfand ist Teil des
+ * Entgelts), ohne Satz (Bestand) der 0-%-Schluessel wie damals in der TSE.
+ */
+function depositKey(rate: number | null, ctx: Ctx): number {
+  if (rate === null) return ctx.zeroKey;
+  return rateKey(rate, ctx.settings.vatExempt, ctx.zeroKey);
+}
+
 function depositLine(
   item: ItemSnapshot,
   quantity: number,
@@ -327,7 +346,7 @@ function depositLine(
   return {
     text: `Pfand ${item.name}`,
     gvTyp: 'Pfand',
-    key: ctx.zeroKey,
+    key: depositKey(item.depositRate, ctx),
     grossCents: Math.round(quantity * item.depositCents),
     quantity,
     unitCents: item.depositCents,
@@ -361,6 +380,7 @@ function receiptLines(
   const composition = (s.composition ?? {}) as {
     goods?: Record<string, number>;
     pfand?: number;
+    pfandByRate?: Record<string, number>;
     tip?: number;
   };
 
@@ -416,7 +436,13 @@ function receiptLines(
   // Positionen der Bestellung zur Erlaeuterung in Bonpos_Zusatzinfo.
   const lines: LineDraft[] = [];
   const goods = composition.goods ?? {};
-  const pfand = num(composition.pfand);
+  // Pfand je Satz (ab 2026-11); aeltere Kopien nur gesamt = nicht steuerbar.
+  const pfandParts: [number | null, number][] = composition.pfandByRate
+    ? Object.entries(composition.pfandByRate).map(([rate, value]) => [
+        Number(rate),
+        Math.round(num(value)),
+      ])
+    : [[null, Math.round(num(composition.pfand))]];
   const compTip = num(composition.tip);
   for (const [rate, value] of Object.entries(goods)) {
     const gross = Math.round(num(value));
@@ -431,11 +457,12 @@ function receiptLines(
       unitCents: gross,
     });
   }
-  if (pfand) {
+  for (const [rate, pfand] of pfandParts) {
+    if (!pfand) continue;
     lines.push({
       text: 'Pfand (anteilig)',
       gvTyp: 'Pfand',
-      key: ctx.zeroKey,
+      key: depositKey(rate, ctx),
       grossCents: pfand,
       quantity: 1,
       unitCents: pfand,
@@ -498,22 +525,39 @@ function refundLines(tx: DsfinvkTransaction, ctx: Ctx): LineDraft[] {
       lines.push({
         text: `Pfand ${str(raw.name)}`.trim(),
         gvTyp: 'Pfand',
-        key: ctx.zeroKey,
+        key: depositKey(optionalRate(raw.depositTaxRate), ctx),
         grossCents: Math.round(quantity * deposit),
         quantity,
         unitCents: deposit,
       });
     }
   }
-  const itemDeposits = lines
-    .filter((l) => l.gvTyp === 'Pfand')
-    .reduce((sum, l) => sum + l.grossCents, 0);
-  const pfand = -Math.abs(cents(s.pfand)) - itemDeposits;
-  if (pfand) {
+  // Pfand ohne Position (Erstattung nach Betrag): je Satz der Rest, den
+  // die Positionen nicht schon zeigen. Aeltere Kopien kennen nur `pfand`.
+  const pfandTargets = new Map<number, number>();
+  const byRate = s.pfandByRate as Record<string, unknown> | undefined;
+  if (byRate && typeof byRate === 'object') {
+    for (const [rate, value] of Object.entries(byRate)) {
+      const key = depositKey(Number(rate), ctx);
+      pfandTargets.set(
+        key,
+        (pfandTargets.get(key) ?? 0) - Math.abs(Math.round(num(value))),
+      );
+    }
+  } else {
+    pfandTargets.set(ctx.zeroKey, -Math.abs(cents(s.pfand)));
+  }
+  // Positionen ohne passendes Ziel (Rundung) gleicht reconcile aus.
+  for (const [key, target] of pfandTargets) {
+    const shown = lines
+      .filter((l) => l.gvTyp === 'Pfand' && l.key === key)
+      .reduce((sum, l) => sum + l.grossCents, 0);
+    const pfand = target - shown;
+    if (!pfand) continue;
     lines.push({
       text: 'Pfand',
       gvTyp: 'Pfand',
-      key: ctx.zeroKey,
+      key,
       grossCents: pfand,
       quantity: -1,
       unitCents: -pfand,
@@ -541,7 +585,7 @@ function depositReturnLines(tx: DsfinvkTransaction, ctx: Ctx): LineDraft[] {
     return {
       text: `Pfandrückgabe ${str(raw.name)}`.trim(),
       gvTyp: 'PfandRueckzahlung' as const,
-      key: ctx.zeroKey,
+      key: depositKey(optionalRate(raw.vatRate), ctx),
       grossCents: Math.round(quantity * unit),
       quantity,
       unitCents: unit,

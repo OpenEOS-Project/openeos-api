@@ -190,7 +190,9 @@ export class AppGateway
 
           // Re-deliver print jobs that were queued while the agent was offline
           if (device.type === DeviceType.PRINTER_AGENT && hasOrg) {
-            void this.replayQueuedPrintJobs(client, device.id);
+            void this.pushAgentTemplates(client, device.organizationId!).then(
+              () => this.replayQueuedPrintJobs(client, device.id),
+            );
           }
           return;
         }
@@ -641,6 +643,29 @@ export class AppGateway
   async isDeviceOnline(deviceId: string): Promise<boolean> {
     const sockets = await this.server.in(`device:${deviceId}`).fetchSockets();
     return sockets.length > 0;
+  }
+
+  /**
+   * Aktuelle Vorlagen an einen (wieder) verbundenen Agenten: Der Agent holt
+   * sie sonst nur beim Start. Nach einem Update der API (neue mitgelieferte
+   * Vorlage wie `pfand_return_receipt`) verbindet er sich neu und kennt sie
+   * so ohne eigenes Update und ohne Neustart.
+   */
+  private async pushAgentTemplates(
+    client: AuthenticatedSocket,
+    organizationId: string,
+  ): Promise<void> {
+    try {
+      const templates =
+        await this.printJobsService.agentTemplates(organizationId);
+      client.emit(GatewayEvents.TEMPLATE_UPDATE, { templates });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to push templates to agent in org ${organizationId}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
   }
 
   /**

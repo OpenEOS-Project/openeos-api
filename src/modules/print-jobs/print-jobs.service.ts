@@ -30,6 +30,7 @@ import {
 } from '../../common/utils/operating-mode.util';
 import { Organization } from '../../database/entities/organization.entity';
 import { GatewayService } from '../gateway/gateway.service';
+import { agentTemplateMap } from './builtin-templates';
 
 /** Websocket payload a printer agent receives for one job. */
 interface AgentJobEvent {
@@ -377,6 +378,16 @@ export class PrintJobsService {
     );
 
     return printJob;
+  }
+
+  /** Vorlagen fuer die Agenten einer Organisation (siehe agentTemplateMap). */
+  async agentTemplates(
+    organizationId: string,
+  ): Promise<Record<string, string>> {
+    const templates = await this.printTemplateRepository.find({
+      where: { organizationId },
+    });
+    return agentTemplateMap(templates);
   }
 
   // Methods for printer agents

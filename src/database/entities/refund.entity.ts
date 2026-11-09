@@ -246,6 +246,17 @@ export class RefundItem extends BaseEntity {
   })
   depositAmount: number;
 
+  /** Steuersatz des Pfands wie verkauft (`order_items.deposit_tax_rate`); NULL = nicht steuerbar (Bestand). */
+  @Column({
+    name: 'deposit_tax_rate',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+    transformer: numericTransformer,
+  })
+  depositTaxRate: number | null;
+
   /** Position wurde mit der Erstattung storniert (nicht nur erstattet). */
   @Column({ type: 'boolean', default: false })
   cancelled: boolean;

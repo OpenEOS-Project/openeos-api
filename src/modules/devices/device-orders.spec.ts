@@ -652,6 +652,27 @@ describe('DeviceApiController.createOrder', () => {
     });
   });
 
+  it('snapshots the VAT rate of the Pfand type on the item; taxTotal includes the deposit', async () => {
+    const { controller, device, response, db } = setupController({
+      serviceMode: 'counter',
+      orgSettings: { vatExempt: false },
+    });
+    Object.assign(db.products[0], {
+      pfandTypeId: 'pt-becher',
+      pfandType: { id: 'pt-becher', amount: 2, vatRate: 19 },
+    });
+
+    const { data } = await controller.createOrder(
+      device,
+      dto(),
+      response() as never,
+    );
+
+    // 2 x 4,50 Bier + 2 x 2,00 Pfand = 13,00 zu 19 % → 2,08
+    expect(data).toMatchObject({ total: 13, pfandTotal: 4, taxTotal: 2.08 });
+    expect(db.items[0]).toMatchObject({ depositAmount: 2, depositTaxRate: 19 });
+  });
+
   it('rejects predefined without a table and leaves nothing behind', async () => {
     const { db, controller, device, response } = setupController({
       tables: { mode: 'predefined' },

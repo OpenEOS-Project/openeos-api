@@ -607,6 +607,9 @@ export class OrderHistoryService {
           totalPrice: Number(i.totalPrice),
           taxRate: Number(i.taxRate),
           depositAmount: Number(i.depositAmount || 0),
+          /** MwSt-Satz des Pfands; null = nicht steuerbar (vor 2026-11). */
+          depositTaxRate:
+            i.depositTaxRate == null ? null : Number(i.depositTaxRate),
           isRefill: i.isRefill,
           options: i.options?.selected ?? [],
           notes: i.notes,
@@ -657,6 +660,8 @@ export class OrderHistoryService {
           taxRate: Number(ri.taxRate),
           amount: Number(ri.amount),
           depositAmount: Number(ri.depositAmount),
+          depositTaxRate:
+            ri.depositTaxRate == null ? null : Number(ri.depositTaxRate),
           cancelled: ri.cancelled,
         })),
       })),

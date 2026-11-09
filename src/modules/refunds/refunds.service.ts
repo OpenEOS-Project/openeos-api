@@ -76,13 +76,19 @@ import {
   type OrderHistoryDetail,
 } from './order-history.service';
 import {
+  addComposition,
   allocateRefundFor,
   amountComposition,
   cents,
   compositionTotal,
+  depositRateOf,
   emptyComposition,
   itemsRefund,
   orderComposition,
+  pfandFromRecord,
+  pfandSum,
+  rateMapFrom,
+  rateRecord,
   refundTaxLines,
   round2,
   scaleComposition,
@@ -865,7 +871,7 @@ export class RefundsService {
         kind,
         amount: -amount,
         taxTotal: round2(taxLines.reduce((sum, l) => sum + l.tax, 0)),
-        pfandAmount: -(part.pfand / 100),
+        pfandAmount: -(pfandSum(part) / 100),
         tipAmount: -(part.tip / 100),
         taxLines,
         paymentMethod: payment.paymentMethod,
@@ -958,10 +964,17 @@ export class RefundsService {
       lines.map((l) => l.goods || cents(unitGross(l.item)) * l.quantity),
       goodsTotal,
     );
-    const deposits = distribute(
-      lines.map((l) => l.deposit),
-      part.pfand,
-    );
+    // Pfand je Satz nur auf die Zeilen mit Pfand dieses Satzes verteilen.
+    const deposits = lines.map(() => 0);
+    for (const [rate, total] of part.pfand) {
+      const weights = lines.map((l) =>
+        depositRateOf(l.item) === rate ? l.deposit : 0,
+      );
+      if (!weights.some((w) => w > 0)) continue;
+      distribute(weights, total).forEach((value, index) => {
+        deposits[index] += value;
+      });
+    }
     return lines.map((line, index) =>
       manager.create(RefundItem, {
         orderItemId: line.item.id,
@@ -971,6 +984,10 @@ export class RefundsService {
         taxRate: Number(line.item.taxRate) || 0,
         amount: -(goods[index] / 100),
         depositAmount: -(deposits[index] / 100),
+        depositTaxRate:
+          deposits[index] !== 0 && line.item.depositTaxRate != null
+            ? depositRateOf(line.item)
+            : null,
         cancelled: line.cancelled,
       }),
     );
@@ -1302,6 +1319,7 @@ export class RefundsService {
           productionStationId: item.productionStationId,
           pfandTypeId: item.pfandTypeId,
           depositAmount: item.depositAmount,
+          depositTaxRate: item.depositTaxRate,
           isRefill: item.isRefill,
         });
         cancelledRow = await manager.save(cancelledRow);
@@ -1604,35 +1622,30 @@ function isSumUpTerminal(payment: Payment): boolean {
   );
 }
 
-function addComposition(a: Composition, b: Composition): Composition {
-  const goods = new Map(a.goods);
-  for (const [rate, value] of b.goods) {
-    goods.set(rate, (goods.get(rate) ?? 0) + value);
-  }
-  return { goods, pfand: a.pfand + b.pfand, tip: a.tip + b.tip };
-}
-
 function compositionToMetadata(c: Composition) {
   return {
-    goods: Object.fromEntries(
-      [...c.goods.entries()].map(([r, v]) => [String(r), v]),
-    ),
-    pfand: c.pfand,
+    goods: rateRecord(c.goods),
+    // `pfand` (gesamt) bleibt fuer Auswertungen von vor 2026-11 lesbar.
+    pfand: pfandSum(c),
+    pfandByRate: rateRecord(c.pfand),
     tip: c.tip,
   };
 }
 
-function compositionFromMetadata(metadata: Record<string, unknown> | null) {
+function compositionFromMetadata(
+  metadata: Record<string, unknown> | null,
+): Composition {
   const raw = (metadata?.composition ?? {}) as {
     goods?: Record<string, number>;
     pfand?: number;
+    pfandByRate?: Record<string, number>;
     tip?: number;
   };
-  const goods = new Map<number, number>();
-  for (const [rate, value] of Object.entries(raw.goods ?? {})) {
-    goods.set(Number(rate), Number(value) || 0);
-  }
-  return { goods, pfand: Number(raw.pfand) || 0, tip: Number(raw.tip) || 0 };
+  return {
+    goods: rateMapFrom(raw.goods),
+    pfand: pfandFromRecord(raw),
+    tip: Number(raw.tip) || 0,
+  };
 }
 
 /** Verteilt `total` (Cent) im Verhaeltnis der Gewichte, Summe exakt. */

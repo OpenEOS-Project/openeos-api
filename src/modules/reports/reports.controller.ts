@@ -58,6 +58,28 @@ export class ReportsController {
   }
 
   @ApiTokenAccess(TokenScope.READ)
+  @Get('vat')
+  @Roles(Role.MEMBER)
+  @ApiOperation({
+    operationId: 'getVatReport',
+    summary: 'Umsatz und Umsatzsteuer je Steuersatz',
+    description:
+      'Je Steuersatz: Warenwert, Pfand aus Verkäufen, Pfand-Rückgaben (negativ), Brutto, enthaltene Umsatzsteuer und Netto im Zeitraum, optional je Veranstaltung. Pfand gehört zum Entgelt und steht beim Satz seiner Pfandart; Buchungen von vor 2026-11 ohne Satz stehen bei 0 %. Trinkgeld ist nicht enthalten. Steuerbefreite Organisationen (`vatExempt: true`): alles bei 0 % ohne Steuer. Scope `read` und Modulrecht Auswertung.',
+  })
+  async getVatReport(
+    @CurrentOrganization() organizationId: string,
+    @Query() queryDto: QueryReportsDto,
+    @CurrentUser() user: User,
+  ) {
+    const report = await this.reportsService.getVatReport(
+      organizationId,
+      queryDto,
+      user,
+    );
+    return { data: report };
+  }
+
+  @ApiTokenAccess(TokenScope.READ)
   @Get('products')
   @Roles(Role.MEMBER)
   @ApiOperation({
@@ -275,6 +297,7 @@ export class ReportsController {
       'categories',
       'devices',
       'inventory',
+      'vat',
     ],
   })
   async exportReport(

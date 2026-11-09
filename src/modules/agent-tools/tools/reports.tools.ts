@@ -35,6 +35,7 @@ const SECTIONS = [
   'hourly',
   'payments',
   'channels',
+  'vat',
 ] as const;
 
 /* Bestellungen ohne alles, was auf einen Gast zeigt: kein Name, keine
@@ -51,6 +52,9 @@ function compactItem(item: OrderItem, hidePrices = false) {
           totalPrice: money(item.totalPrice),
           taxRate: Number(item.taxRate ?? 0),
           deposit: money(item.depositAmount),
+          // MwSt-Satz des Pfands; null = nicht steuerbar (vor 2026-11).
+          depositTaxRate:
+            item.depositTaxRate == null ? null : Number(item.depositTaxRate),
         }),
     status: item.status,
     options: (item.options?.selected ?? []).map((o) => o.option),
@@ -111,7 +115,7 @@ export class ReportTools {
     return defineTool({
       name: 'get_sales_report',
       description:
-        'Sales figures (EUR) for an event and/or date range: summary (revenue, orders, average receipt, Pfand, cancellations), net (items revenue, refunds, tips, net), by product, by category, by hour (only hours with orders), by payment method, by channel. Pick sections to keep the answer small. Needs the reports permission. ' +
+        'Sales figures (EUR) for an event and/or date range: summary (revenue, orders, average receipt, Pfand, cancellations), net (items revenue, refunds, tips, net), by product, by category, by hour (only hours with orders), by payment method, by channel, VAT per rate (vat: goods, Pfand sold and Pfand returned per VAT rate with contained VAT; Pfand is part of the consideration and carries the VAT rate of its Pfand type, bookings before 2026-11 without a rate count as 0 %; vatExempt organizations show no VAT). Pick sections to keep the answer small. Needs the reports permission. ' +
         'If the answer has operatingMode "orders_only" (Nur Bons), OpenEOS only takes orders, shows no prices and collects no money: the answer contains counts only (orders, items, quantities) and no amounts, net or payments sections — never talk about revenue (Umsatz).',
       inputSchema: z
         .object({
@@ -142,6 +146,7 @@ export class ReportTools {
         if (orderOnly) {
           wants.delete('net');
           wants.delete('payments');
+          wants.delete('vat');
         }
         const out: Record<string, unknown> = orderOnly
           ? {
@@ -234,6 +239,29 @@ export class ReportTools {
             total: money(r.total),
             percent: money(r.percentage),
           }));
+        }
+        if (wants.has('vat')) {
+          const v = await this.reports.getVatReport(org, query, ctx.user);
+          out.vat = {
+            vatExempt: v.vatExempt,
+            rows: v.rows.map((r) => ({
+              ratePercent: r.rate,
+              goods: money(r.goods),
+              pfandSold: money(r.deposits),
+              pfandReturned: money(r.depositReturns),
+              gross: money(r.gross),
+              vat: money(r.tax),
+              net: money(r.net),
+            })),
+            total: {
+              goods: money(v.total.goods),
+              pfandSold: money(v.total.deposits),
+              pfandReturned: money(v.total.depositReturns),
+              gross: money(v.total.gross),
+              vat: money(v.total.tax),
+              net: money(v.total.net),
+            },
+          };
         }
         if (wants.has('channels')) {
           const rows = await this.reports.getChannelsReport(
