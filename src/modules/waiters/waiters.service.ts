@@ -37,6 +37,18 @@ import type {
 import { PinCredentialsService } from './pin-credentials.service';
 import { effectiveWaiterPermissions, waiterSettings } from './waiter-operator';
 import { WaiterSessionsService } from './waiter-sessions.service';
+import {
+  retireWaiter,
+  revokeWaiterAccess,
+  waiterHasBookings,
+} from './waiter-retire';
+import {
+  waiterAnonymizeDueAt,
+  waiterRetentionPeriods,
+  type WaiterRetentionPeriods,
+} from './waiter-retention';
+import { loadRetentionConfig } from '../retention/retention.config';
+import { rowsOf } from '../tse/tse-sql.util';
 
 /** Farben fuer neue Bedienungen (weisse Schrift lesbar), der Reihe nach. */
 export const WAITER_COLORS = [
@@ -73,6 +85,8 @@ export interface WaiterView {
   pinLength: number | null;
   lastUsedAt: Date | null;
   anonymizedAt: Date | null;
+  /** Ab wann der Loeschlauf sie anonymisiert (Hinweis in der Verwaltung). */
+  anonymizeDueAt: Date | null;
   createdAt: Date;
 }
 
@@ -95,6 +109,10 @@ export function cleanPermissions(
 @Injectable()
 export class WaitersService {
   private readonly logger = new Logger(WaitersService.name);
+  /** Fristen des Loeschlaufs (Hinweis „wird am … anonymisiert“). */
+  readonly retentionPeriods: WaiterRetentionPeriods = waiterRetentionPeriods(
+    loadRetentionConfig(),
+  );
 
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
@@ -349,6 +367,9 @@ export class WaitersService {
       // PIN vergibt danach „PIN neu vergeben“.
       const deactivated = dto.isActive === false && current.isActive;
       if (dto.isActive !== undefined) current.isActive = dto.isActive;
+      // Frist des Loeschlaufs: 30 Tage nach Deaktivierung.
+      if (deactivated) current.deactivatedAt = new Date();
+      if (dto.isActive === true) current.deactivatedAt = null;
       const saved = await repo.save(current);
       if (deactivated) {
         // Deaktiviert: PIN weg, Sitzungen beendet (Geraet sperrt sofort).
@@ -444,34 +465,15 @@ export class WaitersService {
     await this.assertCanManage(organizationId, user);
     const waiter = await this.load(organizationId, waiterId);
     const outcome = await this.dataSource.transaction(async (manager) => {
-      await this.sessions.endForWaiter(waiterId, 'revoked', manager);
-      await this.pins.remove(
-        { ownerType: 'waiter', ownerId: waiterId },
-        manager,
-      );
-      if (!(await this.hasBookings(manager, waiterId))) {
-        // Sitzungen haengen per Fremdschluessel (CASCADE) mit dran.
-        await manager.getRepository(Waiter).delete({ id: waiterId });
-        return { deleted: true, anonymized: false };
+      if (waiter.anonymizedAt) {
+        await revokeWaiterAccess(manager, [waiterId]);
+        return { deleted: false, anonymized: true };
       }
-      if (waiter.anonymizedAt) return { deleted: false, anonymized: true };
-      const [{ n }]: { n: string }[] = await manager.query(
-        `SELECT count(*)::int + 1 AS n FROM waiters WHERE organization_id = $1 AND anonymized_at IS NOT NULL`,
-        [organizationId],
-      );
-      await manager.getRepository(Waiter).update(
-        { id: waiterId },
-        {
-          name: `Bedienung ${n}`,
-          shortName: null,
-          color: null,
-          userId: null,
-          sourceRegistrationGroupId: null,
-          isActive: false,
-          anonymizedAt: new Date(),
-        },
-      );
-      return { deleted: false, anonymized: true };
+      const result = await retireWaiter(manager, waiterId);
+      return {
+        deleted: result === 'deleted',
+        anonymized: result !== 'deleted',
+      };
     });
     this.notifyWaiterUpdated(organizationId, waiter, 'deactivated');
     await this.audit(
@@ -485,6 +487,129 @@ export class WaitersService {
       },
     );
     return outcome;
+  }
+
+  // ------------------------------------------------------------ Auskunft
+
+  /**
+   * Auskunft (Art. 15 DSGVO) ueber eine Bedienung: Stammdaten (ohne PIN),
+   * Anmeldungen an Geraeten, Abrechnungen und die Anzahl der zugeordneten
+   * Buchungen. JSON oder CSV (Semikolon, UTF-8 mit BOM).
+   */
+  async exportData(
+    organizationId: string,
+    waiterId: string,
+    user: User,
+    meta: RequestMeta = {},
+  ) {
+    await this.assertCanManage(organizationId, user);
+    const waiter = await this.load(organizationId, waiterId);
+    const [view] = await this.views([waiter]);
+    const event = waiter.eventId
+      ? rowsOf<{ name: string }>(
+          await this.dataSource.query(`SELECT name FROM events WHERE id = $1`, [
+            waiter.eventId,
+          ]),
+        )[0]
+      : null;
+    const sessions = rowsOf<{
+      started_at: Date;
+      last_seen_at: Date;
+      ended_at: Date | null;
+      end_reason: string | null;
+      device_name: string | null;
+    }>(
+      await this.dataSource.query(
+        `SELECT s.started_at, s.last_seen_at, s.ended_at, s.end_reason, d.name AS device_name
+           FROM waiter_sessions s LEFT JOIN devices d ON d.id = s.device_id
+          WHERE s.waiter_id = $1 AND s.organization_id = $2
+          ORDER BY s.started_at`,
+        [waiterId, organizationId],
+      ),
+    );
+    const settlements = rowsOf<{
+      number: number | null;
+      is_test: boolean;
+      created_at: Date;
+      period_from: Date | null;
+      period_to: Date;
+      event_name: string | null;
+      cash_expected: string | null;
+      forced: boolean;
+    }>(
+      await this.dataSource.query(
+        `SELECT s.number, s.is_test, s.created_at, s.period_from, s.period_to,
+                e.name AS event_name, s.cash_expected, s.forced
+           FROM waiter_settlements s LEFT JOIN events e ON e.id = s.event_id
+          WHERE s.waiter_id = $1 AND s.organization_id = $2
+          ORDER BY s.created_at`,
+        [waiterId, organizationId],
+      ),
+    );
+    const [counts] = rowsOf<Record<string, number>>(
+      await this.dataSource.query(
+        `SELECT
+           (SELECT count(*) FROM orders WHERE created_by_waiter_id = $1)::int AS "ordersTaken",
+           (SELECT count(*) FROM orders WHERE waiter_id = $1)::int AS "ordersResponsible",
+           (SELECT count(*) FROM order_items WHERE added_by_waiter_id = $1)::int AS "itemsSent",
+           (SELECT count(*) FROM payments WHERE processed_by_waiter_id = $1)::int AS "paymentsProcessed",
+           (SELECT count(*) FROM refunds WHERE waiter_id = $1)::int AS "refundsTriggered",
+           (SELECT count(*) FROM refunds WHERE approved_by_waiter_id = $1)::int AS "refundsApproved",
+           (SELECT count(*) FROM pfand_returns WHERE waiter_id = $1)::int AS "pfandReturns",
+           (SELECT count(*) FROM order_events WHERE waiter_id = $1)::int AS "orderEvents",
+           (SELECT count(*) FROM cashbook_entries WHERE waiter_id = $1)::int AS "cashbookEntries",
+           (SELECT count(*) FROM tse_transactions WHERE waiter_id = $1)::int AS "fiscalTransactions"`,
+        [waiterId],
+      ),
+    );
+    await this.audit(
+      AdminAction.WAITER_UPDATED,
+      organizationId,
+      waiterId,
+      user,
+      meta,
+      { export: true },
+    );
+    return {
+      exportedAt: new Date(),
+      waiter: {
+        id: view.id,
+        name: view.name,
+        shortName: view.shortName,
+        color: view.color,
+        role: view.role,
+        permissions: view.effectivePermissions,
+        event: event?.name ?? null,
+        isActive: view.isActive,
+        hasPin: view.hasPin,
+        lastUsedAt: view.lastUsedAt,
+        createdAt: view.createdAt,
+        anonymizedAt: view.anonymizedAt,
+        anonymizeDueAt: view.anonymizeDueAt,
+      },
+      sessions: sessions.map((s) => ({
+        device: s.device_name,
+        startedAt: s.started_at,
+        lastSeenAt: s.last_seen_at,
+        endedAt: s.ended_at,
+        endReason: s.end_reason,
+      })),
+      settlements: settlements.map((s) => ({
+        number: s.number,
+        training: s.is_test,
+        createdAt: s.created_at,
+        periodFrom: s.period_from,
+        periodTo: s.period_to,
+        event: s.event_name,
+        cashExpected: s.cash_expected === null ? null : Number(s.cash_expected),
+        forced: s.forced,
+      })),
+      bookings: counts ?? {},
+      notes: [
+        'Die PIN ist nur als nicht umkehrbarer Prüfwert gespeichert und daher nicht enthalten.',
+        'Im Steuerarchiv (TSE, Kassenabschlüsse, Kassenbuch) bleibt der Name beim Buchen zehn Jahre gespeichert.',
+      ],
+    };
   }
 
   // ------------------------------------------------------------ Hilfen
@@ -596,29 +721,28 @@ export class WaitersService {
     return event.id;
   }
 
-  /** Steht die Bedienung in irgendeiner Buchung? */
-  async hasBookings(
-    manager: EntityManager,
-    waiterId: string,
-  ): Promise<boolean> {
-    const [row]: { used: boolean }[] = await manager.query(
-      `SELECT (
-         EXISTS (SELECT 1 FROM orders WHERE created_by_waiter_id = $1 OR waiter_id = $1)
-         OR EXISTS (SELECT 1 FROM order_items WHERE added_by_waiter_id = $1)
-         OR EXISTS (SELECT 1 FROM payments WHERE processed_by_waiter_id = $1 OR wallet_waiter_id = $1)
-         OR EXISTS (SELECT 1 FROM refunds WHERE waiter_id = $1 OR approved_by_waiter_id = $1)
-         OR EXISTS (SELECT 1 FROM pfand_returns WHERE waiter_id = $1)
-         OR EXISTS (SELECT 1 FROM order_events WHERE waiter_id = $1)
-         OR EXISTS (SELECT 1 FROM cashbook_entries WHERE waiter_id = $1)
-         OR EXISTS (SELECT 1 FROM tse_transactions WHERE waiter_id = $1)
-       ) AS used`,
-      [waiterId],
-    );
-    return row?.used === true;
+  /** Steht die Bedienung in irgendeiner Buchung (oder Abrechnung)? */
+  hasBookings(manager: EntityManager, waiterId: string): Promise<boolean> {
+    return waiterHasBookings(manager, waiterId);
   }
 
   private async views(waiters: Waiter[]): Promise<WaiterView[]> {
     const ids = waiters.map((w) => w.id);
+    const eventIds = [
+      ...new Set(
+        waiters.map((w) => w.eventId).filter((id): id is string => !!id),
+      ),
+    ];
+    const events: {
+      id: string;
+      end_date: Date | null;
+      deleted_at: Date | null;
+    }[] = eventIds.length
+      ? await this.dataSource.query(
+          `SELECT id, end_date, deleted_at FROM events WHERE id = ANY($1::uuid[])`,
+          [eventIds],
+        )
+      : [];
     const withPin = await this.pins.ownersWithPin('waiter', ids);
     const lengths: { owner_id: string; pin_length: number }[] = ids.length
       ? await this.dataSource.query(
@@ -640,6 +764,11 @@ export class WaitersService {
       pinLength: lengths.find((l) => l.owner_id === w.id)?.pin_length ?? null,
       lastUsedAt: w.lastUsedAt,
       anonymizedAt: w.anonymizedAt,
+      anonymizeDueAt: waiterAnonymizeDueAt(
+        w,
+        events.find((e) => e.id === w.eventId) ?? null,
+        this.retentionPeriods,
+      ),
       createdAt: w.createdAt,
     }));
   }

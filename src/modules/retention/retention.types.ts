@@ -9,6 +9,7 @@ import type { RetentionConfig } from './retention.config';
 export const RETENTION_CATEGORIES = [
   'guest_data',
   'helper_data',
+  'waiter_data',
   'auth_records',
   'audit_logs',
   'support_messages',

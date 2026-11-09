@@ -285,6 +285,7 @@ describeWithDb('OrdersExportService against Postgres', () => {
       'Ausgabe',
       'Tisch',
       'Gerät',
+      'Bedienung',
       'Artikel',
       'Zahlart',
       'Zwischensumme',
@@ -303,7 +304,7 @@ describeWithDb('OrdersExportService against Postgres', () => {
     // Aelteste zuerst: 12:00 Uhr Berlin (SumUp, teilweise erstattet).
     expect(first).toContain(';11.07.2026;12:00:00;"Sommerfest; Zelt";');
     expect(first).toContain(
-      ';Teilweise erstattet;Kasse;Abholung;A03;Kasse 1;3;SumUp;',
+      ';Teilweise erstattet;Kasse;Abholung;A03;Kasse 1;;3;SumUp;',
     );
     expect(first).toContain(
       ';22,50;0,00;2,00;0,00;24,50;24,50;5,00;3,59;Nein;;',
@@ -428,6 +429,7 @@ describeWithDb('OrdersExportService against Postgres', () => {
       'Ausgabe',
       'Tisch',
       'Gerät',
+      'Bedienung',
       'Artikel',
       'Testbestellung',
       'Gastname',

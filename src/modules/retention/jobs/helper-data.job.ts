@@ -7,7 +7,8 @@ import type { RetentionJob, RetentionRunContext } from '../retention.types';
  * Notizen, Verwaltungslinks): `RETENTION_HELPER_DATA_DAYS` (30) Tage nach
  * der letzten Schicht des Schichtplans werden die Anmeldungen samt
  * Aenderungsvorschlaegen und Helfer-Links geloescht. Der Plan mit seinen
- * Schichten bleibt (z. B. als Vorlage).
+ * Schichten bleibt (z. B. als Vorlage). Bedienungen, die aus diesen
+ * Anmeldungen uebernommen wurden, verlieren den Verweis auf sie.
  */
 export class HelperDataJob implements RetentionJob {
   readonly category = 'helper_data' as const;
@@ -47,6 +48,18 @@ export class HelperDataJob implements RetentionJob {
         manager,
         `DELETE FROM helper_magic_links l WHERE l.shift_plan_id IN (${plans})`,
         [cutoff],
+      ),
+    );
+    // Bedienungen aus der Schichtplanung: die Herkunft (Anmeldegruppe)
+    // verschwindet mit der letzten Anmeldung dieser Person.
+    ctx.removed(
+      'waiterSourcesCleared',
+      await affected(
+        manager,
+        `UPDATE waiters w SET source_registration_group_id = NULL
+          WHERE w.source_registration_group_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM shift_registrations r
+                             WHERE r.registration_group_id = w.source_registration_group_id)`,
       ),
     );
   }

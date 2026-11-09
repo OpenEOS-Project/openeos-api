@@ -23,6 +23,15 @@ export interface RetentionConfig {
   guestDataDays: number;
   /** Schichtanmeldungen: Tage nach der letzten Schicht des Plans. */
   helperDataDays: number;
+  /**
+   * Bedienungen: veranstaltungsgebundene Tage nach dem Ende der
+   * Veranstaltung, organisationsweite Tage nach der Deaktivierung.
+   */
+  waiterDataDays: number;
+  /** Organisationsweite Bedienungen: Monate ohne Anmeldung. */
+  waiterInactiveMonths: number;
+  /** Anmeldungen von Bedienungen an Geraeten (Sitzungen). */
+  waiterSessionDays: number;
   /** Admin-Protokoll und IP-Angaben in Aenderungsprotokollen. */
   auditLogDays: number;
   /** Erledigte, abgelaufene Einladungen und widerrufene API-Tokens. */
@@ -103,6 +112,14 @@ export function loadRetentionConfig(env: Env = process.env): RetentionConfig {
       30,
       MIN_EXPORT_OFFER_DAYS,
     ),
+    waiterDataDays: int(
+      env,
+      'RETENTION_WAITER_DATA_DAYS',
+      30,
+      MIN_EXPORT_OFFER_DAYS,
+    ),
+    waiterInactiveMonths: int(env, 'RETENTION_WAITER_INACTIVE_MONTHS', 12),
+    waiterSessionDays: int(env, 'RETENTION_WAITER_SESSION_DAYS', 90),
     auditLogDays: int(env, 'RETENTION_AUDIT_LOG_DAYS', 90),
     staleCredentialDays: int(env, 'RETENTION_STALE_CREDENTIAL_DAYS', 90),
     supportMonths: int(env, 'RETENTION_SUPPORT_MONTHS', 12),

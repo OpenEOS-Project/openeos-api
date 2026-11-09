@@ -18,6 +18,7 @@ import { DeletionRemindersJob } from './jobs/deletion-reminders.job';
 import { FiscalArchiveJob } from './jobs/fiscal-archive.job';
 import { GuestDataJob } from './jobs/guest-data.job';
 import { HelperDataJob } from './jobs/helper-data.job';
+import { WaiterDataJob } from './jobs/waiter-data.job';
 import { OrganizationInactivityJob } from './jobs/organization-inactivity.job';
 import { OrganizationPurgeJob } from './jobs/organization-purge.job';
 import { SupportMessagesJob } from './jobs/support-messages.job';
@@ -72,6 +73,7 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
         return [
           new GuestDataJob(),
           new HelperDataJob(),
+          new WaiterDataJob(),
           new AuthRecordsJob(),
           new AuditLogsJob(),
           new SupportMessagesJob(),

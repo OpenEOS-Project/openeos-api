@@ -17,6 +17,8 @@ export const ORDER_EVENT_TYPES = [
   'receipt_reprinted',
   'tickets_reprinted',
   'refund_receipt_reprinted',
+  /** Tisch bzw. Bestellung an eine andere Bedienung uebergeben. */
+  'transferred',
 ] as const;
 export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number];
 

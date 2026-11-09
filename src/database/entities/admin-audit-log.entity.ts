@@ -87,6 +87,10 @@ export enum AdminAction {
   /** PIN-Eingabe eines Geraets nach 20 Fehlversuchen gesperrt (System). */
   WAITER_PIN_LOCK = 'waiter_pin_lock',
   WAITER_PIN_UNLOCK = 'waiter_pin_unlock',
+  /** Kellnerabrechnung abgeschlossen (erzwungen: mit Notiz). */
+  WAITER_SETTLED = 'waiter_settled',
+  /** Offene Tische/Bestellungen an eine andere Bedienung uebergeben. */
+  WAITER_TABLES_TRANSFERRED = 'waiter_tables_transferred',
   // Ausgehende Webhooks (AGB Ziffer 10.2)
   WEBHOOK_CREATED = 'webhook_created',
   WEBHOOK_UPDATED = 'webhook_updated',

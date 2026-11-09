@@ -251,6 +251,17 @@ export interface WaiterUpdatedEvent {
   change: 'updated' | 'deactivated' | 'pin_reset';
 }
 
+/** Tisch bzw. Bestellungen an eine andere Bedienung uebergeben. */
+export interface OrderTransferredEvent {
+  orderIds: string[];
+  eventId: string | null;
+  tableNumber: string | null;
+  fromWaiterId: string | null;
+  toWaiterId: string;
+  /** Kurzname der neuen Bedienung (Hinweis auf ihrem Geraet). */
+  toName: string;
+}
+
 export interface DeviceStatusChangedEvent {
   deviceId: string;
   status: 'pending' | 'verified' | 'blocked';
@@ -349,6 +360,7 @@ export const GatewayEvents = {
   DEVICE_STATUS_CHANGED: 'deviceStatusChanged',
   // Bedienungen: deaktiviert/neue PIN → Kasse beendet die Sitzung
   WAITER_UPDATED: 'waiterUpdated',
+  ORDER_TRANSFERRED: 'orderTransferred',
 
   // Organization Events
   ORGANIZATION_SETTINGS_UPDATED: 'organizationSettingsUpdated',

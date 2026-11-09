@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AppGateway } from './app.gateway';
 import {
+  type OrderTransferredEvent,
   type WaiterUpdatedEvent,
   GatewayEvents,
   OrderCreatedEvent,
@@ -513,6 +514,15 @@ export class GatewayService {
       deviceId,
       GatewayEvents.DEVICE_STATUS_CHANGED,
       payload,
+    );
+  }
+
+  /** Tisch uebergeben: an alle Geraete (die neue Bedienung sieht den Hinweis). */
+  notifyOrderTransferred(organizationId: string, data: OrderTransferredEvent) {
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.ORDER_TRANSFERRED,
+      data,
     );
   }
 

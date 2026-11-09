@@ -6,11 +6,14 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
   ValidateIf,
   ValidateNested,
@@ -207,4 +210,111 @@ export class WaiterSessionEndDto {
   @IsOptional()
   @IsIn(WAITER_SESSION_END_INPUT)
   reason?: (typeof WAITER_SESSION_END_INPUT)[number];
+}
+
+/** Abrechnen (Verwaltung und Kasse), bedienungen-plan.md §7. */
+export class SettleWaiterDto {
+  @ApiPropertyOptional({
+    description:
+      'Veranstaltung. Ohne: die der Bedienung (veranstaltungsgebunden), sonst die laufende.',
+  })
+  @IsOptional()
+  @IsUUIDLoose()
+  eventId?: string;
+
+  @ApiPropertyOptional({
+    example: 120.5,
+    nullable: true,
+    description:
+      'Gezählter Bargeldbestand (optional). Ohne Kellnerbrieftasche ist „Soll bar“ nur informativ.',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(1_000_000)
+  countedCash?: number | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Trotz offener Tische abrechnen (nur Schichtleitung/Admin, mit `note`).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @Transform(trimOrNull)
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Drucker für den Abrechnungsbon (Verwaltung). Ohne: kein Druck.',
+  })
+  @IsOptional()
+  @IsUUIDLoose()
+  printerId?: string;
+}
+
+/** Abrechnen an der Kasse: optional eine andere Bedienung (Schichtleitung). */
+export class DeviceSettleWaiterDto extends SettleWaiterDto {
+  @ApiPropertyOptional({
+    description:
+      'Andere Bedienung abrechnen (Schichtleitung). Ohne: sich selbst.',
+  })
+  @IsOptional()
+  @IsUUIDLoose()
+  waiterId?: string;
+
+  @ApiPropertyOptional({ default: true, description: 'Bon drucken' })
+  @IsOptional()
+  @IsBoolean()
+  print?: boolean;
+}
+
+export class PrintWaiterSummaryDto {
+  @ApiPropertyOptional({ description: 'Andere Bedienung (Schichtleitung).' })
+  @IsOptional()
+  @IsUUIDLoose()
+  waiterId?: string;
+}
+
+export class ReprintSettlementDto {
+  @ApiPropertyOptional({
+    description: 'Drucker. Ohne: Bondrucker des Geräts der Abrechnung.',
+  })
+  @IsOptional()
+  @IsUUIDLoose()
+  printerId?: string;
+}
+
+/** Tisch bzw. Bestellung an eine andere Bedienung übergeben. */
+export class TransferOrderDto {
+  @ApiProperty({ description: 'Neue verantwortliche Bedienung' })
+  @IsUUIDLoose()
+  toWaiterId: string;
+
+  @ApiPropertyOptional({
+    default: true,
+    description:
+      'Alle offenen Bestellungen desselben Tisches dieser Bedienung mit übergeben.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  wholeTable?: boolean;
+}
+
+/** Verwaltung: alle offenen Tische einer Bedienung übergeben. */
+export class TransferTablesDto {
+  @ApiProperty({ description: 'Neue verantwortliche Bedienung' })
+  @IsUUIDLoose()
+  toWaiterId: string;
+
+  @ApiPropertyOptional({ description: 'Nur diese Veranstaltung' })
+  @IsOptional()
+  @IsUUIDLoose()
+  eventId?: string;
 }

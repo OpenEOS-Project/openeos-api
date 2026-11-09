@@ -116,6 +116,8 @@ export interface OrderExportRow {
   closed_without_payment_at: Date | null;
   event_name: string | null;
   device_name: string | null;
+  /** Verantwortliche Bedienung (Tisch), sonst die aufnehmende. */
+  waiter_name: string | null;
   payment_methods: string[] | null;
   item_count: string | number;
 }
@@ -213,6 +215,7 @@ export const ORDER_COLUMNS: ReadonlyArray<CsvColumn<OrderExportRow>> = [
   },
   { header: 'Tisch', value: (r) => csvText(r.table_number) },
   { header: 'Gerät', value: (r) => csvText(r.device_name) },
+  { header: 'Bedienung', value: (r) => csvText(r.waiter_name) },
   { header: 'Artikel', value: (r) => csvNumber(r.item_count) },
   { header: 'Zahlart', money: true, value: (r) => csvText(paymentLabel(r)) },
   { header: 'Zwischensumme', money: true, value: (r) => csvMoney(r.subtotal) },
@@ -324,6 +327,7 @@ const ORDER_SQL = `
          o.paid_amount, o.refunded_amount, o.tax_total, o.is_test,
          o.customer_name, o.notes, o.closed_without_payment_at,
          e.name AS event_name, d.name AS device_name,
+         COALESCE(w.name, cw.name) AS waiter_name,
          (SELECT array_agg(DISTINCT p.payment_method::text)
             FROM payments p
            WHERE p.order_id = o.id AND p.status IN ('captured', 'refunded')
@@ -335,6 +339,8 @@ const ORDER_SQL = `
     FROM orders o
     LEFT JOIN events e ON e.id = o.event_id
     LEFT JOIN devices d ON d.id = o.created_by_device_id
+    LEFT JOIN waiters w ON w.id = o.waiter_id
+    LEFT JOIN waiters cw ON cw.id = o.created_by_waiter_id
    WHERE o.id = ANY($1::uuid[])
    ORDER BY o.created_at, o.id`;
 

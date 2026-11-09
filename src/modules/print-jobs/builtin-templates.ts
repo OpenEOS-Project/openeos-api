@@ -17,6 +17,8 @@ export const CANCELLATION_TICKET_TEMPLATE = 'cancellation_ticket';
 export const ORDER_TICKET_TEMPLATE = 'order_ticket';
 /** Beleg einer Pfand-Auszahlung („Pfandrückgabe“, openeos-web#116). */
 export const PFAND_RETURN_RECEIPT_TEMPLATE = 'pfand_return_receipt';
+/** Kellnerabrechnung bzw. Zwischenstand (bedienungen-plan.md §9). */
+export const WAITER_SETTLEMENT_TEMPLATE = 'waiter_settlement';
 
 /**
  * Bestellbon wie die Vorlage `order_ticket.jinja2` des Drucker-Agenten,
@@ -400,6 +402,112 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 <<CUT>>
 `;
 
+/**
+ * Kellnerabrechnung („ABRECHNUNG Nr. N“) bzw. Zwischenstand einer Bedienung:
+ * Kopf (Verein, Veranstaltung, Bedienung, Zeitraum, Geraet, abgerechnet
+ * von), Bloecke mit Zeilen (`blocks[].rows[]`: `label` und `amount` bzw.
+ * `text`), Soll bar mit Schublade je Geraet, Gezaehlt/Differenz (falls
+ * gezaehlt), offene Tische bzw. erzwungen mit Notiz, Training getrennt,
+ * Unterschriftszeilen. Kein TSE-Block: Die Abrechnung ist kein Beleg
+ * (die Buchungen haben ihre eigenen). Nur vom Server ausgeliefert; im
+ * Bon-Editor erst spaeter bearbeitbar.
+ */
+const WAITER_SETTLEMENT_SOURCE = `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
+   Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
+{% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}
+{% set sep = "=" * cols %}
+{% set line = "-" * cols %}
+{% macro row(label, value) %}{{ label }}{{ value|rjust(cols - label|length) }}{% endmacro %}
+{% if is_test %}
+<<CENTER>><<BOLD>><<BIG>>** TRAINING **<</BIG>><</BOLD>><</CENTER>>
+
+{% endif %}
+<<CENTER>><<BIG>>{{ organization.name|default("OpenEOS")|wordwrap(cols // 2, true, "\\n") }}<</BIG>><</CENTER>>
+<<CENTER>>{{ sep }}<</CENTER>>
+<<CENTER>><<BOLD>><<BIG>>{{ title|default("ABRECHNUNG") }}<</BIG>><</BOLD>><</CENTER>>
+{% if number is defined and number %}
+<<CENTER>><<BOLD>>{{ "Nr. " ~ number }}<</BOLD>><</CENTER>>
+{% endif %}
+{% if reprint %}
+<<CENTER>><<BOLD>>-- NACHDRUCK --<</BOLD>><</CENTER>>
+{% endif %}
+{{ line }}
+<<BOLD>>{{ ("Bedienung: " ~ waiter_name|default("---", true))|wordwrap(cols, true, "\\n") }}<</BOLD>>
+{% if event_name is defined and event_name %}
+{{ ("Veranstaltung: " ~ event_name)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if period_from is defined and period_from %}
+{{ ("Von: " ~ period_from)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{{ ("Bis: " ~ period_to|default(""))|wordwrap(cols, true, "\\n") }}
+{% if device_name is defined and device_name %}
+{{ ("Kasse: " ~ device_name)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if settled_by is defined and settled_by %}
+{{ ("Abgerechnet von: " ~ settled_by)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% for block in blocks|default([]) %}
+{{ line }}
+<<BOLD>>{{ block.title|wordwrap(cols, true, "\\n") }}<</BOLD>>
+{% for r in block.rows %}
+{% set value = (r.amount|currency) if r.amount is not none else (r.text|default("", true)|string) %}
+{% if r.label|length + value|length + 1 > cols %}
+{{ r.label|wordwrap(cols, true, "\\n") }}
+{{ value|rjust(cols) }}
+{% else %}
+{{ row(r.label, value) }}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if cash_expected is defined and cash_expected is not none %}
+{{ sep }}
+<<BOLD>>{{ row("SOLL BAR:", cash_expected|currency) }}<</BOLD>>
+{% for d in cash_by_device|default([]) %}
+{{ ("  " ~ d.name ~ ": " ~ d.amount|currency)|wordwrap(cols, true, "\\n    ") }}
+{% endfor %}
+{% if cash_hint is defined and cash_hint %}
+{{ cash_hint|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if cash_counted is defined and cash_counted is not none %}
+{{ row("GEZAEHLT:", cash_counted|currency) }}
+<<BOLD>>{{ row("DIFFERENZ:", difference|default(0)|currency) }}<</BOLD>>
+{% endif %}
+{% endif %}
+{% if open_tables is defined and open_tables %}
+{{ line }}
+<<BOLD>>{{ ("OFFENE TISCHE (" ~ open_tables|length ~ ")")|wordwrap(cols, true, "\\n") }}<</BOLD>>
+{% for t in open_tables %}
+{{ ("  " ~ t.label)|wordwrap(cols, true, "\\n    ") }}
+{% endfor %}
+{% endif %}
+{% if forced %}
+{{ line }}
+<<BOLD>>TROTZ OFFENER TISCHE ABGERECHNET<</BOLD>>
+{% if note is defined and note %}
+{{ ("Notiz: " ~ note)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% endif %}
+{% if training is defined and training %}
+{{ line }}
+{{ ("Training (nicht im Geld): " ~ training)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if signatures|default(true) %}
+{{ sep }}
+
+
+{{ "_" * (cols - 4) }}
+Bedienung
+
+
+{{ "_" * (cols - 4) }}
+Kasse / Schichtleitung
+{% endif %}
+{{ line }}
+<<CENTER>>{{ printed_at|default("") }}<</CENTER>>
+<<FEED:3>>
+<<CUT>>
+`;
+
 /** Vorlagen, auf denen die TSE-Angaben stehen muessen. */
 export const TSE_RECEIPT_TEMPLATES: readonly string[] = [
   RECEIPT_TEMPLATE,
@@ -450,6 +558,7 @@ export const BUILTIN_PRINT_TEMPLATES: Record<string, string> = {
   [REFUND_RECEIPT_TEMPLATE]: REFUND_RECEIPT_SOURCE,
   [RECEIPT_TEMPLATE]: RECEIPT_SOURCE,
   [PFAND_RETURN_RECEIPT_TEMPLATE]: PFAND_RETURN_RECEIPT_SOURCE,
+  [WAITER_SETTLEMENT_TEMPLATE]: WAITER_SETTLEMENT_SOURCE,
   [CANCELLATION_TICKET_TEMPLATE]: `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
    Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
 {% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}

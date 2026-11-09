@@ -24,7 +24,8 @@ export const TEST_ORDER_CLEANUP_REFERENCE = 'test_order_cleanup';
 /**
  * Loescht beim Aktivieren einer Veranstaltung alles, was im Testmodus
  * gebucht wurde (Kennzeichen `is_test` an Bestellungen und
- * Pfand-Rueckgaben), samt abhaengiger Daten.
+ * Pfand-Rueckgaben), samt abhaengiger Daten und Kellnerabrechnungen, die
+ * nur aus Testbuchungen bestanden (Training).
  *
  * Laeuft im EntityManager der Aktivierung: schlaegt ein Schritt fehl, rollt
  * die Transaktion alles zurueck, auch den Statuswechsel. Ein zweiter Aufruf
@@ -107,6 +108,13 @@ export class TestOrderCleanupService {
          RETURNING id
        )
        SELECT id FROM deleted`,
+      [organizationId, eventId],
+    );
+
+    // Kellnerabrechnungen nur aus Testbuchungen (Training, ohne Nummer).
+    await manager.query(
+      `DELETE FROM waiter_settlements
+       WHERE organization_id = $1 AND event_id = $2 AND is_test`,
       [organizationId, eventId],
     );
 

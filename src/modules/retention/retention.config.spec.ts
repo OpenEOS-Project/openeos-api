@@ -22,6 +22,9 @@ describe('loadRetentionConfig', () => {
       categories: [],
       guestDataDays: 30,
       helperDataDays: 30,
+      waiterDataDays: 30,
+      waiterInactiveMonths: 12,
+      waiterSessionDays: 90,
       auditLogDays: 90,
       staleCredentialDays: 90,
       supportMonths: 12,
@@ -68,12 +71,14 @@ describe('loadRetentionConfig', () => {
     const config = loadRetentionConfig({
       RETENTION_GUEST_DATA_DAYS: '1',
       RETENTION_HELPER_DATA_DAYS: '7',
+      RETENTION_WAITER_DATA_DAYS: '3',
       RETENTION_NOTICE_DAYS: '0',
       RETENTION_EXPORT_PERIOD_DAYS: '10',
       RETENTION_FISCAL_ARCHIVE_YEARS: '2',
     });
     expect(config.guestDataDays).toBe(MIN_EXPORT_OFFER_DAYS);
     expect(config.helperDataDays).toBe(MIN_EXPORT_OFFER_DAYS);
+    expect(config.waiterDataDays).toBe(MIN_EXPORT_OFFER_DAYS);
     expect(config.noticeDays).toBe(MIN_EXPORT_OFFER_DAYS);
     expect(config.exportPeriodDays).toBe(MIN_EXPORT_OFFER_DAYS);
     expect(config.fiscalArchiveYears).toBe(10);
