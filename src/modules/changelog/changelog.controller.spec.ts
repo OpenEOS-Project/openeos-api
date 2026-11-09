@@ -7,7 +7,7 @@ describe('ChangelogController', () => {
   it('returns the newest release first, with its version', () => {
     const { data } = controller.list();
 
-    expect(data.latest).toBe('2026-11-10');
+    expect(data.latest).toBe('2026-11-09');
     expect(data.latestVersion).toBe('1.8');
     expect(data.entries[0].version).toBe('1.8');
 

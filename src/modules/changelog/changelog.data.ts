@@ -17,7 +17,7 @@ import type { ChangelogEintrag } from './changelog.types';
 export const CHANGELOG: ChangelogEintrag[] = [
   {
     // Naechste Veroeffentlichung (1.8): Datum beim Release anpassen.
-    datum: '2026-11-10',
+    datum: '2026-11-09',
     art: 'neu',
     titel: {
       de: 'Bedienungen mit PIN und Kellnerabrechnung',
@@ -914,7 +914,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
  * Eintrag ohne Version da.
  */
 export const RELEASES: Record<string, string> = {
-  '2026-11-10': '1.8',
+  '2026-11-09': '1.8',
   '2026-10-29': '1.7',
   '2026-10-08': '1.6',
   '2026-10-03': '1.5',
