@@ -11,6 +11,43 @@ export type TseProviderName = 'none' | 'swissbit';
  */
 export type TseLifecycle = 'persistent' | 'monthly';
 
+/**
+ * Bietet dieser Server die Cloud-TSE an?
+ * - `available`: eingerichtet (Provider + Zugangsdaten), siehe `enabled`,
+ * - `coming_soon`: gehostete Installation, die die Cloud-TSE ankuendigt,
+ *   aber noch nicht anbietet (`TSE_COMING_SOON=true`) — die Oberflaeche
+ *   zeigt „Bald verfuegbar“ statt „nicht eingerichtet“,
+ * - `not_configured`: keine Cloud-TSE (eigene Installation ohne Provider).
+ *
+ * Ausdruecklich gesetzt statt abgeleitet: „kein Provider“ allein sagt
+ * nicht, ob die TSE kommt (gehostet) oder nie eingerichtet wird.
+ */
+export type TseAvailability = 'available' | 'coming_soon' | 'not_configured';
+
+export function tseAvailabilityOf(input: {
+  enabled: boolean;
+  comingSoon: boolean;
+  selfHosted: boolean;
+}): TseAvailability {
+  if (input.enabled) return 'available';
+  // Eigene Installationen kuendigt OpenEOS nichts an — dort entscheidet
+  // der Betreiber, ob er eine TSE einrichtet.
+  if (input.comingSoon && !input.selfHosted) return 'coming_soon';
+  return 'not_configured';
+}
+
+/** Meldung zu 503 TSE_NOT_AVAILABLE je nach Verfuegbarkeit. */
+export function tseNotAvailableMessage(availability: TseAvailability): string {
+  return availability === 'coming_soon'
+    ? 'Die Cloud-TSE ist bald verfügbar. Bis dahin kannst du „Nur Bons“ oder „Bargeldlos“ nutzen.'
+    : 'Auf diesem Server ist keine Cloud-TSE eingerichtet';
+}
+
+/** `TSE_COMING_SOON` lesen: nur `true` (Gross/klein egal) schaltet ein. */
+export function parseTseComingSoon(raw: string | undefined): boolean {
+  return (raw ?? '').trim().toLowerCase() === 'true';
+}
+
 /** `TSE_LIFECYCLE` lesen: `persistent` oder (Standard, auch `per_event`) `monthly`. */
 export function parseTseLifecycle(raw: string): TseLifecycle {
   return raw.trim().toLowerCase() === 'persistent' ? 'persistent' : 'monthly';
@@ -96,6 +133,9 @@ export function tseSettingsFromEnv(
 @Injectable()
 export class TseConfig {
   readonly settings: TseSettings;
+  /** `TSE_COMING_SOON=true`: die Cloud-TSE als „Bald verfuegbar“ zeigen. */
+  readonly comingSoon: boolean;
+  private readonly selfHosted: boolean;
 
   constructor(configService: ConfigService) {
     const keys = [
@@ -119,6 +159,14 @@ export class TseConfig {
       env[key] = raw === undefined || raw === null ? undefined : String(raw);
     }
     this.settings = tseSettingsFromEnv(env);
+    const comingSoon = configService.get<string | boolean>('TSE_COMING_SOON');
+    this.comingSoon = parseTseComingSoon(
+      comingSoon === undefined || comingSoon === null
+        ? undefined
+        : String(comingSoon),
+    );
+    this.selfHosted =
+      configService.get<string>('deployment.mode') === 'selfhosted';
   }
 
   get enabled(): boolean {
@@ -129,6 +177,15 @@ export class TseConfig {
       !!s.swissbit.creditClientSecret &&
       !!s.swissbit.productType
     );
+  }
+
+  /** Fuer Oberflaeche und Status: verfuegbar, bald verfuegbar oder nicht. */
+  get availability(): TseAvailability {
+    return tseAvailabilityOf({
+      enabled: this.enabled,
+      comingSoon: this.comingSoon,
+      selfHosted: this.selfHosted,
+    });
   }
 
   get lifecycle(): TseLifecycle {
