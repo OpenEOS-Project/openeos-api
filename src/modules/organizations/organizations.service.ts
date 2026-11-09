@@ -45,7 +45,7 @@ import {
 import { recordInitialCountry } from './country/country.writes';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { ConfigService } from '@nestjs/config';
-import { TseConfig } from '../tse/tse.config';
+import { TseConfig, tseNotAvailableMessage } from '../tse/tse.config';
 import {
   AdminAction,
   AdminAuditLog,
@@ -490,10 +490,11 @@ export class OrganizationsService {
             'Die Cloud-TSE gibt es nur für Organisationen in Deutschland',
         });
       }
-      if (!new TseConfig(this.configService).enabled) {
+      const tse = new TseConfig(this.configService);
+      if (!tse.enabled) {
         throw new ServiceUnavailableException({
           code: ErrorCodes.TSE_NOT_AVAILABLE,
-          message: 'Auf diesem Server ist keine Cloud-TSE eingerichtet',
+          message: tseNotAvailableMessage(tse.availability),
         });
       }
       return;
