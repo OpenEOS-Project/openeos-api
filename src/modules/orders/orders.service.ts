@@ -1718,7 +1718,7 @@ export class OrdersService {
           dailyNumber: order.dailyNumber,
           tableNumber: order.tableNumber,
           stationName: station.name,
-          // Bestellungen aus der Verwaltung: angelegt von einem Mitglied,
+          // Bestellungen aus der Verwaltung: angelegt von einem Web-Nutzer,
           // ohne Geraet (`createdByUser` ist hier schon geladen).
           ...orderStaffPayload({
             userName: personName(order.createdByUser),

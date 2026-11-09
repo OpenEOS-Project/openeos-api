@@ -124,13 +124,12 @@ describeWithDb('order staff names against Postgres', () => {
     });
   });
 
-  it('prefers a member who created the order', async () => {
+  it('loads the web user (member) who created an order without a device', async () => {
     const orgId = await org();
-    const dev = await device(orgId, 'Kasse 1');
     const markus = await user('Markus', 'Maier', orgId);
-    expect(await staffOf(orgId, dev, markus)).toEqual({
+    expect(await staffOf(orgId, null, markus)).toEqual({
       userName: 'Markus Maier',
-      deviceName: 'Kasse 1',
+      deviceName: null,
     });
   });
 

@@ -6,11 +6,14 @@ import type { User } from '../../database/entities/user.entity';
  * (`waiter_name`) und „Gerät“ (`device_name`), Idee aus
  * openeos-web#15.
  *
- * - `userName`: Name des Mitglieds, das die Bestellung angelegt hat
- *   (`created_by_user_id`, z. B. in der Verwaltung). Nur wenn die Person
- *   (noch) Mitglied der Organisation der Bestellung ist.
- * - `deviceName`: Name des bestellenden Geraets (`created_by_device_id`),
- *   nur wenn das Geraet zur Organisation der Bestellung gehoert.
+ * - `deviceName`: Name des Geraets, mit dem die Bestellung aufgenommen
+ *   wurde (`created_by_device_id`), nur wenn das Geraet zur Organisation
+ *   der Bestellung gehoert. Kassen und Bestellgeraete haben keine
+ *   Personen-Anmeldung; „ein Geraet je Bedienung“ heisst: der Name der
+ *   Bedienung steht im Geraetenamen.
+ * - `userName`: Anzeigename des angemeldeten Web-Nutzers, der die
+ *   Bestellung ohne Geraet angelegt hat (`created_by_user_id`, Verwaltung).
+ *   Nur wenn er (noch) Mitglied der Organisation der Bestellung ist.
  *
  * Online-/QR-Bestellungen haben weder noch: dann bleiben beide leer und
  * die Vorlagen lassen die Zeile samt Beschriftung weg.
@@ -84,16 +87,16 @@ export async function loadOrderStaff(
 }
 
 /**
- * Druckfelder: `waiter_name` ist die Person, sonst das Geraet (bei
- * „ein Geraet je Bedienung“ steht der Name im Geraetenamen);
- * `device_name` immer das bestellende Geraet.
+ * Druckfelder: `waiter_name` ist der Name des Geraets, mit dem die
+ * Bestellung aufgenommen wurde; nur ohne Geraet (Bestellung aus der
+ * Verwaltung) der Name des Web-Nutzers. `device_name` immer das Geraet.
  */
 export function orderStaffPayload(staff: OrderStaff): {
   waiter_name: string | null;
   device_name: string | null;
 } {
   return {
-    waiter_name: staff.userName ?? staff.deviceName ?? null,
+    waiter_name: staff.deviceName ?? staff.userName ?? null,
     device_name: staff.deviceName ?? null,
   };
 }

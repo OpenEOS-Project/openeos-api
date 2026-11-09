@@ -28,16 +28,22 @@ function runner(rows: unknown[]): RawQueryRunner & { query: jest.Mock } {
 }
 
 describe('order staff names (Bedienung / Gerät)', () => {
-  it('prefers the person over the device and keeps the device separately', () => {
-    expect(
-      orderStaffPayload({ userName: 'Markus Maier', deviceName: 'Tablet 3' }),
-    ).toEqual({ waiter_name: 'Markus Maier', device_name: 'Tablet 3' });
-  });
-
-  it('falls back to the device name when no person is recorded', () => {
+  it('uses the name of the device that took the order', () => {
     expect(
       orderStaffPayload({ userName: null, deviceName: 'Handy Markus' }),
     ).toEqual({ waiter_name: 'Handy Markus', device_name: 'Handy Markus' });
+  });
+
+  it('keeps the device first even if a web user is recorded too', () => {
+    expect(
+      orderStaffPayload({ userName: 'Markus Maier', deviceName: 'Tablet 3' }),
+    ).toEqual({ waiter_name: 'Tablet 3', device_name: 'Tablet 3' });
+  });
+
+  it('uses the web user only for orders without a device (admin area)', () => {
+    expect(
+      orderStaffPayload({ userName: 'Markus Maier', deviceName: null }),
+    ).toEqual({ waiter_name: 'Markus Maier', device_name: null });
   });
 
   it('leaves both empty for online orders', () => {
@@ -197,18 +203,25 @@ describe('OrderPrintService prints the waiter on order-based tickets', () => {
     }
   });
 
-  it('uses the person who created the order when one is recorded', async () => {
+  it('uses the web user who created an order without a device', async () => {
     const { service, payloads } = setup(
-      [{ device_name: 'Kasse 1', user_name: 'Markus Maier' }],
+      [{ device_name: null, user_name: 'Markus Maier' }],
       { kitchenTicketPrinting: { enabled: true, mode: 'per_station' } },
     );
 
-    await service.handleOrderCreated('org-1', created);
+    await service.handleOrderCreated('org-1', {
+      ...created,
+      order: {
+        ...order,
+        createdByDeviceId: null,
+        createdByUserId: 'user-1',
+      } as Order,
+    });
 
     expect(payloads()).toHaveLength(1);
     expect(payloads()[0]).toMatchObject({
       waiter_name: 'Markus Maier',
-      device_name: 'Kasse 1',
+      device_name: null,
     });
   });
 

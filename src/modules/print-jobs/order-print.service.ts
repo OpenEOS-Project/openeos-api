@@ -185,7 +185,7 @@ export class OrderPrintService {
   }
 
   /**
-   * Wer die Bestellung aufgenommen hat (Person/Geraet), einmal je
+   * Wer die Bestellung aufgenommen hat (Geraet, sonst Web-Nutzer), einmal je
    * Druckvorgang geladen und an alle Bons dieser Bestellung gegeben. Ein
    * Fehler hier darf keinen Bon verhindern.
    */
