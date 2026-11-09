@@ -34,7 +34,7 @@ export function requestLogPath(url: string | undefined): string {
 }
 
 /** Felder, deren Wert nie ins Log gehoert (PIN, Passwort, Tokens). */
-const SECRET_BODY_KEY = /pin|password|passwort|secret|token|code$/i;
+const SECRET_BODY_KEY = /(?:pin|password|passwort|secret|token|code)/i;
 
 /** JSON-Replacer fuers Debug-Log: geheime Felder als `***`. */
 export function redactBodyValue(key: string, value: unknown): unknown {
