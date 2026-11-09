@@ -25,8 +25,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * - Geraete mit `requirePin: true` bekommen `waiterMode: 'shared'`
  *   (Entscheidung 15): die PIN ist dort ab jetzt fuer jede Buchung Pflicht.
  */
-export class AddWaiters1841200000000 implements MigrationInterface {
-  name = 'AddWaiters1841200000000';
+export class AddWaiters1841300000000 implements MigrationInterface {
+  name = 'AddWaiters1841300000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

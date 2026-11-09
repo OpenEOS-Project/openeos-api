@@ -87,6 +87,13 @@ export enum AdminAction {
   /** PIN-Eingabe eines Geraets nach 20 Fehlversuchen gesperrt (System). */
   WAITER_PIN_LOCK = 'waiter_pin_lock',
   WAITER_PIN_UNLOCK = 'waiter_pin_unlock',
+  // Ausgehende Webhooks (AGB Ziffer 10.2)
+  WEBHOOK_CREATED = 'webhook_created',
+  WEBHOOK_UPDATED = 'webhook_updated',
+  WEBHOOK_DELETED = 'webhook_deleted',
+  WEBHOOK_SECRET_ROTATED = 'webhook_secret_rotated',
+  /** Zu viele Fehlversuche in Folge — vom System abgeschaltet. */
+  WEBHOOK_AUTO_DISABLED = 'webhook_auto_disabled',
 }
 
 /**

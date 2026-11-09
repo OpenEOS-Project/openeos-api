@@ -101,3 +101,5 @@ export * from './retention-notice.entity';
 export * from './waiter.entity';
 export * from './pin-credential.entity';
 export * from './waiter-session.entity';
+export * from './webhook-endpoint.entity';
+export * from './webhook-delivery.entity';

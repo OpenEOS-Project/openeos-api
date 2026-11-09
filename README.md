@@ -743,6 +743,7 @@ Beginn/Ende, Probelauf und Fehler in `retention_runs` – ohne Inhalte.
 | `support_messages` | Support-Chat | 12 Monate nach letzter Nachricht und letzter Nutzung bzw. Löschung der Organisation | löschen |
 | `contact_requests` | Anfragen über die Website | 6 Monate nach „erledigt“ | löschen |
 | `assistant_imports` | hochgeladene Speisekarten / Vorschläge | 24 Stunden / 30 Tage (stündlicher Job im Assistenten, hier protokolliert) | löschen |
+| `webhook_deliveries` | Zustellprotokoll der Webhooks (gesendeter Inhalt, ggf. mit Gästeangaben, erste 1 KB der Antwort) | 30 Tage (`WEBHOOKS_DELIVERY_RETENTION_DAYS`; stündlicher Job im Webhook-Modul, hier protokolliert) | löschen |
 | `organization_inactivity` | Organisationen ohne Nutzung | Ankündigung nach 24 Monaten, Schließung frühestens 30 Tage später | Mail an die Admins mit Exportlink, dann wie „Organisation löschen“ |
 | `organization_purge` | gelöschte bzw. geschlossene Organisationen | Ankündigung, endgültig nach Exportfrist (30 Tage) und frühestens 30 Tage nach der Ankündigung | Kundendaten löschen; Steuerarchiv, Abrechnungsdaten des Betreibers und die Organisation als gesperrte Hülle (Name, Anschrift, Steuernummer) bleiben |
 | `user_accounts` | Benutzerkonten ohne bestehende Organisation | Ankündigung nach 24 Monaten ohne Nutzung, Löschung frühestens 30 Tage später | anonymisieren (Name, E-Mail, Zugangsdaten, Tokens, Avatar) |
@@ -900,6 +901,59 @@ Der Super-Admin sieht sie mit den übrigen Läufen und Einzellöschungen unter
 Tests gegen eine Wegwerf-Datenbank (Name auf `_test` oder `_scratch`):
 `TEST_RETENTION_DATABASE_URL=postgres://… pnpm test retention.db`.
 
+## Webhooks
+
+Ausgehende Webhooks (AGB Ziffer 10.2): OpenEOS meldet Ereignisse einer
+Organisation als signierten `POST` an Adressen, die ihre Admins anlegen
+(Web-App *Einstellungen → Webhooks* oder `/api/organizations/:id/webhooks`,
+Scopes `webhooks:read`/`webhooks:write`). Doku für Empfänger:
+https://docs.openeos.de/integrationen/webhooks
+
+**Ablauf.** Datenbank-Trigger auf `orders`, `payments`, `refunds`,
+`pfand_returns`, `cash_point_closings`, `events` und `products` schreiben
+Ereignisse in `webhook_outbox` — nur für Organisationen mit aktivem
+Endpunkt, und ein Fehler dabei wird abgefangen (nie bricht ein Webhook eine
+Buchung ab). Die Phase einer Veranstaltung ist abgeleitet; ihren Wechsel
+(`event.phase_changed`) meldet ein Minuten-Job. Jede Instanz holt alle
+`WEBHOOKS_POLL_INTERVAL_MS` den Postausgang (frühestens 2 s nach der
+Änderung, damit Positionen dabei sind), baut je Endpunkt den Inhalt
+(Betriebsart „Nur Bons“ ohne Beträge, Gästedaten nur mit
+`includeGuestData`, Testbestellungen nur mit `includeTestOrders`) und
+stellt zu: `OpenEOS-Signature: t=…,v1=hex(HMAC-SHA256(secret, t + "." +
+body))`, Zeitlimit, keine Weiterleitungen, acht Versuche über rund 24 h
+(sofort, 1 min, 5 min, 30 min, 2 h, 5 h, 8 h, 8 h, ±10 %). Nach
+`WEBHOOKS_DISABLE_AFTER_FAILURES` Fehlversuchen in Folge, die mindestens
+`WEBHOOKS_DISABLE_AFTER_HOURS` dauern, wird der Endpunkt abgeschaltet und
+die Admins bekommen eine Mail.
+
+**SSRF.** Nur `https://`, keine Zugangsdaten in der Adresse; jede
+aufgelöste Adresse muss öffentlich sein (gesperrt: privat, Loopback,
+link-local inkl. 169.254.169.254, CGNAT, ULA, Multicast, Dokumentations-
+und reservierte Netze, IPv4 in IPv6). Geprüft beim Anlegen und vor jedem
+Versand; die Verbindung geht an genau die geprüfte Adresse (Schutz vor
+DNS-Rebinding).
+
+**Geheimnis.** `whsec_…`, verschlüsselt gespeichert (Schlüssel wie bei den
+Zahlungsanbietern: `INTEGRATION_ENCRYPTION_KEY`, sonst
+`TWO_FACTOR_ENCRYPTION_KEY`), einmal angezeigt; nach dem Erneuern signiert
+das alte 24 h mit.
+
+| Variable | Standard | Bedeutung |
+|---|---|---|
+| `WEBHOOKS_ENABLED` | `true` | Aus: kein Versand, Anlegen/Testen antwortet `503 WEBHOOKS_DISABLED`; der Postausgang wird stündlich geleert |
+| `WEBHOOKS_TIMEOUT_MS` | `10000` | Zeit je Versuch bis zur vollständigen Antwort (1–30 s) |
+| `WEBHOOKS_MAX_ATTEMPTS` | `8` | Versuche je Zustellung (1–8) |
+| `WEBHOOKS_MAX_ENDPOINTS_PER_ORG` | `10` | Endpunkte je Organisation |
+| `WEBHOOKS_DISABLE_AFTER_FAILURES` | `30` | Fehlversuche in Folge bis zum Abschalten … |
+| `WEBHOOKS_DISABLE_AFTER_HOURS` | `24` | … wenn die Fehlerserie mindestens so lange dauert |
+| `WEBHOOKS_DELIVERY_RETENTION_DAYS` | `30` | Aufbewahrung des Zustellprotokolls |
+| `WEBHOOKS_POLL_INTERVAL_MS` | `3000` | Takt je Instanz |
+| `WEBHOOKS_CONCURRENCY` | `10` | gleichzeitige Zustellungen je Instanz |
+| `WEBHOOKS_ALLOW_HTTP` | `false` | `http://` erlauben (nur eigene Installation im LAN) |
+| `WEBHOOKS_ALLOW_PRIVATE_NETWORKS` | `false` | private Netze/Loopback als Ziel erlauben (eigene Installation); link-local und Metadaten bleiben gesperrt |
+
+Tests gegen Postgres: `TEST_WEBHOOKS_DATABASE_URL=postgres://…/openeos_webhooks_test pnpm test webhooks.db`.
+
 ## MCP (KI-Agenten)
 
 Die API ist ein [MCP](https://modelcontextprotocol.io)-Server: Claude Desktop, Claude Code, Cursor und eigene Agenten bedienen OpenEOS über dieselben Werkzeuge. Nur Administration — keine Kasse, keine Erstattungen, keine Mitglieder, kein Löschen, keine Freischaltung.
@@ -1019,6 +1073,8 @@ Die API läuft mit mehreren Instanzen hinter einem Proxy (Traefik):
 - **Cache** (u. a. gesperrte Zugangstoken nach dem Abmelden) liegt in Redis.
 - **Zeitgesteuerte Jobs** (`@Cron`) laufen nur auf einer Instanz:
   `CronLockService` belegt die Fälligkeit per `SET … NX PX` in Redis.
+- **Webhooks** stellen alle Instanzen zu; Postausgang und fällige
+  Zustellungen holt jede mit `FOR UPDATE SKIP LOCKED` (siehe „Webhooks“).
 - **Migrationen** laufen einmal vor dem Rollout, nicht beim Start:
   `DATABASE_MIGRATIONS_RUN=false` und vorher
   `docker compose run --rm migrate` (bzw. `pnpm migration:run:prod` im Image).

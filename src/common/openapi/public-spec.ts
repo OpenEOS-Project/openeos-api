@@ -109,10 +109,19 @@ export const PUBLIC_TAGS: ReadonlyArray<{
     description:
       'API-Tokens der Organisation ausstellen und widerrufen — nur mit Anmeldung (JWT) als Administrator, nicht per Token.',
   },
+  {
+    internal: 'Webhooks',
+    name: 'Webhooks',
+    description:
+      'Ausgehende Webhooks: Endpunkte anlegen, testen, Geheimnis erneuern, Zustellprotokoll und erneut senden. Nur für Administratoren; per Token mit `webhooks:read` bzw. `webhooks:write`, Löschen nur mit Anmeldung. Ereignisse, Inhalt und Signatur: https://docs.openeos.de/integrationen/webhooks',
+  },
 ];
 
 /** Tags, deren Operationen auch ohne `x-api-token-scope` oeffentlich sind. */
-export const PUBLIC_TAG_ALLOWLIST: readonly string[] = ['API Tokens'];
+export const PUBLIC_TAG_ALLOWLIST: readonly string[] = [
+  'API Tokens',
+  'Webhooks',
+];
 
 const HTTP_METHODS = [
   'get',

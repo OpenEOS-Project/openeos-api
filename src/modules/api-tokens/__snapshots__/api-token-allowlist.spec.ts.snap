@@ -89,5 +89,15 @@ exports[`API token allowlist matches the documented matrix (ki-plan.md section 8
   "tables:write POST /organizations/:organizationId/tables",
   "tables:write PATCH /organizations/:organizationId/tables/:tableId",
   "tables:write POST /organizations/:organizationId/tables/bulk",
+  "webhooks:read GET /organizations/:organizationId/webhooks",
+  "webhooks:write POST /organizations/:organizationId/webhooks",
+  "webhooks:read GET /organizations/:organizationId/webhooks/:webhookId",
+  "webhooks:write PATCH /organizations/:organizationId/webhooks/:webhookId",
+  "webhooks:read GET /organizations/:organizationId/webhooks/:webhookId/deliveries",
+  "webhooks:read GET /organizations/:organizationId/webhooks/:webhookId/deliveries/:deliveryId",
+  "webhooks:write POST /organizations/:organizationId/webhooks/:webhookId/deliveries/:deliveryId/redeliver",
+  "webhooks:write POST /organizations/:organizationId/webhooks/:webhookId/rotate-secret",
+  "webhooks:write POST /organizations/:organizationId/webhooks/:webhookId/test",
+  "webhooks:read GET /organizations/:organizationId/webhooks/info",
 ]
 `;
