@@ -76,6 +76,14 @@ export class OrganizationLimitsService {
     );
   }
 
+  /** Standard-Obergrenze der Bedienungen (zaehlen nicht zu den Mitgliedern). */
+  get defaultWaiterLimit(): number {
+    return normalize(
+      this.configService.get<number>('limits.waitersPerOrganization'),
+      200,
+    );
+  }
+
   effectiveOrganizationLimit(
     user: Pick<User, 'organizationLimit'> | null | undefined,
   ): number {

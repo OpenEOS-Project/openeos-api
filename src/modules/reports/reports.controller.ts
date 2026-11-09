@@ -334,7 +334,6 @@ export class ReportsController {
       'channels',
       'categories',
       'devices',
-      'waiters',
       'inventory',
       'vat',
     ],

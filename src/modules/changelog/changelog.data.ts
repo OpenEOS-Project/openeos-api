@@ -16,6 +16,23 @@ import type { ChangelogEintrag } from './changelog.types';
  */
 export const CHANGELOG: ChangelogEintrag[] = [
   {
+    // Naechste Veroeffentlichung (1.8): Datum beim Release anpassen.
+    datum: '2026-11-10',
+    art: 'neu',
+    titel: {
+      de: 'Bedienungen mit PIN und Kellnerabrechnung',
+      en: 'Servers with PIN and server settlement',
+    },
+    kurz: {
+      de: 'Bedienungen ohne Konto melden sich per PIN an gemeinsamen Kassen an; jede Buchung zeigt, wer sie gebucht hat, und am Schichtende gibt es die Abrechnung mit Bon.',
+      en: 'Servers without an account sign in at shared tills with a PIN; every booking shows who made it, and at the end of the shift there is a settlement with a receipt.',
+    },
+    text: {
+      de: 'Unter „Bedienungen“ legst du deine Helferinnen und Helfer mit einer Namensliste an, ohne Konto und ohne E-Mail. Jede Person bekommt eine PIN, die du als PIN-Zettel ausdruckst. Stellst du eine Kasse auf „Gemeinsame Kasse“, meldet sich vor dem Buchen jede Bedienung mit ihrer PIN an, wechselt in Sekunden und sperrt die Kasse, wenn sie geht; ihr Warenkorb bleibt so lange gemerkt. Bestellungen, Zahlungen, Stornos und Pfand zeigen dann, wer gebucht hat, und Tische tragen die Farbe ihrer Bedienung. Über den Chip mit dem Namen sieht jede Bedienung ihren Zwischenstand; die Schichtleitung rechnet am Ende ab, mit Bon und Unterschriftszeilen. Offene Tische übergibst du vorher an eine andere Bedienung. Im Bericht „Bedienungen“ und im Bestellexport findest du die Zahlen je Person. Hast du an einer Kasse bisher „PIN verlangen“ genutzt, läuft sie jetzt als gemeinsame Kasse; Mitglieds-PINs gelten weiter, leg für Helfer aber besser Bedienungen statt Mitglieder an. Bedienungsdaten werden nach festen Fristen anonymisiert, Details stehen in der Dokumentation.',
+      en: 'Under "Servers" you add your helpers from a list of names, without an account and without an e-mail address. Everyone gets a PIN that you print as a PIN slip. If you set a till to "Shared till", every server signs in with their PIN before booking, switches in seconds and locks the till when leaving; their cart is kept in the meantime. Orders, payments, cancellations and deposits then show who booked them, and tables carry the color of their server. Via the chip with their name every server sees their running total; at the end the shift lead settles them, with a receipt and signature lines. Hand open tables over to another server first. The "Servers" report and the order export show the figures per person. If a till used "Require PIN" so far, it now runs as a shared till; member PINs keep working, but for helpers it is better to add servers instead of members. Server data is anonymized after fixed periods; details are in the documentation.',
+    },
+  },
+  {
     datum: '2026-10-29',
     art: 'neu',
     titel: {
@@ -897,6 +914,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
  * Eintrag ohne Version da.
  */
 export const RELEASES: Record<string, string> = {
+  '2026-11-10': '1.8',
   '2026-10-29': '1.7',
   '2026-10-08': '1.6',
   '2026-10-03': '1.5',

@@ -12727,6 +12727,8 @@
                 "waiter_deleted",
                 "waiter_pin_lock",
                 "waiter_pin_unlock",
+                "waiter_settled",
+                "waiter_tables_transferred",
                 "webhook_created",
                 "webhook_updated",
                 "webhook_deleted",
@@ -14157,6 +14159,85 @@
           "Reports"
         ],
         "x-api-token-scope": "read"
+      }
+    },
+    "/api/organizations/{organizationId}/reports/waiters": {
+      "get": {
+        "description": "Je Bedienung bzw. Mitglied: aufgenommen (Bestellungen, Positionen, Umsatz), kassiert je Zahlart mit Trinkgeld, Storno/Erstattungen, Pfand-Auszahlungen, Abrechnungen und offene Tische; ohne Testbuchungen, Zeitraum nach Buchungszeit. Zeile `kind: none` = ohne Bedienung. In „Nur Bons“ nur Mengen. Modulrecht Auswertung; nicht mit API-Token.",
+        "operationId": "getWaitersReport",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": false,
+            "in": "query",
+            "description": "Filter nach Event-ID",
+            "schema": {
+              "example": "550e8400-e29b-41d4-a716-446655440000",
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "required": false,
+            "in": "query",
+            "description": "Startdatum für den Bericht",
+            "schema": {
+              "example": "2024-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "required": false,
+            "in": "query",
+            "description": "Enddatum für den Bericht",
+            "schema": {
+              "example": "2024-12-31T23:59:59.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "groupBy",
+            "required": false,
+            "in": "query",
+            "description": "Gruppierung der Berichtsdaten",
+            "schema": {
+              "example": "day",
+              "type": "string",
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "category",
+                "product",
+                "payment_method"
+              ]
+            }
+          },
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Bericht je Bedienung",
+        "tags": [
+          "Reports"
+        ]
       }
     },
     "/api/organizations/{organizationId}/reports/inventory": {
@@ -18140,6 +18221,7 @@
               "enum": [
                 "guest_data",
                 "helper_data",
+                "waiter_data",
                 "auth_records",
                 "audit_logs",
                 "support_messages",
@@ -19499,6 +19581,329 @@
         ]
       }
     },
+    "/api/organizations/{id}/waiters/{waiterId}/summary": {
+      "get": {
+        "description": "Zahlen seit der letzten Abrechnung dieser Bedienung in der Veranstaltung (sonst ab Beginn): kassiert je Zahlart mit Trinkgeld, Storno/Erstattungen, Pfand-Auszahlungen, aufgenommen, Soll bar (informativ, Schublade je Gerät), offene Tische, Training getrennt. In „Nur Bons“ nur Mengen. `eventId` ohne Angabe: Veranstaltung der Bedienung bzw. die laufende.",
+        "operationId": "waiters_summary",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "waiterId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Zwischenstand einer Bedienung",
+        "tags": [
+          "Waiters"
+        ]
+      }
+    },
+    "/api/organizations/{id}/waiters/{waiterId}/settlements": {
+      "post": {
+        "description": "Schließt den Zeitraum seit der letzten Abrechnung ab (unveränderlich, fortlaufende Nummer je Organisation; nur Testbuchungen → Training ohne Nummer). Offene Tische: 409 WAITER_OPEN_TABLES (`params.openTables`) — übergeben oder mit `force` + `note` trotzdem abrechnen. Nichts abzurechnen: 400 WAITER_SETTLEMENT_EMPTY. Mit `printerId` wird der Abrechnungsbon gedruckt.",
+        "operationId": "waiters_settle",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "waiterId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettleWaiterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Bedienung abrechnen",
+        "tags": [
+          "Waiters"
+        ]
+      }
+    },
+    "/api/organizations/{id}/waiters/{waiterId}/transfer-tables": {
+      "post": {
+        "description": "Alle offenen Bestellungen der Bedienung (optional nur einer Veranstaltung) bekommen eine neue verantwortliche Bedienung. Jede Übergabe steht im Bestellverlauf; die Kassen bekommen `orderTransferred`.",
+        "operationId": "waiters_transferTables",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "waiterId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferTablesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Offene Tische einer Bedienung übergeben",
+        "tags": [
+          "Waiters"
+        ]
+      }
+    },
+    "/api/organizations/{id}/waiters/{waiterId}/export": {
+      "get": {
+        "description": "Stammdaten (ohne PIN), Anmeldungen an Geräten, Abrechnungen und Anzahl der zugeordneten Buchungen. `format=csv` (Standard) oder `json`.",
+        "operationId": "waiters_exportWaiter",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "waiterId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "csv",
+                "json"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Auskunft über eine Bedienung (Art. 15 DSGVO)",
+        "tags": [
+          "Waiters"
+        ]
+      }
+    },
+    "/api/organizations/{id}/waiter-settlements": {
+      "get": {
+        "description": "Neueste zuerst (höchstens 500). Filter `eventId`, `waiterId`. Jede Abrechnung enthält den Schnappschuss der Zahlen (`totals`), offene Tische, „trotz offener Tische“ mit Notiz und wer abgerechnet hat.",
+        "operationId": "waiterSettlements_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "waiterId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Kellnerabrechnungen",
+        "tags": [
+          "Waiters"
+        ]
+      }
+    },
+    "/api/organizations/{id}/waiter-settlements/{settlementId}": {
+      "get": {
+        "operationId": "waiterSettlements_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "settlementId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Eine Kellnerabrechnung",
+        "tags": [
+          "Waiters"
+        ]
+      }
+    },
+    "/api/organizations/{id}/waiter-settlements/{settlementId}/reprint": {
+      "post": {
+        "description": "Druckt den Bon „ABRECHNUNG Nr. N“ mit Vermerk „Nachdruck“ auf dem gewählten Drucker (sonst dem Bondrucker des Geräts der Abrechnung). `printed: false`, wenn kein Drucker erreichbar ist.",
+        "operationId": "waiterSettlements_reprint",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "settlementId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReprintSettlementDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Abrechnungsbon nachdrucken",
+        "tags": [
+          "Waiters"
+        ]
+      }
+    },
     "/api/device-api/waiter-session": {
       "post": {
         "description": "Die PIN allein identifiziert die Bedienung bzw. das Mitglied. Antwort: `token` (Header `X-Waiter-Session` bei jeder Buchung, nur im Speicher halten), `expiresAt`, `kind` (`waiter`|`member`), `waiter` (id, name, shortName, color, role, permissions). Eine vorige Sitzung an diesem Gerät endet (Wechsel). Fehler: 403 PIN_INVALID (`params.remainingAttempts`), 429 PIN_LOCKED (`params.retryAfterSeconds`), 429 PIN_DEVICE_LOCKED (Freigabe durch Admin), 403 WAITER_NOT_FOR_EVENT.",
@@ -19614,6 +20019,192 @@
           }
         },
         "summary": "Kurzliste der Bedienungen (Kacheln, Tischfarben)",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/waiter/summary": {
+      "get": {
+        "description": "Zahlen der angemeldeten Bedienung (bzw. des Mitglieds) seit ihrer letzten Abrechnung in der laufenden Veranstaltung: kassiert je Zahlart mit Trinkgeld, Storno/Erstattungen, Pfand, aufgenommen, Soll bar (informativ, Schublade je Gerät), offene Tische. `waiterId`: andere Bedienung (nur Schichtleitung/Admin). `meta.canSettle`: darf abrechnen; `meta.canForce`: darf trotz offener Tische abrechnen.",
+        "operationId": "deviceWaiters_summary",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "waiterId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Mein Zwischenstand",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/waiter/summary/print": {
+      "post": {
+        "description": "Druckt den unverbindlichen Zwischenstand auf dem Bondrucker des Geräts (`printed: false`, wenn keiner eingerichtet ist).",
+        "operationId": "deviceWaiters_printSummary",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrintWaiterSummaryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Zwischenstand drucken",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/waiter/settlements": {
+      "post": {
+        "description": "Schichtleitung bzw. Admin-Mitglied rechnet eine Bedienung ab (`waiterId`, sonst sich selbst). Sich selbst abrechnen darf eine Bedienung nur mit der Organisations-Einstellung `selfSettlement`; sonst 403 WAITER_NOT_PERMITTED. Offene Tische: 409 WAITER_OPEN_TABLES, außer `force` + `note` (Schichtleitung). Der Bon geht an den Bondrucker des Geräts (`print: false` unterdrückt ihn).",
+        "operationId": "deviceWaiters_settle",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceSettleWaiterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Abrechnen an der Kasse",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/orders/{orderId}/transfer": {
+      "post": {
+        "description": "Neue verantwortliche Bedienung für eine offene Bestellung; mit `wholeTable` (Standard) alle offenen Bestellungen desselben Tisches dieser Bedienung. Eigene Tische übergibt jede Bedienung, fremde nur Schichtleitung/Admin (403 WAITER_NOT_PERMITTED). Eintrag im Bestellverlauf, Echtzeit `orderTransferred`.",
+        "operationId": "deviceWaiters_transfer",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOrderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Tisch bzw. Bestellung übergeben",
         "tags": [
           "Device API"
         ]
@@ -25246,6 +25837,7 @@
               "enum": [
                 "guest_data",
                 "helper_data",
+                "waiter_data",
                 "auth_records",
                 "audit_logs",
                 "support_messages",
@@ -25591,6 +26183,58 @@
           }
         }
       },
+      "SettleWaiterDto": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "description": "Veranstaltung. Ohne: die der Bedienung (veranstaltungsgebunden), sonst die laufende."
+          },
+          "countedCash": {
+            "type": "object",
+            "example": 120.5,
+            "nullable": true,
+            "description": "Gezählter Bargeldbestand (optional). Ohne Kellnerbrieftasche ist „Soll bar“ nur informativ."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Trotz offener Tische abrechnen (nur Schichtleitung/Admin, mit `note`)."
+          },
+          "note": {
+            "type": "object",
+            "maxLength": 500
+          },
+          "printerId": {
+            "type": "string",
+            "description": "Drucker für den Abrechnungsbon (Verwaltung). Ohne: kein Druck."
+          }
+        }
+      },
+      "TransferTablesDto": {
+        "type": "object",
+        "properties": {
+          "toWaiterId": {
+            "type": "string",
+            "description": "Neue verantwortliche Bedienung"
+          },
+          "eventId": {
+            "type": "string",
+            "description": "Nur diese Veranstaltung"
+          }
+        },
+        "required": [
+          "toWaiterId"
+        ]
+      },
+      "ReprintSettlementDto": {
+        "type": "object",
+        "properties": {
+          "printerId": {
+            "type": "string",
+            "description": "Drucker. Ohne: Bondrucker des Geräts der Abrechnung."
+          }
+        }
+      },
       "WaiterSessionLoginDto": {
         "type": "object",
         "properties": {
@@ -25618,6 +26262,68 @@
             "default": "lock"
           }
         }
+      },
+      "PrintWaiterSummaryDto": {
+        "type": "object",
+        "properties": {
+          "waiterId": {
+            "type": "string",
+            "description": "Andere Bedienung (Schichtleitung)."
+          }
+        }
+      },
+      "DeviceSettleWaiterDto": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "description": "Veranstaltung. Ohne: die der Bedienung (veranstaltungsgebunden), sonst die laufende."
+          },
+          "countedCash": {
+            "type": "object",
+            "example": 120.5,
+            "nullable": true,
+            "description": "Gezählter Bargeldbestand (optional). Ohne Kellnerbrieftasche ist „Soll bar“ nur informativ."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Trotz offener Tische abrechnen (nur Schichtleitung/Admin, mit `note`)."
+          },
+          "note": {
+            "type": "object",
+            "maxLength": 500
+          },
+          "printerId": {
+            "type": "string",
+            "description": "Drucker für den Abrechnungsbon (Verwaltung). Ohne: kein Druck."
+          },
+          "waiterId": {
+            "type": "string",
+            "description": "Andere Bedienung abrechnen (Schichtleitung). Ohne: sich selbst."
+          },
+          "print": {
+            "type": "boolean",
+            "default": true,
+            "description": "Bon drucken"
+          }
+        }
+      },
+      "TransferOrderDto": {
+        "type": "object",
+        "properties": {
+          "toWaiterId": {
+            "type": "string",
+            "description": "Neue verantwortliche Bedienung"
+          },
+          "wholeTable": {
+            "type": "boolean",
+            "default": true,
+            "description": "Alle offenen Bestellungen desselben Tisches dieser Bedienung mit übergeben."
+          }
+        },
+        "required": [
+          "toWaiterId"
+        ]
       }
     }
   }

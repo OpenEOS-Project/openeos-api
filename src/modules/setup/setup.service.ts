@@ -31,6 +31,7 @@ export interface SetupStatus {
     limits: {
       organizationsPerUser: number;
       membersPerOrganization: number;
+      waitersPerOrganization: number;
     };
   };
 }
@@ -80,6 +81,7 @@ export class SetupService {
       limits: {
         organizationsPerUser: this.limits.defaultOrganizationLimit,
         membersPerOrganization: this.limits.defaultMemberLimit,
+        waitersPerOrganization: this.limits.defaultWaiterLimit,
       },
     };
 

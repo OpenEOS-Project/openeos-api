@@ -328,6 +328,34 @@ export class OrdersService {
         )
       : [];
     const methodsOf = new Map(methods.map((m) => [m.order_id, m.methods]));
+    // Bedienung je Bestellung: verantwortlich (Tisch), sonst aufnehmend.
+    const waiterIds = [
+      ...new Set(
+        items
+          .map((o) => o.waiterId ?? o.createdByWaiterId)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const waiters = waiterIds.length
+      ? await this.orderRepository.manager.query<
+          {
+            id: string;
+            name: string;
+            short_name: string | null;
+            color: string | null;
+          }[]
+        >(
+          `SELECT id, name, short_name, color FROM waiters
+            WHERE organization_id = $1 AND id = ANY($2::uuid[])`,
+          [organizationId, waiterIds],
+        )
+      : [];
+    const waiterOf = new Map(
+      waiters.map((w) => [
+        w.id,
+        { id: w.id, name: w.name, shortName: w.short_name, color: w.color },
+      ]),
+    );
     const orderOnly =
       items.length > 0 &&
       isOrdersOnly(await this.modeOrganization(organizationId));
@@ -335,6 +363,8 @@ export class OrdersService {
       Object.assign(order, {
         displayStatus: displayStatusOf(order, { orderOnly }),
         paymentMethods: methodsOf.get(order.id) ?? [],
+        waiter:
+          waiterOf.get(order.waiterId ?? order.createdByWaiterId ?? '') ?? null,
       }),
     );
     return createPaginatedResult(withStatus, total, page, limit);
