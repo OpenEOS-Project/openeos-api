@@ -82,6 +82,8 @@ services:
       OPERATOR_NAME: ${OPERATOR_NAME:-LUXCODE by Lukas Lukic-Spitznagel}
       OPERATOR_ADDRESS: ${OPERATOR_ADDRESS:-}
       OPERATOR_EMAIL: ${OPERATOR_EMAIL:-hello@openeos.de}
+      # Notfall-Support am Veranstaltungstag (leer: nicht angezeigt)
+      OPERATOR_EMERGENCY_PHONE: ${OPERATOR_EMERGENCY_PHONE:-}
 
       # Abrechnung (§ 19 UStG — Endpreise ohne USt)
       EVENT_PRICE_EUR: ${EVENT_PRICE_EUR:-25}

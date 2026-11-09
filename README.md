@@ -484,6 +484,7 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `DATABASE_MIGRATIONS_RUN` | Migrationen beim Start ausführen (eine Instanz) | false (Vorlage `docker-compose.prod.yml`: true) |
 | `SHUTDOWN_TIMEOUT_MS` | So lange dürfen offene Anfragen nach SIGTERM noch laufen | 20000 |
 | `SHUTDOWN_DRAIN_DELAY_MS` | Wartezeit nach SIGTERM, in der `/api/health/ready` schon 503 meldet | 0 |
+| `OPERATOR_EMERGENCY_PHONE` | Rufnummer des Notfall-Supports am Veranstaltungstag (AGB 18.2). Nur für Mitglieder und Kassen einer Organisation mit freigeschalteter, noch nicht beendeter Veranstaltung (`GET /organizations/:orgId/support/emergency`, `GET /device-api/support/emergency`) und in der Buchungsbestätigung; leer: nirgends | – |
 | `DEPLOY_GUARD_TOKEN` | Token für `GET /api/internal/deploy-guard` (leer: Endpunkt aus) | – |
 | `AI_PROVIDER` | Assistent: `none`, `anthropic` oder `openai` (siehe „Assistent“) | none |
 | `ANTHROPIC_API_KEY` | Schlüssel für `AI_PROVIDER=anthropic` | – |

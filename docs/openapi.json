@@ -16970,6 +16970,36 @@
         ]
       }
     },
+    "/api/organizations/{organizationId}/support/emergency": {
+      "get": {
+        "description": "Rufnummer des Notfall-Supports (AGB 18.2) — nur für Mitglieder einer Organisation mit mindestens einer freigeschalteten, noch nicht beendeten Veranstaltung und nur, wenn der Betreiber eine Nummer hinterlegt hat (`OPERATOR_EMERGENCY_PHONE`). Sonst `phone: null`. `eventIds`: Veranstaltungen, für die der Notfall-Support gerade gilt.",
+        "operationId": "support_getEmergency",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Emergency support phone for booked event days",
+        "tags": [
+          "Support"
+        ]
+      }
+    },
     "/api/organizations/{organizationId}/support/messages": {
       "post": {
         "operationId": "support_sendMessage",
@@ -17088,6 +17118,32 @@
         ],
         "tags": [
           "Admin Support"
+        ]
+      }
+    },
+    "/api/device-api/support/emergency": {
+      "get": {
+        "description": "Wie `GET /organizations/{organizationId}/support/emergency` für die Organisation des Geräts: Rufnummer nur mit gebuchter, noch nicht beendeter Veranstaltung und hinterlegter Nummer, sonst `phone: null`.",
+        "operationId": "deviceEmergencySupport_emergency",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Emergency support phone for this device organization",
+        "tags": [
+          "Device API"
         ]
       }
     },

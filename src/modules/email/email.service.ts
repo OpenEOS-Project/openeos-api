@@ -245,6 +245,8 @@ export class EmailService {
     bookedAt: Date;
     documents: LegalEmailDocument[];
     elster: BookingElsterData | null;
+    /** Notfall-Support (AGB 18.2), `null`: keine Nummer hinterlegt. */
+    emergencyPhone?: { phone: string; telUri: string } | null;
   }): Promise<boolean> {
     const subject = `Buchungsbestätigung: ${options.eventName}`;
     const betrag = new Intl.NumberFormat('de-DE', {
@@ -335,6 +337,13 @@ export class EmailService {
           'Für die Buchung gelten diese Fassungen – zum Nachlesen und Speichern:',
         ) + dokumentLinks(options.documents),
         elsterBlock,
+        options.emergencyPhone
+          ? hinweis(
+              'Notfall-Support am Veranstaltungstag',
+              `Bei kritischen Störungen während deiner gebuchten Veranstaltung, z. B. wenn die Kasse ausfällt, erreichst du uns telefonisch unter <a href="${escapeHtml(options.emergencyPhone.telUri)}" style="color:inherit;font-weight:bold">${escapeHtml(options.emergencyPhone.phone)}</a>. Für alles andere schreib uns bitte im Support-Chat in der App oder per E-Mail.`,
+              true,
+            )
+          : null,
         knopf(`${this.appUrl}/events`, 'Zur Veranstaltung'),
       ),
     });

@@ -121,6 +121,10 @@ export const validationSchema = Joi.object({
   OPERATOR_NAME: Joi.string().allow(''),
   OPERATOR_ADDRESS: Joi.string().allow(''),
   OPERATOR_EMAIL: Joi.string().allow(''),
+  // Notfall-Support am Veranstaltungstag (AGB 18.2). Leer: keine Nummer.
+  OPERATOR_EMERGENCY_PHONE: Joi.string()
+    .pattern(/^\+?[0-9][0-9 ()/-]{4,30}$/)
+    .allow(''),
 
   // Event billing (pay-per-event activation)
   STRIPE_SECRET_KEY: Joi.string().allow('').default(''),
