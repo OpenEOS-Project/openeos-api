@@ -10,7 +10,6 @@ import {
   Optional,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import * as bcrypt from 'bcrypt';
 import { DataSource, Repository, type EntityManager } from 'typeorm';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { TseSigningService } from '../tse/tse-signing.service';
@@ -64,6 +63,8 @@ import {
 } from '../print-jobs/order-print.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { SumUpApiService } from '../sumup/sumup-api.service';
+import type { Operator } from '../waiters/waiter-operator';
+import { WaiterSessionsService } from '../waiters/waiter-sessions.service';
 import type {
   CancelItemsDto,
   CancelOrderWithActorDto,
@@ -105,7 +106,12 @@ export interface RefundActor {
   deviceId: string | null;
   deviceName: string | null;
   userId: string | null;
+  /** Ausloesende Bedienung (Bedienungs-Sitzung an der Kasse). */
+  waiterId?: string | null;
   actorName: string | null;
+  /** Freigabe per PIN (Schichtleitung bzw. Mitglied mit Recht „Bestellungen“). */
+  approvedByWaiterId?: string | null;
+  approvedByUserId?: string | null;
   /** Kassenlade bei Barerstattung oeffnen (Geraeteeinstellung). */
   cashDrawerPrinterId: string | null;
 }
@@ -227,6 +233,8 @@ export class RefundsService {
     private readonly orderHistoryService: OrderHistoryService,
     @Optional()
     private readonly tseSigning?: TseSigningService,
+    @Optional()
+    private readonly waiterSessions?: WaiterSessionsService,
   ) {}
 
   // ---------------------------------------------------------------------
@@ -235,12 +243,21 @@ export class RefundsService {
 
   /**
    * Prueft die Geraeteeinstellung „Stornieren & Erstatten“ und liefert,
-   * wer die Aktion ausloest. `pin`: PIN eines Mitglieds mit Recht
-   * „Bestellungen“ oder Admin ist Pflicht.
+   * wer die Aktion ausloest (bedienungen-plan.md §6).
+   *
+   * - `disabled`: nie.
+   * - Mit Bedienungs-Sitzung (`operator`): mit Recht `refund` direkt,
+   *   sonst gibt eine Schichtleitung bzw. ein Mitglied mit Recht
+   *   „Bestellungen“ (oder Admin) per PIN frei (`approved_by_*`).
+   * - Ohne Sitzung (Modus `off`): `pin` verlangt die PIN einer berechtigten
+   *   Person, die dann als Ausloeser gilt; `allowed` ohne PIN.
+   * - `operatorUserId` aus dem Body wird ignoriert: die Zuordnung kommt nur
+   *   aus der Sitzung.
    */
   async resolveDeviceActor(
     device: Device,
     body: DeviceActorDto,
+    operator: Operator | null = null,
   ): Promise<RefundActor> {
     const organizationId = device.organizationId!;
     const policy = (device.settings?.refundPermission ??
@@ -249,8 +266,9 @@ export class RefundsService {
       organizationId,
       deviceId: device.id,
       deviceName: device.name,
-      userId: null,
-      actorName: null,
+      userId: operator?.userId ?? null,
+      waiterId: operator?.waiterId ?? null,
+      actorName: operator?.name ?? null,
       cashDrawerPrinterId:
         (device.settings?.cashDrawerPrinterId as string | undefined) ?? null,
     };
@@ -264,51 +282,62 @@ export class RefundsService {
       });
     }
 
-    if (policy === 'pin' || body.pin) {
-      if (!body.pin) {
-        throw new ForbiddenException({
-          code: ErrorCodes.FORBIDDEN,
-          reason: ErrorReasons.REFUND_PIN_REQUIRED,
-          message: 'Für Storno und Erstattung ist eine PIN nötig.',
-        });
-      }
-      const member = await this.memberByPin(organizationId, body.pin);
-      if (!member) {
-        throw new ForbiddenException({
-          code: ErrorCodes.FORBIDDEN,
-          reason: ErrorReasons.PIN_INVALID,
-          message: 'Ungültige PIN',
-        });
-      }
-      if (policy === 'pin' && !this.mayRefund(member)) {
-        throw new ForbiddenException({
-          code: ErrorCodes.FORBIDDEN,
-          reason: ErrorReasons.REFUND_PIN_NOT_AUTHORIZED,
-          message:
-            'Diese PIN darf nicht stornieren oder erstatten. Nötig ist das Recht „Bestellungen“ oder Admin.',
-        });
-      }
+    if (operator) {
+      if (operator.permissions.refund) return base;
+      const approver = await this.approverByPin(device, body.pin);
       return {
         ...base,
-        userId: member.userId,
-        actorName: fullName(member.user),
+        approvedByWaiterId: approver.waiterId,
+        approvedByUserId: approver.userId,
       };
     }
 
-    if (body.operatorUserId) {
-      const member = await this.memberRepository.findOne({
-        where: { organizationId, userId: body.operatorUserId },
-        relations: ['user'],
-      });
-      if (member) {
-        return {
-          ...base,
-          userId: member.userId,
-          actorName: fullName(member.user),
-        };
-      }
+    if (policy === 'pin' || body.pin) {
+      const approver = await this.approverByPin(
+        device,
+        body.pin,
+        policy === 'pin',
+      );
+      return {
+        ...base,
+        userId: approver.userId,
+        waiterId: approver.waiterId,
+        actorName: approver.name,
+      };
     }
     return base;
+  }
+
+  /** PIN einer Freigabe pruefen (mit Sperre nach Fehlversuchen). */
+  private async approverByPin(
+    device: Device,
+    pin: string | undefined,
+    requireRight = true,
+  ): Promise<Operator> {
+    if (!pin) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.REFUND_PIN_REQUIRED,
+        message: 'Für Storno und Erstattung ist eine PIN nötig.',
+      });
+    }
+    if (!this.waiterSessions) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.PIN_INVALID,
+        message: 'Ungültige PIN',
+      });
+    }
+    const approver = await this.waiterSessions.verifyApprover(device, pin);
+    if (requireRight && !approver.permissions.refund) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.REFUND_PIN_NOT_AUTHORIZED,
+        message:
+          'Diese PIN darf nicht stornieren oder erstatten. Nötig ist eine Schichtleitung, das Recht „Bestellungen“ oder Admin.',
+      });
+    }
+    return approver;
   }
 
   /** Verwaltung: Admin oder Recht „Bestellungen“. */
@@ -350,20 +379,6 @@ export class RefundsService {
       member.role === OrganizationRole.ADMIN ||
       member.permissions?.orders === true
     );
-  }
-
-  private async memberByPin(
-    organizationId: string,
-    pin: string,
-  ): Promise<UserOrganization | null> {
-    const members = await this.memberRepository.find({
-      where: { organizationId },
-      relations: ['user'],
-    });
-    for (const member of members) {
-      if (member.pin && (await bcrypt.compare(pin, member.pin))) return member;
-    }
-    return null;
   }
 
   // ---------------------------------------------------------------------
@@ -882,6 +897,9 @@ export class RefundsService {
         reasonText: dto.reasonText?.trim() || null,
         deviceId: actor.deviceId,
         userId: actor.userId,
+        waiterId: actor.waiterId ?? null,
+        approvedByWaiterId: actor.approvedByWaiterId ?? null,
+        approvedByUserId: actor.approvedByUserId ?? null,
         actorName: actor.actorName,
         isTest: order.isTest || isTestMode,
         clientRequestId: index === 0 ? (dto.clientRequestId ?? null) : null,
@@ -1448,8 +1466,18 @@ export class RefundsService {
         type,
         deviceId: actor.deviceId,
         userId: actor.userId,
+        waiterId: actor.waiterId ?? null,
         actorName: actor.actorName,
-        data: { ...data, deviceName: actor.deviceName },
+        data: {
+          ...data,
+          deviceName: actor.deviceName,
+          ...(actor.approvedByWaiterId || actor.approvedByUserId
+            ? {
+                approvedByWaiterId: actor.approvedByWaiterId ?? null,
+                approvedByUserId: actor.approvedByUserId ?? null,
+              }
+            : {}),
+        },
       }),
     );
   }
@@ -1556,7 +1584,12 @@ export class RefundsService {
     void this.tseSigning?.signOrderChange(
       order.id,
       cancelled.lines.map((l) => ({ item: l.item, quantity: -l.quantity })),
-      { terminal: actor.deviceId, userId: actor.userId },
+      {
+        terminal: actor.deviceId,
+        userId: actor.userId,
+        waiterId: actor.waiterId ?? null,
+        operatorName: actor.actorName,
+      },
     );
     // Storno-Bon nur fuer Positionen, die schon in der Kueche lagen.
     const kitchenLines = cancelled.lines.filter(

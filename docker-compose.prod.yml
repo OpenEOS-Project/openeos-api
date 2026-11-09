@@ -60,6 +60,11 @@ services:
       # Zugangsdaten der Zahlungsanbieter (SumUp, PayPal). Leer = Rueckfall
       # auf TWO_FACTOR_ENCRYPTION_KEY.
       INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:-}
+      # Pepper der Kassen-PINs (Mitglieder und Bedienungen, HMAC). Leer =
+      # abgeleitet aus TWO_FACTOR_ENCRYPTION_KEY. Vor der ersten PIN setzen;
+      # ein spaeterer Wechsel macht alle PINs ungueltig.
+      PIN_PEPPER: ${PIN_PEPPER:-}
+      WAITERS_PER_ORGANIZATION_LIMIT: ${WAITERS_PER_ORGANIZATION_LIMIT:-200}
 
       # Optional: Stripe
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}

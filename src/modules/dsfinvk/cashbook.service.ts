@@ -123,7 +123,11 @@ export class CashbookService {
       note?: string | null;
       scope?: CashbookScope;
     },
-    actor: { deviceId?: string | null; userId?: string | null },
+    actor: {
+      deviceId?: string | null;
+      userId?: string | null;
+      waiterId?: string | null;
+    },
   ): Promise<{
     entry: CashbookEntryView;
     tse: TseReceiptView | null;
@@ -194,6 +198,7 @@ export class CashbookService {
         note,
         deviceId,
         userId: actor.userId ?? null,
+        waiterId: actor.waiterId ?? null,
       }),
     );
 
@@ -207,6 +212,7 @@ export class CashbookService {
         note,
         terminal: deviceId,
         userId: actor.userId ?? null,
+        waiterId: actor.waiterId ?? null,
       });
       if (tse) {
         entry.tseTransactionId = tse.id;

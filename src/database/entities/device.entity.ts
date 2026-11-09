@@ -116,6 +116,26 @@ export interface DeviceSettings {
   posDeviceId?: string;
   /** Aussehen und Inhalt — nur bei Anzeigen ausgewertet. */
   display?: DisplayAppearance;
+  /**
+   * Bedienungen (bedienungen-plan.md §4): `off` = ohne PIN (wie bisher),
+   * `shared` = gemeinsame Kasse, vor dem Buchen meldet sich eine Bedienung
+   * per PIN an, `personal` = feste Bedienung (`waiterId`). Fehlt der Wert,
+   * gilt `requirePin: true` als `shared`.
+   */
+  waiterMode?: 'off' | 'shared' | 'personal';
+  /** Feste Bedienung bei `waiterMode = personal`. */
+  waiterId?: string | null;
+  /** Automatische Sperre nach so vielen Sekunden ohne Beruehrung (0/fehlt = aus). */
+  autoLockSeconds?: number | null;
+  /** Nach jedem Kassieren sperren (Theke). */
+  lockAfterPayment?: boolean;
+  /** Namenskacheln (Kurzname + Farbe) auf dem Sperrbildschirm (Standard aus). */
+  waiterTiles?: boolean;
+  /**
+   * PIN-Eingabe nach zu vielen Fehlversuchen gesperrt (ISO-Zeit), bis ein
+   * Admin sie freigibt.
+   */
+  waiterPinLockedAt?: string | null;
   [key: string]: unknown;
 }
 

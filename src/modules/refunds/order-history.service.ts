@@ -487,6 +487,39 @@ export class OrderHistoryService {
       }),
     ]);
 
+    // Bedienungen (Name, Kurzname, Farbe) fuer Bestellung, Runden,
+    // Zahlungen und Erstattungen — eine Abfrage, nur aus dieser Organisation.
+    const waiterIds = [
+      order.waiterId,
+      order.createdByWaiterId,
+      ...order.items.map((i) => i.addedByWaiterId),
+      ...payments.map((p) => p.processedByWaiterId),
+      ...refunds.flatMap((r) => [r.waiterId, r.approvedByWaiterId]),
+    ].filter((id): id is string => !!id);
+    const waiterRows: {
+      id: string;
+      name: string;
+      short_name: string | null;
+      color: string | null;
+    }[] = waiterIds.length
+      ? await this.orderRepository.manager.query(
+          `SELECT id, name, short_name, color FROM waiters
+            WHERE organization_id = $1 AND id = ANY($2::uuid[])`,
+          [organizationId, [...new Set(waiterIds)]],
+        )
+      : [];
+    const waiterOf = (id: string | null | undefined) => {
+      const row = id ? waiterRows.find((w) => w.id === id) : undefined;
+      return row
+        ? {
+            id: row.id,
+            name: row.name,
+            shortName: row.short_name,
+            color: row.color,
+          }
+        : null;
+    };
+
     const items = [...order.items].sort(
       (a, b) =>
         a.sortOrder - b.sortOrder ||
@@ -540,6 +573,8 @@ export class OrderHistoryService {
         createdAt: p.createdAt,
         deviceId: p.processedByDeviceId,
         deviceName: p.processedByDevice?.name ?? null,
+        /** Kassiert von (Bedienung). */
+        waiter: waiterOf(p.processedByWaiterId),
         userName: p.processedByUser
           ? `${p.processedByUser.firstName ?? ''} ${p.processedByUser.lastName ?? ''}`.trim()
           : null,
@@ -588,6 +623,9 @@ export class OrderHistoryService {
       cancellationReason: order.cancellationReason,
       createdByDeviceId: order.createdByDeviceId,
       deviceName: order.createdByDevice?.name ?? null,
+      /** Verantwortliche Bedienung (Tisch) und aufnehmende Bedienung. */
+      waiter: waiterOf(order.waiterId),
+      createdByWaiter: waiterOf(order.createdByWaiterId),
       createdByUserName: order.createdByUser
         ? `${order.createdByUser.firstName ?? ''} ${order.createdByUser.lastName ?? ''}`.trim()
         : null,
@@ -618,6 +656,8 @@ export class OrderHistoryService {
           productionStationId: i.productionStationId,
           paidQuantity: i.paidQuantity,
           refundedQuantity: i.refundedQuantity || 0,
+          /** Runden-Sender (Bedienung). */
+          addedByWaiter: waiterOf(i.addedByWaiterId),
           refundableQuantity,
           /** Erstattung je Stueck ohne Storno (Rabatt anteilig, ohne Pfand). */
           unitRefund: round2(unitGross(i) * factor),
@@ -649,6 +689,10 @@ export class OrderHistoryService {
         deviceName: r.device?.name ?? null,
         userId: r.userId,
         actorName: r.actorName,
+        waiterId: r.waiterId,
+        /** Freigabe per PIN (Schichtleitung). */
+        approvedBy: waiterOf(r.approvedByWaiterId),
+        approvedByUserId: r.approvedByUserId,
         isTest: r.isTest,
         createdAt: r.createdAt,
         items: (r.items ?? []).map((ri) => ({

@@ -346,7 +346,12 @@ export class CashPointClosingService {
   ): Promise<DsfinvkTransaction[]> {
     const ids = new Set(txs.map((t) => t.id));
     const userIds = [
-      ...new Set(txs.map((t) => t.userId).filter((u): u is string => !!u)),
+      ...new Set(
+        txs
+          .filter((t) => !t.operatorName)
+          .map((t) => t.userId)
+          .filter((u): u is string => !!u),
+      ),
     ];
     const users = userIds.length
       ? await m.getRepository(User).find({
@@ -507,10 +512,14 @@ export class CashPointClosingService {
             ? tx.finishTime
             : new Date(ms(tx.createdAt) + (tx.durationMs ?? 0)),
         terminal: tx.terminal,
-        userId: tx.userId,
-        userName: user
-          ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || null
-          : null,
+        // BEDIENER_ID: Bedienung vor Mitglied; BEDIENER_NAME aus dem
+        // Snapshot beim Signieren, Rueckfall Live-Name (Altbestand).
+        userId: tx.waiterId ?? tx.userId,
+        userName:
+          tx.operatorName?.trim() ||
+          (user
+            ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || null
+            : null),
         lines,
         amountCents:
           tx.amount !== null ? Math.round(Number(tx.amount) * 100) : null,

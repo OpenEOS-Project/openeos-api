@@ -37,6 +37,7 @@ import {
 } from './dto';
 import { EmailService } from '../email/email.service';
 import { normalizeLegalSettings } from './legal/legal-settings.util';
+import { normalizeWaiterSettings } from '../waiters/waiter-settings';
 import {
   initialOperatingMode,
   keepCountryMirror,
@@ -367,6 +368,11 @@ export class OrganizationsService {
     if (incomingSettings && 'legal' in incomingSettings) {
       incomingSettings.legal = normalizeLegalSettings(incomingSettings.legal);
     }
+    if (incomingSettings && 'waiters' in incomingSettings) {
+      incomingSettings.waiters = normalizeWaiterSettings(
+        incomingSettings.waiters,
+      );
+    }
     // Die Betriebsart steht in eigenen Spalten und wechselt nur ueber
     // PATCH :id/operating-mode (Verlauf, Protokoll, TSE-Pruefung). Felder
     // der frueheren Zwischenloesungen bleiben hier aussen vor.
@@ -611,10 +617,18 @@ export class OrganizationsService {
       order: { createdAt: 'DESC' },
     });
 
-    // Strip pin hash, add hasPin boolean
+    // PIN nie ausliefern, nur ob es eine gibt: alte bcrypt-PIN oder ein
+    // Eintrag im gemeinsamen PIN-Raum (pin_credentials, Bedienungen).
+    const credentials: { owner_id: string }[] = items.length
+      ? await this.dataSource.query(
+          `SELECT owner_id FROM pin_credentials WHERE owner_type = 'member' AND owner_id = ANY($1::uuid[])`,
+          [items.map((m) => m.id)],
+        )
+      : [];
+    const withCredential = new Set(credentials.map((row) => row.owner_id));
     const mappedItems = items.map(({ pin, ...rest }) => ({
       ...rest,
-      hasPin: !!pin,
+      hasPin: !!pin || withCredential.has(rest.id),
     })) as unknown as UserOrganization[];
 
     return createPaginatedResult(mappedItems, total, page, limit);
@@ -832,6 +846,16 @@ export class OrganizationsService {
 
     await this.dataSource.transaction(async (manager) => {
       await manager.delete(UserOrganization, { id: member.id });
+      // Kassen-PIN und offene Kassen-Sitzungen des Mitglieds enden mit.
+      await manager.query(
+        `DELETE FROM pin_credentials WHERE owner_type = 'member' AND owner_id = $1`,
+        [member.id],
+      );
+      await manager.query(
+        `UPDATE waiter_sessions SET ended_at = now(), end_reason = 'revoked', updated_at = now()
+          WHERE organization_id = $1 AND user_id = $2 AND ended_at IS NULL`,
+        [member.organizationId, member.userId],
+      );
       await recordDeletion(manager, {
         category: 'memberships',
         trigger: 'club',

@@ -42,6 +42,9 @@ import {
   User,
 } from '../../database/entities';
 import { RefundsService, type RefundActor } from './refunds.service';
+import { PinCredentialsService } from '../waiters/pin-credentials.service';
+import { PinLockoutService } from '../waiters/pin-lockout.service';
+import { WaiterSessionsService } from '../waiters/waiter-sessions.service';
 import { displayStatusSql } from './refund-calc';
 
 /**
@@ -107,6 +110,27 @@ describeWithDb('RefundsService against Postgres', () => {
       print as unknown as OrderPrintService,
       gateway as unknown as GatewayService,
       history,
+      undefined,
+      // PIN-Freigabe ueber den gemeinsamen PIN-Raum (alte Mitglieds-PINs
+      // werden dabei nachgezogen), Sperre ohne Redis im Speicher.
+      (() => {
+        const pins = new PinCredentialsService(ds, {
+          get: () => 'refunds-db-spec-pepper-0123456789',
+        } as never);
+        const sessions = new WaiterSessionsService(
+          ds,
+          pins,
+          new PinLockoutService(
+            new Proxy(
+              {},
+              { get: () => () => Promise.reject(new Error('offline')) },
+            ) as never,
+            ds,
+          ),
+        );
+        sessions.minResponseMs = 0;
+        return sessions;
+      })(),
     );
   }, 120_000);
 
@@ -469,6 +493,54 @@ describeWithDb('RefundsService against Postgres', () => {
     ).rejects.toMatchObject({
       response: { reason: 'REFUND_EXCEEDS_REFUNDABLE' },
     });
+  });
+
+  it('Bedienungen: refund and storno carry the server and the approving shift lead', async () => {
+    const w = await world();
+    const [anna] = await ds.query<{ id: string }[]>(
+      `INSERT INTO waiters (organization_id, name) VALUES ($1, 'Anna Berger') RETURNING id`,
+      [w.orgId],
+    );
+    const [lead] = await ds.query<{ id: string }[]>(
+      `INSERT INTO waiters (organization_id, name, role) VALUES ($1, 'Lea Lead', 'lead') RETURNING id`,
+      [w.orgId],
+    );
+    const actor = {
+      ...w.actor,
+      waiterId: anna.id,
+      actorName: 'Anna Berger',
+      approvedByWaiterId: lead.id,
+      approvedByUserId: null,
+    };
+    const o = await order(w);
+    const outcome = await service.createRefund(actor, o.orderId, {
+      mode: 'items',
+      items: [{ orderItemId: o.pilsItemId, quantity: 1 }],
+      reasonCode: 'quality',
+    });
+    const [refund] = await ds.query<
+      {
+        waiter_id: string;
+        approved_by_waiter_id: string;
+        actor_name: string;
+      }[]
+    >(
+      `SELECT waiter_id, approved_by_waiter_id, actor_name FROM refunds WHERE id = $1`,
+      [outcome.refunds[0].id],
+    );
+    expect(refund).toEqual({
+      waiter_id: anna.id,
+      approved_by_waiter_id: lead.id,
+      actor_name: 'Anna Berger',
+    });
+    const events = await ds.query<
+      { waiter_id: string; data: Record<string, unknown> }[]
+    >(
+      `SELECT waiter_id, data FROM order_events WHERE order_id = $1 AND type = 'refunded'`,
+      [o.orderId],
+    );
+    expect(events[0].waiter_id).toBe(anna.id);
+    expect(events[0].data).toMatchObject({ approvedByWaiterId: lead.id });
   });
 
   it('Pfand with VAT (2026-11): refund reduces VAT of goods and deposit at the rate of the sale', async () => {

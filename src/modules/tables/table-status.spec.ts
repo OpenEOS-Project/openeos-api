@@ -62,6 +62,8 @@ describe('aggregateTableStatus', () => {
       orderIds: ['a', 'b'],
       waitingSince: null,
       lastActivityAt: '2026-10-06T18:30:00.000Z',
+      waiterId: null,
+      waiterIds: [],
     });
   });
 

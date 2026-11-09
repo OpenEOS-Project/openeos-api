@@ -242,6 +242,15 @@ export interface DeviceConfigUpdatedEvent {
   type?: string;
 }
 
+/**
+ * Bedienung geaendert (deaktiviert, neue PIN, Rechte): Kassen mit einer
+ * Sitzung dieser Bedienung pruefen ihre Sitzung bzw. sperren.
+ */
+export interface WaiterUpdatedEvent {
+  waiterId: string;
+  change: 'updated' | 'deactivated' | 'pin_reset';
+}
+
 export interface DeviceStatusChangedEvent {
   deviceId: string;
   status: 'pending' | 'verified' | 'blocked';
@@ -338,6 +347,8 @@ export const GatewayEvents = {
   DEVICE_SETTINGS_UPDATED: 'deviceSettingsUpdated',
   DEVICE_CONFIG_UPDATED: 'deviceConfigUpdated',
   DEVICE_STATUS_CHANGED: 'deviceStatusChanged',
+  // Bedienungen: deaktiviert/neue PIN → Kasse beendet die Sitzung
+  WAITER_UPDATED: 'waiterUpdated',
 
   // Organization Events
   ORGANIZATION_SETTINGS_UPDATED: 'organizationSettingsUpdated',

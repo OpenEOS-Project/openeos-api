@@ -40,6 +40,8 @@ interface PfandReturnContext {
   /** Name der Kasse fuer den Beleg. */
   deviceName?: string | null;
   userId?: string | null;
+  /** Auszahlende Bedienung (Bedienungs-Sitzung). */
+  waiterId?: string | null;
   /** Bediener fuer den Beleg, falls bekannt. */
   actorName?: string | null;
   cashDrawerPrinterId?: string | null;
@@ -153,6 +155,7 @@ export class PfandReturnsService {
       isTest,
       deviceId: context.deviceId ?? null,
       createdByUserId: context.userId ?? null,
+      waiterId: context.waiterId ?? null,
       totalAmount,
       lines,
       // MwSt je Satz (negativ) fuer Beleg und Nachdruck festhalten; leer bei

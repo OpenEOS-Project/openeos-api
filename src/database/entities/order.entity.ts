@@ -312,6 +312,17 @@ export class Order extends BaseEntity {
   @Column({ name: 'created_by_device_id', type: 'uuid', nullable: true })
   createdByDeviceId: string | null;
 
+  /** Bedienung, die die Bestellung aufgenommen hat (Kasse mit Bedienungs-Sitzung). */
+  @Column({ name: 'created_by_waiter_id', type: 'uuid', nullable: true })
+  createdByWaiterId: string | null;
+
+  /**
+   * Verantwortliche Bedienung (Tischbesitz). Beim Anlegen = aufnehmende
+   * Bedienung; spaeter uebergebbar (P5).
+   */
+  @Column({ name: 'waiter_id', type: 'uuid', nullable: true })
+  waiterId: string | null;
+
   @Column({ name: 'online_session_id', type: 'uuid', nullable: true })
   onlineSessionId: string | null;
 

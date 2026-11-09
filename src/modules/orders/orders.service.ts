@@ -1500,6 +1500,8 @@ export class OrdersService {
       null;
 
     const item = this.orderItemRepository.create({
+      // Runden-Sender: Bestellung in der Verwaltung.
+      addedByUserId: user?.id ?? null,
       orderId: order.id,
       productId: product.id,
       categoryId: product.categoryId,

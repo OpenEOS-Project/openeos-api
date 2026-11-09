@@ -115,3 +115,29 @@ describe('LoggingInterceptor', () => {
     expect(lines.join('\n')).not.toContain(TOKEN);
   });
 });
+
+describe('redactBodyValue (Debug-Log ohne PINs)', () => {
+  it('masks PINs, passwords and tokens in logged bodies', () => {
+    const { redactBodyValue } = jest.requireActual<
+      typeof import('./logging.interceptor')
+    >('./logging.interceptor');
+    expect(
+      JSON.parse(
+        JSON.stringify(
+          {
+            pin: '3958',
+            items: [{ name: 'Anna', pin: '7146' }],
+            password: 'x',
+            reason: 'lock',
+          },
+          redactBodyValue,
+        ),
+      ),
+    ).toEqual({
+      pin: '***',
+      items: [{ name: 'Anna', pin: '***' }],
+      password: '***',
+      reason: 'lock',
+    });
+  });
+});

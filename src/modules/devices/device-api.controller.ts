@@ -15,8 +15,10 @@ import {
   GoneException,
   Logger,
   Optional,
+  HttpCode,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -119,6 +121,13 @@ import {
   ReprintDto,
 } from '../refunds/dto/refund.dto';
 import { agentTemplateMap } from '../print-jobs/builtin-templates';
+import { CurrentOperator, WithOperator } from '../waiters/waiter-session.guard';
+import {
+  attributionOf,
+  type Attribution,
+  type Operator,
+} from '../waiters/waiter-operator';
+import { assertOperatorMay } from '../waiters/waiter-sessions.service';
 
 /**
  * Helper to ensure device has an organization.
@@ -270,9 +279,11 @@ export class DeviceApiController {
     summary:
       'Record a deposit payout (Pfand-Rückgabe) and open the cash drawer',
   })
+  @WithOperator()
   async createPfandReturn(
     @CurrentDevice() device: Device,
     @Body() dto: CreatePfandReturnDto,
+    @CurrentOperator() operator: Operator | null,
   ) {
     const organizationId = requireOrganization(device);
     const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as
@@ -289,6 +300,9 @@ export class DeviceApiController {
         deviceId: device.id,
         deviceName: device.name,
         cashDrawerPrinterId: cashDrawerPrinterId ?? null,
+        userId: operator?.userId ?? null,
+        waiterId: operator?.waiterId ?? null,
+        actorName: operator?.name ?? null,
       },
     );
     return { data: pfandReturn };
@@ -405,14 +419,20 @@ export class DeviceApiController {
   }
 
   @Post('verify-pin')
-  @ApiOperation({ summary: 'Verify a member PIN from device' })
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'PIN prüfen (Alias von POST /device-api/waiter-session)',
+    description:
+      'Rückwärtskompatibel: meldet die Bedienung bzw. das Mitglied an wie `POST /device-api/waiter-session` und liefert zusätzlich `userId`, `firstName`, `lastName`, `role`. Neu: `token` für den Header `X-Waiter-Session`. Fehler wie dort (403 PIN_INVALID, 429 PIN_LOCKED).',
+  })
   async verifyPin(
     @CurrentDevice() device: Device,
     @Body() verifyPinDto: VerifyPinDto,
   ) {
-    const organizationId = requireOrganization(device);
+    requireOrganization(device);
     const result = await this.devicesService.verifyPin(
-      organizationId,
+      device,
       verifyPinDto.pin,
     );
     return { data: result };
@@ -605,13 +625,23 @@ export class DeviceApiController {
     description:
       'Tischbetrieb je Gerät und Veranstaltung (Spezifikation §2.3). Mit `clientRequestId` idempotent: eine Wiederholung liefert die bestehende Bestellung mit HTTP 200, ohne erneuten Küchenbon. Mit `payment` werden Bestellung und Zahlung in einer Transaktion gebucht; im Kassiermodus `immediate` ist das Pflicht (sonst 400 ORDER_PAYMENT_REQUIRED) — Küchenbon und Stationen bekommen die Bestellung dann erst nach der Zahlung.',
   })
+  @WithOperator()
   async createOrder(
     @CurrentDevice() device: Device,
     @Body() createDto: CreateDeviceOrderDto,
     @Res({ passthrough: true }) response: Response,
+    @CurrentOperator() operator: Operator | null = null,
   ) {
     const organizationId = requireOrganization(device);
     const clientRequestId = createDto.clientRequestId ?? null;
+    const attribution = attributionOf(operator);
+    // Rabatt nur mit Recht `discount` (Bedienung ohne Schalter: 403).
+    if (
+      Number(createDto.discountAmount || 0) > 0 ||
+      Number(createDto.payment?.discountAmount || 0) > 0
+    ) {
+      assertOperatorMay(operator, 'discount');
+    }
 
     // Wiederholung derselben Anlage: bestehende Bestellung zurueckgeben,
     // nichts drucken, nichts melden.
@@ -622,7 +652,14 @@ export class DeviceApiController {
       );
       if (existing) {
         response.status(HttpStatus.OK);
-        return { data: await this.settleExisting(existing, createDto, device) };
+        return {
+          data: await this.settleExisting(
+            existing,
+            createDto,
+            device,
+            attribution,
+          ),
+        };
       }
     }
 
@@ -719,6 +756,10 @@ export class DeviceApiController {
               discountReason: createDto.discountReason || null,
               tipAmount: createDto.tipAmount || 0,
               createdByDeviceId: device.id,
+              // Bedienung der Sitzung: nimmt auf und ist verantwortlich.
+              createdByWaiterId: attribution.waiterId,
+              waiterId: attribution.waiterId,
+              createdByUserId: attribution.userId,
               clientRequestId,
               status: OrderStatus.OPEN,
               paymentStatus: PaymentStatus.UNPAID,
@@ -747,6 +788,7 @@ export class DeviceApiController {
                 itemDto,
                 chargePfand,
                 stockChanges,
+                attribution,
               );
             }
             await this.recalculateOrderTotals(
@@ -784,6 +826,7 @@ export class DeviceApiController {
                   completeOrder.id,
                 ],
               },
+              attribution,
             );
             const paidOrder =
               settled.orders.find((o) => o.id === completeOrder.id) ??
@@ -860,7 +903,12 @@ export class DeviceApiController {
         if (existing) {
           response.status(HttpStatus.OK);
           return {
-            data: await this.settleExisting(existing, createDto, device),
+            data: await this.settleExisting(
+              existing,
+              createDto,
+              device,
+              attribution,
+            ),
           };
         }
       }
@@ -900,9 +948,15 @@ export class DeviceApiController {
       : created.zeroPaid
         ? (this.tseSigning?.signZeroReceipt(completeOrder.id, {
             terminal: device.id,
+            waiterId: attribution.waiterId,
+            userId: attribution.userId,
+            operatorName: attribution.name,
           }) ?? Promise.resolve(null))
         : (this.tseSigning?.signOrderCreated(completeOrder.id, {
             terminal: device.id,
+            waiterId: attribution.waiterId,
+            userId: attribution.userId,
+            operatorName: attribution.name,
           }) ?? Promise.resolve(null));
 
     // Print station tickets and notify admin order list
@@ -962,7 +1016,11 @@ export class DeviceApiController {
       await this.paymentsBatchService.afterCommit(
         organizationId,
         created.settled,
-        { deviceId: device.id },
+        {
+          deviceId: device.id,
+          waiterId: attribution.waiterId,
+          userId: attribution.userId,
+        },
       );
     }
 
@@ -983,6 +1041,7 @@ export class DeviceApiController {
     existing: Order,
     createDto: CreateDeviceOrderDto,
     device: Device,
+    attribution: Attribution,
   ): Promise<Order> {
     const open =
       (existing.paymentStatus === PaymentStatus.UNPAID ||
@@ -993,13 +1052,21 @@ export class DeviceApiController {
     const organizationId = requireOrganization(device);
     const { orderIds: others = [], ...payment } = createDto.payment;
     const settled = await this.orderRepository.manager.transaction((manager) =>
-      this.paymentsBatchService.settle(manager, organizationId, device.id, {
-        ...payment,
-        orderIds: [...others.filter((id) => id !== existing.id), existing.id],
-      }),
+      this.paymentsBatchService.settle(
+        manager,
+        organizationId,
+        device.id,
+        {
+          ...payment,
+          orderIds: [...others.filter((id) => id !== existing.id), existing.id],
+        },
+        attribution,
+      ),
     );
     await this.paymentsBatchService.afterCommit(organizationId, settled, {
       deviceId: device.id,
+      waiterId: attribution.waiterId,
+      userId: attribution.userId,
     });
     const order = settled.orders.find((o) => o.id === existing.id) ?? existing;
     return Object.assign(order, {
@@ -1009,9 +1076,11 @@ export class DeviceApiController {
 
   @Post('payments')
   @ApiOperation({ summary: 'Create a payment for an order from device' })
+  @WithOperator()
   async createPayment(
     @CurrentDevice() device: Device,
     @Body() createDto: CreatePaymentDto,
+    @CurrentOperator() operator: Operator | null = null,
   ) {
     const organizationId = requireOrganization(device);
     await this.assertPaymentsAllowedFor(organizationId);
@@ -1070,6 +1139,8 @@ export class DeviceApiController {
         createDto.amountReceived,
       ),
       processedByDeviceId: device.id,
+      processedByWaiterId: operator?.waiterId ?? null,
+      processedByUserId: operator?.userId ?? null,
     });
 
     await this.paymentRepository.save(payment);
@@ -1141,6 +1212,7 @@ export class DeviceApiController {
   @ApiOperation({
     summary: 'Create a split payment for specific items from device',
   })
+  @WithOperator()
   async createSplitPayment(
     @CurrentDevice() device: Device,
     @Body()
@@ -1151,6 +1223,7 @@ export class DeviceApiController {
       items: Array<{ orderItemId: string; quantity: number }>;
       amountReceived?: number;
     },
+    @CurrentOperator() operator: Operator | null = null,
   ) {
     const organizationId = requireOrganization(device);
     await this.assertPaymentsAllowedFor(organizationId);
@@ -1242,6 +1315,8 @@ export class DeviceApiController {
         ),
       },
       processedByDeviceId: device.id,
+      processedByWaiterId: operator?.waiterId ?? null,
+      processedByUserId: operator?.userId ?? null,
     });
 
     await this.paymentRepository.save(payment);
@@ -1324,9 +1399,19 @@ export class DeviceApiController {
   // Cash Drawer
 
   @Post('cash-drawer/open')
-  @ApiOperation({ summary: 'Open the cash drawer via configured printer' })
-  async openCashDrawer(@CurrentDevice() device: Device) {
+  @WithOperator()
+  @ApiOperation({
+    summary: 'Open the cash drawer via configured printer',
+    description:
+      '`reason: payment` beim Barkassieren (immer erlaubt). Von Hand (`manual`, Standard) braucht eine Bedienung das Recht `cashDrawer`, sonst 403 WAITER_NOT_PERMITTED.',
+  })
+  async openCashDrawer(
+    @CurrentDevice() device: Device,
+    @Body() body: { reason?: 'payment' | 'manual' } = {},
+    @CurrentOperator() operator: Operator | null = null,
+  ) {
     const organizationId = requireOrganization(device);
+    if (body?.reason !== 'payment') assertOperatorMay(operator, 'cashDrawer');
     // Bargeldlos: keine Kassenlade (ein reiner Bargeldvorgang).
     await this.assertPaymentMethodAllowed(organizationId);
     const cashDrawerPrinterId = device.settings?.cashDrawerPrinterId as
@@ -1386,6 +1471,7 @@ export class DeviceApiController {
     description:
       'Im Testmodus der Veranstaltung abgelehnt (400 SUMUP_DISABLED_IN_TEST_MODE): Testbestellungen lösen keine echten Kartenzahlungen aus. Status und Abbruch bleiben erreichbar.',
   })
+  @WithOperator()
   async initiateSumupCheckout(
     @CurrentDevice() device: Device,
     @Body() body: { amount: number; currency?: string },
@@ -1636,13 +1722,19 @@ export class DeviceApiController {
     description:
       'Bezahlte oder teilweise bezahlte Bestellungen: 400 ORDER_PAID_REFUND_REQUIRED — stattdessen `POST orders/:orderId/refunds` mit `mode: full, cancelItems: true`. Bestand zurück nur für Positionen, mit denen die Küche noch nicht begonnen hat. Berechtigung je Gerät (`refundPermission`).',
   })
+  @WithOperator()
   async cancelOrder(
     @CurrentDevice() device: Device,
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() body: CancelOrderWithActorDto,
+    @CurrentOperator() operator: Operator | null = null,
   ) {
     requireOrganization(device);
-    const actor = await this.refundsService.resolveDeviceActor(device, body);
+    const actor = await this.refundsService.resolveDeviceActor(
+      device,
+      body,
+      operator,
+    );
     const { order } = await this.refundsService.cancelOrder(
       actor,
       orderId,
@@ -1660,13 +1752,19 @@ export class DeviceApiController {
     description:
       'Solange die Küche nicht begonnen hat (`pending`): Bestand zurück, Station entfernt sie live, Storno-Bon an den Stationsdrucker. In Arbeit/fertig/serviert nur mit `confirmStarted` und Grund (Ausschuss, kein Bestand zurück), sonst 409 ORDER_ITEM_ALREADY_STARTED. Sinkt die Summe unter das schon Bezahlte: 400 ORDER_PAID_REFUND_REQUIRED.',
   })
+  @WithOperator()
   async cancelOrderItems(
     @CurrentDevice() device: Device,
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() body: CancelItemsDto,
+    @CurrentOperator() operator: Operator | null = null,
   ) {
     const organizationId = requireOrganization(device);
-    const actor = await this.refundsService.resolveDeviceActor(device, body);
+    const actor = await this.refundsService.resolveDeviceActor(
+      device,
+      body,
+      operator,
+    );
     await this.refundsService.cancelItems(actor, orderId, body);
     return {
       data: await this.orderHistoryService.detail(organizationId, orderId),
@@ -1680,15 +1778,21 @@ export class DeviceApiController {
     description:
       'Jede Erstattung ist ein eigener Beleg mit negativen Beträgen, MwSt je Satz und Bezug auf Bestellung und Zahlung; er wird auf dem Kassenbon-Drucker gedruckt. Rückgabeweg je ursprünglicher Zahlart: bar (Kassenlade öffnet), SumUp (Erstattung über die SumUp-API; Fehler: 400 REFUND_PROVIDER_FAILED, Wiederholung mit `manual: true` bucht „manuell erstattet“), fremdes Kartengerät (manuell). Im Testmodus wird bei SumUp nichts erstattet. `cancelItems` storniert die Positionen zugleich (Storno bezahlter Bestellungen).',
   })
+  @WithOperator()
   async createRefund(
     @CurrentDevice() device: Device,
     @Param('orderId', ParseUUIDPipe) orderId: string,
     @Body() body: CreateRefundDto,
+    @CurrentOperator() operator: Operator | null = null,
   ) {
     const organizationId = requireOrganization(device);
     // „Nur Bons“: die Kasse vor Ort erstattet nie (auch nicht online).
     await this.assertPaymentsAllowedFor(organizationId);
-    const actor = await this.refundsService.resolveDeviceActor(device, body);
+    const actor = await this.refundsService.resolveDeviceActor(
+      device,
+      body,
+      operator,
+    );
     const outcome = await this.refundsService.createRefund(
       actor,
       orderId,
@@ -1899,6 +2003,7 @@ export class DeviceApiController {
     },
     chargePfand: boolean,
     stockChanges: Product[],
+    attribution: Attribution,
   ): Promise<OrderItem> {
     const productRepository = manager.getRepository(Product);
     const orderItemRepository = manager.getRepository(OrderItem);
@@ -1990,6 +2095,9 @@ export class DeviceApiController {
       depositAmount,
       depositTaxRate,
       isRefill,
+      // Runden-Sender (Küchenbon, Kellnerabrechnung).
+      addedByWaiterId: attribution.waiterId,
+      addedByUserId: attribution.userId,
     });
 
     await orderItemRepository.save(item);

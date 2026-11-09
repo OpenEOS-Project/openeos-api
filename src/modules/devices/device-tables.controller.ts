@@ -33,6 +33,9 @@ import { tableKey } from '../tables/tables.constants';
 import { TablesService } from '../tables/tables.service';
 import { requireOrganization } from './device-api.controller';
 import { effectiveTableMode } from './device-order-table';
+import { CurrentOperator, WithOperator } from '../waiters/waiter-session.guard';
+import { attributionOf, type Operator } from '../waiters/waiter-operator';
+import { assertOperatorMay } from '../waiters/waiter-sessions.service';
 import {
   AcknowledgeTableDto,
   CompleteOrdersDto,
@@ -192,9 +195,11 @@ export class DeviceTablesController {
   @ApiOperation({
     summary: 'Acknowledge guest orders (shop/QR) of a table',
   })
+  @WithOperator()
   async acknowledgeTable(
     @CurrentDevice() device: Device,
     @Body() dto: AcknowledgeTableDto,
+    @CurrentOperator() operator: Operator | null = null,
   ) {
     const organizationId = requireOrganization(device);
     const event = await this.resolveEvent(organizationId, dto.eventId);
@@ -204,8 +209,20 @@ export class DeviceTablesController {
     const result = await this.orderRepository
       .createQueryBuilder()
       .update(Order)
-      .set({ acknowledgedAt: () => 'now()' })
-      .where('organization_id = :organizationId', { organizationId })
+      .set({
+        acknowledgedAt: () => 'now()',
+        // Wer die Gastbestellung quittiert, wird verantwortliche Bedienung
+        // (nur wenn noch keine eingetragen ist).
+        ...(operator?.waiterId
+          ? {
+              waiterId: () => 'COALESCE(waiter_id, CAST(:ackWaiterId AS uuid))',
+            }
+          : {}),
+      })
+      .where('organization_id = :organizationId', {
+        organizationId,
+        ackWaiterId: operator?.waiterId ?? null,
+      })
       .andWhere('event_id = :eventId', { eventId: event.id })
       .andWhere('upper(btrim(table_number)) = :key', { key })
       .andWhere('source IN (:...sources)', {
@@ -236,6 +253,7 @@ export class DeviceTablesController {
   @ApiOperation({
     summary: 'Mark ready items as delivered (served at the table)',
   })
+  @WithOperator()
   async deliverItems(
     @CurrentDevice() device: Device,
     @Body() dto: DeliverOrderItemsDto,
@@ -257,6 +275,7 @@ export class DeviceTablesController {
     description:
       'Nur in der Betriebsart `orders_only` („Nur Bons“): „Abgeholt“ (Theke) bzw. „Tisch abschließen“ statt „Kassieren“, z. B. für alle offenen Bestellungen eines Tisches oder eine abgeholte Thekenbestellung. Fertige Positionen gelten damit als ausgegeben. Solange eine Station noch arbeitet: 400 ORDER_ITEMS_IN_PRODUCTION. In den Betriebsarten `cashless` und `full`: 400 ORDER_NOT_FULLY_PAID.',
   })
+  @WithOperator()
   async completeOrders(
     @CurrentDevice() device: Device,
     @Body() dto: CompleteOrdersDto,
@@ -276,16 +295,22 @@ export class DeviceTablesController {
     description:
       'Alles oder nichts: ist eine Bestellung bereits bezahlt, kommt 409 ORDER_ALREADY_PAID und nichts wird gebucht. Mit aktiver Cloud-TSE trägt jede Zahlung `tse` (Kassenbeleg oder Ausfallvermerk).',
   })
+  @WithOperator()
   async payBatch(
     @CurrentDevice() device: Device,
     @Body() dto: BatchPaymentDto,
+    @CurrentOperator() operator: Operator | null = null,
   ) {
     const organizationId = requireOrganization(device);
+    if (Number(dto.discountAmount || 0) > 0) {
+      assertOperatorMay(operator, 'discount');
+    }
     return {
       data: await this.paymentsBatchService.payBatch(
         organizationId,
         device.id,
         dto,
+        attributionOf(operator),
       ),
     };
   }

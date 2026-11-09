@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AppGateway } from './app.gateway';
 import {
+  type WaiterUpdatedEvent,
   GatewayEvents,
   OrderCreatedEvent,
   OrderUpdatedEvent,
@@ -512,6 +513,15 @@ export class GatewayService {
       deviceId,
       GatewayEvents.DEVICE_STATUS_CHANGED,
       payload,
+    );
+  }
+
+  /** Bedienung geaendert: an alle Geraete der Organisation. */
+  notifyWaiterUpdated(organizationId: string, data: WaiterUpdatedEvent) {
+    this.appGateway.emitToOrganization(
+      organizationId,
+      GatewayEvents.WAITER_UPDATED,
+      data,
     );
   }
 

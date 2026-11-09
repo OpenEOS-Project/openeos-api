@@ -46,6 +46,7 @@ import {
   orderTaxTotal,
 } from '../print-jobs/receipt-tax.util';
 import { BatchPaymentDto } from './dto/batch-payment.dto';
+import { NO_ATTRIBUTION, type Attribution } from '../waiters/waiter-operator';
 
 /**
  * Sammelzahlung der Kasse (Spezifikation §3.4, §5.2.3): mehrere offene
@@ -161,12 +162,17 @@ export class PaymentsBatchService {
     organizationId: string,
     deviceId: string,
     dto: BatchPaymentDto,
+    attribution: Attribution = NO_ATTRIBUTION,
   ): Promise<BatchPaymentResult> {
     const outcome = await this.dataSource.transaction((manager) =>
-      this.settle(manager, organizationId, deviceId, dto),
+      this.settle(manager, organizationId, deviceId, dto, attribution),
     );
 
-    await this.afterCommit(organizationId, outcome);
+    await this.afterCommit(organizationId, outcome, {
+      deviceId,
+      waiterId: attribution.waiterId,
+      userId: attribution.userId,
+    });
 
     return {
       orders: outcome.orders,
@@ -187,6 +193,7 @@ export class PaymentsBatchService {
     organizationId: string,
     deviceId: string,
     dto: BatchPaymentDto,
+    attribution: Attribution = NO_ATTRIBUTION,
   ): Promise<SettledBatch> {
     const provider = providerForMethod(dto.paymentMethod);
     const batchId = randomUUID();
@@ -360,6 +367,7 @@ export class PaymentsBatchService {
     const payableAmounts = payable.map((p) => p.amount);
 
     const payments: Payment[] = [];
+    const tipOrderId = tip > 0 ? orders[orders.length - 1].id : null;
     payable.forEach(({ order, amount }, index) => {
       const received = isCash
         ? amountReceivedFor(index, payableAmounts, dto.amountReceived)
@@ -379,6 +387,11 @@ export class PaymentsBatchService {
             ...cashReceivedMetadata(dto.paymentMethod, amount, received),
           },
           processedByDeviceId: deviceId,
+          // Wer kassiert: Bedienung bzw. Mitglied der Sitzung.
+          processedByWaiterId: attribution.waiterId,
+          processedByUserId: attribution.userId,
+          // Trinkgeld dieser Kassierung haengt an der letzten Bestellung.
+          tipAmount: order.id === tipOrderId ? Math.min(tip, amount) : 0,
         }),
       );
     });
@@ -452,7 +465,11 @@ export class PaymentsBatchService {
   async afterCommit(
     organizationId: string,
     outcome: SettledBatch,
-    actor: { deviceId?: string | null } = {},
+    actor: {
+      deviceId?: string | null;
+      waiterId?: string | null;
+      userId?: string | null;
+    } = {},
   ): Promise<void> {
     const orderById = new Map(outcome.orders.map((o) => [o.id, o]));
 
@@ -464,6 +481,8 @@ export class PaymentsBatchService {
             outcome.settledWithoutPayment.map((orderId) =>
               tseSigning.signZeroReceipt(orderId, {
                 terminal: actor.deviceId ?? null,
+                waiterId: actor.waiterId ?? null,
+                userId: actor.userId ?? null,
               }),
             ),
           ),

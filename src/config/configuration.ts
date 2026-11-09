@@ -233,5 +233,11 @@ export default () => ({
       process.env.MEMBERS_PER_ORGANIZATION_LIMIT || '10',
       10,
     ),
+    // Bedienungen (Kassenprofile ohne Konto) zaehlen nicht zu den
+    // Mitgliedern; technische Grenze je Organisation (organizations.waiter_limit).
+    waitersPerOrganization: parseInt(
+      process.env.WAITERS_PER_ORGANIZATION_LIMIT || '200',
+      10,
+    ),
   },
 });

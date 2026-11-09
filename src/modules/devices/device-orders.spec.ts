@@ -21,6 +21,8 @@ import { Organization } from '../../database/entities/organization.entity';
 import { PaymentMethod } from '../../database/entities/payment.entity';
 import { Product } from '../../database/entities/product.entity';
 import { CreateDeviceOrderDto } from './dto';
+import { OrganizationRole } from '../../database/entities/user-organization.entity';
+import { memberOperator, waiterOperator } from '../waiters/waiter-operator';
 import { DeviceApiController } from './device-api.controller';
 import {
   CLIENT_REQUEST_INDEX,
@@ -911,6 +913,7 @@ describe('DeviceApiController.createOrder — Kassiermodus (F8)', () => {
         amountReceived: 10,
         orderIds: [data.id],
       }),
+      { waiterId: null, userId: null, name: null },
     );
     // Erst nach der Transaktion: Bestellung melden, Küchenbon, dann Zahlung.
     expect(gatewayService.notifyOrderCreated).toHaveBeenCalledTimes(1);
@@ -1257,6 +1260,7 @@ describe('DeviceApiController.createOrder — Betriebsart „Bargeldlos“', () 
       ORG,
       'device-1',
       expect.objectContaining(payment),
+      { waiterId: null, userId: null, name: null },
     );
   });
 
@@ -1545,5 +1549,111 @@ describe('DeviceApiController.createOrder — Phasen der Veranstaltung', () => {
     expect(code).toBe('EVENT_ENDED');
     expect(db.orders).toHaveLength(0);
     expect(db.products[0].stockQuantity).toBe(10);
+  });
+});
+
+describe('DeviceApiController — Zuordnung zur Bedienung (bedienungen-plan.md §5)', () => {
+  const anna = waiterOperator(
+    {
+      id: 'w-anna',
+      name: 'Anna Berger',
+      shortName: 'Anna',
+      color: '#2563eb',
+      role: 'service',
+      permissions: {},
+    },
+    's-1',
+  );
+
+  it('records the server as creator, responsible server and round sender', async () => {
+    const { controller, device, response, db } = setupController({
+      serviceMode: 'counter',
+    });
+    await controller.createOrder(device, dto(), response() as never, anna);
+    expect(db.orders[0]).toMatchObject({
+      createdByDeviceId: 'device-1',
+      createdByWaiterId: 'w-anna',
+      waiterId: 'w-anna',
+      createdByUserId: null,
+    });
+    expect(db.items[0]).toMatchObject({
+      addedByWaiterId: 'w-anna',
+      addedByUserId: null,
+    });
+  });
+
+  it('records a member logged in with the member PIN as user', async () => {
+    const { controller, device, response, db } = setupController({
+      serviceMode: 'counter',
+    });
+    const member = memberOperator(
+      { userId: 'u-1', role: OrganizationRole.MEMBER, permissions: {} },
+      { firstName: 'Markus', lastName: 'Maier' },
+      's-2',
+    );
+    await controller.createOrder(device, dto(), response() as never, member);
+    expect(db.orders[0]).toMatchObject({
+      createdByWaiterId: null,
+      waiterId: null,
+      createdByUserId: 'u-1',
+    });
+    expect(db.items[0]).toMatchObject({ addedByUserId: 'u-1' });
+  });
+
+  it('passes the server to the payment of an order paid right away', async () => {
+    const { controller, device, response, paymentsBatchService } =
+      setupController({ serviceMode: 'counter', orderingMode: 'immediate' });
+    await controller.createOrder(
+      device,
+      dto({
+        payment: { paymentMethod: PaymentMethod.CASH, amountReceived: 10 },
+      } as Partial<CreateDeviceOrderDto>),
+      response() as never,
+      anna,
+    );
+    expect(paymentsBatchService.settle).toHaveBeenCalledWith(
+      expect.anything(),
+      ORG,
+      'device-1',
+      expect.anything(),
+      { waiterId: 'w-anna', userId: null, name: 'Anna Berger' },
+    );
+  });
+
+  it('keeps everything unattributed without a session (mode off, as before)', async () => {
+    const { controller, device, response, db } = setupController({
+      serviceMode: 'counter',
+    });
+    await controller.createOrder(device, dto(), response() as never);
+    expect(db.orders[0]).toMatchObject({
+      createdByWaiterId: null,
+      waiterId: null,
+      createdByUserId: null,
+    });
+    expect(db.items[0]).toMatchObject({
+      addedByWaiterId: null,
+      addedByUserId: null,
+    });
+  });
+
+  it('refuses a discount from a server without the discount right', async () => {
+    const { controller, device, response, db } = setupController({
+      serviceMode: 'counter',
+    });
+    const noDiscount = {
+      ...anna,
+      permissions: { ...anna.permissions, discount: false },
+    };
+    expect(
+      await reason(
+        controller.createOrder(
+          device,
+          dto({ discountAmount: 1 }),
+          response() as never,
+          noDiscount,
+        ),
+      ),
+    ).toBe('WAITER_NOT_PERMITTED');
+    expect(db.orders).toHaveLength(0);
   });
 });

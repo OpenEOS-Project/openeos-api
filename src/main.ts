@@ -118,6 +118,8 @@ async function bootstrap() {
       'X-Organization-Id',
       'X-Device-Id',
       'X-Device-Token',
+      // Bedienungs-Sitzung an der Kasse (bedienungen-plan.md §5).
+      'X-Waiter-Session',
       'X-Session-Token',
       'X-Request-Id',
       'Accept-Language',

@@ -12,7 +12,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
-import * as bcrypt from 'bcrypt';
 import {
   Device,
   User,
@@ -47,6 +46,11 @@ import {
 } from './device-settings.validation';
 import { GatewayService } from '../gateway/gateway.service';
 import { PrinterAgentsService } from '../printers/printer-agents.service';
+import { PinCredentialsService } from '../waiters/pin-credentials.service';
+import { WaiterSessionsService } from '../waiters/waiter-sessions.service';
+import { operatorView, waiterModeOf } from '../waiters/waiter-operator';
+import { AdminAction } from '../../database/entities/admin-audit-log.entity';
+import { Waiter } from '../../database/entities/waiter.entity';
 
 @Injectable()
 export class DevicesService {
@@ -67,6 +71,8 @@ export class DevicesService {
     private readonly gatewayService: GatewayService,
     @Inject(forwardRef(() => PrinterAgentsService))
     private readonly printerAgentsService: PrinterAgentsService,
+    private readonly pins: PinCredentialsService,
+    private readonly waiterSessions: WaiterSessionsService,
   ) {}
 
   async create(
@@ -193,9 +199,42 @@ export class DevicesService {
       });
     }
 
+    await this.assertWaiterOfOrganization(organizationId, device.settings);
     await this.deviceRepository.save(device);
 
     this.logger.log(`Device updated: ${device.name} (${device.id})`);
+
+    // Bedienungsmodus bzw. feste Bedienung geaendert: offene Sitzungen enden.
+    if (
+      waiterModeOf(previousSettings) !== waiterModeOf(device.settings) ||
+      (previousSettings?.waiterId ?? null) !==
+        (device.settings?.waiterId ?? null)
+    ) {
+      await this.waiterSessions.endForDevice(device.id, 'revoked');
+    }
+    // PIN-Sperre durch einen Admin freigegeben.
+    if (
+      previousSettings?.waiterPinLockedAt &&
+      !device.settings?.waiterPinLockedAt
+    ) {
+      await this.deviceRepository.manager
+        .query(
+          `INSERT INTO admin_audit_logs (admin_user_id, organization_id, action, resource_type, resource_id, details, ip_address)
+           VALUES ($1, $2, $3, 'device', $4, $5::jsonb, 'system')`,
+          [
+            user.id,
+            organizationId,
+            AdminAction.WAITER_PIN_UNLOCK,
+            device.id,
+            JSON.stringify({ lockedAt: previousSettings.waiterPinLockedAt }),
+          ],
+        )
+        .catch((error: Error) =>
+          this.logger.error(
+            `Audit of PIN unlock not written: ${error.message}`,
+          ),
+        );
+    }
 
     // Notify device about settings changes
     if (
@@ -681,6 +720,8 @@ export class DevicesService {
     device.isActive = false;
 
     await this.deviceRepository.save(device);
+    // Bedienungs-Sitzungen an diesem Geraet enden.
+    await this.waiterSessions.endForDevice(device.id, 'device_blocked');
     this.logger.log(
       `Device blocked: ${device.name} (${device.id}) by user ${user.email}`,
     );
@@ -812,26 +853,18 @@ export class DevicesService {
 
     assertCanManage(actor, membership);
 
-    // Check PIN uniqueness within organization
-    const members = await this.userOrganizationRepository.find({
-      where: { organizationId },
-    });
-
-    for (const member of members) {
-      if (member.userId === userId) continue;
-      if (member.pin && (await bcrypt.compare(pin, member.pin))) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          reason: ErrorReasons.PIN_ALREADY_IN_USE,
-          message:
-            'Diese PIN wird bereits von einem anderen Mitglied verwendet',
-        });
-      }
+    // Ein PIN-Raum mit den Bedienungen (pin_credentials, HMAC): vergebene
+    // oder zu einfache PINs → 400 PIN_NOT_AVAILABLE.
+    await this.pins.assign(
+      organizationId,
+      { ownerType: 'member', ownerId: membership.id },
+      pin,
+    );
+    if (membership.pin) {
+      membership.pin = null;
+      await this.userOrganizationRepository.save(membership);
     }
-
-    const hashedPin = await bcrypt.hash(pin, 10);
-    membership.pin = hashedPin;
-    await this.userOrganizationRepository.save(membership);
+    await this.waiterSessions.endForMember(organizationId, userId, 'revoked');
 
     this.logger.log(
       `PIN set for user ${userId} in organization ${organizationId}`,
@@ -865,44 +898,71 @@ export class DevicesService {
 
     membership.pin = null;
     await this.userOrganizationRepository.save(membership);
+    await this.pins.remove({ ownerType: 'member', ownerId: membership.id });
+    await this.waiterSessions.endForMember(organizationId, userId, 'revoked');
 
     this.logger.log(
       `PIN removed for user ${userId} in organization ${organizationId}`,
     );
   }
 
+  /**
+   * `POST /device-api/verify-pin` (Alias aus der Zeit vor den Bedienungen):
+   * meldet die Person wie `POST /device-api/waiter-session` an und liefert
+   * zusaetzlich die frueheren Felder.
+   */
   async verifyPin(
-    organizationId: string,
+    device: Device,
     pin: string,
   ): Promise<{
-    userId: string;
+    userId: string | null;
     firstName: string;
     lastName: string;
     role: string;
+    token: string | undefined;
+    expiresAt: string;
+    kind: 'waiter' | 'member';
+    waiter: ReturnType<typeof operatorView>;
   }> {
-    const members = await this.userOrganizationRepository.find({
-      where: { organizationId },
-      relations: ['user'],
-    });
+    const session = await this.waiterSessions.login(device, pin);
+    const user = session.waiter.userId
+      ? await this.userOrganizationRepository.findOne({
+          where: {
+            organizationId: device.organizationId!,
+            userId: session.waiter.userId,
+          },
+          relations: ['user'],
+        })
+      : null;
+    return {
+      userId: session.waiter.userId ?? session.waiter.waiterId,
+      firstName: user?.user?.firstName ?? session.waiter.name,
+      lastName: user?.user?.lastName ?? '',
+      role: session.waiter.role,
+      token: session.token,
+      expiresAt: session.expiresAt,
+      kind: session.kind,
+      waiter: session.waiter,
+    };
+  }
 
-    for (const member of members) {
-      if (!member.pin) continue;
-      const isMatch = await bcrypt.compare(pin, member.pin);
-      if (isMatch) {
-        return {
-          userId: member.userId,
-          firstName: member.user.firstName,
-          lastName: member.user.lastName,
-          role: member.role,
-        };
-      }
+  /** Feste Bedienung muss zur Organisation gehoeren. */
+  private async assertWaiterOfOrganization(
+    organizationId: string,
+    settings: Device['settings'] | null | undefined,
+  ): Promise<void> {
+    const waiterId = settings?.waiterId;
+    if (!waiterId) return;
+    const exists = await this.deviceRepository.manager
+      .getRepository(Waiter)
+      .exists({ where: { id: waiterId, organizationId } });
+    if (!exists) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.WAITER_NOT_FOUND,
+        message: 'Bedienung nicht gefunden',
+      });
     }
-
-    throw new BadRequestException({
-      code: ErrorCodes.VALIDATION_ERROR,
-      reason: ErrorReasons.PIN_INVALID,
-      message: 'Ungültige PIN',
-    });
   }
 
   private async checkMembership(

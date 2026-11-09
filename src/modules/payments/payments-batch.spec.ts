@@ -336,6 +336,40 @@ describe('PaymentsBatchService.payBatch', () => {
     );
   });
 
+  it('records who cashed and the tip per payment (Kellnerabrechnung)', async () => {
+    const { db } = setup();
+    db.orders.push(order('o1'), order('o2'));
+    const service = new PaymentsBatchService(
+      db.dataSource() as never,
+      {
+        notifyPaymentReceived: jest.fn(),
+        notifyOrderUpdated: jest.fn(),
+      } as never,
+      { handlePaymentReceived: jest.fn(() => Promise.resolve()) } as never,
+    );
+    const result = await service.payBatch(
+      ORG,
+      'device-1',
+      {
+        orderIds: ['o1', 'o2'],
+        paymentMethod: PaymentMethod.CARD,
+        tipAmount: 2,
+      } as BatchPaymentDto,
+      { waiterId: 'w-anna', userId: null, name: 'Anna Berger' },
+    );
+    expect(
+      result.payments.map((p) => [
+        p.orderId,
+        p.processedByWaiterId,
+        p.processedByUserId,
+        Number(p.tipAmount),
+      ]),
+    ).toEqual([
+      ['o1', 'w-anna', null, 0],
+      ['o2', 'w-anna', null, 2],
+    ]);
+  });
+
   it('spreads a discount from the last order backwards, capped at the open amount without Pfand', async () => {
     const { db, pay, gateway } = setup();
     db.orders.push(
