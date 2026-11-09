@@ -255,6 +255,26 @@ describe('EventsService – moving dates by phase', () => {
   });
 });
 
+describe('EventsService – clean-up marker after support moves', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('an inactive event moved back into the future gets its clean-up again', async () => {
+    jest
+      .useFakeTimers({ doNotFake: ['nextTick'] })
+      .setSystemTime(new Date('2026-11-16T12:00:00Z'));
+    const event = makeEvent({
+      status: EventStatus.INACTIVE,
+      salesStartedAt: new Date('2026-11-15T17:00:00Z'),
+    });
+    const { service } = setup(event);
+    await service.moveDatesAsSupport(event.id, {
+      startDate: '2026-11-29T23:00:00.000Z',
+      endDate: '2026-11-30T23:00:00.000Z',
+    });
+    expect(event.salesStartedAt).toBeNull();
+  });
+});
+
 describe('EventPhaseService.prepareOrder', () => {
   afterEach(() => jest.useRealTimers());
   const now = (iso: string) =>

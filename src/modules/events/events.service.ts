@@ -373,10 +373,11 @@ export class EventsService {
       event.settings = next;
     }
 
-    // Zurueck in „Geplant“ (Support hat nach hinten verschoben): beim
-    // naechsten Beginn des Verkaufsfensters wieder aufraeumen.
+    // Verkaufsfenster liegt wieder in der Zukunft (Support hat nach hinten
+    // verschoben) — auch bei einer gerade ausgeschalteten Veranstaltung:
+    // beim naechsten Beginn wieder aufraeumen.
     const after = this.eventPhase.resolveWith(event, organization, now);
-    if (after.phase === 'planned' && event.salesStartedAt) {
+    if (event.salesStartedAt && salesWindowAhead(after, now)) {
       event.salesStartedAt = null;
     }
 
@@ -594,6 +595,20 @@ export class EventsService {
         );
 
         event.status = EventStatus.ACTIVE;
+        // Liegt das Verkaufsfenster noch vor uns, raeumt der Uebergangslauf
+        // zu seinem Beginn (wieder) auf.
+        if (
+          event.salesStartedAt &&
+          salesWindowAhead(
+            this.eventPhase.resolveWith(
+              event,
+              await this.eventPhase.loadOrganization(organizationId, manager),
+            ),
+            new Date(),
+          )
+        ) {
+          event.salesStartedAt = null;
+        }
         await repository.save(event);
 
         return { deactivatedSiblings: siblings, purge: purgeResult };
@@ -1031,4 +1046,12 @@ export class EventsService {
 
     return membership;
   }
+}
+
+/** Beginnt das Verkaufsfenster erst noch? */
+function salesWindowAhead(info: EventPhaseInfo, now: Date): boolean {
+  return (
+    !!info.realSalesFrom &&
+    now.getTime() < new Date(info.realSalesFrom).getTime()
+  );
 }
