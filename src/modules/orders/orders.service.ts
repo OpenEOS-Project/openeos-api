@@ -49,6 +49,7 @@ import {
 import { TseSigningService } from '../tse/tse-signing.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
+import { orderStaffPayload, personName } from '../print-jobs/order-staff';
 import { Refund } from '../../database/entities/refund.entity';
 import {
   ORDER_DISPLAY_STATUSES,
@@ -1717,6 +1718,12 @@ export class OrdersService {
           dailyNumber: order.dailyNumber,
           tableNumber: order.tableNumber,
           stationName: station.name,
+          // Bestellungen aus der Verwaltung: angelegt von einem Web-Nutzer,
+          // ohne Geraet (`createdByUser` ist hier schon geladen).
+          ...orderStaffPayload({
+            userName: personName(order.createdByUser),
+            deviceName: null,
+          }),
           items: items.map((i) => ({
             productName: i.productName,
             categoryName: i.categoryName,
