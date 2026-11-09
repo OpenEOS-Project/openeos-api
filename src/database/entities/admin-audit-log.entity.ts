@@ -79,6 +79,13 @@ export enum AdminAction {
   // DSFinV-K (openeos-api#102)
   DSFINVK_CLOSING_REQUESTED = 'dsfinvk_closing_requested',
   DSFINVK_EXPORTED = 'dsfinvk_exported',
+  // Ausgehende Webhooks (AGB Ziffer 10.2)
+  WEBHOOK_CREATED = 'webhook_created',
+  WEBHOOK_UPDATED = 'webhook_updated',
+  WEBHOOK_DELETED = 'webhook_deleted',
+  WEBHOOK_SECRET_ROTATED = 'webhook_secret_rotated',
+  /** Zu viele Fehlversuche in Folge — vom System abgeschaltet. */
+  WEBHOOK_AUTO_DISABLED = 'webhook_auto_disabled',
 }
 
 /**

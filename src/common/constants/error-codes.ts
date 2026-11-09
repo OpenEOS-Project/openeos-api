@@ -149,6 +149,8 @@ export const ErrorCodes = {
   CASHBOOK_AMOUNT_INVALID: 'CASHBOOK_AMOUNT_INVALID',
   // Kassenbuch: unbekannte Buchungsart — 400
   CASHBOOK_TYPE_INVALID: 'CASHBOOK_TYPE_INVALID',
+  // Webhooks auf diesem Server ausgeschaltet (WEBHOOKS_ENABLED=false) — 503
+  WEBHOOKS_DISABLED: 'WEBHOOKS_DISABLED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -288,6 +290,8 @@ export const ErrorMessages: Record<ErrorCode, string> = {
     'Für diesen Zeitraum gibt es keinen Kassenabschluss',
   [ErrorCodes.CASHBOOK_AMOUNT_INVALID]: 'Bitte gib einen gültigen Betrag an',
   [ErrorCodes.CASHBOOK_TYPE_INVALID]: 'Unbekannte Kassenbuch-Buchung',
+  [ErrorCodes.WEBHOOKS_DISABLED]:
+    'Webhooks sind auf diesem Server ausgeschaltet',
 };
 
 /**
@@ -578,6 +582,12 @@ export const ErrorReasons = {
   USER_NOT_FOUND: 'USER_NOT_FOUND',
   VERIFICATION_LINK_EXPIRED: 'VERIFICATION_LINK_EXPIRED',
   VERIFICATION_LINK_INVALID: 'VERIFICATION_LINK_INVALID',
+  WEBHOOK_DELIVERY_NOT_FOUND: 'WEBHOOK_DELIVERY_NOT_FOUND',
+  WEBHOOK_EVENT_TYPE_INVALID: 'WEBHOOK_EVENT_TYPE_INVALID',
+  WEBHOOK_LIMIT_REACHED: 'WEBHOOK_LIMIT_REACHED',
+  WEBHOOK_NOT_FOUND: 'WEBHOOK_NOT_FOUND',
+  WEBHOOK_URL_INVALID: 'WEBHOOK_URL_INVALID',
+  WEBHOOKS_DISABLED: 'WEBHOOKS_DISABLED',
 } as const;
 
 export type ErrorReason = (typeof ErrorReasons)[keyof typeof ErrorReasons];

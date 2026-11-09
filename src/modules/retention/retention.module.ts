@@ -7,7 +7,10 @@ import { RetentionNotice, RetentionRun } from '../../database/entities';
 import { AssistantModule } from '../assistant';
 import { MenuImportWorkerService } from '../assistant/menu-import/menu-import-worker.service';
 import { tseSettingsFromEnv } from '../tse/tse.config';
+import { WebhooksModule } from '../webhooks/webhooks.module';
+import { WebhookDeliveryService } from '../webhooks/webhook-delivery.service';
 import { AssistantImportsJob } from './jobs/assistant-imports.job';
+import { WebhookDeliveriesJob } from './jobs/webhook-deliveries.job';
 import { AuditLogsJob } from './jobs/audit-logs.job';
 import { AuthRecordsJob } from './jobs/auth-records.job';
 import { ContactRequestsJob } from './jobs/contact-requests.job';
@@ -37,6 +40,7 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
   imports: [
     TypeOrmModule.forFeature([RetentionRun, RetentionNotice]),
     AssistantModule,
+    WebhooksModule,
   ],
   controllers: [RetentionAdminController, AccountDeletionController],
   providers: [
@@ -44,11 +48,17 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
     RetentionNoticeService,
     {
       provide: RETENTION_JOBS,
-      inject: [ConfigService, RetentionNoticeService, MenuImportWorkerService],
+      inject: [
+        ConfigService,
+        RetentionNoticeService,
+        MenuImportWorkerService,
+        WebhookDeliveryService,
+      ],
       useFactory: (
         config: ConfigService,
         notices: RetentionNoticeService,
         menuImports: MenuImportWorkerService,
+        webhookDeliveries: WebhookDeliveryService,
       ): RetentionJob[] => {
         const uploadDir = config.get<string>('UPLOAD_DIR') || './uploads';
         const options = {
@@ -67,6 +77,7 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
           new SupportMessagesJob(),
           new ContactRequestsJob(),
           new AssistantImportsJob(menuImports),
+          new WebhookDeliveriesJob(webhookDeliveries),
           new OrganizationInactivityJob(notices),
           new OrganizationPurgeJob(notices, options),
           new UserAccountsJob(notices, options),

@@ -96,3 +96,5 @@ export * from './ai-usage.entity';
 export * from './legal-acceptance.entity';
 export * from './retention-run.entity';
 export * from './retention-notice.entity';
+export * from './webhook-endpoint.entity';
+export * from './webhook-delivery.entity';

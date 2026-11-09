@@ -30,6 +30,10 @@ export const OPENAPI_TAGS: ReadonlyArray<[name: string, description: string]> =
       'API Tokens',
       'API-Tokens einer Organisation ausstellen und widerrufen (nur mit Anmeldung)',
     ],
+    [
+      'Webhooks',
+      'Ausgehende Webhooks: OpenEOS meldet Ereignisse signiert an deine Adresse',
+    ],
     ['Organizations', 'Organisation, Mitglieder, Einladungen'],
     ['Events', 'Veranstaltungen anlegen, bearbeiten, freischalten'],
     ['Categories', 'Kategorien je Veranstaltung'],
@@ -129,7 +133,7 @@ function descriptionFooter(variant: 'full' | 'public'): string {
     return `
 ## Was diese Referenz zeigt
 
-Nur die Endpunkte, die ein API-Token erreichen kann, plus die Verwaltung der Tokens selbst (nur mit Anmeldung). Alle anderen Teile der API — Anmeldung und Sitzungen der Web-App, Kasse und Geräte-API (\`/api/device-api/*\`), Zahlungen, Mitglieder, Abrechnung, Admin — sind absichtlich nicht dokumentiert: Sie sind für die Apps von OpenEOS gedacht und keine stabile Schnittstelle für Integrationen. Wer OpenEOS selbst betreibt, findet die vollständige Beschreibung im Repository (\`docs/openapi.json\`) und außerhalb der Produktion unter \`/docs\`.
+Nur die Endpunkte, die ein API-Token erreichen kann, plus die Verwaltung der Tokens selbst und das Löschen von Webhooks (beides nur mit Anmeldung). Alle anderen Teile der API — Anmeldung und Sitzungen der Web-App, Kasse und Geräte-API (\`/api/device-api/*\`), Zahlungen, Mitglieder, Abrechnung, Admin — sind absichtlich nicht dokumentiert: Sie sind für die Apps von OpenEOS gedacht und keine stabile Schnittstelle für Integrationen. Wer OpenEOS selbst betreibt, findet die vollständige Beschreibung im Repository (\`docs/openapi.json\`) und außerhalb der Produktion unter \`/docs\`.
 
 Zu jedem Endpunkt steht der nötige Scope (\`x-api-token-scope\`). Die Texte sind auf Deutsch; die Referenz ist für beide Sprachen der Doku-Seite dieselbe.
 `;
@@ -177,6 +181,10 @@ Je Token:
 ${limitList()}
 
 Darüber hinaus \`429 API_TOKEN_RATE_LIMITED\` mit \`Retry-After\`. Zusätzlich gilt die allgemeine Grenze je IP-Adresse.
+
+## Webhooks
+
+Statt regelmäßig abzufragen, kann OpenEOS Ereignisse (z. B. \`order.paid\`, \`refund.created\`, \`event.phase_changed\`) als signierten \`POST\` an deine HTTPS-Adresse senden — mit \`OpenEOS-Signature\` (HMAC-SHA256), Wiederholungen bis etwa 24 Stunden und Zustellprotokoll. Einrichten in der App unter *Einstellungen → Webhooks* oder über die Endpunkte unter *Webhooks* (Scopes \`webhooks:read\` und \`webhooks:write\`). Ereignisse, Inhalte und Prüfung der Signatur: https://docs.openeos.de/integrationen/webhooks
 
 ### Fehler
 

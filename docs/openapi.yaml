@@ -7360,6 +7360,11 @@ paths:
               - tse_keep_revoked
               - dsfinvk_closing_requested
               - dsfinvk_exported
+              - webhook_created
+              - webhook_updated
+              - webhook_deleted
+              - webhook_secret_rotated
+              - webhook_auto_disabled
         - name: startDate
           required: false
           in: query
@@ -10592,6 +10597,7 @@ paths:
               - support_messages
               - contact_requests
               - assistant_imports
+              - webhook_deliveries
               - organization_inactivity
               - organization_purge
               - user_accounts
@@ -10796,6 +10802,460 @@ paths:
       security: *a103
       summary: Cancel a scheduled account deletion (restores the account and the organizations deleted with it, until the final deletion)
       tags: *a104
+  /api/organizations/{organizationId}/webhooks/info:
+    get:
+      description: Ob Webhooks auf diesem Server eingeschaltet sind, Grenzen (Endpunkte je Organisation, Versuche, Aufbewahrung des Protokolls), die aktuelle `apiVersion` der Nutzlast und alle abonnierbaren Ereignisse mit Beschreibung. Scope `webhooks:read`.
+      operationId: getWebhookInfo
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - &a105
+          JWT-auth: []
+        - API-token: []
+      summary: Webhook-Einstellungen des Servers
+      tags: &a106
+        - Webhooks
+      x-api-token-scope: webhooks:read
+  /api/organizations/{organizationId}/webhooks:
+    get:
+      description: Alle Webhook-Endpunkte der Organisation, neueste zuerst, mit Zustand der letzten Zustellung und Fehlerserie. Vom Signatur-Geheimnis ist nur `secretHint` sichtbar. Scope `webhooks:read`, Besitzer Administrator.
+      operationId: listWebhooks
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: Webhook-Endpunkte
+          content:
+            application/json:
+              example:
+                data:
+                  - id: 0d2f6a4e-5b8c-4d0e-9a51-3c7e2b9f1a10
+                    organizationId: b1e7c9d2-4f3a-4e8b-9c6d-2a5f8e1b7c30
+                    url: https://example.org/openeos/webhook
+                    description: Buchhaltung
+                    eventTypes:
+                      - order.paid
+                      - refund.created
+                    active: true
+                    includeGuestData: false
+                    includeTestOrders: false
+                    secretHint: whsec_3fA9…
+                    previousSecretExpiresAt: null
+                    consecutiveFailures: 0
+                    failingSince: null
+                    disabledReason: null
+                    disabledAt: null
+                    lastDeliveryAt: 2026-11-10T18:04:13.511Z
+                    lastDeliveryStatus: succeeded
+                    lastSuccessAt: 2026-11-10T18:04:13.511Z
+                    createdBy:
+                      id: 7c4e…
+                      firstName: Alex
+                      lastName: Muster
+                    createdAt: 2026-11-10T17:55:02.000Z
+                    updatedAt: 2026-11-10T18:04:13.511Z
+      security:
+        - *a105
+        - API-token: []
+      summary: Webhooks auflisten
+      tags: *a106
+      x-api-token-scope: webhooks:read
+    post:
+      description: Legt einen Endpunkt an. Die Adresse muss mit `https://` beginnen und auf öffentliche Adressen zeigen (`400 WEBHOOK_URL_INVALID`, `params.reason`). Das Signatur-Geheimnis (`data.secret`, `whsec_…`) kommt genau einmal in dieser Antwort. Höchstens 10 Endpunkte je Organisation (`409 WEBHOOK_LIMIT_REACHED`). Scope `webhooks:write`.
+      operationId: createWebhook
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWebhookDto"
+      responses:
+        "201":
+          description: Angelegt; `data.secret` ist das Geheimnis
+          content:
+            application/json:
+              example:
+                data:
+                  id: 0d2f6a4e-5b8c-4d0e-9a51-3c7e2b9f1a10
+                  organizationId: b1e7c9d2-4f3a-4e8b-9c6d-2a5f8e1b7c30
+                  url: https://example.org/openeos/webhook
+                  description: Buchhaltung
+                  eventTypes:
+                    - order.paid
+                    - refund.created
+                  active: true
+                  includeGuestData: false
+                  includeTestOrders: false
+                  secretHint: whsec_3fA9…
+                  previousSecretExpiresAt: null
+                  consecutiveFailures: 0
+                  failingSince: null
+                  disabledReason: null
+                  disabledAt: null
+                  lastDeliveryAt: null
+                  lastDeliveryStatus: null
+                  lastSuccessAt: null
+                  createdBy:
+                    id: 7c4e…
+                    firstName: Alex
+                    lastName: Muster
+                  createdAt: 2026-11-10T17:55:02.000Z
+                  updatedAt: 2026-11-10T18:04:13.511Z
+                  secret: whsec_3fA9pQ…
+        "400":
+          description: WEBHOOK_URL_INVALID, WEBHOOK_EVENT_TYPE_INVALID
+        "409":
+          description: WEBHOOK_LIMIT_REACHED
+        "503":
+          description: WEBHOOKS_DISABLED
+      security:
+        - *a105
+        - API-token: []
+      summary: Webhook anlegen
+      tags: *a106
+      x-api-token-scope: webhooks:write
+  /api/organizations/{organizationId}/webhooks/{webhookId}:
+    get:
+      description: Ein Endpunkt der Organisation. Scope `webhooks:read`.
+      operationId: getWebhook
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: webhookId
+          required: true
+          in: path
+          description: ID des Webhooks
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a105
+        - API-token: []
+      summary: Webhook abrufen
+      tags: *a106
+      x-api-token-scope: webhooks:read
+    patch:
+      description: "Ändert Adresse, Beschreibung, Ereignisse oder Schalter. `active: true` schaltet einen automatisch abgeschalteten Endpunkt wieder ein und setzt die Fehlerserie zurück; `active: false` beendet offene Zustellungen. Scope `webhooks:write`."
+      operationId: updateWebhook
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: webhookId
+          required: true
+          in: path
+          description: ID des Webhooks
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWebhookDto"
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a105
+        - API-token: []
+      summary: Webhook ändern
+      tags: *a106
+      x-api-token-scope: webhooks:write
+    delete:
+      description: Löscht den Endpunkt samt Zustellprotokoll. Nur mit Anmeldung (JWT) als Administrator — nicht per Token.
+      operationId: deleteWebhook
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: webhookId
+          required: true
+          in: path
+          description: ID des Webhooks
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a105
+      summary: Webhook löschen
+      tags: *a106
+  /api/organizations/{organizationId}/webhooks/{webhookId}/rotate-secret:
+    post:
+      description: Erzeugt ein neues Geheimnis (`data.secret`, genau einmal). Das alte signiert noch 24 Stunden mit (zweites `v1=` in `OpenEOS-Signature`, bis `previousSecretExpiresAt`), damit du den Empfänger ohne Ausfall umstellen kannst. Scope `webhooks:write`.
+      operationId: rotateWebhookSecret
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: webhookId
+          required: true
+          in: path
+          description: ID des Webhooks
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a105
+        - API-token: []
+      summary: Signatur-Geheimnis erneuern
+      tags: *a106
+      x-api-token-scope: webhooks:write
+  /api/organizations/{organizationId}/webhooks/{webhookId}/test:
+    post:
+      description: Sendet ein Ereignis `ping` (ein Versuch, auch an ausgeschaltete Endpunkte). Das Ergebnis steht nach wenigen Sekunden im Zustellprotokoll. Scope `webhooks:write`.
+      operationId: testWebhook
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: webhookId
+          required: true
+          in: path
+          description: ID des Webhooks
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "202":
+          description: Zustellung angelegt
+          content:
+            application/json:
+              example:
+                data:
+                  id: 5a0f3c1e-2d4b-4b7a-8e9f-1c2d3e4f5a6b
+                  webhookId: 0d2f6a4e-5b8c-4d0e-9a51-3c7e2b9f1a10
+                  eventId: 6f1c2b3a-4d5e-4f60-8a9b-0c1d2e3f4a5b
+                  eventType: ping
+                  status: pending
+                  attempts: 0
+                  maxAttempts: 1
+                  nextAttemptAt: null
+                  lastAttemptAt: null
+                  responseStatus: null
+                  durationMs: null
+                  error: null
+                  manual: true
+                  redeliveryOf: null
+                  createdAt: 2026-11-10T18:04:13.250Z
+      security:
+        - *a105
+        - API-token: []
+      summary: Test senden
+      tags: *a106
+      x-api-token-scope: webhooks:write
+  /api/organizations/{organizationId}/webhooks/{webhookId}/deliveries:
+    get:
+      description: Zustellungen des Endpunkts, neueste zuerst, seitenweise (`page`, `limit` ≤ 100), optional nach `status` und `eventType` gefiltert. Das Protokoll wird nach 30 Tagen gelöscht. Scope `webhooks:read`.
+      operationId: listWebhookDeliveries
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: webhookId
+          required: true
+          in: path
+          description: ID des Webhooks
+          schema:
+            format: uuid
+            type: string
+        - name: page
+          required: false
+          in: query
+          description: Seite, beginnend bei 1
+          schema:
+            minimum: 1
+            default: 1
+            type: number
+        - name: limit
+          required: false
+          in: query
+          description: Einträge je Seite (höchstens 100)
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 20
+            type: number
+        - name: status
+          required: false
+          in: query
+          description: Nur Zustellungen in diesem Zustand
+          schema:
+            type: string
+            enum:
+              - pending
+              - delivering
+              - succeeded
+              - failed
+        - name: eventType
+          required: false
+          in: query
+          description: Nur Zustellungen dieses Ereignisses (auch `ping`)
+          schema:
+            example: order.paid
+            type: string
+      responses:
+        "200":
+          description: Zustellungen
+          content:
+            application/json:
+              example:
+                data:
+                  - id: 5a0f3c1e-2d4b-4b7a-8e9f-1c2d3e4f5a6b
+                    webhookId: 0d2f6a4e-5b8c-4d0e-9a51-3c7e2b9f1a10
+                    eventId: 6f1c2b3a-4d5e-4f60-8a9b-0c1d2e3f4a5b
+                    eventType: order.paid
+                    status: succeeded
+                    attempts: 1
+                    maxAttempts: 8
+                    nextAttemptAt: null
+                    lastAttemptAt: 2026-11-10T18:04:13.300Z
+                    responseStatus: 200
+                    durationMs: 211
+                    error: null
+                    manual: false
+                    redeliveryOf: null
+                    createdAt: 2026-11-10T18:04:13.250Z
+                meta:
+                  page: 1
+                  limit: 20
+                  total: 1
+                  totalPages: 1
+                  hasNext: false
+                  hasPrev: false
+      security:
+        - *a105
+        - API-token: []
+      summary: Zustellprotokoll
+      tags: *a106
+      x-api-token-scope: webhooks:read
+  /api/organizations/{organizationId}/webhooks/{webhookId}/deliveries/{deliveryId}:
+    get:
+      description: Eine Zustellung mit dem gesendeten Inhalt (`payload`), den ersten 1 024 Zeichen der Antwort (`responseBody`) und allen Versuchen (`attemptLog`). Scope `webhooks:read`.
+      operationId: getWebhookDelivery
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: webhookId
+          required: true
+          in: path
+          description: ID des Webhooks
+          schema:
+            format: uuid
+            type: string
+        - name: deliveryId
+          required: true
+          in: path
+          description: ID der Zustellung
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a105
+        - API-token: []
+      summary: Zustellung abrufen
+      tags: *a106
+      x-api-token-scope: webhooks:read
+  /api/organizations/{organizationId}/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver:
+    post:
+      description: Sendet eine Zustellung noch einmal (ein Versuch) — mit derselben Ereignis-ID und demselben Inhalt, damit der Empfänger Doppelte erkennt. Scope `webhooks:write`.
+      operationId: redeliverWebhook
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: webhookId
+          required: true
+          in: path
+          description: ID des Webhooks
+          schema:
+            format: uuid
+            type: string
+        - name: deliveryId
+          required: true
+          in: path
+          description: ID der Zustellung
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "202":
+          description: ""
+      security:
+        - *a105
+        - API-token: []
+      summary: Erneut senden
+      tags: *a106
+      x-api-token-scope: webhooks:write
 info:
   title: OpenEOS API
   description: |-
@@ -10820,6 +11280,8 @@ info:
     | `staff:write` | Schichtpläne, Jobs, Schichten und Helfer-Anmeldungen bearbeiten |
     | `devices:write` | Bon-Vorlagen anlegen und ändern |
     | `settings:write` | Organisationseinstellungen ändern |
+    | `webhooks:read` | Webhooks und ihre Zustellungen lesen |
+    | `webhooks:write` | Webhooks anlegen, ändern, testen und erneut senden (kein Löschen) |
 
     Schreib-Scopes schließen `read` nicht ein. Jeder Endpunkt nennt den nötigen Scope als `x-api-token-scope`; fehlt er am Token, antwortet die API mit `403 API_TOKEN_SCOPE_MISSING`, bei nicht freigegebenen Endpunkten mit `403 API_TOKEN_NOT_ALLOWED`.
 
@@ -10830,6 +11292,10 @@ info:
     - 5000 Aufrufe je Tag
 
     Darüber hinaus `429 API_TOKEN_RATE_LIMITED` mit `Retry-After`. Zusätzlich gilt die allgemeine Grenze je IP-Adresse.
+
+    ## Webhooks
+
+    Statt regelmäßig abzufragen, kann OpenEOS Ereignisse (z. B. `order.paid`, `refund.created`, `event.phase_changed`) als signierten `POST` an deine HTTPS-Adresse senden — mit `OpenEOS-Signature` (HMAC-SHA256), Wiederholungen bis etwa 24 Stunden und Zustellprotokoll. Einrichten in der App unter *Einstellungen → Webhooks* oder über die Endpunkte unter *Webhooks* (Scopes `webhooks:read` und `webhooks:write`). Ereignisse, Inhalte und Prüfung der Signatur: https://docs.openeos.de/integrationen/webhooks
 
     ### Fehler
 
@@ -10853,6 +11319,8 @@ info:
 tags:
   - name: API Tokens
     description: API-Tokens einer Organisation ausstellen und widerrufen (nur mit Anmeldung)
+  - name: Webhooks
+    description: "Ausgehende Webhooks: OpenEOS meldet Ereignisse signiert an deine Adresse"
   - name: Organizations
     description: Organisation, Mitglieder, Einladungen
   - name: Events
@@ -11014,6 +11482,8 @@ components:
               - staff:write
               - devices:write
               - settings:write
+              - webhooks:read
+              - webhooks:write
         expiresAt:
           type: string
           description: ISO-8601. Ohne Angabe läuft der Token nicht ab
@@ -12091,7 +12561,7 @@ components:
       properties:
         paymentMethod:
           type: string
-          enum: &a106
+          enum: &a108
             - cash
             - card
             - sumup_terminal
@@ -12161,7 +12631,7 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: &a107
+          enum: &a109
             - normal
             - high
             - rush
@@ -12169,7 +12639,7 @@ components:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: &a108
+          enum: &a110
             - pos
             - online
             - qr_order
@@ -12177,7 +12647,7 @@ components:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: &a109
+          enum: &a111
             - table_service
             - counter_pickup
         items:
@@ -12256,7 +12726,7 @@ components:
           type: string
         reasonCode:
           type: string
-          enum: &a105
+          enum: &a107
             - wrong_order
             - quality
             - not_delivered
@@ -12293,7 +12763,7 @@ components:
             $ref: "#/components/schemas/RefundItemSelectionDto"
         reasonCode:
           type: string
-          enum: *a105
+          enum: *a107
         reasonText:
           type: string
           example: Gast hat es sich anders überlegt
@@ -12338,7 +12808,7 @@ components:
           description: "Zahlung, über die erstattet wird. Ohne: von der jüngsten Zahlung rückwärts."
         reasonCode:
           type: string
-          enum: *a105
+          enum: *a107
         reasonText:
           type: string
           example: Burger kalt
@@ -12411,7 +12881,7 @@ components:
             type: string
         paymentMethod:
           type: string
-          enum: *a106
+          enum: *a108
           example: cash
         amountReceived:
           type: number
@@ -12641,17 +13111,17 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: *a107
+          enum: *a109
         source:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: *a108
+          enum: *a110
         fulfillmentType:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: *a109
+          enum: *a111
         items:
           description: Liste der Bestellpositionen
           type: array
@@ -12811,7 +13281,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: &a110
+          enum: &a112
             - fixed
             - manual
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
@@ -12848,7 +13318,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: *a110
+          enum: *a112
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
         amount:
           type: number
@@ -12880,7 +13350,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: &a111
+          enum: &a113
             - 19
             - 7
             - 0
@@ -12911,7 +13381,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: *a111
+          enum: *a113
           default: 19
           description: "Umsatzsteuersatz des Pfands in Prozent: der Satz der Getränke/Waren, für die dieses Pfand gilt (meist 19). Pfand gehört zum Entgelt; die Rückgabe mindert Umsatz und Umsatzsteuer zum selben Satz. Steuerbefreite Organisationen (Kleinunternehmer) weisen trotzdem keine MwSt aus."
         isActive:
@@ -13109,7 +13579,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: &a112
+          enum: &a114
             - rect
             - round
         x:
@@ -13193,7 +13663,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: *a112
+          enum: *a114
         x:
           type: number
         y:
@@ -14966,6 +15436,7 @@ components:
               - support_messages
               - contact_requests
               - assistant_imports
+              - webhook_deliveries
               - organization_inactivity
               - organization_purge
               - user_accounts
@@ -15030,3 +15501,74 @@ components:
         code:
           type: string
           description: Code aus der E-Mail (Konten ohne Passwort)
+    CreateWebhookDto:
+      type: object
+      properties:
+        url:
+          type: string
+          example: https://example.org/openeos/webhook
+          description: Ziel der Zustellungen. Nur `https://`, ohne Zugangsdaten in der Adresse; der Name muss sich auf öffentliche Adressen auflösen lassen.
+          maxLength: 2048
+        description:
+          type: object
+          example: Buchhaltung
+          description: Wofür der Webhook gedacht ist
+          maxLength: 255
+          nullable: true
+        eventTypes:
+          type: array
+          example:
+            - order.paid
+            - refund.created
+          description: Abonnierte Ereignisse (mindestens eines)
+          items:
+            type: string
+            enum: &a115
+              - order.created
+              - order.paid
+              - order.completed
+              - order.cancelled
+              - payment.created
+              - refund.created
+              - shop.order.created
+              - pfand_return.created
+              - event.activated
+              - event.phase_changed
+              - cash_point_closing.created
+              - product.updated
+        active:
+          type: boolean
+          default: true
+        includeGuestData:
+          type: boolean
+          default: false
+          description: "„Gästedaten mitsenden“: Name, Telefon und Notizen der Gäste in Bestellungen. Nur einschalten, wenn der Empfänger sie braucht."
+        includeTestOrders:
+          type: boolean
+          default: false
+          description: "„Testbestellungen mitsenden“ (Testmodus und Phase „Geplant“); sie tragen dann `isTest: true`."
+      required:
+        - url
+        - eventTypes
+    UpdateWebhookDto:
+      type: object
+      properties:
+        url:
+          type: string
+          maxLength: 2048
+        description:
+          type: object
+          maxLength: 255
+          nullable: true
+        eventTypes:
+          type: array
+          items:
+            type: string
+            enum: *a115
+        active:
+          type: boolean
+          description: Ein- oder ausschalten. Einschalten setzt eine automatische Abschaltung und die Fehlerserie zurück.
+        includeGuestData:
+          type: boolean
+        includeTestOrders:
+          type: boolean
