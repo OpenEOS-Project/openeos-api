@@ -21,6 +21,12 @@ import type { Refund } from '../../database/entities/refund.entity';
 import { tsePrintBlock, type TseReceiptView } from '../tse/tse-view';
 import { organizationPrintBlock, paymentMethodLabel } from './receipt-labels';
 import {
+  NO_ORDER_STAFF,
+  loadOrderStaff,
+  orderStaffPayload,
+  type OrderStaff,
+} from './order-staff';
+import {
   CANCELLATION_TICKET_TEMPLATE,
   REFUND_RECEIPT_TEMPLATE,
 } from './builtin-templates';
@@ -154,9 +160,14 @@ export class OrderPrintService {
    * The agent expects fields like `created_at`, `daily_number`, `customer_name`
    * — not the camelCase entity fields used elsewhere in the API.
    */
-  private buildOrderPayload(order: Order | null): Record<string, unknown> {
+  private buildOrderPayload(
+    order: Order | null,
+    staff: OrderStaff,
+  ): Record<string, unknown> {
     if (!order) return {};
     return {
+      // Bon-Elemente „Bedienung“/„Gerät“ (leer → Vorlage laesst sie weg).
+      ...orderStaffPayload(staff),
       order_id: order.id,
       order_number: order.orderNumber,
       daily_number: order.dailyNumber ?? null,
@@ -171,6 +182,22 @@ export class OrderPrintService {
       // Pass the raw entity too in case a template wants nested access.
       order,
     };
+  }
+
+  /**
+   * Wer die Bestellung aufgenommen hat (Person/Geraet), einmal je
+   * Druckvorgang geladen und an alle Bons dieser Bestellung gegeben. Ein
+   * Fehler hier darf keinen Bon verhindern.
+   */
+  private async orderStaff(order: Order | null): Promise<OrderStaff> {
+    try {
+      return await loadOrderStaff(this.deviceRepository, order);
+    } catch (error) {
+      this.logger.warn(
+        `Could not load waiter/device name for order ${order?.id}: ${(error as Error).message}`,
+      );
+      return NO_ORDER_STAFF;
+    }
   }
 
   /**
@@ -206,6 +233,7 @@ export class OrderPrintService {
       const orderDeviceId: string | null =
         data.order?.createdByDeviceId ?? null;
       const isTest = await this.isTestOrder(data.order);
+      const staff = await this.orderStaff(data.order);
 
       // Kitchen ticket(s) on order creation — supports three dispatch modes.
       // The kitchen toggle gates ORG-level routing only. If a device has a
@@ -228,6 +256,7 @@ export class OrderPrintService {
           },
           data,
           isTest,
+          staff,
         );
       }
 
@@ -248,7 +277,7 @@ export class OrderPrintService {
             data.orderId,
             1,
             {
-              ...this.buildOrderPayload(data.order),
+              ...this.buildOrderPayload(data.order, staff),
               organization: await this.buildOrgPayload(organizationId),
               // Positionen fuer die Liste des Bestellbons (wie beim Kassenbon).
               items: await this.ticketItems(data.order, data.orderId),
@@ -285,6 +314,7 @@ export class OrderPrintService {
       source: string;
     },
     isTest: boolean,
+    staff: OrderStaff,
   ): Promise<void> {
     const { mode, templateId } = kitchen;
     const orgPayload = await this.buildOrgPayload(organizationId);
@@ -308,7 +338,7 @@ export class OrderPrintService {
         data.orderId,
         1,
         {
-          ...this.buildOrderPayload(data.order),
+          ...this.buildOrderPayload(data.order, staff),
           organization: orgPayload,
           total: data.total,
           source: data.source,
@@ -351,7 +381,7 @@ export class OrderPrintService {
           data.orderId,
           1,
           {
-            ...this.buildOrderPayload(data.order),
+            ...this.buildOrderPayload(data.order, staff),
             organization: orgPayload,
             // Single-item items array so the kitchen template's items_list still
             // renders cleanly. The barcode field uses order_item_id.
@@ -428,7 +458,7 @@ export class OrderPrintService {
           data.orderId,
           1,
           {
-            ...this.buildOrderPayload(data.order),
+            ...this.buildOrderPayload(data.order, staff),
             organization: orgPayload,
             station_name: bucket.stationName,
             station_id: bucket.stationId,
@@ -536,6 +566,7 @@ export class OrderPrintService {
             where: { orderId: data.orderId },
             order: { createdAt: 'ASC' },
           });
+          const staff = await this.orderStaff(data.order);
           await this.printJobsService.createFromWorkflow(
             organizationId,
             printerId,
@@ -543,7 +574,7 @@ export class OrderPrintService {
             data.orderId,
             1,
             {
-              ...this.buildOrderPayload(data.order),
+              ...this.buildOrderPayload(data.order, staff),
               organization: orgPayload,
               items: receiptItems
                 .filter((it) => it.status !== OrderItemStatus.CANCELLED)
@@ -623,6 +654,8 @@ export class OrderPrintService {
       if (!printerId) return false;
       const isTest = refund.isTest || (await this.isTestOrder(order));
       const taxLines = refund.taxLines ?? [];
+      // `device_name` bleibt hier das Geraet der Erstattung (unten).
+      const staff = await this.orderStaff(order);
       await this.printJobsService.createFromWorkflow(
         organizationId,
         printerId,
@@ -630,7 +663,7 @@ export class OrderPrintService {
         order.id,
         1,
         {
-          ...this.buildOrderPayload(order),
+          ...this.buildOrderPayload(order, staff),
           organization: await this.buildOrgPayload(organizationId),
           created_at: refund.createdAt,
           original_created_at: order.createdAt,
@@ -698,6 +731,7 @@ export class OrderPrintService {
 
       const isTest = await this.isTestOrder(data.order);
       const orgPayload = await this.buildOrgPayload(organizationId);
+      const staff = await this.orderStaff(data.order);
       const withRelations = await this.orderItemRepository.find({
         where: data.items.map(({ item }) => ({ id: item.id })),
         relations: ['product', 'productionStation'],
@@ -761,7 +795,7 @@ export class OrderPrintService {
           data.order.id,
           1,
           {
-            ...this.buildOrderPayload(data.order),
+            ...this.buildOrderPayload(data.order, staff),
             organization: orgPayload,
             created_at: new Date(),
             station_name: bucket.stationName,
