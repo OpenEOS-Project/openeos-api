@@ -79,6 +79,14 @@ export enum AdminAction {
   // DSFinV-K (openeos-api#102)
   DSFINVK_CLOSING_REQUESTED = 'dsfinvk_closing_requested',
   DSFINVK_EXPORTED = 'dsfinvk_exported',
+  // Bedienungen (bedienungen-plan.md §11)
+  WAITER_CREATED = 'waiter_created',
+  WAITER_UPDATED = 'waiter_updated',
+  WAITER_PIN_RESET = 'waiter_pin_reset',
+  WAITER_DELETED = 'waiter_deleted',
+  /** PIN-Eingabe eines Geraets nach 20 Fehlversuchen gesperrt (System). */
+  WAITER_PIN_LOCK = 'waiter_pin_lock',
+  WAITER_PIN_UNLOCK = 'waiter_pin_unlock',
 }
 
 /**

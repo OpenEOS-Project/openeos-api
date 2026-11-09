@@ -96,3 +96,8 @@ export * from './ai-usage.entity';
 export * from './legal-acceptance.entity';
 export * from './retention-run.entity';
 export * from './retention-notice.entity';
+
+// Bedienungen (Kassenprofile mit PIN)
+export * from './waiter.entity';
+export * from './pin-credential.entity';
+export * from './waiter-session.entity';

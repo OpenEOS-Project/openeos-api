@@ -153,6 +153,23 @@ export class TseTransaction extends BaseEntity {
   @Column({ name: 'user_id', type: 'uuid', nullable: true })
   userId: string | null;
 
+  /** Bedienung (BEDIENER_ID der DSFinV-K, vor `userId`). */
+  @Column({ name: 'waiter_id', type: 'uuid', nullable: true })
+  waiterId: string | null;
+
+  /**
+   * Name des Bedieners beim Signieren (BEDIENER_NAME, hoechstens 50
+   * Zeichen). Snapshot fuer das Steuerarchiv: bleibt, auch wenn die
+   * Bedienung spaeter anonymisiert oder das Mitglied entfernt wird.
+   */
+  @Column({
+    name: 'operator_name',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
+  operatorName: string | null;
+
   @Column({ name: 'order_id', type: 'uuid', nullable: true })
   orderId: string | null;
 

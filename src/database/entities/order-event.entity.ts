@@ -38,6 +38,9 @@ export class OrderEvent extends BaseEntity {
   @Column({ name: 'user_id', type: 'uuid', nullable: true })
   userId: string | null;
 
+  @Column({ name: 'waiter_id', type: 'uuid', nullable: true })
+  waiterId: string | null;
+
   @Column({ name: 'actor_name', type: 'varchar', length: 255, nullable: true })
   actorName: string | null;
 

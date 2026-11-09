@@ -57,6 +57,11 @@ export const validationSchema = Joi.object({
   // Zugangsdaten der Zahlungsanbieter (SumUp, PayPal) in den
   // Organisationseinstellungen. Leer: TWO_FACTOR_ENCRYPTION_KEY.
   INTEGRATION_ENCRYPTION_KEY: Joi.string().allow(''),
+  // Pepper fuer die PIN-Pruefwerte der Kasse (Mitglieder und Bedienungen,
+  // HMAC-SHA256). Empfohlen in Produktion (openssl rand -base64 32). Leer:
+  // abgeleitet aus TWO_FACTOR_ENCRYPTION_KEY, der Start warnt. Ein Wechsel
+  // macht alle PINs ungueltig (neu vergeben).
+  PIN_PEPPER: Joi.string().allow('').min(16),
 
   // CORS
   CORS_ORIGINS: Joi.string().default(
@@ -219,6 +224,8 @@ export const validationSchema = Joi.object({
   // offener Einladungen) je Organisation. 0 = unbegrenzt.
   ORGANIZATIONS_PER_USER_LIMIT: Joi.number().integer().min(0).default(5),
   MEMBERS_PER_ORGANIZATION_LIMIT: Joi.number().integer().min(0).default(10),
+  // Bedienungen je Organisation (zaehlen nicht zu den Mitgliedern), 0 = unbegrenzt.
+  WAITERS_PER_ORGANIZATION_LIMIT: Joi.number().integer().min(0).default(200),
 
   // Aufbewahrung und Loeschung (README „Aufbewahrung und Löschung“). Leer
   // gilt wie nicht gesetzt; Standardwerte in retention.config.ts. Fristen,

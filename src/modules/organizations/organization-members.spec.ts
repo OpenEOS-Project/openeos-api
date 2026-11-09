@@ -557,9 +557,11 @@ describe('OrganizationsService.removeMember', () => {
       },
     });
     await service.removeMember(ORG_ID, 'm1', ACTOR);
-    expect(logged).toHaveLength(1);
+    // Daneben: Kassen-PIN loeschen und Kassen-Sitzungen beenden.
+    const deletionLog = logged.filter((params) => params[0] === 'memberships');
+    expect(deletionLog).toHaveLength(1);
     const [category, trigger, , counts, total, orgId, executedBy, , details] =
-      logged[0];
+      deletionLog[0];
     expect(category).toBe('memberships');
     expect(trigger).toBe('club');
     expect(JSON.parse(counts as string)).toEqual({ membershipsDeleted: 1 });
@@ -665,6 +667,23 @@ describe('DevicesService member PINs', () => {
     } as unknown as Repository<UserOrganization>;
 
     const none = undefined as never;
+    const assigned: Array<{ ownerId: string; pin: string }> = [];
+    const removedPins: string[] = [];
+    const pins = {
+      assign: jest.fn(
+        (_org: string, owner: { ownerId: string }, pin: string) => {
+          assigned.push({ ownerId: owner.ownerId, pin });
+          return Promise.resolve();
+        },
+      ),
+      remove: jest.fn((owner: { ownerId: string }) => {
+        removedPins.push(owner.ownerId);
+        return Promise.resolve();
+      }),
+    };
+    const sessions = {
+      endForMember: jest.fn(() => Promise.resolve(0)),
+    };
     const service = new DevicesService(
       none,
       repository,
@@ -673,8 +692,10 @@ describe('DevicesService member PINs', () => {
       none,
       none,
       none,
+      pins as never,
+      sessions as never,
     );
-    return { service, saved };
+    return { service, saved, assigned, removedPins, sessions };
   }
 
   it.each([
@@ -709,9 +730,30 @@ describe('DevicesService member PINs', () => {
       permissions: { products: true },
     });
 
-    await service.setMemberPin(ORG_ID, 'u1', '1234', ACTOR);
+    await service.setMemberPin(ORG_ID, 'u1', '3958', ACTOR);
     await service.removeMemberPin(ORG_ID, 'u1', ACTOR);
-    expect(saved).toHaveLength(2);
-    expect(saved[1].pin).toBeNull();
+    // Ohne alte PIN speichert nur das Entfernen die Mitgliedschaft.
+    expect(saved).toHaveLength(1);
+    expect(saved[0].pin).toBeNull();
+  });
+
+  it('stores member PINs in the shared PIN space and clears the legacy hash', async () => {
+    const { service, saved, assigned, removedPins, sessions } = setupPins({
+      id: 'm-u1',
+      userId: 'u1',
+      role: OrganizationRole.MEMBER,
+      permissions: { products: true },
+      pin: '$2b$10$legacy',
+    });
+
+    await service.setMemberPin(ORG_ID, 'u1', '3958', ACTOR);
+    // HMAC-Eintrag je Mitgliedschaft, bcrypt-Feld geleert, Sitzungen beendet.
+    expect(assigned).toEqual([{ ownerId: 'm-u1', pin: '3958' }]);
+    expect(saved[0].pin).toBeNull();
+    expect(sessions.endForMember).toHaveBeenCalledWith(ORG_ID, 'u1', 'revoked');
+
+    await service.removeMemberPin(ORG_ID, 'u1', ACTOR);
+    expect(removedPins).toEqual(['m-u1']);
+    expect(saved[saved.length - 1].pin).toBeNull();
   });
 });

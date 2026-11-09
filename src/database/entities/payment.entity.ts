@@ -89,6 +89,24 @@ export class Payment extends BaseEntity {
   @Column({ name: 'processed_by_device_id', type: 'uuid', nullable: true })
   processedByDeviceId: string | null;
 
+  /** Kassiert von (Bedienungs-Sitzung an der Kasse). */
+  @Column({ name: 'processed_by_waiter_id', type: 'uuid', nullable: true })
+  processedByWaiterId: string | null;
+
+  /** Bargeld liegt in der Kellnerbrieftasche dieser Bedienung (P3, nach SB1). */
+  @Column({ name: 'wallet_waiter_id', type: 'uuid', nullable: true })
+  walletWaiterId: string | null;
+
+  /** Trinkgeld, das mit dieser Zahlung kassiert wurde (Teil von `amount`). */
+  @Column({
+    name: 'tip_amount',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  tipAmount: number;
+
   // Relations
   @ManyToOne(() => Order, (order) => order.payments, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'order_id' })

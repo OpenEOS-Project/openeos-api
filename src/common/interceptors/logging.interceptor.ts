@@ -33,6 +33,16 @@ export function requestLogPath(url: string | undefined): string {
     .join('/');
 }
 
+/** Felder, deren Wert nie ins Log gehoert (PIN, Passwort, Tokens). */
+const SECRET_BODY_KEY = /pin|password|passwort|secret|token|code$/i;
+
+/** JSON-Replacer fuers Debug-Log: geheime Felder als `***`. */
+export function redactBodyValue(key: string, value: unknown): unknown {
+  return key && SECRET_BODY_KEY.test(key) && value !== null && value !== ''
+    ? '***'
+    : value;
+}
+
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger(LoggingInterceptor.name);
@@ -70,7 +80,7 @@ export class LoggingInterceptor implements NestInterceptor {
       Object.keys(body).length > 0
     ) {
       this.logger.debug(
-        `[${requestId}] Body: ${JSON.stringify(body).substring(0, 500)}`,
+        `[${requestId}] Body: ${JSON.stringify(body, redactBodyValue).substring(0, 500)}`,
       );
     }
 

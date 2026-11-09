@@ -137,6 +137,25 @@ export interface OrganizationSettings {
     customerDisplay?: { enabled: boolean };
     autoComplete?: { enabled: boolean };
   };
+  /** Bedienungen (Kassenprofile mit PIN), bedienungen-plan.md §4. */
+  waiters?: OrganizationWaiterSettings;
+}
+
+/**
+ * Einstellungen der Bedienungen. Fehlt ein Wert, gilt die Vorgabe aus
+ * `WAITER_SETTINGS_DEFAULTS` (modules/waiters/waiter-settings.ts).
+ */
+export interface OrganizationWaiterSettings {
+  /** Laenge neu erzeugter PINs (Standard 4). */
+  pinLength?: 4 | 6;
+  /** Kellnerbrieftasche (erst nach Steuerberater-Antwort SB1, Standard aus). */
+  wallet?: boolean;
+  /** Fremde Tische: buchen erlaubt (`allow`) oder mit Hinweis (`warn`, Standard). */
+  foreignTables?: 'allow' | 'warn';
+  /** Abrechnung durch die Bedienung selbst (P3, Standard aus). */
+  selfSettlement?: boolean;
+  /** Name auf Bons: Kurzname, wenn gesetzt (`short`, Standard) oder voller Name. */
+  receiptName?: 'short' | 'full';
 }
 
 export type OperatingMode = 'orders_only' | 'cashless' | 'full';
@@ -300,6 +319,14 @@ export class Organization extends SoftDeleteEntity {
    */
   @Column({ name: 'member_limit', type: 'int', nullable: true })
   memberLimit: number | null;
+
+  /**
+   * Eigene Obergrenze fuer Bedienungen (Kassenprofile, zaehlen nicht zu den
+   * Mitgliedern). NULL: WAITERS_PER_ORGANIZATION_LIMIT (200); 0: unbegrenzt.
+   * Setzt nur ein Super-Admin.
+   */
+  @Column({ name: 'waiter_limit', type: 'int', nullable: true })
+  waiterLimit: number | null;
 
   /**
    * Land der Organisation (ISO 3166-1 alpha-2), einzige Quelle dafuer —

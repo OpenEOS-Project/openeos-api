@@ -136,6 +136,19 @@ export class UpdateOrganizationAdminDto {
   @Min(0)
   @Max(100000)
   memberLimit?: number | null;
+
+  @ApiPropertyOptional({
+    example: 300,
+    nullable: true,
+    description:
+      'Eigene Höchstzahl an Bedienungen (Kassenprofile); leer = Standard (WAITERS_PER_ORGANIZATION_LIMIT, 200), 0 = unbegrenzt',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  waiterLimit?: number | null;
 }
 
 export class UpdateUserAdminDto {

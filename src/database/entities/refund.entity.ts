@@ -158,6 +158,18 @@ export class Refund extends BaseEntity {
   @Column({ name: 'user_id', type: 'uuid', nullable: true })
   userId: string | null;
 
+  /** Ausloesende Bedienung (Sitzung an der Kasse). */
+  @Column({ name: 'waiter_id', type: 'uuid', nullable: true })
+  waiterId: string | null;
+
+  /** Freigabe per PIN einer Schichtleitung … */
+  @Column({ name: 'approved_by_waiter_id', type: 'uuid', nullable: true })
+  approvedByWaiterId: string | null;
+
+  /** … bzw. eines Mitglieds mit Recht „Bestellungen“ oder Admin. */
+  @Column({ name: 'approved_by_user_id', type: 'uuid', nullable: true })
+  approvedByUserId: string | null;
+
   /** Name des Bedieners zum Zeitpunkt der Erstattung (Anzeige, Bon). */
   @Column({ name: 'actor_name', type: 'varchar', length: 255, nullable: true })
   actorName: string | null;

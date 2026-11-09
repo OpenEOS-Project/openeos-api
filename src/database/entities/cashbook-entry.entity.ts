@@ -73,6 +73,10 @@ export class CashbookEntry extends BaseEntity {
   @Column({ name: 'user_id', type: 'uuid', nullable: true })
   userId: string | null;
 
+  /** Buchende Bedienung (Sitzung an der Kasse). */
+  @Column({ name: 'waiter_id', type: 'uuid', nullable: true })
+  waiterId: string | null;
+
   @Column({ name: 'tse_transaction_id', type: 'uuid', nullable: true })
   tseTransactionId: string | null;
 }

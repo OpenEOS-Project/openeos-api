@@ -156,6 +156,14 @@ export class OrderItem extends BaseEntity {
   @Column({ name: 'is_refill', type: 'boolean', default: false })
   isRefill: boolean;
 
+  /** Wer die Runde mit dieser Position gesendet hat (Bedienung). */
+  @Column({ name: 'added_by_waiter_id', type: 'uuid', nullable: true })
+  addedByWaiterId: string | null;
+
+  /** Wer die Runde gesendet hat (Mitglied per PIN bzw. Verwaltung). */
+  @Column({ name: 'added_by_user_id', type: 'uuid', nullable: true })
+  addedByUserId: string | null;
+
   // Relations
   @ManyToOne(() => Order, (order) => order.items, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'order_id' })

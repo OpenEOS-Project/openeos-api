@@ -44,6 +44,10 @@ export class PfandReturn extends BaseEntity {
   @Column({ name: 'created_by_user_id', type: 'uuid', nullable: true })
   createdByUserId: string | null;
 
+  /** Auszahlende Bedienung (Sitzung an der Kasse). */
+  @Column({ name: 'waiter_id', type: 'uuid', nullable: true })
+  waiterId: string | null;
+
   /** Total amount paid back to the guest, in EUR. */
   @Column({ name: 'total_amount', type: 'decimal', precision: 10, scale: 2 })
   totalAmount: number;
