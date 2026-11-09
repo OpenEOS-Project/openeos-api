@@ -182,6 +182,13 @@ export const validationSchema = Joi.object({
   // (z. B. `${SWISSBIT_BASE_URL:-}` in docker-compose) gelten wie nicht
   // gesetzt.
   TSE_PROVIDER: Joi.string().valid('none', 'swissbit', '').default('none'),
+  // `true`: ohne eingerichteten Provider zeigt die gehostete Installation
+  // die Cloud-TSE als „Bald verfuegbar“ (GET /organizations/:id/tse →
+  // `availability: 'coming_soon'`). Eigene Installationen ignorieren es.
+  TSE_COMING_SOON: Joi.string()
+    .valid('true', 'false', '')
+    .insensitive()
+    .default('false'),
   // `monthly` (Standard): Abmeldung zum Monatsende; `per_event` = alter
   // Name dafuer; `persistent`: TSE bleibt aktiv.
   TSE_LIFECYCLE: Joi.string()

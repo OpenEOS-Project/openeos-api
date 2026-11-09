@@ -52,7 +52,7 @@ import {
 import { SwissbitClientProvider } from './swissbit/swissbit-client.provider';
 import type { TseInfo } from './swissbit/swissbit.types';
 import { missingMasterData } from '../dsfinvk/dsfinvk-master';
-import { TseConfig } from './tse.config';
+import { TseConfig, tseNotAvailableMessage } from './tse.config';
 import { TseCryptoService } from './tse-crypto.service';
 import { localDate, startOfLocalMonth } from './tse-dates';
 import { EventPhaseService } from '../events/event-phase.service';
@@ -356,7 +356,7 @@ export class TseUnitService {
     if (!this.config.enabled) {
       throw new ServiceUnavailableException({
         code: ErrorCodes.TSE_NOT_AVAILABLE,
-        message: 'Auf diesem Server ist keine Cloud-TSE eingerichtet',
+        message: tseNotAvailableMessage(this.config.availability),
       });
     }
     if ((organization.country ?? '').toUpperCase() !== 'DE') {

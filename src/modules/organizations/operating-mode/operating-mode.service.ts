@@ -143,7 +143,11 @@ export class OperatingModeService {
   }
 
   private tseContext(plan: TseSetupPlan | null): TseModeContext {
-    return { available: this.tseAuto?.available ?? false, follows: !!plan };
+    return {
+      available: this.tseAuto?.available ?? false,
+      comingSoon: this.tseAuto?.availability === 'coming_soon',
+      follows: !!plan,
+    };
   }
 
   /** Zustand samt waehlbaren Betriebsarten. */
@@ -279,6 +283,14 @@ export class OperatingModeService {
       }
       if (unavailable === 'tse_required') {
         throw tseRequiredError(ErrorReasons.OPERATING_MODE_FULL_REQUIRES_TSE);
+      }
+      if (unavailable === 'tse_coming_soon') {
+        throw new ForbiddenException({
+          code: ErrorCodes.TSE_REQUIRED_FOR_CASH,
+          reason: ErrorReasons.OPERATING_MODE_FULL_REQUIRES_TSE,
+          message:
+            '„Alle Funktionen“ mit Bargeld geht in Deutschland nur mit Cloud-TSE – die Cloud-TSE ist bald verfügbar. Bis dahin kannst du „Nur Bons“ oder „Bargeldlos“ nutzen.',
+        });
       }
       if (unavailable === 'paid_event_required') {
         throw new ForbiddenException({

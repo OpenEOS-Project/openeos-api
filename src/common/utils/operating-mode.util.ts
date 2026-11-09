@@ -106,6 +106,7 @@ export function arePricesVisible(
 
 export type ModeUnavailableReason =
   | 'tse_required'
+  | 'tse_coming_soon'
   | 'paid_event_required'
   | 'country_required';
 
@@ -118,6 +119,8 @@ export type ModeUnavailableReason =
  */
 export interface TseModeContext {
   available?: boolean;
+  /** Gehostet, Cloud-TSE angekuendigt (`TSE_COMING_SOON`) — „Bald verfuegbar“. */
+  comingSoon?: boolean;
   follows?: boolean;
 }
 
@@ -135,7 +138,8 @@ export function modeUnavailableReason(
   if (!countryOf(org)) return 'country_required';
   if (mode === 'full' && countryOf(org) === 'DE' && !hasActiveTse(org)) {
     if (tse.follows) return null;
-    return tse.available ? 'paid_event_required' : 'tse_required';
+    if (tse.available) return 'paid_event_required';
+    return tse.comingSoon ? 'tse_coming_soon' : 'tse_required';
   }
   return null;
 }

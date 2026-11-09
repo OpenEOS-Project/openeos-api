@@ -19,7 +19,7 @@ import {
 import { isIntegrationEnabled } from '../integrations/integration-catalog';
 import { missingMasterData } from '../dsfinvk/dsfinvk-master';
 import { errorMessageOf } from './swissbit/swissbit.errors';
-import { TseConfig } from './tse.config';
+import { TseConfig, type TseAvailability } from './tse.config';
 import { localDate, startOfLocalMonth } from './tse-dates';
 import {
   DEFAULT_EVENT_PHASE_SETTINGS,
@@ -51,6 +51,12 @@ export interface TseCheckoutTerms {
   surcharge: number;
   /** Fehlende Stammdaten fuer die TSE (`taxNumber`, `street`, `zip`, `city`). */
   missing: string[];
+  /**
+   * Die TSE gehoerte dazu, ist auf diesem Server aber erst angekuendigt
+   * (`TSE_COMING_SOON`): der Dialog zeigt „Bald verfuegbar“ statt der
+   * Frage. `offer` ist dann `null`.
+   */
+  comingSoon: boolean;
 }
 
 /** Wie die Veranstaltung freigeschaltet wurde. */
@@ -112,6 +118,13 @@ interface LockedOrg {
   settings: Organization['settings'] | null;
 }
 
+/** Angebot im Kaufdialog, wenn der Server die Cloud-TSE anbietet. */
+function offerWithTse(organization: OperatingModeOrg): TseCheckoutOffer {
+  if ((organization.country ?? '').toUpperCase() !== 'DE') return null;
+  if (getOperatingMode(organization) !== 'full') return null;
+  return organization.operatingModeLegacy === true ? 'optional' : 'included';
+}
+
 /**
  * Cloud-TSE „All inclusive“ (tse-swissbit-plan.md §3/§8.3, Entscheidung
  * 2026-11-03): Kauft eine deutsche Organisation in „Alle Funktionen“ eine
@@ -142,6 +155,11 @@ export class TseAutoActivationService {
     return this.config.enabled;
   }
 
+  /** Verfuegbar, bald verfuegbar (TSE_COMING_SOON) oder nicht eingerichtet. */
+  get availability(): TseAvailability {
+    return this.config.availability;
+  }
+
   /** `TSE_EVENT_SURCHARGE_EUR`, auf Cent gerundet, nie negativ. */
   get surchargePerEvent(): number {
     const raw = Number(
@@ -162,6 +180,9 @@ export class TseAutoActivationService {
       missing: offer
         ? missingMasterData({ name: '', settings: organization.settings })
         : [],
+      comingSoon:
+        this.config.availability === 'coming_soon' &&
+        offerWithTse(organization) !== null,
     };
   }
 
@@ -186,9 +207,7 @@ export class TseAutoActivationService {
 
   private offerFor(organization: OperatingModeOrg): TseCheckoutOffer {
     if (!this.config.enabled) return null;
-    if ((organization.country ?? '').toUpperCase() !== 'DE') return null;
-    if (getOperatingMode(organization) !== 'full') return null;
-    return organization.operatingModeLegacy === true ? 'optional' : 'included';
+    return offerWithTse(organization);
   }
 
   // ------------------------------------------------------------- Kauf

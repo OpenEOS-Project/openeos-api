@@ -655,6 +655,7 @@ describe('Cloud-TSE price hook TSE_EVENT_SURCHARGE_EUR', () => {
       offer: 'optional',
       surcharge: 4.5,
       missing: ['taxNumber'],
+      comingSoon: false,
       included: null,
       surchargeCharged: null,
     });

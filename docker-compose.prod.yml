@@ -105,6 +105,8 @@ services:
 
       # Cloud-TSE (Swissbit), README „Cloud-TSE“. Leer = nicht gesetzt.
       TSE_PROVIDER: ${TSE_PROVIDER:-none}
+      # Gehostet ohne Swissbit-Vertrag: true = „Bald verfuegbar“
+      TSE_COMING_SOON: ${TSE_COMING_SOON:-false}
       TSE_LIFECYCLE: ${TSE_LIFECYCLE:-monthly}
       SWISSBIT_BASE_URL: ${SWISSBIT_BASE_URL:-}
       SWISSBIT_VENDOR_CLIENT: ${SWISSBIT_VENDOR_CLIENT:-}

@@ -498,6 +498,7 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `ORGANIZATIONS_PER_USER_LIMIT` | Höchstzahl Organisationen, in denen ein Benutzer Mitglied sein darf (Anlegen und Einladung annehmen); 0 = unbegrenzt | 5 |
 | `MEMBERS_PER_ORGANIZATION_LIMIT` | Höchstzahl Mitglieder je Organisation, aktive Mitglieder plus offene Einladungen; 0 = unbegrenzt | 10 |
 | `TSE_PROVIDER` | Cloud-TSE: `none` oder `swissbit` (siehe „Cloud-TSE“) | none |
+| `TSE_COMING_SOON` | `true`: ohne eingerichteten Provider kündigt die gehostete Installation die Cloud-TSE als „Bald verfügbar“ an (`availability: 'coming_soon'`); eigene Installationen ignorieren den Wert | false |
 | `TSE_LIFECYCLE` | `monthly` (TSE läuft für den Monat der Veranstaltung, Abmeldung am letzten Tag 20:00 Berlin; `per_event` = alter Name) oder `persistent` (TSE bleibt aktiv) | monthly |
 | `SWISSBIT_BASE_URL` | Swissbit Cloud-TSE 2 (Dev: `https://dev.web-tse.de`) | https://web-tse.de |
 | `SWISSBIT_VENDOR_CLIENT` / `SWISSBIT_VENDOR_SECRET` | Vendor-Zugang (Billing API: Credit Token anlegen, Nutzungsbericht, Notfall-Deaktivierung) | – |
@@ -693,6 +694,15 @@ Einrichtung:
    `node dist/scripts/tse-create-credit-token.js > swissbit-credit.env`.
 3. `SWISSBIT_PRODUCT_TYPE` aus den ausgegebenen `validProductTypes`
    wählen, `TSE_PROVIDER=swissbit`, `TSE_ENCRYPTION_KEY` setzen und sichern.
+
+Noch ohne Swissbit-Vertrag: `TSE_PROVIDER=none` und `TSE_COMING_SOON=true`
+(nur gehostet, `DEPLOYMENT_MODE` ungleich `selfhosted`). Dann melden
+`GET /organizations/:id/tse` und die `tse`-Kurzfassung der Organisation
+`available: false` mit `availability: 'coming_soon'` (sonst
+`'not_configured'`, eingerichtet `'available'`); „Alle Funktionen“ in
+Deutschland hat den Grund `tse_coming_soon` statt `tse_required`, und der
+Kaufdialog meldet `tse.comingSoon` statt der TSE-Frage. Die Oberfläche
+zeigt „Bald verfügbar“ statt „nicht eingerichtet“.
 
 Test gegen die Swissbit-Entwicklungsumgebung (nie in CI; nutzt den
 Zustand in `~/.config/openeos/swissbit-dev-state.json` und legt höchstens

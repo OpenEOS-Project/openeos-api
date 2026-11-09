@@ -58,7 +58,7 @@ function tseStatusService(units: TseUnit[]) {
   const service = new TseStatusService(
     none,
     none,
-    { enabled: true } as never,
+    { enabled: true, availability: 'available' } as never,
     { findLatestFor } as never,
     none,
     none,
@@ -153,7 +153,9 @@ describe('tseSummaryOf', () => {
     const off = {
       settings: { integrations: { tse: { enabled: false } } },
     } as unknown as Organization;
-    expect(tseSummaryOf(off, unit(ORG_ID, 'active'), true)).toMatchObject({
+    expect(
+      tseSummaryOf(off, unit(ORG_ID, 'active'), 'available'),
+    ).toMatchObject({
       integrationEnabled: false,
       active: false,
       state: 'active',
@@ -162,7 +164,7 @@ describe('tseSummaryOf', () => {
 
   it('shows the latest unit even when deactivated', () => {
     expect(
-      tseSummaryOf(germanWithTse(), unit(ORG_ID, 'deactivated'), true),
+      tseSummaryOf(germanWithTse(), unit(ORG_ID, 'deactivated'), 'available'),
     ).toMatchObject({ active: false, state: 'deactivated' });
   });
 });
