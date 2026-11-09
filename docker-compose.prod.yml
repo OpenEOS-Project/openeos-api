@@ -122,6 +122,22 @@ services:
       TSE_SIGN_BUDGET_MS: ${TSE_SIGN_BUDGET_MS:-}
       TSE_ADMIN_TIMEOUT_MS: ${TSE_ADMIN_TIMEOUT_MS:-}
 
+      # Assistent (opt-in je Organisation), README „Assistent“. Leer/none = aus.
+      # Gehostet: IONOS AI Model Hub (AI_PROVIDER=openai, siehe .env.prod.example).
+      AI_PROVIDER: ${AI_PROVIDER:-none}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      AI_MODEL_EXTRACT: ${AI_MODEL_EXTRACT:-}
+      AI_MODEL_CLASSIFY: ${AI_MODEL_CLASSIFY:-}
+      AI_REASONING_EFFORT_EXTRACT: ${AI_REASONING_EFFORT_EXTRACT:-}
+      AI_REASONING_EFFORT_CLASSIFY: ${AI_REASONING_EFFORT_CLASSIFY:-}
+      AI_MAX_IMAGES_PER_REQUEST: ${AI_MAX_IMAGES_PER_REQUEST:-}
+      AI_MENU_IMPORTS_PER_DAY: ${AI_MENU_IMPORTS_PER_DAY:-5}
+      AI_MENU_PAGES_PER_IMPORT: ${AI_MENU_PAGES_PER_IMPORT:-6}
+      AI_CLASSIFY_PER_DAY: ${AI_CLASSIFY_PER_DAY:-500}
+      AI_MAX_UPLOAD_MB: ${AI_MAX_UPLOAD_MB:-10}
+
       # Aufbewahrung und Loeschung, README „Aufbewahrung und Löschung“.
       # Ohne Angabe: Probelauf (nur zaehlen). Echte Laeufe: RETENTION_DRY_RUN=false.
       RETENTION_ENABLED: ${RETENTION_ENABLED:-}

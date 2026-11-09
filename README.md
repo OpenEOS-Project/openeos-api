@@ -597,7 +597,7 @@ Modell-IDs stehen in der Konfiguration (`AI_MODEL_EXTRACT`, `AI_MODEL_CLASSIFY`)
 
 **Fotos und Seitenzahl.** Für alle Anbieter werden Fotos vor dem Senden mit `sharp` nach EXIF gedreht und auf 1600 px lange Kante verkleinert (JPEG). Nimmt ein Dienst nur wenige Bilder je Aufruf (`AI_MAX_IMAGES_PER_REQUEST`, IONOS: 4), liest der Import längere Karten in mehreren, möglichst gleich großen Aufrufen (6 Seiten → 3 + 3); spätere Aufrufe bekommen die Kategorien und Hinweise der vorherigen Seiten als Kontext, die Teilergebnisse werden zusammengeführt. Kontingent: weiterhin ein Import, Tokens summiert.
 
-**IONOS AI Model Hub** (OpenAI-kompatibel, Rechenzentrum Berlin). Empfohlene Konfiguration — im Anbieter-Test (11/2026, 8 Testkarten) lag `Qwen/Qwen3.8-27B` mit Reasoning `medium` bei 97 % fehlerfreien Produkten, Icon-Vorschläge brauchen Reasoning `none`:
+**IONOS AI Model Hub** (OpenAI-kompatibel, Rechenzentrum Berlin) — empfohlener Anbieter und Anbieter des gehosteten Angebots (app.openeos.de); Eingaben und Antworten werden laut IONOS weder protokolliert noch gespeichert und nicht zum Training genutzt. `anthropic` bleibt für Self-Hoster eine Option. Empfohlene Konfiguration — im Anbieter-Test (11/2026, 8 Testkarten) lag `Qwen/Qwen3.8-27B` mit Reasoning `medium` bei 97 % fehlerfreien Produkten, Icon-Vorschläge brauchen Reasoning `none`:
 
 ```env
 AI_PROVIDER=openai
