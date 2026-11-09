@@ -142,6 +142,18 @@ describe('operating mode helper', () => {
     expect(
       modeUnavailableReason(org, 'full', { available: true, follows: true }),
     ).toBeNull();
+    // Gehostet, Cloud-TSE angekuendigt (TSE_COMING_SOON): eigener Grund.
+    expect(modeUnavailableReason(org, 'full', { comingSoon: true })).toBe(
+      'tse_coming_soon',
+    );
+    expect(
+      modeUnavailableReason(org, 'full', { available: true, comingSoon: true }),
+    ).toBe('paid_event_required');
+    expect(
+      modeUnavailableReason({ ...org, country: 'AT' }, 'full', {
+        comingSoon: true,
+      }),
+    ).toBeNull();
     // Gewaehlt, aber ohne aktive TSE: noch kein Bargeld.
     expect(
       isCashAllowed({

@@ -1127,7 +1127,7 @@
     },
     "/api/organizations/{id}/tse": {
       "get": {
-        "description": "Zustand der Cloud-TSE: Integration, Voraussetzungen (`eligibility`: bezahlte Veranstaltung, Monat), TSE (`unit`), Live-Status von Swissbit (Speicher, Signaturen im Monat, Produkt, Zertifikat; 60 s zwischengespeichert), offener Ausfall, Zähler der letzten 30 Tage, Exporte und Verlauf aller TSEs.",
+        "description": "Zustand der Cloud-TSE: Verfügbarkeit auf diesem Server (`available`; feiner `availability`: `available`, `coming_soon` = gehostet und angekündigt über `TSE_COMING_SOON`, `not_configured`), Integration, Voraussetzungen (`eligibility`: bezahlte Veranstaltung, Monat), TSE (`unit`), Live-Status von Swissbit (Speicher, Signaturen im Monat, Produkt, Zertifikat; 60 s zwischengespeichert), offener Ausfall, Zähler der letzten 30 Tage, Exporte und Verlauf aller TSEs.",
         "operationId": "tse_getStatus",
         "parameters": [
           {
@@ -1921,7 +1921,7 @@
     },
     "/api/organizations/{id}/operating-mode": {
       "get": {
-        "description": "Betriebsart (`orders_only` „Nur Bons“, `cashless` „Bargeldlos“, `full` „Alle Funktionen“), Bestand (`operatingModeLegacy`), Land, TSE, abgeleitete Werte (`cashAllowed`, `pricesVisible`), wählbare Betriebsarten (`options`) und Verlauf.",
+        "description": "Betriebsart (`orders_only` „Nur Bons“, `cashless` „Bargeldlos“, `full` „Alle Funktionen“), Bestand (`operatingModeLegacy`), Land, TSE, abgeleitete Werte (`cashAllowed`, `pricesVisible`), wählbare Betriebsarten (`options`, Gründe `unavailableReason`: `country_required`, `tse_required`, `tse_coming_soon` = Cloud-TSE bald verfügbar, `paid_event_required`) und Verlauf.",
         "operationId": "organizations_getOperatingMode",
         "parameters": [
           {

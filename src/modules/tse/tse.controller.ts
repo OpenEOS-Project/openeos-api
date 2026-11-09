@@ -63,7 +63,7 @@ export class TseController {
   @ApiOperation({
     summary: 'Cloud-TSE status (admins)',
     description:
-      'Zustand der Cloud-TSE: Integration, Voraussetzungen (`eligibility`: bezahlte Veranstaltung, Monat), TSE (`unit`), Live-Status von Swissbit (Speicher, Signaturen im Monat, Produkt, Zertifikat; 60 s zwischengespeichert), offener Ausfall, Zähler der letzten 30 Tage, Exporte und Verlauf aller TSEs.',
+      'Zustand der Cloud-TSE: Verfügbarkeit auf diesem Server (`available`; feiner `availability`: `available`, `coming_soon` = gehostet und angekündigt über `TSE_COMING_SOON`, `not_configured`), Integration, Voraussetzungen (`eligibility`: bezahlte Veranstaltung, Monat), TSE (`unit`), Live-Status von Swissbit (Speicher, Signaturen im Monat, Produkt, Zertifikat; 60 s zwischengespeichert), offener Ausfall, Zähler der letzten 30 Tage, Exporte und Verlauf aller TSEs.',
   })
   @ApiParam({ name: 'id', description: 'ID der Organisation', format: 'uuid' })
   async getStatus(

@@ -99,6 +99,8 @@ export interface EventTseTerms {
   offer: TseCheckoutOffer;
   surcharge: number;
   missing: string[];
+  /** Cloud-TSE angekuendigt (`TSE_COMING_SOON`), siehe TseCheckoutTerms. */
+  comingSoon: boolean;
   /**
    * Freigeschaltete Veranstaltung: ob die TSE dazugehoert (`tse_included`).
    * Sonst `null`.
@@ -112,6 +114,7 @@ const NO_TSE: EventTseTerms = {
   offer: null,
   surcharge: 0,
   missing: [],
+  comingSoon: false,
   included: null,
   surchargeCharged: null,
 };

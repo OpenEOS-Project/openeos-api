@@ -76,7 +76,7 @@ function setup(
     role?: OrganizationRole;
     selfHosted?: boolean;
     /** Cloud-TSE auf dem Server; `paidEvent`: eine bezahlte Veranstaltung steht an. */
-    tse?: { paidEvent: boolean };
+    tse?: { paidEvent: boolean; comingSoon?: boolean };
   } = {},
 ) {
   const stored = {
@@ -183,7 +183,9 @@ function setup(
   };
   const tseAuto = options.tse
     ? {
-        available: true,
+        available: options.tse.comingSoon !== true,
+        availability:
+          options.tse.comingSoon === true ? 'coming_soon' : 'available',
         planFor: jest.fn(() =>
           Promise.resolve(options.tse?.paidEvent ? plan : null),
         ),
@@ -281,6 +283,27 @@ describe('OperatingModeService — switch by the club (admins)', () => {
       tseActive: true,
       cashAllowed: true,
     });
+  });
+
+  it('DE: Cloud-TSE coming soon — full shows its own reason and stays blocked', async () => {
+    const t = setup(
+      { operatingMode: 'cashless', operatingModeLegacy: false },
+      { tse: { paidEvent: false, comingSoon: true } },
+    );
+    const view = await t.service.getForMember(ORG_ID, clubAdmin);
+    expect(view.options.find((o) => o.mode === 'full')).toEqual({
+      mode: 'full',
+      available: false,
+      unavailableReason: 'tse_coming_soon',
+    });
+    expect(
+      await responseOf(t.service.setByMember(ORG_ID, 'full', clubAdmin)),
+    ).toMatchObject({
+      code: 'TSE_REQUIRED_FOR_CASH',
+      reason: 'OPERATING_MODE_FULL_REQUIRES_TSE',
+    });
+    expect(t.history).toHaveLength(0);
+    expect(t.stored.operatingMode).toBe('cashless');
   });
 
   it('DE: full without TSE is allowed with a paid event — the Cloud-TSE follows automatically', async () => {

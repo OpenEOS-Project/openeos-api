@@ -8,7 +8,7 @@ import type { TseUnit } from '../../database/entities/tse-unit.entity';
 import type { User } from '../../database/entities/user.entity';
 import { isIntegrationEnabled } from '../integrations/integration-catalog';
 import { tseAutoEnabledInfo } from './tse-auto-activation.service';
-import { TseConfig } from './tse.config';
+import { TseConfig, type TseAvailability } from './tse.config';
 import { TseExportService } from './tse-export.service';
 import { TseOutageService } from './tse-outage.service';
 import { TseSigningService } from './tse-signing.service';
@@ -28,6 +28,8 @@ import { businessDayStartHour } from '../dsfinvk/dsfinvk-master';
 export interface TseSummary {
   /** Ist auf diesem Server eine Cloud-TSE verfuegbar? */
   available: boolean;
+  /** Feiner: `available` | `coming_soon` | `not_configured` (TseAvailability). */
+  availability: TseAvailability;
   integrationEnabled: boolean;
   /** Integration an und TSE aktiv (= hasActiveTse). */
   active: boolean;
@@ -44,11 +46,12 @@ export interface TseSummary {
 export function tseSummaryOf(
   organization: Pick<Organization, 'settings'>,
   latest: TseUnit | null,
-  available: boolean,
+  availability: TseAvailability,
 ): TseSummary {
   const integrationEnabled = isIntegrationEnabled(organization.settings, 'tse');
   return {
-    available,
+    available: availability === 'available',
+    availability,
     integrationEnabled,
     active: integrationEnabled && latest?.state === 'active',
     state: latest?.state ?? null,
@@ -184,7 +187,7 @@ export class TseStatusService {
     organization: Pick<Organization, 'id' | 'settings'>,
   ): Promise<TseSummary> {
     const latest = await this.units.findLatest(organization.id);
-    return tseSummaryOf(organization, latest, this.config.enabled);
+    return tseSummaryOf(organization, latest, this.config.availability);
   }
 
   /**
@@ -205,7 +208,7 @@ export class TseStatusService {
         tseSummaryOf(
           organization,
           latest.get(organization.id) ?? null,
-          this.config.enabled,
+          this.config.availability,
         ),
       );
     }
@@ -279,6 +282,9 @@ export class TseStatusService {
     const { qualifying: _qualifying, ...eligibilityView } = eligibility;
     return {
       available: this.config.enabled,
+      /* `coming_soon`: gehostet, Cloud-TSE angekuendigt (TSE_COMING_SOON),
+         `not_configured`: kein Provider eingerichtet. */
+      availability: this.config.availability,
       integrationEnabled: isIntegrationEnabled(organization.settings, 'tse'),
       /* Automatisch eingeschaltet (beim Kauf einer Veranstaltung bzw. beim
          Wechsel auf „Alle Funktionen“): `{ source, eventId, eventName, path,
