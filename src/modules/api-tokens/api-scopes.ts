@@ -28,6 +28,10 @@ export enum TokenScope {
   DEVICES_WRITE = 'devices:write',
   /** Organisationseinstellungen ändern. */
   SETTINGS_WRITE = 'settings:write',
+  /** Webhooks und ihre Zustellungen lesen (Besitzer muss Admin sein). */
+  WEBHOOKS_READ = 'webhooks:read',
+  /** Webhooks anlegen, ändern, testen, erneut senden — nicht löschen. */
+  WEBHOOKS_WRITE = 'webhooks:write',
   /** Plattform-Kennzahlen (nur Super-Admin-Tokens, keine Organisation). */
   MONITORING_READ = 'monitoring:read',
 }
@@ -48,6 +52,8 @@ export const ORGANIZATION_TOKEN_SCOPES: readonly TokenScope[] = [
   TokenScope.STAFF_WRITE,
   TokenScope.DEVICES_WRITE,
   TokenScope.SETTINGS_WRITE,
+  TokenScope.WEBHOOKS_READ,
+  TokenScope.WEBHOOKS_WRITE,
 ];
 
 /** Scopes für Tokens ohne Organisation (Super-Admin, `admin/api-tokens`). */
@@ -75,6 +81,8 @@ export const SCOPE_PERMISSIONS: Record<
   [TokenScope.STAFF_WRITE]: ['shiftPlans'],
   [TokenScope.DEVICES_WRITE]: ['devices'],
   [TokenScope.SETTINGS_WRITE]: [],
+  [TokenScope.WEBHOOKS_READ]: [],
+  [TokenScope.WEBHOOKS_WRITE]: [],
   [TokenScope.MONITORING_READ]: [],
 };
 
@@ -91,5 +99,8 @@ export const SCOPE_DESCRIPTIONS: Record<TokenScope, string> = {
     'Schichtpläne, Jobs, Schichten und Helfer-Anmeldungen bearbeiten',
   [TokenScope.DEVICES_WRITE]: 'Bon-Vorlagen anlegen und ändern',
   [TokenScope.SETTINGS_WRITE]: 'Organisationseinstellungen ändern',
+  [TokenScope.WEBHOOKS_READ]: 'Webhooks und ihre Zustellungen lesen',
+  [TokenScope.WEBHOOKS_WRITE]:
+    'Webhooks anlegen, ändern, testen und erneut senden (kein Löschen)',
   [TokenScope.MONITORING_READ]: 'Plattform-Kennzahlen lesen (Super-Admin)',
 };

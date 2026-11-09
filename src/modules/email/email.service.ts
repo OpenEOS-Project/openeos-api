@@ -1196,6 +1196,51 @@ export class EmailService {
   }
 
   /**
+   * Ein Webhook wurde nach zu vielen Fehlversuchen in Folge abgeschaltet
+   * (WebhookDeliveryService). Geht an alle Admins der Organisation.
+   */
+  async sendWebhookDisabledEmail(options: {
+    to: string;
+    organizationName: string;
+    url: string;
+    failures: number;
+    failingSince: Date | null;
+    settingsPath: string;
+  }): Promise<boolean> {
+    const subject = 'Webhook abgeschaltet';
+    const seit = options.failingSince
+      ? `${new Intl.DateTimeFormat('de-DE', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'Europe/Berlin',
+        }).format(options.failingSince)} Uhr`
+      : '–';
+    const intro = `Der Webhook${options.organizationName ? ` von ${options.organizationName}` : ''} hat seit längerer Zeit keine Zustellung mehr angenommen. Wir haben ihn deshalb abgeschaltet; neue Ereignisse werden nicht mehr gesendet.`;
+    const html = rahmen({
+      kontext: 'Webhooks',
+      titel: `OpenEOS — ${subject}`,
+      preheader: intro,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift(subject),
+        absatz(intro),
+        datenblock('Details', [
+          ['Ziel', options.url],
+          ['Fehlversuche in Folge', String(options.failures)],
+          ['Fehler seit', seit],
+        ]),
+        hinweis(
+          'Was du tun solltest',
+          'Prüfe, ob der Empfänger erreichbar ist und mit einem Status 2xx antwortet. Danach kannst du den Webhook in den Einstellungen wieder einschalten und verpasste Zustellungen im Protokoll erneut senden.',
+        ),
+        knopf(`${this.appUrl}${options.settingsPath}`, 'Webhooks öffnen'),
+      ),
+    });
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /**
    * Warnung an den Betreiber zur Cloud-TSE (Monatsende-Abmeldung
    * ueberfaellig, Gesundheitspruefung). Fuehrt zur Super-Admin-Liste.
    */

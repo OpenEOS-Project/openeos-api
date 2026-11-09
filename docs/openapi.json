@@ -12601,7 +12601,12 @@
                 "tse_kept_for_next_month",
                 "tse_keep_revoked",
                 "dsfinvk_closing_requested",
-                "dsfinvk_exported"
+                "dsfinvk_exported",
+                "webhook_created",
+                "webhook_updated",
+                "webhook_deleted",
+                "webhook_secret_rotated",
+                "webhook_auto_disabled"
               ]
             }
           },
@@ -18006,6 +18011,7 @@
                 "support_messages",
                 "contact_requests",
                 "assistant_imports",
+                "webhook_deliveries",
                 "organization_inactivity",
                 "organization_purge",
                 "user_accounts",
@@ -18372,11 +18378,702 @@
           "Users"
         ]
       }
+    },
+    "/api/organizations/{organizationId}/webhooks/info": {
+      "get": {
+        "description": "Ob Webhooks auf diesem Server eingeschaltet sind, Grenzen (Endpunkte je Organisation, Versuche, Aufbewahrung des Protokolls), die aktuelle `apiVersion` der Nutzlast und alle abonnierbaren Ereignisse mit Beschreibung. Scope `webhooks:read`.",
+        "operationId": "getWebhookInfo",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Webhook-Einstellungen des Servers",
+        "tags": [
+          "Webhooks"
+        ],
+        "x-api-token-scope": "webhooks:read"
+      }
+    },
+    "/api/organizations/{organizationId}/webhooks": {
+      "get": {
+        "description": "Alle Webhook-Endpunkte der Organisation, neueste zuerst, mit Zustand der letzten Zustellung und Fehlerserie. Vom Signatur-Geheimnis ist nur `secretHint` sichtbar. Scope `webhooks:read`, Besitzer Administrator.",
+        "operationId": "listWebhooks",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Webhook-Endpunkte",
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "id": "0d2f6a4e-5b8c-4d0e-9a51-3c7e2b9f1a10",
+                      "organizationId": "b1e7c9d2-4f3a-4e8b-9c6d-2a5f8e1b7c30",
+                      "url": "https://example.org/openeos/webhook",
+                      "description": "Buchhaltung",
+                      "eventTypes": [
+                        "order.paid",
+                        "refund.created"
+                      ],
+                      "active": true,
+                      "includeGuestData": false,
+                      "includeTestOrders": false,
+                      "secretHint": "whsec_3fA9…",
+                      "previousSecretExpiresAt": null,
+                      "consecutiveFailures": 0,
+                      "failingSince": null,
+                      "disabledReason": null,
+                      "disabledAt": null,
+                      "lastDeliveryAt": "2026-11-10T18:04:13.511Z",
+                      "lastDeliveryStatus": "succeeded",
+                      "lastSuccessAt": "2026-11-10T18:04:13.511Z",
+                      "createdBy": {
+                        "id": "7c4e…",
+                        "firstName": "Alex",
+                        "lastName": "Muster"
+                      },
+                      "createdAt": "2026-11-10T17:55:02.000Z",
+                      "updatedAt": "2026-11-10T18:04:13.511Z"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Webhooks auflisten",
+        "tags": [
+          "Webhooks"
+        ],
+        "x-api-token-scope": "webhooks:read"
+      },
+      "post": {
+        "description": "Legt einen Endpunkt an. Die Adresse muss mit `https://` beginnen und auf öffentliche Adressen zeigen (`400 WEBHOOK_URL_INVALID`, `params.reason`). Das Signatur-Geheimnis (`data.secret`, `whsec_…`) kommt genau einmal in dieser Antwort. Höchstens 10 Endpunkte je Organisation (`409 WEBHOOK_LIMIT_REACHED`). Scope `webhooks:write`.",
+        "operationId": "createWebhook",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWebhookDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Angelegt; `data.secret` ist das Geheimnis",
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "id": "0d2f6a4e-5b8c-4d0e-9a51-3c7e2b9f1a10",
+                    "organizationId": "b1e7c9d2-4f3a-4e8b-9c6d-2a5f8e1b7c30",
+                    "url": "https://example.org/openeos/webhook",
+                    "description": "Buchhaltung",
+                    "eventTypes": [
+                      "order.paid",
+                      "refund.created"
+                    ],
+                    "active": true,
+                    "includeGuestData": false,
+                    "includeTestOrders": false,
+                    "secretHint": "whsec_3fA9…",
+                    "previousSecretExpiresAt": null,
+                    "consecutiveFailures": 0,
+                    "failingSince": null,
+                    "disabledReason": null,
+                    "disabledAt": null,
+                    "lastDeliveryAt": null,
+                    "lastDeliveryStatus": null,
+                    "lastSuccessAt": null,
+                    "createdBy": {
+                      "id": "7c4e…",
+                      "firstName": "Alex",
+                      "lastName": "Muster"
+                    },
+                    "createdAt": "2026-11-10T17:55:02.000Z",
+                    "updatedAt": "2026-11-10T18:04:13.511Z",
+                    "secret": "whsec_3fA9pQ…"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "WEBHOOK_URL_INVALID, WEBHOOK_EVENT_TYPE_INVALID"
+          },
+          "409": {
+            "description": "WEBHOOK_LIMIT_REACHED"
+          },
+          "503": {
+            "description": "WEBHOOKS_DISABLED"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Webhook anlegen",
+        "tags": [
+          "Webhooks"
+        ],
+        "x-api-token-scope": "webhooks:write"
+      }
+    },
+    "/api/organizations/{organizationId}/webhooks/{webhookId}": {
+      "get": {
+        "description": "Ein Endpunkt der Organisation. Scope `webhooks:read`.",
+        "operationId": "getWebhook",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "required": true,
+            "in": "path",
+            "description": "ID des Webhooks",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Webhook abrufen",
+        "tags": [
+          "Webhooks"
+        ],
+        "x-api-token-scope": "webhooks:read"
+      },
+      "patch": {
+        "description": "Ändert Adresse, Beschreibung, Ereignisse oder Schalter. `active: true` schaltet einen automatisch abgeschalteten Endpunkt wieder ein und setzt die Fehlerserie zurück; `active: false` beendet offene Zustellungen. Scope `webhooks:write`.",
+        "operationId": "updateWebhook",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "required": true,
+            "in": "path",
+            "description": "ID des Webhooks",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWebhookDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Webhook ändern",
+        "tags": [
+          "Webhooks"
+        ],
+        "x-api-token-scope": "webhooks:write"
+      },
+      "delete": {
+        "description": "Löscht den Endpunkt samt Zustellprotokoll. Nur mit Anmeldung (JWT) als Administrator — nicht per Token.",
+        "operationId": "deleteWebhook",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "required": true,
+            "in": "path",
+            "description": "ID des Webhooks",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Webhook löschen",
+        "tags": [
+          "Webhooks"
+        ]
+      }
+    },
+    "/api/organizations/{organizationId}/webhooks/{webhookId}/rotate-secret": {
+      "post": {
+        "description": "Erzeugt ein neues Geheimnis (`data.secret`, genau einmal). Das alte signiert noch 24 Stunden mit (zweites `v1=` in `OpenEOS-Signature`, bis `previousSecretExpiresAt`), damit du den Empfänger ohne Ausfall umstellen kannst. Scope `webhooks:write`.",
+        "operationId": "rotateWebhookSecret",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "required": true,
+            "in": "path",
+            "description": "ID des Webhooks",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Signatur-Geheimnis erneuern",
+        "tags": [
+          "Webhooks"
+        ],
+        "x-api-token-scope": "webhooks:write"
+      }
+    },
+    "/api/organizations/{organizationId}/webhooks/{webhookId}/test": {
+      "post": {
+        "description": "Sendet ein Ereignis `ping` (ein Versuch, auch an ausgeschaltete Endpunkte). Das Ergebnis steht nach wenigen Sekunden im Zustellprotokoll. Scope `webhooks:write`.",
+        "operationId": "testWebhook",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "required": true,
+            "in": "path",
+            "description": "ID des Webhooks",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Zustellung angelegt",
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "id": "5a0f3c1e-2d4b-4b7a-8e9f-1c2d3e4f5a6b",
+                    "webhookId": "0d2f6a4e-5b8c-4d0e-9a51-3c7e2b9f1a10",
+                    "eventId": "6f1c2b3a-4d5e-4f60-8a9b-0c1d2e3f4a5b",
+                    "eventType": "ping",
+                    "status": "pending",
+                    "attempts": 0,
+                    "maxAttempts": 1,
+                    "nextAttemptAt": null,
+                    "lastAttemptAt": null,
+                    "responseStatus": null,
+                    "durationMs": null,
+                    "error": null,
+                    "manual": true,
+                    "redeliveryOf": null,
+                    "createdAt": "2026-11-10T18:04:13.250Z"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Test senden",
+        "tags": [
+          "Webhooks"
+        ],
+        "x-api-token-scope": "webhooks:write"
+      }
+    },
+    "/api/organizations/{organizationId}/webhooks/{webhookId}/deliveries": {
+      "get": {
+        "description": "Zustellungen des Endpunkts, neueste zuerst, seitenweise (`page`, `limit` ≤ 100), optional nach `status` und `eventType` gefiltert. Das Protokoll wird nach 30 Tagen gelöscht. Scope `webhooks:read`.",
+        "operationId": "listWebhookDeliveries",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "required": true,
+            "in": "path",
+            "description": "ID des Webhooks",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Seite, beginnend bei 1",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Einträge je Seite (höchstens 100)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Nur Zustellungen in diesem Zustand",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "delivering",
+                "succeeded",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "eventType",
+            "required": false,
+            "in": "query",
+            "description": "Nur Zustellungen dieses Ereignisses (auch `ping`)",
+            "schema": {
+              "example": "order.paid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zustellungen",
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "id": "5a0f3c1e-2d4b-4b7a-8e9f-1c2d3e4f5a6b",
+                      "webhookId": "0d2f6a4e-5b8c-4d0e-9a51-3c7e2b9f1a10",
+                      "eventId": "6f1c2b3a-4d5e-4f60-8a9b-0c1d2e3f4a5b",
+                      "eventType": "order.paid",
+                      "status": "succeeded",
+                      "attempts": 1,
+                      "maxAttempts": 8,
+                      "nextAttemptAt": null,
+                      "lastAttemptAt": "2026-11-10T18:04:13.300Z",
+                      "responseStatus": 200,
+                      "durationMs": 211,
+                      "error": null,
+                      "manual": false,
+                      "redeliveryOf": null,
+                      "createdAt": "2026-11-10T18:04:13.250Z"
+                    }
+                  ],
+                  "meta": {
+                    "page": 1,
+                    "limit": 20,
+                    "total": 1,
+                    "totalPages": 1,
+                    "hasNext": false,
+                    "hasPrev": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Zustellprotokoll",
+        "tags": [
+          "Webhooks"
+        ],
+        "x-api-token-scope": "webhooks:read"
+      }
+    },
+    "/api/organizations/{organizationId}/webhooks/{webhookId}/deliveries/{deliveryId}": {
+      "get": {
+        "description": "Eine Zustellung mit dem gesendeten Inhalt (`payload`), den ersten 1 024 Zeichen der Antwort (`responseBody`) und allen Versuchen (`attemptLog`). Scope `webhooks:read`.",
+        "operationId": "getWebhookDelivery",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "required": true,
+            "in": "path",
+            "description": "ID des Webhooks",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "deliveryId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Zustellung",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Zustellung abrufen",
+        "tags": [
+          "Webhooks"
+        ],
+        "x-api-token-scope": "webhooks:read"
+      }
+    },
+    "/api/organizations/{organizationId}/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver": {
+      "post": {
+        "description": "Sendet eine Zustellung noch einmal (ein Versuch) — mit derselben Ereignis-ID und demselben Inhalt, damit der Empfänger Doppelte erkennt. Scope `webhooks:write`.",
+        "operationId": "redeliverWebhook",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhookId",
+            "required": true,
+            "in": "path",
+            "description": "ID des Webhooks",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "deliveryId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Zustellung",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Erneut senden",
+        "tags": [
+          "Webhooks"
+        ],
+        "x-api-token-scope": "webhooks:write"
+      }
     }
   },
   "info": {
     "title": "OpenEOS API",
-    "description": "OpenEOS ist ein Kassen- und Bestellsystem für Vereinsfeste. Diese Referenz beschreibt die REST-API unter `https://api.openeos.de/api` (selbst gehostet: `https://<deine-api>/api`).\n\n## Zugang mit API-Token\n\nFür Skripte, Automatisierungen (z. B. Zapier) und KI-Agenten gibt es **API-Tokens je Organisation**. Dieselben Tokens öffnen den **MCP-Server** unter `https://api.openeos.de/mcp` (Streamable HTTP, außerhalb von `/api`) für Claude, Cursor und eigene Agenten — die Werkzeuge dort folgen denselben Scopes. Ein Token wirkt wie die Person, die ihn ausgestellt hat — beschränkt auf eine Organisation, auf die gewählten Scopes und auf die hier mit *API-token* markierten Endpunkte. Alles andere (Kasse, Zahlungen, Mitglieder, Abrechnung, Löschen, Freischaltung) bleibt der Anmeldung in der App vorbehalten.\n\n**Token anlegen:** In der Web-App unter *Einstellungen → Organisation → Zugänge* (Organisations-Admin) oder per `POST /api/organizations/{organizationId}/api-tokens` mit einer angemeldeten Sitzung. Der Token (`oeos_…`) wird genau einmal angezeigt; gespeichert wird nur ein Hash. Höchstens 20 aktive Tokens je Organisation.\n\n**Verwenden:** `Authorization: Bearer oeos_…` — derselbe Header wie für Sitzungs-JWTs. Welche Organisation gemeint ist, steht im Pfad; ein Token erreicht nur seine eigene (sonst `403 API_TOKEN_WRONG_ORGANIZATION`).\n\n### Scopes\n\n| Scope | Erlaubt |\n|---|---|\n| `read` | Organisation, Veranstaltungen, Kategorien, Produkte, Pfandarten, Tische, Stationen, Bon-Vorlagen, Drucker, Schichtpläne, Geräte, Berichte und Bestellungen lesen |\n| `catalog:write` | Kategorien, Produkte und Pfandarten anlegen und ändern |\n| `events:write` | Veranstaltungen und Produktionsstationen anlegen und ändern (keine Freischaltung) |\n| `tables:write` | Bereiche, Tische und Tischplan bearbeiten |\n| `staff:write` | Schichtpläne, Jobs, Schichten und Helfer-Anmeldungen bearbeiten |\n| `devices:write` | Bon-Vorlagen anlegen und ändern |\n| `settings:write` | Organisationseinstellungen ändern |\n\nSchreib-Scopes schließen `read` nicht ein. Jeder Endpunkt nennt den nötigen Scope als `x-api-token-scope`; fehlt er am Token, antwortet die API mit `403 API_TOKEN_SCOPE_MISSING`, bei nicht freigegebenen Endpunkten mit `403 API_TOKEN_NOT_ALLOWED`.\n\n### Grenzen\n\nJe Token:\n- 120 Aufrufe je Minute\n- 5000 Aufrufe je Tag\n\nDarüber hinaus `429 API_TOKEN_RATE_LIMITED` mit `Retry-After`. Zusätzlich gilt die allgemeine Grenze je IP-Adresse.\n\n### Fehler\n\nJede Fehlerantwort hat die Form `{ \"error\": { \"code\", \"reason\", \"message\", \"params\", \"details\", \"requestId\", \"timestamp\" } }`. `code` ist die allgemeine Klasse (`FORBIDDEN`, `NOT_FOUND`, …), `reason` der konkrete Fall (`API_TOKEN_SCOPE_MISSING`, `EVENT_NOT_FOUND`, …).\n\n## Sitzungen (Web-App)\n\nDie Web-App meldet sich mit E-Mail/Passwort (`POST /api/auth/login`) an und erhält ein kurzlebiges Access-Token (JWT, `Authorization: Bearer`) sowie ein Refresh-Token als httpOnly-Cookie. Diese Endpunkte sind hier der Vollständigkeit halber dokumentiert; für Integrationen nimm ein API-Token.\n\n## Geräte\n\nKassen und Displays sprechen `/api/device-api/*` mit einem Geräte-Token (`X-Device-Token`). Diese Endpunkte sind nicht für Integrationen gedacht.",
+    "description": "OpenEOS ist ein Kassen- und Bestellsystem für Vereinsfeste. Diese Referenz beschreibt die REST-API unter `https://api.openeos.de/api` (selbst gehostet: `https://<deine-api>/api`).\n\n## Zugang mit API-Token\n\nFür Skripte, Automatisierungen (z. B. Zapier) und KI-Agenten gibt es **API-Tokens je Organisation**. Dieselben Tokens öffnen den **MCP-Server** unter `https://api.openeos.de/mcp` (Streamable HTTP, außerhalb von `/api`) für Claude, Cursor und eigene Agenten — die Werkzeuge dort folgen denselben Scopes. Ein Token wirkt wie die Person, die ihn ausgestellt hat — beschränkt auf eine Organisation, auf die gewählten Scopes und auf die hier mit *API-token* markierten Endpunkte. Alles andere (Kasse, Zahlungen, Mitglieder, Abrechnung, Löschen, Freischaltung) bleibt der Anmeldung in der App vorbehalten.\n\n**Token anlegen:** In der Web-App unter *Einstellungen → Organisation → Zugänge* (Organisations-Admin) oder per `POST /api/organizations/{organizationId}/api-tokens` mit einer angemeldeten Sitzung. Der Token (`oeos_…`) wird genau einmal angezeigt; gespeichert wird nur ein Hash. Höchstens 20 aktive Tokens je Organisation.\n\n**Verwenden:** `Authorization: Bearer oeos_…` — derselbe Header wie für Sitzungs-JWTs. Welche Organisation gemeint ist, steht im Pfad; ein Token erreicht nur seine eigene (sonst `403 API_TOKEN_WRONG_ORGANIZATION`).\n\n### Scopes\n\n| Scope | Erlaubt |\n|---|---|\n| `read` | Organisation, Veranstaltungen, Kategorien, Produkte, Pfandarten, Tische, Stationen, Bon-Vorlagen, Drucker, Schichtpläne, Geräte, Berichte und Bestellungen lesen |\n| `catalog:write` | Kategorien, Produkte und Pfandarten anlegen und ändern |\n| `events:write` | Veranstaltungen und Produktionsstationen anlegen und ändern (keine Freischaltung) |\n| `tables:write` | Bereiche, Tische und Tischplan bearbeiten |\n| `staff:write` | Schichtpläne, Jobs, Schichten und Helfer-Anmeldungen bearbeiten |\n| `devices:write` | Bon-Vorlagen anlegen und ändern |\n| `settings:write` | Organisationseinstellungen ändern |\n| `webhooks:read` | Webhooks und ihre Zustellungen lesen |\n| `webhooks:write` | Webhooks anlegen, ändern, testen und erneut senden (kein Löschen) |\n\nSchreib-Scopes schließen `read` nicht ein. Jeder Endpunkt nennt den nötigen Scope als `x-api-token-scope`; fehlt er am Token, antwortet die API mit `403 API_TOKEN_SCOPE_MISSING`, bei nicht freigegebenen Endpunkten mit `403 API_TOKEN_NOT_ALLOWED`.\n\n### Grenzen\n\nJe Token:\n- 120 Aufrufe je Minute\n- 5000 Aufrufe je Tag\n\nDarüber hinaus `429 API_TOKEN_RATE_LIMITED` mit `Retry-After`. Zusätzlich gilt die allgemeine Grenze je IP-Adresse.\n\n## Webhooks\n\nStatt regelmäßig abzufragen, kann OpenEOS Ereignisse (z. B. `order.paid`, `refund.created`, `event.phase_changed`) als signierten `POST` an deine HTTPS-Adresse senden — mit `OpenEOS-Signature` (HMAC-SHA256), Wiederholungen bis etwa 24 Stunden und Zustellprotokoll. Einrichten in der App unter *Einstellungen → Webhooks* oder über die Endpunkte unter *Webhooks* (Scopes `webhooks:read` und `webhooks:write`). Ereignisse, Inhalte und Prüfung der Signatur: https://docs.openeos.de/integrationen/webhooks\n\n### Fehler\n\nJede Fehlerantwort hat die Form `{ \"error\": { \"code\", \"reason\", \"message\", \"params\", \"details\", \"requestId\", \"timestamp\" } }`. `code` ist die allgemeine Klasse (`FORBIDDEN`, `NOT_FOUND`, …), `reason` der konkrete Fall (`API_TOKEN_SCOPE_MISSING`, `EVENT_NOT_FOUND`, …).\n\n## Sitzungen (Web-App)\n\nDie Web-App meldet sich mit E-Mail/Passwort (`POST /api/auth/login`) an und erhält ein kurzlebiges Access-Token (JWT, `Authorization: Bearer`) sowie ein Refresh-Token als httpOnly-Cookie. Diese Endpunkte sind hier der Vollständigkeit halber dokumentiert; für Integrationen nimm ein API-Token.\n\n## Geräte\n\nKassen und Displays sprechen `/api/device-api/*` mit einem Geräte-Token (`X-Device-Token`). Diese Endpunkte sind nicht für Integrationen gedacht.",
     "version": "1.0",
     "contact": {
       "name": "OpenEOS",
@@ -18392,6 +19089,10 @@
     {
       "name": "API Tokens",
       "description": "API-Tokens einer Organisation ausstellen und widerrufen (nur mit Anmeldung)"
+    },
+    {
+      "name": "Webhooks",
+      "description": "Ausgehende Webhooks: OpenEOS meldet Ereignisse signiert an deine Adresse"
     },
     {
       "name": "Organizations",
@@ -18658,7 +19359,9 @@
                 "tables:write",
                 "staff:write",
                 "devices:write",
-                "settings:write"
+                "settings:write",
+                "webhooks:read",
+                "webhooks:write"
               ]
             }
           },
@@ -23993,6 +24696,7 @@
                 "support_messages",
                 "contact_requests",
                 "assistant_imports",
+                "webhook_deliveries",
                 "organization_inactivity",
                 "organization_purge",
                 "user_accounts",
@@ -24079,6 +24783,111 @@
           "code": {
             "type": "string",
             "description": "Code aus der E-Mail (Konten ohne Passwort)"
+          }
+        }
+      },
+      "CreateWebhookDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "example": "https://example.org/openeos/webhook",
+            "description": "Ziel der Zustellungen. Nur `https://`, ohne Zugangsdaten in der Adresse; der Name muss sich auf öffentliche Adressen auflösen lassen.",
+            "maxLength": 2048
+          },
+          "description": {
+            "type": "object",
+            "example": "Buchhaltung",
+            "description": "Wofür der Webhook gedacht ist",
+            "maxLength": 255,
+            "nullable": true
+          },
+          "eventTypes": {
+            "type": "array",
+            "example": [
+              "order.paid",
+              "refund.created"
+            ],
+            "description": "Abonnierte Ereignisse (mindestens eines)",
+            "items": {
+              "type": "string",
+              "enum": [
+                "order.created",
+                "order.paid",
+                "order.completed",
+                "order.cancelled",
+                "payment.created",
+                "refund.created",
+                "shop.order.created",
+                "pfand_return.created",
+                "event.activated",
+                "event.phase_changed",
+                "cash_point_closing.created",
+                "product.updated"
+              ]
+            }
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          },
+          "includeGuestData": {
+            "type": "boolean",
+            "default": false,
+            "description": "„Gästedaten mitsenden“: Name, Telefon und Notizen der Gäste in Bestellungen. Nur einschalten, wenn der Empfänger sie braucht."
+          },
+          "includeTestOrders": {
+            "type": "boolean",
+            "default": false,
+            "description": "„Testbestellungen mitsenden“ (Testmodus und Phase „Geplant“); sie tragen dann `isTest: true`."
+          }
+        },
+        "required": [
+          "url",
+          "eventTypes"
+        ]
+      },
+      "UpdateWebhookDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "description": {
+            "type": "object",
+            "maxLength": 255,
+            "nullable": true
+          },
+          "eventTypes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "order.created",
+                "order.paid",
+                "order.completed",
+                "order.cancelled",
+                "payment.created",
+                "refund.created",
+                "shop.order.created",
+                "pfand_return.created",
+                "event.activated",
+                "event.phase_changed",
+                "cash_point_closing.created",
+                "product.updated"
+              ]
+            }
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Ein- oder ausschalten. Einschalten setzt eine automatische Abschaltung und die Fehlerserie zurück."
+          },
+          "includeGuestData": {
+            "type": "boolean"
+          },
+          "includeTestOrders": {
+            "type": "boolean"
           }
         }
       }

@@ -113,7 +113,8 @@ describe('API token allowlist', () => {
       /\/menu-imports\b/,
       /\/activate$/,
       /\/deactivate$/,
-      /\/test$/,
+      // Testmodus einer Veranstaltung — „Test senden“ eines Webhooks ist harmlos.
+      /(?<!\/webhooks\/:webhookId)\/test$/,
       /\/api-tokens\b/,
       /\/cancel\b/,
       /\/broadcast$/,
@@ -141,6 +142,7 @@ describe('API token allowlist', () => {
       (r) =>
         r.method === 'GET' &&
         r.scope !== TokenScope.READ &&
+        r.scope !== TokenScope.WEBHOOKS_READ &&
         r.scope !== TokenScope.MONITORING_READ,
     );
     expect(readOnly).toEqual([]);
@@ -153,7 +155,7 @@ describe('API token allowlist', () => {
     const writesWithRead = routes.filter(
       (r) =>
         r.method !== 'GET' &&
-        r.scope === TokenScope.READ &&
+        (r.scope === TokenScope.READ || r.scope === TokenScope.WEBHOOKS_READ) &&
         !harmlessPosts.has(r.path),
     );
     expect(writesWithRead).toEqual([]);
