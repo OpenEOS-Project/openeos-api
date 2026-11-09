@@ -8,6 +8,10 @@ import { TseUnit } from '../../database/entities/tse-unit.entity';
 import { EmailService } from '../email/email.service';
 import { softwareFacts } from './legal-elster.service';
 import { LegalService } from './legal.service';
+import {
+  emergencyPhoneTelUri,
+  normalizeEmergencyPhone,
+} from '../support/emergency-support';
 
 /**
  * Buchungsbestaetigung an die Organisation nach einer Freischaltung
@@ -61,6 +65,12 @@ export class BookingConfirmationService {
         organization.id,
       );
       const withTse = event.tseIncluded === true || !!unit;
+      const phone = normalizeEmergencyPhone(
+        this.configService.get<string>('OPERATOR_EMERGENCY_PHONE'),
+      );
+      const emergencyPhone = phone
+        ? { phone, telUri: emergencyPhoneTelUri(phone) }
+        : null;
       const recipients = await this.recipients(organization);
       for (const to of recipients) {
         await this.emailService.sendEventBookingConfirmationEmail({
@@ -94,6 +104,7 @@ export class BookingConfirmationService {
                   : null,
               }
             : null,
+          emergencyPhone,
         });
       }
     } catch (error) {

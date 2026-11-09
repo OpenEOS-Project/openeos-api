@@ -409,7 +409,8 @@ export class SupportService {
     return organization;
   }
 
-  private async checkMembership(
+  /** Mitglied der Organisation? Sonst 403 (auch fuer den Notfall-Support). */
+  async checkMembership(
     organizationId: string,
     userId: string,
   ): Promise<UserOrganization> {
