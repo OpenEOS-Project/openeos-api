@@ -22,7 +22,7 @@ import {
   OrderItemStatus,
 } from '../../database/entities/order-item.entity';
 import { Organization } from '../../database/entities/organization.entity';
-import { Event } from '../../database/entities/event.entity';
+import { Event, EventStatus } from '../../database/entities/event.entity';
 import { assertSumUpAllowedInMode } from '../../common/utils/sumup-test-mode.util';
 import {
   Payment,
@@ -227,6 +227,10 @@ export class PaymentsBatchService {
 
     // Testbestellungen: keine echte SumUp-Kartenzahlung buchen.
     if (dto.paymentMethod === PaymentMethod.SUMUP_TERMINAL) {
+      // Testbestellung (Testmodus oder „Geplant“): Kennzeichen der Bestellung.
+      if (orders.some((o) => o.isTest)) {
+        assertSumUpAllowedInMode(EventStatus.TEST, dto.paymentMethod);
+      }
       const eventIds = [
         ...new Set(orders.map((o) => o.eventId).filter(Boolean)),
       ] as string[];

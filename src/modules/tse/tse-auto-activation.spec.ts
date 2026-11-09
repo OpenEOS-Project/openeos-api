@@ -454,7 +454,8 @@ describe('Cloud-TSE all inclusive: organization × unlock path', () => {
           expect(await t.units.autoCreate.mock.results[0].value).toEqual([]);
           expect(await t.tseAuto.planFor(t.org)).toMatchObject({
             eventId: EVENT_ID,
-            scheduledFor: '2026-12-12',
+            // 12.12. 16:00 → echt ab 11.12. 18:00, TSE am 11.12. (Phasen)
+            scheduledFor: '2026-12-11',
             missing: [],
           });
           expect(t.notify.settingsChanged).toHaveBeenCalledWith(ORG);
@@ -672,7 +673,7 @@ describe('Cloud-TSE after switching to „Alle Funktionen“', () => {
     expect(result).toMatchObject({
       integrationEnabled: true,
       tseFollows: true,
-      plan: { scheduledFor: '2026-12-12', eventName: 'Weihnachtsmarkt' },
+      plan: { scheduledFor: '2026-12-11', eventName: 'Weihnachtsmarkt' },
     });
     expect(t.integration()).toMatchObject({
       enabled: true,
@@ -692,18 +693,26 @@ describe('Cloud-TSE after switching to „Alle Funktionen“', () => {
 });
 
 describe('helpers', () => {
-  it('autoCreationDay: first business day, the evening before for early-morning starts, never in the past', () => {
+  it('autoCreationDay: 12 h before the sales window, never before the event month or today', () => {
     const now = new Date('2026-11-03T10:00:00Z');
-    expect(autoCreationDay(new Date('2026-12-12T15:00:00Z'), now)).toBe(
-      '2026-12-12',
+    const at = (start: string, end: string | null = null) =>
+      autoCreationDay(
+        { startDate: new Date(start), endDate: end ? new Date(end) : null },
+        now,
+      );
+    // Fest 12.12. 16:00: Geschaeftstag ab 12.12. 6 Uhr, echt ab 11.12. 18 Uhr
+    expect(at('2026-12-12T15:00:00Z')).toBe('2026-12-11');
+    // 03:00 Berlin am 12.12. gehoert zum 11.12. → echt ab 10.12. 18 Uhr
+    expect(at('2026-12-12T02:00:00Z')).toBe('2026-12-10');
+    // reine Daten 16.–17.12. → am 15.12. (6 Uhr)
+    expect(at('2026-12-15T23:00:00Z', '2026-12-16T23:00:00Z')).toBe(
+      '2026-12-15',
     );
-    // 03:00 Berlin am 12.12. → der Lauf am 11.12. erfasst sie schon.
-    expect(autoCreationDay(new Date('2026-12-12T02:00:00Z'), now)).toBe(
-      '2026-12-11',
+    // Fest am 1.12. (reine Daten): nicht im November, sondern am 1. um 0 Uhr
+    expect(at('2026-11-30T23:00:00Z', '2026-11-30T23:00:00Z')).toBe(
+      '2026-12-01',
     );
-    expect(autoCreationDay(new Date('2026-11-01T15:00:00Z'), now)).toBe(
-      '2026-11-03',
-    );
+    expect(at('2026-11-01T15:00:00Z')).toBe('2026-11-03');
   });
 
   it('tseAutoEnabledInfo reads only automatic, still enabled entries', () => {

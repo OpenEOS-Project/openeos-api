@@ -2,7 +2,8 @@ import {
   OPERATING_MODE_SELECT,
   isOrdersOnly,
 } from '../../common/utils/operating-mode.util';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { EventPhaseService } from '../events/event-phase.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Device } from '../../database/entities/device.entity';
@@ -59,6 +60,8 @@ export class OrderPrintService {
     private readonly eventRepository: Repository<Event>,
     private readonly printJobsService: PrintJobsService,
     private readonly printRoutingService: PrintRoutingService,
+    @Optional()
+    private readonly eventPhaseService?: EventPhaseService,
   ) {}
 
   /**
@@ -75,9 +78,34 @@ export class OrderPrintService {
     if (!eventId) return false;
     const event = await this.eventRepository.findOne({
       where: { id: eventId },
-      select: ['id', 'status'],
     });
-    return event?.status === EventStatus.TEST;
+    if (event?.status === EventStatus.TEST) return true;
+    if (!event) return false;
+    // Zustand „Geplant“: die Kasse bucht Testbestellungen.
+    const phase =
+      this.eventPhaseService ??
+      EventPhaseService.standalone(this.organizationRepository);
+    return phase.isTestModeNow(event);
+  }
+
+  /**
+   * Testbon? Eine Testbestellung immer; eine echte Bestellung nur im
+   * Testmodus der Veranstaltung — eine echte Vorverkaufs-Bestellung im
+   * Zustand „Geplant“ bekommt keinen Testvermerk.
+   */
+  private async isTestOrder(
+    order: { eventId?: string | null; isTest?: boolean } | null | undefined,
+  ): Promise<boolean> {
+    if (order?.isTest === true) return true;
+    if (order?.isTest === false) {
+      if (!order.eventId) return false;
+      const event = await this.eventRepository.findOne({
+        where: { id: order.eventId },
+        select: ['id', 'status'],
+      });
+      return event?.status === EventStatus.TEST;
+    }
+    return this.isTestEvent(order?.eventId ?? null);
   }
 
   /** Betriebsart „Nur Bons“: Bons ohne Preise, keine Kassenbons. */
@@ -177,7 +205,7 @@ export class OrderPrintService {
       const orderFlow = (await this.getOrderFlow(organizationId)) ?? {};
       const orderDeviceId: string | null =
         data.order?.createdByDeviceId ?? null;
-      const isTest = await this.isTestEvent(data.order?.eventId ?? null);
+      const isTest = await this.isTestOrder(data.order);
 
       // Kitchen ticket(s) on order creation — supports three dispatch modes.
       // The kitchen toggle gates ORG-level routing only. If a device has a
@@ -475,7 +503,7 @@ export class OrderPrintService {
       const orderFlow = (await this.getOrderFlow(organizationId)) ?? {};
       const orderDeviceId: string | null =
         data.order?.createdByDeviceId ?? null;
-      const isTest = await this.isTestEvent(data.order?.eventId ?? null);
+      const isTest = await this.isTestOrder(data.order);
 
       // Betriebsart „Nur Bons“: keine Kassenbons (keine Preise, keine
       // Zahlungen; Online-Zahlungen aus der Zeit davor eingeschlossen).
@@ -593,8 +621,7 @@ export class OrderPrintService {
         workflow: 'receipt',
       });
       if (!printerId) return false;
-      const isTest =
-        refund.isTest || (await this.isTestEvent(order.eventId ?? null));
+      const isTest = refund.isTest || (await this.isTestOrder(order));
       const taxLines = refund.taxLines ?? [];
       await this.printJobsService.createFromWorkflow(
         organizationId,
@@ -669,7 +696,7 @@ export class OrderPrintService {
         !!orderDeviceId && (await this.deviceHasDefaultPrinter(orderDeviceId));
       if (kitchen?.enabled === false && !deviceHasFallback) return;
 
-      const isTest = await this.isTestEvent(data.order.eventId ?? null);
+      const isTest = await this.isTestOrder(data.order);
       const orgPayload = await this.buildOrgPayload(organizationId);
       const withRelations = await this.orderItemRepository.find({
         where: data.items.map(({ item }) => ({ id: item.id })),

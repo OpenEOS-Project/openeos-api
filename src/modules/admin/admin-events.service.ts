@@ -79,6 +79,11 @@ export class AdminEventsService {
     private readonly eventRepository: Repository<Event>,
   ) {}
 
+  /** Fuer Nachlesungen im Controller (Phasen der Liste). */
+  get events(): Repository<Event> {
+    return this.eventRepository;
+  }
+
   async findAllEvents(queryDto: QueryAdminEventsDto): Promise<{
     data: AdminEventListItem[];
     total: number;

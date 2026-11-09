@@ -20,10 +20,19 @@ import { isIntegrationEnabled } from '../integrations/integration-catalog';
 import { missingMasterData } from '../dsfinvk/dsfinvk-master';
 import { errorMessageOf } from './swissbit/swissbit.errors';
 import { TseConfig } from './tse.config';
-import { localDate } from './tse-dates';
+import { localDate, startOfLocalMonth } from './tse-dates';
+import {
+  DEFAULT_EVENT_PHASE_SETTINGS,
+  EventPhaseSettings,
+  salesWindow,
+} from '../../common/utils/event-phase.util';
 import { TseNotifyService } from './tse-notify.service';
 import { rowsOf } from './tse-sql.util';
-import { TseUnitService, type QualifyingEvent } from './tse-unit.service';
+import {
+  TSE_CREATE_LEAD_MS,
+  TseUnitService,
+  type QualifyingEvent,
+} from './tse-unit.service';
 
 /**
  * Was der Bezahldialog zur Cloud-TSE sagt:
@@ -480,15 +489,28 @@ export function tseAutoEnabledInfo(
 }
 
 /**
- * Tag, an dem die Automatik die TSE fuer diese Veranstaltung anlegt: der
- * Kalendertag (Berlin), an dem der Lauf um 5–22 Uhr sie zum ersten Mal
- * erfasst — Beginn vor dem naechsten Tageswechsel um 6 Uhr
- * (`autoCreateHorizon`). Eine Nacht-Veranstaltung ab 3 Uhr also am Vortag.
- * Nie vor heute.
+ * Tag, an dem die Automatik die TSE fuer diese Veranstaltung anlegt
+ * (`isTseCreationDue`): 12 Stunden vor Beginn des Verkaufsfensters, also
+ * meist am Vortag des ersten Geschaeftstags — nie vor dem Monat des ersten
+ * Geschaeftstags (Fest am 1.: am 1. um 0 Uhr) und nie vor heute.
  */
-export function autoCreationDay(start: Date, now = new Date()): string {
-  const day = localDate(new Date(start.getTime() - 6 * 3600_000));
+export function autoCreationDay(
+  event: Pick<QualifyingEvent, 'startDate' | 'endDate'>,
+  now = new Date(),
+  settings: EventPhaseSettings = DEFAULT_EVENT_PHASE_SETTINGS,
+): string {
+  const window = salesWindow(
+    { startDate: event.startDate, endDate: event.endDate ?? null },
+    { timezone: 'Europe/Berlin', usesCloudTse: true },
+    settings,
+  );
   const today = localDate(now);
+  if (!window) return today;
+  const from = Math.max(
+    startOfLocalMonth(window.businessDaysFrom).getTime(),
+    window.realSalesFrom.getTime() - TSE_CREATE_LEAD_MS,
+  );
+  const day = localDate(new Date(from));
   return day < today ? today : day;
 }
 
@@ -501,7 +523,7 @@ function planOf(
     eventId: event.id,
     eventName: event.name,
     eventStartDate: event.startDate.toISOString(),
-    scheduledFor: autoCreationDay(event.startDate, now),
+    scheduledFor: autoCreationDay(event, now),
     missing: missingMasterData({ name: '', settings }),
   };
 }

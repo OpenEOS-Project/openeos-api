@@ -12,6 +12,7 @@ import {
   Req,
   Res,
   StreamableFile,
+  BadRequestException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiBody } from '@nestjs/swagger';
@@ -31,8 +32,21 @@ import {
 } from '../events/event-unlock-cancellation.service';
 import { StripeInvoiceService } from '../events/stripe-invoice.service';
 import { EventBillingService } from '../events/event-billing.service';
-import { WaiveEventDto } from '../events/dto/event-billing.dto';
-import type { AuditActor } from '../events/billing-audit.service';
+import {
+  MoveEventDatesDto,
+  WaiveEventDto,
+} from '../events/dto/event-billing.dto';
+import {
+  BillingAuditService,
+  type AuditActor,
+} from '../events/billing-audit.service';
+import { EventsService } from '../events/events.service';
+import {
+  EventPhaseFields,
+  EventPhaseService,
+} from '../events/event-phase.service';
+import { AdminAction } from '../../database/entities/admin-audit-log.entity';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 
 function actorOf(user: User, req: Request): AuditActor {
   return {
@@ -54,13 +68,27 @@ export class AdminEventsController {
     private readonly cancellationService: EventUnlockCancellationService,
     private readonly invoiceService: StripeInvoiceService,
     private readonly eventBillingService: EventBillingService,
+    private readonly eventsService: EventsService,
+    private readonly billingAudit: BillingAuditService,
+    private readonly eventPhase: EventPhaseService,
   ) {}
+
+  /** Phase (Geplant/Aktiv/Beendet) zu jeder Zeile der Liste. */
+  private async withPhases<T extends { id: string }>(
+    items: T[],
+  ): Promise<(T & Partial<EventPhaseFields>)[]> {
+    const phases = await this.eventPhase.phaseFieldsByIds(
+      items.map((item) => item.id),
+      this.adminEventsService.events,
+    );
+    return items.map((item) => ({ ...item, ...(phases.get(item.id) ?? {}) }));
+  }
 
   @Get()
   async findAll(@Query() queryDto: QueryAdminEventsDto) {
     const result = await this.adminEventsService.findAllEvents(queryDto);
     return {
-      data: result.data,
+      data: await this.withPhases(result.data),
       meta: {
         total: result.total,
         page: result.page,
@@ -75,7 +103,7 @@ export class AdminEventsController {
   @Get(':id')
   async getOne(@Param('id') id: string) {
     const event = await this.adminEventsService.getEvent(id);
-    return { data: event };
+    return { data: (await this.withPhases([event]))[0] };
   }
 
   @Patch(':id/invoice')
@@ -206,5 +234,55 @@ export class AdminEventsController {
       user?.id ?? null,
     );
     return { data: event };
+  }
+
+  @Post(':id/dates')
+  @ApiOperation({
+    summary: 'Veranstaltung trotz begonnenem Verkauf verschieben (Support)',
+    description:
+      'Übersteuert die Sperre der Phasen: nach Beginn des Verkaufsfensters lassen sich Beginn und Ende sonst nicht mehr verschieben (Ende nur vorziehen). Grund Pflicht (400 `EVENT_DATES_OVERRIDE_REASON_REQUIRED`), protokolliert als `event_dates_override`. Die bezahlte Dauer gilt weiter (400 `EVENT_PAID_DAYS_EXCEEDED`). Liegt das Verkaufsfenster danach wieder in der Zukunft, ist die Veranstaltung wieder „Geplant“ (Testbestellungen) und wird zu Beginn erneut aufgeräumt.',
+  })
+  @ApiBody({ type: MoveEventDatesDto })
+  async moveDates(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: MoveEventDatesDto,
+    @CurrentUser() user: User,
+    @Req() req: Request,
+  ) {
+    const reason = (dto?.reason ?? '').trim();
+    if (!reason) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.EVENT_DATES_OVERRIDE_REASON_REQUIRED,
+        message: 'Bitte gib einen Grund für das Verschieben an',
+      });
+    }
+    const { event, before } = await this.eventsService.moveDatesAsSupport(id, {
+      startDate: dto.startDate,
+      endDate: dto.endDate,
+    });
+    const phase = await this.eventPhase.resolve(event);
+    await this.billingAudit.record({
+      action: AdminAction.EVENT_DATES_OVERRIDE,
+      organizationId: event.organizationId,
+      eventId: event.id,
+      actor: actorOf(user, req),
+      reason,
+      details: {
+        before: {
+          startDate: before.startDate?.toISOString?.() ?? before.startDate,
+          endDate: before.endDate?.toISOString?.() ?? before.endDate,
+        },
+        after: {
+          startDate: event.startDate?.toISOString() ?? null,
+          endDate: event.endDate?.toISOString() ?? null,
+        },
+        phase: phase.phase,
+        realSalesFrom: phase.realSalesFrom,
+        realSalesUntil: phase.realSalesUntil,
+      },
+    });
+    const updated = await this.adminEventsService.getEvent(event.id);
+    return { data: (await this.withPhases([updated]))[0] };
   }
 }

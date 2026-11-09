@@ -46,6 +46,9 @@ export const ErrorCodes = {
   INVENTORY_ALREADY_COMPLETED: 'INVENTORY_ALREADY_COMPLETED',
   EVENT_NOT_PAID: 'EVENT_NOT_PAID',
   TEST_LIMIT_REACHED: 'TEST_LIMIT_REACHED',
+  // Veranstaltung beendet (Verkaufsfenster samt Kulanz vorbei): keine neuen
+  // Bestellungen; Kassieren, Erstatten und Tische schliessen gehen weiter.
+  EVENT_ENDED: 'EVENT_ENDED',
   // Missbrauchsschranken — 403, params.limit (und params.used bei Mitgliedern)
   ORGANIZATION_LIMIT_REACHED: 'ORGANIZATION_LIMIT_REACHED',
   MEMBER_LIMIT_REACHED: 'MEMBER_LIMIT_REACHED',
@@ -197,6 +200,8 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.EVENT_NOT_PAID]:
     'Veranstaltung ist noch nicht freigeschaltet — bitte zuerst kostenpflichtig bestellen',
   [ErrorCodes.TEST_LIMIT_REACHED]: 'Test-Limit erreicht',
+  [ErrorCodes.EVENT_ENDED]:
+    'Die Veranstaltung ist beendet – neue Bestellungen sind nicht mehr möglich',
   [ErrorCodes.ORGANIZATION_LIMIT_REACHED]:
     'Du hast die Höchstzahl an Organisationen erreicht',
   [ErrorCodes.MEMBER_LIMIT_REACHED]:
@@ -366,6 +371,15 @@ export const ErrorReasons = {
   EVENT_NO_STRIPE_INVOICE: 'EVENT_NO_STRIPE_INVOICE',
   EVENT_INVOICE_NOT_OPEN: 'EVENT_INVOICE_NOT_OPEN',
   EVENT_PAID_DAYS_EXCEEDED: 'EVENT_PAID_DAYS_EXCEEDED',
+  // Verkaufsfenster hat begonnen: Beginn/Ende nicht mehr verschiebbar
+  EVENT_DATES_LOCKED: 'EVENT_DATES_LOCKED',
+  EVENT_DATES_OVERRIDE_REASON_REQUIRED: 'EVENT_DATES_OVERRIDE_REASON_REQUIRED',
+  // settings.sales.earlyStartHours ausserhalb 0..EVENT_EARLY_START_MAX_HOURS
+  EVENT_EARLY_START_INVALID: 'EVENT_EARLY_START_INVALID',
+  // Shop: Veranstaltung geplant, Vorverkauf aus
+  SHOP_PRESALE_DISABLED: 'SHOP_PRESALE_DISABLED',
+  // Testbestellungen im Zustand „Geplant“ ausgeschoepft (Code TEST_LIMIT_REACHED)
+  PLANNED_TEST_LIMIT_REACHED: 'PLANNED_TEST_LIMIT_REACHED',
   FEATURE_UNAVAILABLE_SELF_HOSTED: 'FEATURE_UNAVAILABLE_SELF_HOSTED',
   FILE_NOT_FOUND: 'FILE_NOT_FOUND',
   HANDOFF_STATION_NOT_FOUND: 'HANDOFF_STATION_NOT_FOUND',

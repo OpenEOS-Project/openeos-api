@@ -428,6 +428,11 @@ class FakeDb {
           }
           return Promise.resolve(hit ? [hit] : []);
         }
+        // Status unter Sperre (saveOrderWithNumbers → isTestOrder)
+        if (sql.includes('FROM events WHERE id')) {
+          const row = this.events.find((e) => e.id === params[0]);
+          return Promise.resolve(row ? [{ status: row.status }] : []);
+        }
         // advisory lock + MAX() der Nummernvergabe
         return Promise.resolve([{ max: null }]);
       },
@@ -468,6 +473,8 @@ function setupController(
     serviceMode?: 'table' | 'counter';
     tables?: Event['settings']['tables'];
     eventStatus?: EventStatus;
+    /** Weitere Spalten der Veranstaltung (Abrechnung, Zeitraum, Verkauf). */
+    event?: Record<string, unknown>;
     /** Kassiermodus der Veranstaltung; `null` = nicht gesetzt. Standard `tab`. */
     orderingMode?: 'immediate' | 'tab' | null;
     /** Kassiermodus der Organisation (Rückfall). */
@@ -493,6 +500,7 @@ function setupController(
       ...(options.tables ? { tables: options.tables } : {}),
       ...(orderingMode ? { orderingMode } : {}),
     },
+    ...(options.event ?? {}),
   });
   if (options.orgOrderingMode) {
     db.organizations[0].settings = {
@@ -538,7 +546,11 @@ function setupController(
   const orderPrintService = {
     handleOrderCreated: jest.fn(() => Promise.resolve()),
   };
-  const configService = { get: jest.fn(() => 25) };
+  const configService = {
+    get: jest.fn((key: string) =>
+      key === 'billing.testEventMaxOrders' ? 25 : undefined,
+    ),
+  };
   // Zahlung mit der Anlage: wie PaymentsBatchService.settle, aber nur das,
   // was die Bestellung betrifft (Status, bezahlter Betrag).
   const paymentsBatchService = {
@@ -1442,5 +1454,75 @@ describe('DeviceApiController.createOrder — Alle Funktionen in Deutschland ohn
     });
     expect(paymentsBatchService.settle).not.toHaveBeenCalled();
     expect(db.orders).toHaveLength(0);
+  });
+});
+
+describe('DeviceApiController.createOrder — Phasen der Veranstaltung', () => {
+  // Fest 16.–17.11.2026, bezahlt: Verkaufsfenster 15.11. 18:00 bis 18.11. 12:00
+  const paid = {
+    billingStatus: 'paid',
+    startDate: new Date('2026-11-15T23:00:00Z'),
+    endDate: new Date('2026-11-16T23:00:00Z'),
+  };
+  afterEach(() => jest.useRealTimers());
+  const now = (iso: string) =>
+    jest
+      .useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
+      .setSystemTime(new Date(iso));
+
+  it('planned: the order is booked as a test order', async () => {
+    now('2026-11-08T12:00:00Z');
+    const { db, controller, device, response } = setupController({
+      event: paid,
+    });
+    await controller.createOrder(device, dto(), response() as never);
+    expect(db.orders).toHaveLength(1);
+    expect(db.orders[0].isTest).toBe(true);
+  });
+
+  it('planned: no real SumUp terminal payment (test orders are removed later)', async () => {
+    now('2026-11-08T12:00:00Z');
+    const { db, controller, device, response } = setupController({
+      event: paid,
+      orderingMode: 'immediate',
+    });
+    const call = controller.createOrder(
+      device,
+      dto({
+        payment: {
+          paymentMethod: PaymentMethod.SUMUP_TERMINAL,
+          providerTransactionId: 'tx-1',
+        },
+      }),
+      response() as never,
+    );
+    expect(await reason(call)).toBe('SUMUP_DISABLED_IN_TEST_MODE');
+    expect(db.orders).toHaveLength(0);
+  });
+
+  it('active (evening before, 18:00): real order', async () => {
+    now('2026-11-15T17:00:00Z');
+    const { db, controller, device, response } = setupController({
+      event: paid,
+    });
+    await controller.createOrder(device, dto(), response() as never);
+    expect(db.orders[0].isTest).toBe(false);
+  });
+
+  it('ended: 403 EVENT_ENDED, nothing is booked', async () => {
+    now('2026-11-18T11:00:00Z');
+    const { db, controller, device, response } = setupController({
+      event: paid,
+    });
+    let code: string | undefined;
+    try {
+      await controller.createOrder(device, dto(), response() as never);
+    } catch (error) {
+      code = (error as { response: { code: string } }).response?.code;
+      if (!code) throw error;
+    }
+    expect(code).toBe('EVENT_ENDED');
+    expect(db.orders).toHaveLength(0);
+    expect(db.products[0].stockQuantity).toBe(10);
   });
 });

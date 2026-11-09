@@ -161,17 +161,27 @@ export type NewOrderData = Omit<
   'orderNumber' | 'dailyNumber' | 'organizationId' | 'eventId' | 'isTest'
 >;
 
-/** Steht die Veranstaltung gerade im Testmodus? Sperrt ihre Zeile geteilt. */
-async function isEventInTestMode(
+/**
+ * Wird die Bestellung eine Testbestellung? Sperrt die Zeile der
+ * Veranstaltung geteilt. Testmodus (Status `test`) immer; eine aktive
+ * Veranstaltung, wenn der Aufrufer sie im Zustand „Geplant“ gesehen hat
+ * (`plannedTest`, EventPhaseService.prepareOrder). Der Status wird hier
+ * unter der Sperre gelesen, damit ein gleichzeitiges Aktivieren entweder
+ * vorher oder nachher greift.
+ */
+async function isTestOrder(
   manager: EntityManager,
   eventId: string | null,
+  plannedTest: boolean,
 ): Promise<boolean> {
   if (!eventId) return false;
   const rows = await manager.query<{ status: EventStatus }[]>(
     `SELECT status FROM events WHERE id = $1 FOR SHARE`,
     [eventId],
   );
-  return rows[0]?.status === EventStatus.TEST;
+  const status = rows[0]?.status;
+  if (status === EventStatus.TEST) return true;
+  return status === EventStatus.ACTIVE && plannedTest;
 }
 
 /**
@@ -180,14 +190,18 @@ async function isEventInTestMode(
  * je Organisation; die Lock endet mit der Transaktion.
  *
  * Hier — an der einen Stelle, durch die jede Bestellung laeuft — wird auch
- * `isTest` gesetzt: steht die Veranstaltung im Testmodus, ist es eine
- * Testbestellung, die beim Aktivieren geloescht wird. Die Zeile der
+ * `isTest` gesetzt: steht die Veranstaltung im Testmodus oder (laut
+ * `plannedTest`) im Zustand „Geplant“, ist es eine Testbestellung, die beim
+ * Aktivieren bzw. zu Beginn des Verkaufsfensters geloescht wird. Die Zeile der
  * Veranstaltung wird dabei geteilt gesperrt, damit eine gleichzeitige
  * Aktivierung (sperrt exklusiv) entweder vorher oder nachher greift.
  */
 export async function saveOrderWithNumbers(
   orderRepository: Repository<Order>,
-  params: AllocateOrderNumbersParams,
+  params: AllocateOrderNumbersParams & {
+    /** Veranstaltung im Zustand „Geplant“: Testbestellung (siehe isTestOrder). */
+    plannedTest?: boolean;
+  },
   data: NewOrderData,
 ): Promise<Order> {
   return orderRepository.manager.transaction(async (manager) => {
@@ -196,7 +210,11 @@ export async function saveOrderWithNumbers(
       params.organizationId,
     ]);
     const numbers = await allocateOrderNumbers(manager, params);
-    const isTest = await isEventInTestMode(manager, params.eventId);
+    const isTest = await isTestOrder(
+      manager,
+      params.eventId,
+      params.plannedTest === true,
+    );
     const order = manager.create(Order, {
       ...data,
       organizationId: params.organizationId,

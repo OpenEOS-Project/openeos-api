@@ -151,6 +151,8 @@ describeWithDb('RefundsService against Postgres', () => {
       sumup?: boolean;
       cashless?: boolean;
       orderOnly?: boolean;
+      /** Bezahlt, Verkaufsfenster laengst vorbei (Phase „Beendet“). */
+      ended?: boolean;
     } = {},
   ): Promise<World> {
     const orgId = randomUUID();
@@ -173,8 +175,11 @@ describeWithDb('RefundsService against Postgres', () => {
       [orgId, `verein-${orgId}`, JSON.stringify(settings), operatingMode],
     );
     const [event] = await q<{ id: string }>(
-      `INSERT INTO events (organization_id, name, status)
-       VALUES ($1, 'Fest', $2) RETURNING id`,
+      options.ended
+        ? `INSERT INTO events (organization_id, name, status, billing_status, start_date, end_date)
+           VALUES ($1, 'Fest', $2, 'paid', '2026-01-09T23:00:00Z', '2026-01-10T23:00:00Z') RETURNING id`
+        : `INSERT INTO events (organization_id, name, status)
+           VALUES ($1, 'Fest', $2) RETURNING id`,
       [orgId, options.eventStatus ?? 'active'],
     );
     const [category] = await q<{ id: string }>(
@@ -461,6 +466,26 @@ describeWithDb('RefundsService against Postgres', () => {
     ).rejects.toMatchObject({
       response: { reason: 'REFUND_EXCEEDS_REFUNDABLE' },
     });
+  });
+
+  it('ended event (phases): refunds and cancellations of existing orders still work', async () => {
+    const w = await world({ ended: true });
+    const o = await order(w);
+    const outcome = await service.createRefund(w.actor, o.orderId, {
+      mode: 'items',
+      items: [{ orderItemId: o.pilsItemId, quantity: 1 }],
+      reasonCode: 'quality',
+    });
+    expect(Number(outcome.refunds[0].amount)).toBeLessThan(0);
+    await service.createRefund(w.actor, o.orderId, {
+      mode: 'full',
+      reasonCode: 'other',
+    });
+    const [row] = await q<{ refunded_amount: string }>(
+      `SELECT refunded_amount FROM orders WHERE id = $1`,
+      [o.orderId],
+    );
+    expect(Number(row.refunded_amount)).toBeGreaterThan(0);
   });
 
   it('free amount refund and then the rest: fully refunded, payment marked refunded', async () => {

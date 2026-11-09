@@ -88,6 +88,12 @@ services:
       # Tageswechsel der Abrechnung (Stunde, Ortszeit): 6 = Tag von 6 bis 6 Uhr
       BUSINESS_DAY_START_HOUR: ${BUSINESS_DAY_START_HOUR:-6}
       TEST_EVENT_MAX_ORDERS: ${TEST_EVENT_MAX_ORDERS:-25}
+      # Phasen: Vorlauf vor dem ersten / Kulanz nach dem letzten Geschaeftstag
+      EVENT_DATE_PHASES: ${EVENT_DATE_PHASES:-true}
+      EVENT_EARLY_START_HOURS: ${EVENT_EARLY_START_HOURS:-12}
+      EVENT_EARLY_START_MAX_HOURS: ${EVENT_EARLY_START_MAX_HOURS:-24}
+      EVENT_GRACE_HOURS: ${EVENT_GRACE_HOURS:-6}
+      EVENT_PLANNED_TEST_MAX_ORDERS: ${EVENT_PLANNED_TEST_MAX_ORDERS:-200}
       OPENREGISTER_API_KEY: ${OPENREGISTER_API_KEY:-}
 
       # Benachrichtigung über Support-Nachrichten und Kontaktanfragen

@@ -474,6 +474,11 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `UPLOAD_DIR` | Upload-Verzeichnis — muss dem Container-Nutzer (uid 1001) gehören, siehe „Uploads“ | ./uploads |
 | `EVENT_PRICE_EUR` | Preis pro abgerechnetem Veranstaltungstag | 25 |
 | `BUSINESS_DAY_START_HOUR` | Tageswechsel der Abrechnung (Stunde 1–23, Ortszeit der Organisation). Ein Veranstaltungstag läuft von 6 bis 6 Uhr; ein Ende bis einschließlich 6:00 zählt zum Vortag (Sa 20 Uhr – So 2 Uhr = 1 Tag). Bereits bezahlte Veranstaltungen behalten ihre Tage. | 6 |
+| `EVENT_DATE_PHASES` | Phasen freigeschalteter Veranstaltungen (Geplant – Aktiv – Beendet). `false`: nur der Status zählt, wie vor 2026-11 | true |
+| `EVENT_EARLY_START_HOURS` | Echte Verkäufe beginnen so viele Stunden vor dem ersten Geschäftstag (Fest am 16. → ab 15. um 18 Uhr). Mit Cloud-TSE nie im Vormonat (dann ab 0 Uhr am 1.) | 12 |
+| `EVENT_EARLY_START_MAX_HOURS` | Höchster Vorlauf, den eine Veranstaltung selbst einstellen kann (`settings.sales.earlyStartHours`) | 24 |
+| `EVENT_GRACE_HOURS` | Kulanz nach dem Ende des letzten Geschäftstags, danach keine neuen Bestellungen (Kassieren, Erstatten, Tische schließen gehen weiter); höchstens 13 | 6 |
+| `EVENT_PLANNED_TEST_MAX_ORDERS` | Testbestellungen im Zustand „Geplant“ (vor dem Verkaufsfenster); eigene Installation unbegrenzt | 200 |
 | `TSE_EVENT_SURCHARGE_EUR` | Cloud-TSE-Zuschlag je Veranstaltung (nicht je Tag) für Freischaltungen in Deutschland mit Cloud-TSE. 0 = derzeit inklusive (keine eigene Position); größer 0: Position „Cloud-TSE“ in Checkout, Rechnung und Preisvorschau, wird bei kostenloser Stornierung mit erstattet | 0 |
 | `STRIPE_INVOICE_DAYS_UNTIL_DUE` | Zahlungsziel der Stripe-Rechnung beim Kauf auf Rechnung in Tagen (je Organisation überschreibbar) | 14 |
 | `DATABASE_MIGRATIONS_RUN` | Migrationen beim Start ausführen (eine Instanz) | false (Vorlage `docker-compose.prod.yml`: true) |

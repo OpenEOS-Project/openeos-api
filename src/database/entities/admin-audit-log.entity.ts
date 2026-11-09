@@ -40,6 +40,11 @@ export enum AdminAction {
   EVENT_INVOICE_MARKED_PAID = 'event_invoice_marked_paid',
   /** Support hat ohne vollstaendige Pflichtangaben erlassen (mit Grund). */
   EVENT_MASTER_DATA_OVERRIDE = 'event_master_data_override',
+  /**
+   * Support hat Beginn/Ende einer Veranstaltung nach Beginn des
+   * Verkaufsfensters verschoben (mit Grund), Phasen 2026-11-08.
+   */
+  EVENT_DATES_OVERRIDE = 'event_dates_override',
   // Assistent-Funktionen (ki-plan.md Abschnitt 6)
   ASSISTANT_ENABLED = 'assistant_enabled',
   ASSISTANT_DISABLED = 'assistant_disabled',

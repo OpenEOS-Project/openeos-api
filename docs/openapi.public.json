@@ -1982,7 +1982,11 @@
                         "orderingMode": "immediate",
                         "enableOnlineOrdering": false,
                         "enableTableService": true,
-                        "enableTakeaway": true
+                        "enableTakeaway": true,
+                        "sales": {
+                          "earlyStartHours": 12,
+                          "presale": false
+                        }
                       },
                       "billingStatus": "paid",
                       "paidAt": "2026-06-01T09:12:44.000Z",
@@ -1994,8 +1998,23 @@
                       "invoiceHostedUrl": null,
                       "invoicePdfUrl": null,
                       "unlockedStartDate": "2026-07-10T00:00:00.000Z",
+                      "salesStartedAt": "2026-07-09T16:00:00.000Z",
                       "createdAt": "2026-05-20T18:30:12.000Z",
-                      "updatedAt": "2026-07-10T15:58:03.000Z"
+                      "updatedAt": "2026-07-10T15:58:03.000Z",
+                      "phase": "active",
+                      "realSalesFrom": "2026-07-09T16:00:00.000Z",
+                      "realSalesUntil": "2026-07-13T10:00:00.000Z",
+                      "presaleEnabled": false,
+                      "phaseDetails": {
+                        "datePhases": true,
+                        "businessDaysFrom": "2026-07-10T04:00:00.000Z",
+                        "businessDaysUntil": "2026-07-13T04:00:00.000Z",
+                        "earlyStartHours": 12,
+                        "graceHours": 6,
+                        "earlyStartLimitedByMonth": false,
+                        "presaleActive": false,
+                        "datesLocked": true
+                      }
                     },
                     {
                       "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
@@ -2020,8 +2039,23 @@
                       "invoiceHostedUrl": null,
                       "invoicePdfUrl": null,
                       "unlockedStartDate": "2025-12-06T00:00:00.000Z",
+                      "salesStartedAt": "2026-07-09T16:00:00.000Z",
                       "createdAt": "2025-10-28T19:02:40.000Z",
-                      "updatedAt": "2025-12-07T21:10:00.000Z"
+                      "updatedAt": "2025-12-07T21:10:00.000Z",
+                      "phase": "inactive",
+                      "realSalesFrom": "2026-07-09T16:00:00.000Z",
+                      "realSalesUntil": "2026-07-13T10:00:00.000Z",
+                      "presaleEnabled": false,
+                      "phaseDetails": {
+                        "datePhases": true,
+                        "businessDaysFrom": "2026-07-10T04:00:00.000Z",
+                        "businessDaysUntil": "2026-07-13T04:00:00.000Z",
+                        "earlyStartHours": 12,
+                        "graceHours": 6,
+                        "earlyStartLimitedByMonth": false,
+                        "presaleActive": false,
+                        "datesLocked": true
+                      }
                     }
                   ],
                   "meta": {
@@ -2134,7 +2168,7 @@
     },
     "/api/organizations/{organizationId}/events/{eventId}": {
       "get": {
-        "description": "Eine Veranstaltung mit Einstellungen und Abrechnungsstand. Scope `read`.",
+        "description": "Eine Veranstaltung mit Einstellungen und Abrechnungsstand. Dazu die abgeleitete Phase: `phase` (`inactive`, `test`, `planned` = freigeschaltet, vor dem Verkaufsfenster – Kasse bucht Testbestellungen –, `active`, `ended` = keine neuen Bestellungen), `realSalesFrom`/`realSalesUntil` (Verkaufsfenster samt Vorlauf und Kulanz), `presaleEnabled` und `phaseDetails`. Scope `read`.",
         "operationId": "getEvent",
         "parameters": [
           {
@@ -2178,7 +2212,7 @@
         "x-api-token-scope": "read"
       },
       "patch": {
-        "description": "Ändert Name, Beschreibung, Zeitraum oder Einstellungen. Scope `events:write`; der Status (aktiv, Test) lässt sich hier nicht setzen.",
+        "description": "Ändert Name, Beschreibung, Zeitraum oder Einstellungen. Scope `events:write`; der Status (aktiv, Test) lässt sich hier nicht setzen. Freigeschaltete Veranstaltungen lassen sich nur verschieben, solange sie „Geplant“ sind (`phase: planned`); danach ist der Beginn fest und das Ende kann nur noch vorgezogen werden (400 `EVENT_DATES_LOCKED`). `settings.sales`: `earlyStartHours` (Vorlauf vor dem ersten Geschäftstag, 0 bis `EVENT_EARLY_START_MAX_HOURS`, Standard `EVENT_EARLY_START_HOURS`) und `presale` (Vorverkauf im Shop schon vor dem Verkaufsfenster).",
         "operationId": "updateEvent",
         "parameters": [
           {

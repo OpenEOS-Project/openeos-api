@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Logger,
   Inject,
+  Optional,
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -44,6 +45,12 @@ import {
   normalizeBusinessDayStartHour,
 } from '../../common/utils/event-schedule.util';
 import { TestOrderCleanupService } from './test-order-cleanup.service';
+import {
+  EventPhaseFields,
+  EventPhaseService,
+  toPhaseFields,
+} from './event-phase.service';
+import { EventPhaseInfo } from '../../common/utils/event-phase.util';
 
 @Injectable()
 export class EventsService {
@@ -71,14 +78,31 @@ export class EventsService {
     private readonly deployment: DeploymentService,
     private readonly testOrderCleanupService: TestOrderCleanupService,
     private readonly configService: ConfigService,
+    // Optional mit Rueckfall fuer von Hand gebaute Tests (Standardwerte).
+    @Optional()
+    private readonly eventPhaseService?: EventPhaseService,
   ) {}
 
+  private get eventPhase(): EventPhaseService {
+    return (
+      this.eventPhaseService ??
+      EventPhaseService.standalone(
+        this.organizationRepository,
+        this.orderRepository,
+        this.configService,
+        this.deployment,
+      )
+    );
+  }
+
   private emitStatusChanged(event: Event): void {
+    const phase = (event as Partial<EventPhaseFields>).phase;
     this.gatewayService.notifyEventStatusChanged(event.organizationId, {
       eventId: event.id,
       organizationId: event.organizationId,
       status: event.status,
       name: event.name,
+      ...(phase ? { phase } : {}),
     });
   }
 
@@ -241,6 +265,60 @@ export class EventsService {
     await this.checkPermission(organizationId, user.id, 'events');
 
     const event = await this.findOne(organizationId, eventId, user);
+    return this.applyUpdate(event, updateDto, { override: false });
+  }
+
+  /**
+   * Support verschiebt eine Veranstaltung, deren Verkaufsfenster schon
+   * begonnen hat (`POST /admin/events/:id/dates`). Die bezahlte Dauer gilt
+   * weiter; protokolliert wird im Admin-Controller.
+   */
+  async moveDatesAsSupport(
+    eventId: string,
+    dates: { startDate?: string; endDate?: string },
+  ): Promise<{
+    event: Event;
+    before: { startDate: Date | null; endDate: Date | null };
+  }> {
+    const event = await this.eventRepository.findOne({
+      where: { id: eventId },
+    });
+    if (!event) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.EVENT_NOT_FOUND,
+        message: 'Event nicht gefunden',
+      });
+    }
+    const before = { startDate: event.startDate, endDate: event.endDate };
+    await this.applyUpdate(
+      event,
+      { startDate: dates.startDate, endDate: dates.endDate },
+      { override: true },
+    );
+    return { event, before };
+  }
+
+  /**
+   * Verschieben nach den Phasen (Entscheidung 2026-11-08):
+   * - „Geplant“ (bzw. vor dem Kauf, eigene Installation): frei, mit
+   *   Abrechnung innerhalb der bezahlten Tage.
+   * - Ab Beginn des Verkaufsfensters: Beginn fest. Das Ende darf nur noch
+   *   frueher werden (z. B. ein Tag faellt aus) und nicht vor „jetzt“
+   *   enden; nach dem Ende ist nichts mehr zu verschieben.
+   * - Support mit Grund (`override`) uebersteuert die Sperre.
+   * Der eigene Vorlauf (`settings.sales.earlyStartHours`) verschiebt den
+   * Beginn des Fensters und ist damit ebenso gesperrt.
+   */
+  private async applyUpdate(
+    event: Event,
+    updateDto: UpdateEventDto,
+    options: { override: boolean },
+  ): Promise<Event> {
+    const organizationId = event.organizationId;
+    const organization = await this.eventPhase.loadOrganization(organizationId);
+    const now = new Date();
+    const before = this.eventPhase.resolveWith(event, organization, now);
 
     const datesChanged =
       updateDto.startDate !== undefined || updateDto.endDate !== undefined;
@@ -254,6 +332,16 @@ export class EventsService {
           ? new Date(updateDto.startDate)
           : event.endDate;
       this.assertChronological(nextStart, nextEnd);
+      if (before.datesLocked && !options.override) {
+        this.assertLockedDateChange(
+          event,
+          before,
+          nextStart,
+          nextEnd,
+          now,
+          organization,
+        );
+      }
       await this.assertPaidDurationNotExtended(event, nextStart, nextEnd);
       event.startDate = nextStart;
       event.endDate = nextEnd;
@@ -264,14 +352,33 @@ export class EventsService {
       event.description = updateDto.description;
     let settingsChanged = false;
     if (updateDto.settings) {
-      const next = await this.withTablesSettings(
+      const withTables = await this.withTablesSettings(
         organizationId,
         event.settings ?? {},
         updateDto.settings as EventSettings,
       );
+      const next = this.withSalesSettings(
+        event.settings ?? {},
+        withTables,
+        updateDto.settings as EventSettings,
+      );
+      const earlyStartChanged =
+        (next.sales?.earlyStartHours ?? null) !==
+        (event.settings?.sales?.earlyStartHours ?? null);
+      if (earlyStartChanged && before.datesLocked && !options.override) {
+        throw this.datesLockedError(before);
+      }
       settingsChanged =
         JSON.stringify(next) !== JSON.stringify(event.settings ?? {});
       event.settings = next;
+    }
+
+    // Verkaufsfenster liegt wieder in der Zukunft (Support hat nach hinten
+    // verschoben) — auch bei einer gerade ausgeschalteten Veranstaltung:
+    // beim naechsten Beginn wieder aufraeumen.
+    const after = this.eventPhase.resolveWith(event, organization, now);
+    if (event.salesStartedAt && salesWindowAhead(after, now)) {
+      event.salesStartedAt = null;
     }
 
     await this.eventRepository.save(event);
@@ -286,8 +393,121 @@ export class EventsService {
         'event-settings',
       );
     }
+    if (after.phase !== before.phase) {
+      this.emitStatusChanged(
+        Object.assign(event, toPhaseFields(after)) as Event,
+      );
+    }
 
     return event;
+  }
+
+  private datesLockedError(info: EventPhaseInfo): BadRequestException {
+    return new BadRequestException({
+      code: ErrorCodes.VALIDATION_ERROR,
+      reason: ErrorReasons.EVENT_DATES_LOCKED,
+      message:
+        'Der Verkauf dieser Veranstaltung hat begonnen – Beginn und Vorlauf lassen sich nicht mehr verschieben. Das Ende kannst du nur noch vorziehen.',
+      params: {
+        phase: info.phase,
+        realSalesFrom: info.realSalesFrom,
+        realSalesUntil: info.realSalesUntil,
+      },
+    });
+  }
+
+  private assertLockedDateChange(
+    event: Event,
+    info: EventPhaseInfo,
+    nextStart: Date | null,
+    nextEnd: Date | null,
+    now: Date,
+    organization: Awaited<ReturnType<EventPhaseService['loadOrganization']>>,
+  ): void {
+    const time = (d: Date | null) => (d ? new Date(d).getTime() : null);
+    const startChanged = time(nextStart) !== time(event.startDate);
+    const currentEnd = time(event.endDate ?? event.startDate);
+    const endChanged = time(nextEnd) !== currentEnd;
+    if (!startChanged && !endChanged) return;
+
+    const ended =
+      !!info.realSalesUntil &&
+      now.getTime() >= new Date(info.realSalesUntil).getTime();
+    if (startChanged || ended) throw this.datesLockedError(info);
+
+    // Nur vorziehen — und nicht in die Vergangenheit.
+    const nextEndTime = time(nextEnd);
+    if (
+      nextEndTime === null ||
+      currentEnd === null ||
+      nextEndTime > currentEnd
+    ) {
+      throw this.datesLockedError(info);
+    }
+    const shortened = this.eventPhase.resolveWith(
+      { ...event, endDate: nextEnd } as Event,
+      organization,
+      now,
+    );
+    const until = shortened.realSalesUntil
+      ? new Date(shortened.realSalesUntil).getTime()
+      : null;
+    if (until !== null && until <= now.getTime()) {
+      throw this.datesLockedError(info);
+    }
+  }
+
+  /**
+   * `settings.sales` pruefen und mit dem Bestand zusammenfuehren (ein Patch
+   * mit nur `presale` laesst den Vorlauf stehen).
+   */
+  private withSalesSettings(
+    current: EventSettings,
+    next: EventSettings,
+    patch: EventSettings,
+  ): EventSettings {
+    if (!('sales' in patch)) return next;
+    const raw = patch.sales as unknown;
+    if (raw === null || raw === undefined) {
+      const rest = { ...next };
+      delete rest.sales;
+      return rest;
+    }
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+      throw this.earlyStartInvalid();
+    }
+    const value = raw as { earlyStartHours?: unknown; presale?: unknown };
+    const sales: NonNullable<EventSettings['sales']> = {
+      ...(current.sales ?? {}),
+    };
+    if ('earlyStartHours' in value) {
+      const hours = value.earlyStartHours;
+      if (hours === null || hours === undefined || hours === '') {
+        delete sales.earlyStartHours;
+      } else {
+        const n = Number(hours);
+        const max = this.eventPhase.settings.maxEarlyStartHours;
+        if (!Number.isFinite(n) || n < 0 || n > max) {
+          throw this.earlyStartInvalid();
+        }
+        sales.earlyStartHours = Math.round(n * 4) / 4;
+      }
+    }
+    if ('presale' in value) {
+      if (typeof value.presale !== 'boolean') throw this.earlyStartInvalid();
+      sales.presale = value.presale;
+    }
+    return { ...next, sales };
+  }
+
+  private earlyStartInvalid(): BadRequestException {
+    const max = this.eventPhase.settings.maxEarlyStartHours;
+    return new BadRequestException({
+      code: ErrorCodes.VALIDATION_ERROR,
+      reason: ErrorReasons.EVENT_EARLY_START_INVALID,
+      message: `Der Vorlauf muss zwischen 0 und ${max} Stunden liegen, Vorverkauf an oder aus`,
+      params: { max },
+    });
   }
 
   async remove(
@@ -375,6 +595,20 @@ export class EventsService {
         );
 
         event.status = EventStatus.ACTIVE;
+        // Liegt das Verkaufsfenster noch vor uns, raeumt der Uebergangslauf
+        // zu seinem Beginn (wieder) auf.
+        if (
+          event.salesStartedAt &&
+          salesWindowAhead(
+            this.eventPhase.resolveWith(
+              event,
+              await this.eventPhase.loadOrganization(organizationId, manager),
+            ),
+            new Date(),
+          )
+        ) {
+          event.salesStartedAt = null;
+        }
         await repository.save(event);
 
         return { deactivatedSiblings: siblings, purge: purgeResult };
@@ -812,4 +1046,12 @@ export class EventsService {
 
     return membership;
   }
+}
+
+/** Beginnt das Verkaufsfenster erst noch? */
+function salesWindowAhead(info: EventPhaseInfo, now: Date): boolean {
+  return (
+    !!info.realSalesFrom &&
+    now.getTime() < new Date(info.realSalesFrom).getTime()
+  );
 }

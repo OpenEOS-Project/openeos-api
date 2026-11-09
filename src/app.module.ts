@@ -68,6 +68,7 @@ import { McpModule } from './modules/mcp';
 import { TseModule } from './modules/tse';
 import { DsfinvkModule } from './modules/dsfinvk';
 import { RetentionModule } from './modules/retention';
+import { EventPhaseModule } from './modules/events/event-phase.module';
 import {
   OrganizationClosureGuard,
   OrganizationClosureModule,
@@ -170,6 +171,7 @@ import {
     ScheduleModule.forRoot(),
 
     // Feature Modules
+    EventPhaseModule,
     AuthModule,
     UsersModule,
     OrganizationsModule,

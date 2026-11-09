@@ -424,3 +424,97 @@ export function shiftCalendarDaysInZone(
     timeZone,
   );
 }
+
+/**
+ * Geschaeftstage einer Veranstaltung als Zeitraum: vom Beginn ihres ersten
+ * bis zum Ende ihres letzten Geschaeftstags (Tageswechsel `dayStartHour`,
+ * Standard 6 Uhr, in der Zeitzone der Organisation).
+ *
+ * Zwei Lesarten, je nachdem, was gespeichert ist:
+ *
+ * - **Reine Daten** (Beginn und Ende liegen beide genau auf Mitternacht —
+ *   so schickt das Formular „16.11. bis 17.11.“): die Kalendertage sind die
+ *   Veranstaltungstage. Der erste Geschaeftstag beginnt am 16. um 6 Uhr, der
+ *   letzte endet am 18. um 6 Uhr.
+ * - **Mit Uhrzeit** (mindestens eine Seite nicht auf Mitternacht): wie bei
+ *   `countBillableDays` — der Beginn gehoert zu dem Geschaeftstag, in dem er
+ *   liegt (3 Uhr zaehlt zum Vortag), das Ende ist exklusiv.
+ *
+ * Die Anzahl der Tage ist in beiden Lesarten dieselbe wie bei
+ * `countBillableDays`; bezahlt und genutzt wird also immer gleich viel.
+ * Nur die Lage unterscheidet sich: reine Daten rutschen nicht auf den
+ * Vortag, sonst begaenne ein Fest am 16. schon am 15. um 6 Uhr.
+ */
+export function eventBusinessSpan(
+  startDate: Date | string | null | undefined,
+  endDate: Date | string | null | undefined,
+  timeZone: string,
+  dayStartHour: number = DEFAULT_BUSINESS_DAY_START_HOUR,
+): { from: Date; to: Date; days: number } | null {
+  const range = readRange(startDate, endDate);
+  if (!range) return null;
+  const hour = normalizeBusinessDayStartHour(dayStartHour);
+
+  const isMidnight = (date: Date): boolean => {
+    const wall = toWallClock(date, timeZone);
+    return (
+      wall.hour === 0 &&
+      wall.minute === 0 &&
+      fromWallClock(wall, timeZone).getTime() === date.getTime()
+    );
+  };
+
+  let firstDay: number;
+  let lastDay: number;
+  if (isMidnight(range.start) && isMidnight(range.end)) {
+    firstDay = dayNumber(toWallClock(range.start, timeZone));
+    lastDay = dayNumber(toWallClock(range.end, timeZone));
+  } else {
+    firstDay = businessDayNumber(range.start, timeZone, hour);
+    lastDay =
+      range.end.getTime() <= range.start.getTime()
+        ? firstDay
+        : businessDayNumber(new Date(range.end.getTime() - 1), timeZone, hour);
+  }
+  if (lastDay < firstDay) lastDay = firstDay;
+
+  return {
+    from: fromWallClock(dayToWallClock(firstDay, hour, 0), timeZone),
+    to: fromWallClock(dayToWallClock(lastDay + 1, hour, 0), timeZone),
+    days: lastDay - firstDay + 1,
+  };
+}
+
+/**
+ * Zeitpunkt um `hours` Stunden Wanduhrzeit verschieben (negativ: frueher).
+ * „12 Stunden vor 6 Uhr“ ist so immer 18 Uhr am Vortag, auch in der Nacht
+ * der Zeitumstellung, in der zwischen beiden 11 bzw. 13 echte Stunden
+ * liegen.
+ */
+export function shiftWallClockHours(
+  date: Date,
+  hours: number,
+  timeZone: string,
+): Date {
+  const wall = toWallClock(date, timeZone);
+  const totalMinutes = wall.hour * 60 + wall.minute + Math.round(hours * 60);
+  const dayOffset = Math.floor(totalMinutes / (24 * 60));
+  const minutesOfDay = totalMinutes - dayOffset * 24 * 60;
+  return fromWallClock(
+    dayToWallClock(
+      dayNumber(wall) + dayOffset,
+      Math.floor(minutesOfDay / 60),
+      minutesOfDay % 60,
+    ),
+    timeZone,
+  );
+}
+
+/** Beginn (00:00 Ortszeit) des Kalendermonats, in dem `date` liegt. */
+export function startOfMonthInZone(date: Date, timeZone: string): Date {
+  const wall = toWallClock(date, timeZone);
+  return fromWallClock(
+    { year: wall.year, month: wall.month, day: 1, hour: 0, minute: 0 },
+    timeZone,
+  );
+}

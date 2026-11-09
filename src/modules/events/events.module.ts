@@ -9,6 +9,7 @@ import { EventsService } from './events.service';
 import { EventBillingService } from './event-billing.service';
 import { EventUnlockCancellationService } from './event-unlock-cancellation.service';
 import { TestOrderCleanupService } from './test-order-cleanup.service';
+import { EventPhaseTransitionService } from './event-phase-transition.service';
 import { BillingAuditService } from './billing-audit.service';
 import { EventCheckoutLifecycleService } from './event-checkout-lifecycle.service';
 import { StripeDisputeService } from './stripe-dispute.service';
@@ -73,6 +74,7 @@ import {
     EventBillingService,
     EventUnlockCancellationService,
     TestOrderCleanupService,
+    EventPhaseTransitionService,
     BillingAuditService,
     EventCheckoutLifecycleService,
     StripeDisputeService,

@@ -10,6 +10,7 @@ import { In, Repository } from 'typeorm';
 import { PfandType } from '../../database/entities/pfand-type.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
 import { Organization } from '../../database/entities/organization.entity';
+import { EventPhaseService } from '../events/event-phase.service';
 import {
   assertCashAllowed,
   OPERATING_MODE_SELECT,
@@ -44,6 +45,8 @@ export class PfandReturnsService {
     private readonly gatewayService: GatewayService,
     @Optional()
     private readonly tseSigning?: TseSigningService,
+    @Optional()
+    private readonly eventPhaseService?: EventPhaseService,
   ) {}
 
   /**
@@ -104,19 +107,25 @@ export class PfandReturnsService {
       });
     }
 
-    // Im Testmodus gebucht: wird beim Aktivieren mit den Testbestellungen
-    // geloescht.
+    // Im Testmodus bzw. im Zustand „Geplant“ gebucht: wird beim Aktivieren
+    // bzw. zu Beginn des Verkaufsfensters mit den Testbestellungen geloescht.
     const event = context.eventId
       ? await this.pfandReturnRepository.manager.findOne(Event, {
           where: { id: context.eventId },
-          select: { id: true, status: true },
         })
       : null;
+    const phase =
+      this.eventPhaseService ??
+      EventPhaseService.standalone(
+        this.pfandReturnRepository.manager?.getRepository?.(Organization),
+      );
+    const isTest =
+      event?.status === EventStatus.TEST || (await phase.isTestModeNow(event));
 
     const pfandReturn = this.pfandReturnRepository.create({
       organizationId,
       eventId: context.eventId ?? null,
-      isTest: event?.status === EventStatus.TEST,
+      isTest,
       deviceId: context.deviceId ?? null,
       createdByUserId: context.userId ?? null,
       totalAmount,

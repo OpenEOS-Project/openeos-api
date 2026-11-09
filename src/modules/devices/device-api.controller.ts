@@ -86,7 +86,6 @@ import { PfandTypesService } from '../pfand-types/pfand-types.service';
 import { PfandReturnsService } from '../pfand-types/pfand-returns.service';
 import { CreatePfandReturnDto } from '../pfand-types/dto';
 import { isPfandChargedForFulfillment } from '../../common/utils/pfand-policy';
-import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 import {
   assertSumUpAllowedInMode,
   currentEventStatus,
@@ -97,6 +96,7 @@ import {
   type SettledBatch,
 } from '../payments/payments-batch.service';
 import { saveOrderWithNumbers } from '../orders/order-numbering';
+import { EventPhaseService } from '../events/event-phase.service';
 import { closedWithoutPaymentError } from '../orders/close-without-payment';
 import {
   createDeviceTableLookup,
@@ -192,7 +192,21 @@ export class DeviceApiController {
     // Optional mit Rueckfall: ohne TSE-Modul (Tests) bleibt `tse` null.
     @Optional()
     private readonly organizationView: OrganizationViewService = new OrganizationViewService(),
+    // Optional mit Rueckfall fuer von Hand gebaute Tests (Standardwerte).
+    @Optional()
+    private readonly eventPhaseService?: EventPhaseService,
   ) {}
+
+  private get eventPhase(): EventPhaseService {
+    return (
+      this.eventPhaseService ??
+      EventPhaseService.standalone(
+        this.organizationRepository,
+        this.orderRepository,
+        this.configService,
+      )
+    );
+  }
 
   @Get('organization')
   @ApiOperation({ summary: 'Get organization info and settings for device' })
@@ -423,7 +437,8 @@ export class DeviceApiController {
       order: { status: 'ASC' },
     });
 
-    return { data: events };
+    // Phase (Testbetrieb bis …, beendet) fuer den Hinweis in der Kasse.
+    return { data: await this.eventPhase.decorateMany(events) };
   }
 
   @Get('events/:eventId')
@@ -444,7 +459,7 @@ export class DeviceApiController {
       return { data: null };
     }
 
-    return { data: event };
+    return { data: await this.eventPhase.decorate(event) };
   }
 
   @Get('events/:eventId/categories')
@@ -618,6 +633,7 @@ export class DeviceApiController {
 
     // Validate event
     let event: Event | null = null;
+    let plannedTest = false;
     if (createDto.eventId) {
       event = await this.eventRepository.findOne({
         where: { id: createDto.eventId, organizationId },
@@ -631,27 +647,10 @@ export class DeviceApiController {
         });
       }
 
-      if (
-        event.status !== EventStatus.ACTIVE &&
-        event.status !== EventStatus.TEST
-      ) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          reason: ErrorReasons.EVENT_NOT_ACTIVE,
-          message: 'Event ist nicht aktiv',
-        });
-      }
-
-      if (event.status === EventStatus.TEST) {
-        const existingOrderCount = await this.orderRepository.count({
-          where: { eventId: event.id },
-        });
-        assertTestEventOrderLimitNotReached(
-          event.status,
-          existingOrderCount,
-          this.configService.get<number>('billing.testEventMaxOrders', 25),
-        );
-      }
+      // Phase der Veranstaltung (inaktiv/beendet: keine neue Bestellung;
+      // Testmodus und „Geplant“: Testbestellung mit Deckel).
+      plannedTest = (await this.eventPhase.prepareOrder(event, 'pos'))
+        .plannedTest;
     }
 
     // „Nur Bons“: Bestellungen ja, aber ohne Zahlung, Trinkgeld und
@@ -663,7 +662,10 @@ export class DeviceApiController {
     // Testmodus: keine echte SumUp-Kartenzahlung; Bar und manuelle Karte
     // gehen weiter.
     if (createDto.payment) {
-      assertSumUpAllowedInMode(event?.status, createDto.payment.paymentMethod);
+      assertSumUpAllowedInMode(
+        plannedTest ? EventStatus.TEST : event?.status,
+        createDto.payment.paymentMethod,
+      );
       // Bargeldloser Modus: gar nicht erst eine Bestellung anlegen, die
       // settle() danach wieder zurueckrollen muesste.
       await this.assertPaymentMethodAllowed(
@@ -704,7 +706,11 @@ export class DeviceApiController {
           // insert (savepoint inside this transaction).
           const order = await saveOrderWithNumbers(
             manager.getRepository(Order),
-            { organizationId, eventId: createDto.eventId || null },
+            {
+              organizationId,
+              eventId: createDto.eventId || null,
+              plannedTest,
+            },
             {
               tableNumber: table.tableNumber,
               tableId: table.tableId,
@@ -2112,7 +2118,10 @@ export class DeviceApiController {
     assertPaymentsAllowed(organization);
   }
 
-  /** Testmodus der Organisation: kein SumUp-Checkout am Lesegeraet. */
+  /**
+   * Testmodus der Organisation (auch „Geplant“): kein SumUp-Checkout am
+   * Lesegeraet.
+   */
   private async assertSumUpAllowedForOrganization(
     organizationId: string,
   ): Promise<void> {
@@ -2121,17 +2130,26 @@ export class DeviceApiController {
         organizationId,
         status: In([EventStatus.ACTIVE, EventStatus.TEST]),
       },
-      select: { id: true, status: true },
     });
-    assertSumUpAllowedInMode(currentEventStatus(events));
+    const effective = await Promise.all(
+      events.map(async (event) => ({
+        status: (await this.eventPhase.isTestModeNow(event))
+          ? EventStatus.TEST
+          : event.status,
+      })),
+    );
+    assertSumUpAllowedInMode(currentEventStatus(effective));
   }
 
   /** Testbestellung: keine SumUp-Zahlung buchen (Bar/Karte manuell gehen). */
   private async assertSumUpAllowedForOrder(
-    order: Pick<Order, 'eventId'>,
+    order: Pick<Order, 'eventId'> & { isTest?: boolean },
     method: PaymentMethod,
   ): Promise<void> {
     if (method !== PaymentMethod.SUMUP_TERMINAL || !order.eventId) return;
+    if (order.isTest === true) {
+      assertSumUpAllowedInMode(EventStatus.TEST, method);
+    }
     const event = await this.eventRepository.findOne({
       where: { id: order.eventId },
       select: { id: true, status: true },

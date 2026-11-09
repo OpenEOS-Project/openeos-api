@@ -221,6 +221,8 @@ export interface EventStatusChangedEvent {
   organizationId: string;
   status: 'active' | 'inactive' | 'test';
   name: string;
+  /** Phase (inactive | test | planned | active | ended), falls bekannt. */
+  phase?: 'inactive' | 'test' | 'planned' | 'active' | 'ended';
 }
 
 export interface KitchenOrderCancelledEvent {

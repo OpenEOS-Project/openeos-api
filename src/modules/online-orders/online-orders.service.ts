@@ -5,6 +5,7 @@ import {
   BadRequestException,
   Logger,
   Inject,
+  Optional,
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -37,6 +38,7 @@ import {
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { EventPhaseService } from '../events/event-phase.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { findTableIdByLabel } from '../tables/table-lookup';
 import {
@@ -82,7 +84,21 @@ export class OnlineOrdersService {
     private readonly orderPrintService: OrderPrintService,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
+    // Optional mit Rueckfall fuer von Hand gebaute Tests (Standardwerte).
+    @Optional()
+    private readonly eventPhaseService?: EventPhaseService,
   ) {}
+
+  private get eventPhase(): EventPhaseService {
+    return (
+      this.eventPhaseService ??
+      EventPhaseService.standalone(
+        this.organizationRepository,
+        this.orderRepository,
+        this.configService,
+      )
+    );
+  }
 
   async startSession(
     startDto: StartSessionDto,
@@ -357,6 +373,32 @@ export class OnlineOrdersService {
       });
     }
 
+    // Phase der Veranstaltung: inaktiv oder beendet keine Bestellung, vor
+    // dem Verkaufsfenster („Geplant“) und im Testmodus eine Testbestellung.
+    let plannedTest = false;
+    if (session.eventId) {
+      const event = await this.orderRepository.manager
+        .getRepository(Event)
+        .findOne({
+          where: {
+            id: session.eventId,
+            organizationId: session.organizationId,
+          },
+        });
+      if (!event) {
+        throw new NotFoundException({
+          code: ErrorCodes.NOT_FOUND,
+          reason: ErrorReasons.EVENT_NOT_FOUND,
+          message: 'Event nicht gefunden',
+        });
+      }
+      plannedTest = (
+        await this.eventPhase.prepareOrder(event, 'qr', {
+          organization: session.organization,
+        })
+      ).plannedTest;
+    }
+
     // Tisch best effort ueber die Bezeichnung zuordnen; ohne Treffer bleibt
     // es bei der Tischnummer.
     const tableId = await findTableIdByLabel(
@@ -368,7 +410,11 @@ export class OnlineOrdersService {
     // Create order (order number and daily number are allocated with it)
     const order = await saveOrderWithNumbers(
       this.orderRepository,
-      { organizationId: session.organizationId, eventId: session.eventId },
+      {
+        organizationId: session.organizationId,
+        eventId: session.eventId,
+        plannedTest,
+      },
       {
         tableNumber: session.tableNumber,
         tableId,
