@@ -745,7 +745,8 @@ describeWithDb('Webhooks against Postgres', () => {
       await delivery.deliverDue(later());
       let view = await service.get(o, ep.id);
       expect(view.active).toBe(true);
-      expect(view.consecutiveFailures).toBe(4);
+      // Je Takt hoechstens drei Zustellungen je Endpunkt.
+      expect(view.consecutiveFailures).toBe(3);
       // Die Serie laeuft schon zwei Stunden.
       await sql(
         `UPDATE webhook_endpoints SET failing_since = now() - interval '2 hours' WHERE id = $1`,
@@ -769,7 +770,7 @@ describeWithDb('Webhooks against Postgres', () => {
         disabledReason: 'too_many_failures',
       });
       expect(view.disabledAt).not.toBeNull();
-      expect(mails).toEqual([{ to: u.email, url: ep.url, failures: 5 }]);
+      expect(mails).toEqual([{ to: u.email, url: ep.url, failures: 4 }]);
       const audit = await one(
         `SELECT action, admin_user_id FROM admin_audit_logs WHERE resource_id = $1 AND action = 'webhook_auto_disabled'`,
         [ep.id],
@@ -854,6 +855,35 @@ describeWithDb('Webhooks against Postgres', () => {
       await service.sendTest(o, ep.id);
       await delivery.deliverDue(later());
       expect(sent).toHaveLength(1);
+    });
+
+    it('sends the events of one endpoint in order, at most three per round', async () => {
+      const o = await org();
+      const u = await admin(o);
+      const ev = await event(o);
+      await endpoint(o, u.id, {
+        eventTypes: ['order.created', 'order.paid', 'order.completed'],
+      });
+      const first = await order(o, ev);
+      await sql(
+        `UPDATE orders SET payment_status = 'paid', status = 'completed' WHERE id = $1`,
+        [first],
+      );
+      const second = await order(o, ev);
+      await dispatcher.dispatchBatch(later());
+      expect(await delivery.deliverDue(later())).toBe(3);
+      expect(await delivery.deliverDue(later())).toBe(1);
+      expect(
+        sent.map((r) => {
+          const body = JSON.parse(r.body);
+          return `${body.type} ${body.data.order.id === first ? 1 : body.data.order.id === second ? 2 : '?'}`;
+        }),
+      ).toEqual([
+        'order.created 1',
+        'order.paid 1',
+        'order.completed 1',
+        'order.created 2',
+      ]);
     });
 
     it('takes over deliveries whose instance died mid-attempt (lease)', async () => {

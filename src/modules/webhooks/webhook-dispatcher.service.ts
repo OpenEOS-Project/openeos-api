@@ -166,7 +166,9 @@ export class WebhookDispatcherService {
             payload: body(endpoint.includeGuestData),
             status: 'pending',
             attempts: 0,
-            nextAttemptAt: now,
+            // +1 ms je Zustellung: haelt die Reihenfolge der Ereignisse fest
+            // (je Endpunkt wird in dieser Reihenfolge gesendet).
+            nextAttemptAt: new Date(now.getTime() + created),
             manual: false,
           });
           created += 1;

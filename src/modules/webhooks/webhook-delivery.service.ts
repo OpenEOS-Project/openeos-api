@@ -38,6 +38,15 @@ export const WEBHOOK_SETTINGS_PATH = '/settings/webhooks';
 
 const MAX_ATTEMPT_LOG = 20;
 
+/** Zustellungen je Endpunkt und Takt (nacheinander gesendet). */
+const PER_ENDPOINT = 3;
+
+interface ClaimedRow {
+  id: string;
+  endpoint_id: string;
+  next_attempt_at: Date;
+}
+
 type Sender = typeof sendWebhookRequest;
 
 /**
@@ -115,51 +124,80 @@ export class WebhookDeliveryService
     await this.deliverDue(now);
   }
 
-  /** Faellige Zustellungen holen und senden; liefert die Zahl der Versuche. */
+  /**
+   * Faellige Zustellungen holen und senden; liefert die Zahl der Versuche.
+   *
+   * Je Endpunkt der Reihe nach (in der Reihenfolge der Ereignisse), die
+   * Endpunkte nebeneinander. Je Takt hoechstens `PER_ENDPOINT` je Endpunkt,
+   * damit ein langsamer Empfaenger die anderen nicht aufhaelt.
+   */
   async deliverDue(now: Date = new Date()): Promise<number> {
     const batch = this.config.concurrency * 2;
-    const lease = new Date(now.getTime() + this.config.timeoutMs + 60_000);
-    const claimed = await this.dataSource.query<{ id: string }[]>(
+    const lease = new Date(now.getTime() + this.config.timeoutMs * 4 + 60_000);
+    const claimed = await this.dataSource.query<
+      [ClaimedRow[], number] | ClaimedRow[]
+    >(
       `UPDATE webhook_deliveries
           SET status = 'delivering', locked_until = $2, updated_at = now()
         WHERE id IN (
           SELECT id FROM webhook_deliveries
-           WHERE (status = 'pending' AND next_attempt_at <= $1)
-              OR (status = 'delivering' AND locked_until < $1)
+           WHERE id IN (
+             SELECT id FROM (
+               SELECT id, row_number() OVER (
+                        PARTITION BY endpoint_id ORDER BY next_attempt_at, created_at) AS rn
+                 FROM webhook_deliveries
+                WHERE (status = 'pending' AND next_attempt_at <= $1)
+                   OR (status = 'delivering' AND locked_until < $1)
+             ) ranked
+             WHERE rn <= $4)
            ORDER BY next_attempt_at
            LIMIT $3
            FOR UPDATE SKIP LOCKED)
-      RETURNING id`,
-      [now, lease, batch],
+      RETURNING id, endpoint_id, next_attempt_at`,
+      [now, lease, batch, PER_ENDPOINT],
     );
-    const ids = (Array.isArray(claimed[0]) ? claimed[0] : claimed) as {
-      id: string;
-    }[];
-    if (ids.length === 0) return 0;
+    const rows = (
+      Array.isArray(claimed[0]) ? claimed[0] : claimed
+    ) as ClaimedRow[];
+    if (rows.length === 0) return 0;
 
-    const queue = ids.map((row) => row.id);
+    const byEndpoint = new Map<string, ClaimedRow[]>();
+    for (const row of [...rows].sort(
+      (a, b) =>
+        new Date(a.next_attempt_at).getTime() -
+        new Date(b.next_attempt_at).getTime(),
+    )) {
+      const list = byEndpoint.get(row.endpoint_id) ?? [];
+      list.push(row);
+      byEndpoint.set(row.endpoint_id, list);
+    }
+    const queues = [...byEndpoint.values()];
     const workers = Array.from(
-      { length: Math.min(this.config.concurrency, queue.length) },
+      { length: Math.min(this.config.concurrency, queues.length) },
       async () => {
-        for (let id = queue.shift(); id; id = queue.shift()) {
-          try {
-            await this.attempt(id);
-          } catch (error) {
-            this.logger.error(
-              `Webhook delivery ${id} failed internally: ${(error as Error).message}`,
-            );
-            await this.dataSource
-              .getRepository(WebhookDelivery)
-              .update(
-                { id, status: 'delivering' },
-                { status: 'failed', error: 'INTERNAL', lockedUntil: null },
-              );
-          }
+        for (let queue = queues.shift(); queue; queue = queues.shift()) {
+          for (const { id } of queue) await this.attemptSafely(id);
         }
       },
     );
     await Promise.all(workers);
-    return ids.length;
+    return rows.length;
+  }
+
+  private async attemptSafely(id: string): Promise<void> {
+    try {
+      await this.attempt(id);
+    } catch (error) {
+      this.logger.error(
+        `Webhook delivery ${id} failed internally: ${(error as Error).message}`,
+      );
+      await this.dataSource
+        .getRepository(WebhookDelivery)
+        .update(
+          { id, status: 'delivering' },
+          { status: 'failed', error: 'INTERNAL', lockedUntil: null },
+        );
+    }
   }
 
   maxAttemptsFor(delivery: Pick<WebhookDelivery, 'manual'>): number {
