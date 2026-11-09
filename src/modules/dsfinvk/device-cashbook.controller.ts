@@ -15,6 +15,9 @@ import type { Device } from '../../database/entities';
 import { requireOrganization } from '../devices/device-api.controller';
 import { CashbookService } from './cashbook.service';
 import { CreateCashbookEntryDto } from './dto/dsfinvk.dto';
+import { CurrentOperator, WithOperator } from '../waiters/waiter-session.guard';
+import type { Operator } from '../waiters/waiter-operator';
+import { assertOperatorMay } from '../waiters/waiter-sessions.service';
 
 /** Kassenbuch an der Kasse (Menüpunkt „Kassenbuch“). */
 @ApiTags('Device API')
@@ -49,14 +52,20 @@ export class DeviceCashbookController {
     description:
       'Anfangsbestand (Wechselgeld), Einlage, Entnahme/Abschöpfung (Geldtransit) oder Kassensturz (gezählter Bestand → Differenz Soll/Ist). Jede Bargeldbewegung ist ein eigener TSE-gesicherter Beleg (Kassenbeleg-V1, `tse` in der Antwort). Nur wenn Bargeld erlaubt ist.',
   })
+  @WithOperator()
   async create(
     @CurrentDevice() device: Device,
     @Body() dto: CreateCashbookEntryDto,
+    @CurrentOperator() operator: Operator | null = null,
   ) {
     const organizationId = requireOrganization(device);
+    // Bedienung: nur mit Recht `cashbook` (Schichtleitung).
+    assertOperatorMay(operator, 'cashbook');
     return {
       data: await this.cashbook.create(organizationId, dto, {
         deviceId: device.id,
+        userId: operator?.userId ?? null,
+        waiterId: operator?.waiterId ?? null,
       }),
     };
   }

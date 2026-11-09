@@ -1,6 +1,7 @@
 import type { Request } from 'express';
 import type { Device } from '../../database/entities';
 import type { RequestUser } from '../decorators/current-user.decorator';
+import type { Operator } from '../../modules/waiters/waiter-operator';
 
 /**
  * Der API-Token, mit dem eine Anfrage angemeldet ist — nur gesetzt, wenn
@@ -27,4 +28,6 @@ export interface AppRequest extends Request {
   device?: Device;
   organizationId?: string;
   apiToken?: RequestApiToken;
+  /** Bedienung bzw. Mitglied der Bedienungs-Sitzung (WaiterSessionGuard). */
+  operator?: Operator | null;
 }

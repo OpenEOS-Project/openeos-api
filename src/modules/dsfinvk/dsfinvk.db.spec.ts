@@ -468,6 +468,73 @@ describeWithDb('DSFinV-K closings against Postgres', () => {
     ]);
   });
 
+  it('BEDIENER: server name from the snapshot at signing, member name live for old rows, empty without person', async () => {
+    const w = await world();
+    const seq = new Sequence();
+    const at = new Date('2026-11-10T18:00:00Z');
+    const items = [{ name: 'Bier', quantity: 1, price: 4, rate: 19 }];
+    const byWaiter = await insert(w, sale(seq, VAT_LIABLE, { items }), at);
+    const byMember = await insert(w, sale(seq, VAT_LIABLE, { items }), at);
+    const byNobody = await insert(w, sale(seq, VAT_LIABLE, { items }), at);
+    const waiterId = randomUUID();
+    const [member] = await sql(
+      `INSERT INTO users (email, first_name, last_name, password_hash)
+       VALUES ($1, 'Markus', 'Maier', 'x') RETURNING id`,
+      [`m-${randomUUID()}@example.com`],
+    );
+    // Snapshot beim Signieren; die Bedienung darf danach anonymisiert sein.
+    await sql(
+      `UPDATE tse_transactions SET waiter_id = $2, operator_name = 'Anna Berger' WHERE id = $1`,
+      [byWaiter.id, waiterId],
+    );
+    await sql(`UPDATE tse_transactions SET user_id = $2 WHERE id = $1`, [
+      byMember.id,
+      member.id,
+    ]);
+    await closings.closeUpTo(w.orgId, new Date('2026-11-11T05:00:00Z'), {
+      trigger: 'scheduled',
+    });
+    const file = await closings.exportZip(
+      w.orgId,
+      admin,
+      { from: '2026-11-10', to: '2026-11-10' },
+      {},
+    );
+    expect(validateZip(file.data).errors).toEqual([]);
+    const [header, ...records] = parseCsv(
+      readZip(file.data)
+        .find((e) => e.name === 'transactions.csv')!
+        .data.toString('utf8'),
+    ).records;
+    const rows = records.map((r) =>
+      Object.fromEntries(header.values.map((h, i) => [h, r.values[i]])),
+    );
+    const bon = (id: string | null) =>
+      rows.find(
+        (r) =>
+          r.BON_ID ===
+          String(
+            Number(
+              ([byWaiter, byMember, byNobody].find((x) => x.id === id) ?? {})
+                .bon_id,
+            ),
+          ),
+      );
+    expect(bon(byWaiter.id)).toMatchObject({
+      BEDIENER_ID: waiterId,
+      BEDIENER_NAME: 'Anna Berger',
+    });
+    expect(bon(byMember.id)).toMatchObject({
+      BEDIENER_ID: member.id,
+      BEDIENER_NAME: 'Markus Maier',
+    });
+    expect(bon(byNobody.id)).toMatchObject({
+      BEDIENER_ID: '',
+      BEDIENER_NAME: '',
+    });
+    await sql(`DELETE FROM users WHERE id = $1`, [member.id]);
+  });
+
   it('waits for pending TSE transactions before closing', async () => {
     const w = await world();
     const seq = new Sequence();

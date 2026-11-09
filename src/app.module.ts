@@ -73,6 +73,7 @@ import {
   OrganizationClosureGuard,
   OrganizationClosureModule,
 } from './common/organization-closure';
+import { WaiterCoreModule, WaitersModule } from './modules/waiters';
 
 @Module({
   imports: [
@@ -217,6 +218,9 @@ import {
     DsfinvkModule,
     RetentionModule,
     OrganizationClosureModule,
+    // Bedienungen (Kassenprofile mit PIN), bedienungen-plan.md
+    WaiterCoreModule,
+    WaitersModule,
   ],
   controllers: [],
   providers: [

@@ -68,6 +68,10 @@ export interface TseActor {
   /** Eingabegeraet (Terminal) — Geraete-ID. */
   terminal?: string | null;
   userId?: string | null;
+  /** Bedienung (geht fuer BEDIENER_ID vor `userId`). */
+  waiterId?: string | null;
+  /** Name des Bedieners; fehlt er, wird er beim Signieren nachgeschlagen. */
+  operatorName?: string | null;
 }
 
 export interface SignInput extends TseActor {
@@ -160,6 +164,7 @@ export class TseSigningService {
     const { unit, credentials } = signing;
 
     let tx: TseTransaction;
+    const operatorName = await this.operatorNameFor(input);
     try {
       tx = await this.txRepository.save(
         this.txRepository.create({
@@ -180,6 +185,8 @@ export class TseSigningService {
           lines: input.lines ?? null,
           terminal: input.terminal ? String(input.terminal).slice(0, 64) : null,
           userId: input.userId ?? null,
+          waiterId: input.waiterId ?? null,
+          operatorName,
           orderId: input.orderId ?? null,
           paymentId: input.paymentId ?? null,
           refundId: input.refundId ?? null,
@@ -336,6 +343,39 @@ export class TseSigningService {
     }
   }
 
+  /**
+   * BEDIENER_NAME als Snapshot (hoechstens 50 Zeichen): mitgegebener Name,
+   * sonst der Name der Bedienung bzw. des Mitglieds zum Zeitpunkt des
+   * Signierens. Fehler beim Nachschlagen stoppen nie den Verkauf.
+   */
+  private async operatorNameFor(actor: TseActor): Promise<string | null> {
+    const given = actor.operatorName?.trim();
+    if (given) return given.slice(0, 50);
+    try {
+      if (actor.waiterId) {
+        const rows: { name: string }[] = await this.txRepository.manager.query(
+          `SELECT name FROM waiters WHERE id = $1`,
+          [actor.waiterId],
+        );
+        return rows[0]?.name?.trim().slice(0, 50) || null;
+      }
+      if (actor.userId) {
+        const rows: { name: string | null }[] =
+          await this.txRepository.manager.query(
+            `SELECT NULLIF(CONCAT_WS(' ', NULLIF(TRIM(first_name), ''), NULLIF(TRIM(last_name), '')), '') AS name
+               FROM users WHERE id = $1`,
+            [actor.userId],
+          );
+        return rows[0]?.name?.slice(0, 50) || null;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Operator name lookup failed: ${(error as Error).message}`,
+      );
+    }
+    return null;
+  }
+
   private rememberUnit(unit: TseUnit): TseUnitInfo {
     const info: TseUnitInfo = {
       serialNumber: unit.serialNumber,
@@ -398,6 +438,7 @@ export class TseSigningService {
         paymentId: payment.id,
         terminal: payment.processedByDeviceId,
         userId: payment.processedByUserId,
+        waiterId: payment.processedByWaiterId ?? null,
       });
     } catch (error) {
       this.logger.error(
@@ -524,6 +565,8 @@ export class TseSigningService {
         referencesTseTransactionId: original?.id ?? null,
         terminal: refund.deviceId,
         userId: refund.userId,
+        waiterId: refund.waiterId ?? null,
+        operatorName: refund.actorName,
       });
     } catch (error) {
       this.logger.error(
@@ -568,6 +611,7 @@ export class TseSigningService {
         pfandReturnId: pfandReturn.id,
         terminal: pfandReturn.deviceId,
         userId: pfandReturn.createdByUserId,
+        waiterId: pfandReturn.waiterId ?? null,
       });
     } catch (error) {
       this.logger.error(
@@ -590,6 +634,7 @@ export class TseSigningService {
     note?: string | null;
     terminal?: string | null;
     userId?: string | null;
+    waiterId?: string | null;
   }): Promise<TseReceiptView | null> {
     try {
       if (input.amountCents === 0) return null;
@@ -609,6 +654,7 @@ export class TseSigningService {
         },
         terminal: input.terminal ?? null,
         userId: input.userId ?? null,
+        waiterId: input.waiterId ?? null,
       });
     } catch (error) {
       this.logger.error(

@@ -28,29 +28,61 @@ function runner(rows: unknown[]): RawQueryRunner & { query: jest.Mock } {
 }
 
 describe('order staff names (Bedienung / Gerät)', () => {
+  const none = { userName: null, deviceName: null };
+
   it('uses the name of the device that took the order', () => {
-    expect(
-      orderStaffPayload({ userName: null, deviceName: 'Handy Markus' }),
-    ).toEqual({ waiter_name: 'Handy Markus', device_name: 'Handy Markus' });
+    expect(orderStaffPayload({ ...none, deviceName: 'Handy Markus' })).toEqual({
+      waiter_name: 'Handy Markus',
+      waiter_short_name: 'Handy Markus',
+      device_name: 'Handy Markus',
+    });
   });
 
-  it('keeps the device first even if a web user is recorded too', () => {
+  it('prefers the member who was logged in at the till over the device', () => {
     expect(
       orderStaffPayload({ userName: 'Markus Maier', deviceName: 'Tablet 3' }),
-    ).toEqual({ waiter_name: 'Tablet 3', device_name: 'Tablet 3' });
+    ).toEqual({
+      waiter_name: 'Markus Maier',
+      waiter_short_name: 'Markus',
+      device_name: 'Tablet 3',
+    });
   });
 
-  it('uses the web user only for orders without a device (admin area)', () => {
+  it('uses the web user for orders without a device (admin area)', () => {
     expect(
       orderStaffPayload({ userName: 'Markus Maier', deviceName: null }),
-    ).toEqual({ waiter_name: 'Markus Maier', device_name: null });
+    ).toMatchObject({ waiter_name: 'Markus Maier', device_name: null });
   });
 
-  it('leaves both empty for online orders', () => {
-    expect(orderStaffPayload({ userName: null, deviceName: null })).toEqual({
+  it('leaves everything empty for online orders', () => {
+    expect(orderStaffPayload(none)).toEqual({
       waiter_name: null,
+      waiter_short_name: null,
       device_name: null,
     });
+  });
+
+  it('prints the round sender first, then the responsible server (short name)', () => {
+    const staff = {
+      userName: 'Markus Maier',
+      deviceName: 'Kasse 2',
+      waiter: { name: 'Anna Berger', shortName: 'Anna' },
+      sender: { name: 'Ben Krämer', shortName: null },
+    };
+    expect(orderStaffPayload(staff)).toEqual({
+      waiter_name: 'Ben Krämer',
+      waiter_short_name: 'Ben',
+      device_name: 'Kasse 2',
+    });
+    expect(orderStaffPayload({ ...staff, sender: null })).toEqual({
+      waiter_name: 'Anna',
+      waiter_short_name: 'Anna',
+      device_name: 'Kasse 2',
+    });
+    // Einstellung „Name auf Bons: voller Name“.
+    expect(
+      orderStaffPayload({ ...staff, sender: null, receiptName: 'full' }),
+    ).toMatchObject({ waiter_name: 'Anna Berger', waiter_short_name: 'Anna' });
   });
 
   it('builds a person name and treats blanks as missing', () => {
@@ -62,7 +94,7 @@ describe('order staff names (Bedienung / Gerät)', () => {
     expect(personName(null)).toBeNull();
   });
 
-  it('does not query when the order has no creator', async () => {
+  it('does not query when the order has no creator and no server', async () => {
     const db = runner([]);
     const staff = await loadOrderStaff(db, {
       organizationId: 'org-1',
@@ -77,19 +109,37 @@ describe('order staff names (Bedienung / Gerät)', () => {
     });
   });
 
-  it('loads both names with one query scoped to the order organization', async () => {
-    const db = runner([{ device_name: ' Handy Markus ', user_name: '  ' }]);
+  it('loads all names with one query scoped to the order organization', async () => {
+    const db = runner([
+      {
+        device_name: ' Handy Markus ',
+        user_name: '  ',
+        waiter_name: 'Anna Berger',
+        waiter_short_name: ' ',
+        sender_name: null,
+        receipt_name: 'full',
+      },
+    ]);
     const staff = await loadOrderStaff(db, {
+      id: 'order-1',
       organizationId: 'org-1',
       createdByUserId: 'user-1',
       createdByDeviceId: 'dev-1',
+      waiterId: 'w-1',
     });
-    expect(staff).toEqual({ userName: null, deviceName: 'Handy Markus' });
+    expect(staff).toEqual({
+      userName: null,
+      deviceName: 'Handy Markus',
+      waiter: { name: 'Anna Berger', shortName: null },
+      receiptName: 'full',
+    });
     expect(db.query).toHaveBeenCalledTimes(1);
     const [sql, params] = db.query.mock.calls[0] as [string, unknown[]];
-    expect(params).toEqual(['org-1', 'dev-1', 'user-1']);
+    expect(params).toEqual(['org-1', 'dev-1', 'user-1', 'w-1', 'order-1']);
     expect(sql).toContain('d.organization_id = $1');
     expect(sql).toContain('m.organization_id = $1');
+    expect(sql).toContain('w.organization_id = $1');
+    expect(sql).toContain('sw.organization_id = $1');
   });
 });
 

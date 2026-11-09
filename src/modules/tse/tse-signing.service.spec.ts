@@ -105,6 +105,16 @@ function setup(
     findOne: jest.fn(() => Promise.resolve(null)),
     exists: jest.fn(() => Promise.resolve(true)),
     find: jest.fn(() => Promise.resolve([])),
+    // Namens-Snapshot fuer BEDIENER_NAME (Bedienung bzw. Mitglied).
+    manager: {
+      query: jest.fn((sql: string) =>
+        Promise.resolve(
+          sql.includes('FROM waiters')
+            ? [{ name: 'Anna Berger' }]
+            : [{ name: 'Markus Maier' }],
+        ),
+      ),
+    },
   };
   const theOrder = order(options.order);
   const payment = {
@@ -398,6 +408,44 @@ describe('TseSigningService — Kassenbeleg einer Zahlung', () => {
     await expect(service.signPayment('pay-1')).resolves.toBeNull();
     expect(client.startTransaction).not.toHaveBeenCalled();
     expect(txRepository.save).not.toHaveBeenCalled();
+  });
+});
+
+describe('TseSigningService — Bediener (DSFinV-K BEDIENER)', () => {
+  it('stores the server and a name snapshot with the receipt', async () => {
+    const { service, rows, payment } = setup();
+    Object.assign(payment, { processedByWaiterId: 'w-1' });
+    await service.signPayment('pay-1');
+    const [tx] = [...rows.values()];
+    expect(tx).toMatchObject({ waiterId: 'w-1', operatorName: 'Anna Berger' });
+  });
+
+  it('takes the member name when a member was logged in, and nothing without a person', async () => {
+    const { service, rows, payment } = setup();
+    Object.assign(payment, { processedByUserId: 'u-1' });
+    await service.signPayment('pay-1');
+    expect([...rows.values()][0]).toMatchObject({
+      userId: 'u-1',
+      waiterId: null,
+      operatorName: 'Markus Maier',
+    });
+    const other = setup();
+    await other.service.signPayment('pay-1');
+    expect([...other.rows.values()][0]).toMatchObject({
+      userId: null,
+      waiterId: null,
+      operatorName: null,
+    });
+  });
+
+  it('cuts the snapshot to 50 characters (DSFinV-K field length)', async () => {
+    const { service, rows } = setup();
+    await service.signZeroReceipt('order-1', {
+      terminal: 'device-1',
+      waiterId: 'w-1',
+      operatorName: 'A'.repeat(80),
+    });
+    expect([...rows.values()][0]?.operatorName).toBe('A'.repeat(50));
   });
 });
 

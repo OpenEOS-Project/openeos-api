@@ -1923,6 +1923,12 @@ paths:
       operationId: deviceApi_createPfandReturn
       parameters:
         - *a19
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -2008,6 +2014,7 @@ paths:
       tags: *a20
   /api/device-api/verify-pin:
     post:
+      description: "Rückwärtskompatibel: meldet die Bedienung bzw. das Mitglied an wie `POST /device-api/waiter-session` und liefert zusätzlich `userId`, `firstName`, `lastName`, `role`. Neu: `token` für den Header `X-Waiter-Session`. Fehler wie dort (403 PIN_INVALID, 429 PIN_LOCKED)."
       operationId: deviceApi_verifyPin
       parameters:
         - *a19
@@ -2018,9 +2025,9 @@ paths:
             schema:
               $ref: "#/components/schemas/VerifyPinDto"
       responses:
-        "201":
+        "200":
           description: ""
-      summary: Verify a member PIN from device
+      summary: PIN prüfen (Alias von POST /device-api/waiter-session)
       tags: *a20
   /api/device-api/events:
     get:
@@ -2117,6 +2124,12 @@ paths:
       operationId: deviceApi_createOrder
       parameters:
         - *a19
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -2191,6 +2204,12 @@ paths:
       operationId: deviceApi_createPayment
       parameters:
         - *a19
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -2207,6 +2226,12 @@ paths:
       operationId: deviceApi_createSplitPayment
       parameters:
         - *a19
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       responses:
         "201":
           description: ""
@@ -2214,9 +2239,16 @@ paths:
       tags: *a20
   /api/device-api/cash-drawer/open:
     post:
+      description: "`reason: payment` beim Barkassieren (immer erlaubt). Von Hand (`manual`, Standard) braucht eine Bedienung das Recht `cashDrawer`, sonst 403 WAITER_NOT_PERMITTED."
       operationId: deviceApi_openCashDrawer
       parameters:
         - *a19
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       responses:
         "201":
           description: ""
@@ -2228,6 +2260,12 @@ paths:
       operationId: deviceApi_initiateSumupCheckout
       parameters:
         - *a19
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       responses:
         "201":
           description: ""
@@ -2300,6 +2338,12 @@ paths:
           in: path
           schema:
             type: string
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -2322,6 +2366,12 @@ paths:
           in: path
           schema:
             type: string
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -2342,6 +2392,12 @@ paths:
         - name: orderId
           required: true
           in: path
+          schema:
+            type: string
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
           schema:
             type: string
       requestBody:
@@ -2464,6 +2520,12 @@ paths:
       operationId: deviceTables_acknowledgeTable
       parameters:
         - *a21
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -2480,6 +2542,12 @@ paths:
       operationId: deviceTables_deliverItems
       parameters:
         - *a21
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -2497,6 +2565,12 @@ paths:
       operationId: deviceTables_completeOrders
       parameters:
         - *a21
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -2514,6 +2588,12 @@ paths:
       operationId: deviceTables_payBatch
       parameters:
         - *a21
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -7360,6 +7440,12 @@ paths:
               - tse_keep_revoked
               - dsfinvk_closing_requested
               - dsfinvk_exported
+              - waiter_created
+              - waiter_updated
+              - waiter_pin_reset
+              - waiter_deleted
+              - waiter_pin_lock
+              - waiter_pin_unlock
         - name: startDate
           required: false
           in: query
@@ -10552,6 +10638,12 @@ paths:
       operationId: deviceCashbook_create
       parameters:
         - *a99
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -10796,6 +10888,234 @@ paths:
       security: *a103
       summary: Cancel a scheduled account deletion (restores the account and the organizations deleted with it, until the final deletion)
       tags: *a104
+  /api/organizations/{id}/waiters:
+    get:
+      description: "`eventId`: Bedienungen dieser Veranstaltung plus die organisationsweiten. `active=true|false` filtert. `meta.limit`/`meta.count`: Obergrenze (0 = unbegrenzt) und angelegte Bedienungen; Bedienungen zählen nicht zu den Mitgliedern."
+      operationId: waiters_list
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: eventId
+          required: false
+          in: query
+          schema:
+            type: string
+        - name: active
+          required: false
+          in: query
+          schema:
+            enum:
+              - "true"
+              - "false"
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: &a105
+        - JWT-auth: []
+      summary: Bedienungen der Organisation (ohne PIN)
+      tags: &a106
+        - Waiters
+    post:
+      description: "Ohne `pin` erzeugt das System eine eindeutige PIN (Länge laut `settings.waiters.pinLength`, Standard 4). Die Antwort enthält die PIN **einmalig**; gespeichert wird nur ein Prüfwert. Eigene PIN: einfache Folgen und vergebene PINs → 400 PIN_NOT_AVAILABLE. Obergrenze: 400 WAITER_LIMIT_REACHED."
+      operationId: waiters_create
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWaiterDto"
+      responses:
+        "201":
+          description: ""
+      security: *a105
+      summary: Bedienung anlegen
+      tags: *a106
+  /api/organizations/{id}/waiters/bulk:
+    post:
+      description: Namensliste je Veranstaltung (`eventId`) oder organisationsweit. Alle bekommen eine erzeugte PIN; die Antwort enthält sie **einmalig** (PIN-Zettel). Alles oder nichts.
+      operationId: waiters_bulk
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkCreateWaitersDto"
+      responses:
+        "201":
+          description: ""
+      security: *a105
+      summary: Bedienungen in einem Schritt anlegen (bis 200)
+      tags: *a106
+  /api/organizations/{id}/waiters/{waiterId}:
+    get:
+      operationId: waiters_findOne
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: waiterId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a105
+      summary: Eine Bedienung (ohne PIN)
+      tags: *a106
+    patch:
+      description: Name, Kurzname, Farbe, Rolle, Rechte, Veranstaltung, aktiv. Deaktivieren löscht die PIN und beendet offene Sitzungen (Kasse sperrt).
+      operationId: waiters_update
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: waiterId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWaiterDto"
+      responses:
+        "200":
+          description: ""
+      security: *a105
+      summary: Bedienung ändern
+      tags: *a106
+    delete:
+      description: "Ohne Buchungen wird sie gelöscht (`deleted: true`). Mit Buchungen wird sie deaktiviert und anonymisiert (`anonymized: true`, Name „Bedienung N“); das Steuerarchiv behält den Namen beim Signieren."
+      operationId: waiters_remove
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: waiterId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a105
+      summary: Bedienung löschen
+      tags: *a106
+  /api/organizations/{id}/waiters/{waiterId}/pin:
+    post:
+      description: Erzeugt eine neue PIN (oder setzt die gewählte) und beendet offene Sitzungen. Die Antwort enthält die PIN **einmalig**.
+      operationId: waiters_resetPin
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: waiterId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetWaiterPinDto"
+      responses:
+        "200":
+          description: ""
+      security: *a105
+      summary: Neue PIN vergeben
+      tags: *a106
+  /api/device-api/waiter-session:
+    post:
+      description: "Die PIN allein identifiziert die Bedienung bzw. das Mitglied. Antwort: `token` (Header `X-Waiter-Session` bei jeder Buchung, nur im Speicher halten), `expiresAt`, `kind` (`waiter`|`member`), `waiter` (id, name, shortName, color, role, permissions). Eine vorige Sitzung an diesem Gerät endet (Wechsel). Fehler: 403 PIN_INVALID (`params.remainingAttempts`), 429 PIN_LOCKED (`params.retryAfterSeconds`), 429 PIN_DEVICE_LOCKED (Freigabe durch Admin), 403 WAITER_NOT_FOR_EVENT."
+      operationId: deviceWaiters_login
+      parameters:
+        - &a107
+          name: X-Device-Token
+          in: header
+          description: Device authentication token
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WaiterSessionLoginDto"
+      responses:
+        "200":
+          description: ""
+      summary: Bedienung per PIN anmelden („Wer bedient?“)
+      tags: &a108
+        - Device API
+    get:
+      description: "`data: null` ohne gültige Sitzung (dann PIN-Bildschirm). Bei fester Bedienung (`personal`) die Bedienung des Geräts. `mode`: Gerätemodus."
+      operationId: deviceWaiters_current
+      parameters:
+        - *a107
+      responses:
+        "200":
+          description: ""
+      summary: Aktuelle Bedienungs-Sitzung
+      tags: *a108
+    delete:
+      description: "Beendet die Sitzung des Tokens (`reason`: lock, switch, timeout, logout). Ohne gültiges Token passiert nichts."
+      operationId: deviceWaiters_end
+      parameters:
+        - *a107
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WaiterSessionEndDto"
+      responses:
+        "200":
+          description: ""
+      summary: Sperren bzw. abmelden
+      tags: *a108
+  /api/device-api/waiters:
+    get:
+      description: "Aktive Bedienungen der laufenden Veranstaltung plus organisationsweite: nur `id`, `shortName` (sonst Vorname) und `color`."
+      operationId: deviceWaiters_list
+      parameters:
+        - *a107
+      responses:
+        "200":
+          description: ""
+      summary: Kurzliste der Bedienungen (Kacheln, Tischfarben)
+      tags: *a108
 info:
   title: OpenEOS API
   description: |-
@@ -12091,7 +12411,7 @@ components:
       properties:
         paymentMethod:
           type: string
-          enum: &a106
+          enum: &a110
             - cash
             - card
             - sumup_terminal
@@ -12161,7 +12481,7 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: &a107
+          enum: &a111
             - normal
             - high
             - rush
@@ -12169,7 +12489,7 @@ components:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: &a108
+          enum: &a112
             - pos
             - online
             - qr_order
@@ -12177,7 +12497,7 @@ components:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: &a109
+          enum: &a113
             - table_service
             - counter_pickup
         items:
@@ -12256,7 +12576,7 @@ components:
           type: string
         reasonCode:
           type: string
-          enum: &a105
+          enum: &a109
             - wrong_order
             - quality
             - not_delivered
@@ -12293,7 +12613,7 @@ components:
             $ref: "#/components/schemas/RefundItemSelectionDto"
         reasonCode:
           type: string
-          enum: *a105
+          enum: *a109
         reasonText:
           type: string
           example: Gast hat es sich anders überlegt
@@ -12338,7 +12658,7 @@ components:
           description: "Zahlung, über die erstattet wird. Ohne: von der jüngsten Zahlung rückwärts."
         reasonCode:
           type: string
-          enum: *a105
+          enum: *a109
         reasonText:
           type: string
           example: Burger kalt
@@ -12411,7 +12731,7 @@ components:
             type: string
         paymentMethod:
           type: string
-          enum: *a106
+          enum: *a110
           example: cash
         amountReceived:
           type: number
@@ -12641,17 +12961,17 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: *a107
+          enum: *a111
         source:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: *a108
+          enum: *a112
         fulfillmentType:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: *a109
+          enum: *a113
         items:
           description: Liste der Bestellpositionen
           type: array
@@ -12811,7 +13131,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: &a110
+          enum: &a114
             - fixed
             - manual
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
@@ -12848,7 +13168,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: *a110
+          enum: *a114
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
         amount:
           type: number
@@ -12880,7 +13200,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: &a111
+          enum: &a115
             - 19
             - 7
             - 0
@@ -12911,7 +13231,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: *a111
+          enum: *a115
           default: 19
           description: "Umsatzsteuersatz des Pfands in Prozent: der Satz der Getränke/Waren, für die dieses Pfand gilt (meist 19). Pfand gehört zum Entgelt; die Rückgabe mindert Umsatz und Umsatzsteuer zum selben Satz. Steuerbefreite Organisationen (Kleinunternehmer) weisen trotzdem keine MwSt aus."
         isActive:
@@ -13109,7 +13429,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: &a112
+          enum: &a116
             - rect
             - round
         x:
@@ -13193,7 +13513,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: *a112
+          enum: *a116
         x:
           type: number
         y:
@@ -14107,6 +14427,11 @@ components:
           example: 25
           nullable: true
           description: Eigene Höchstzahl an Mitgliedern (aktive plus offene Einladungen); leer = Standard (MEMBERS_PER_ORGANIZATION_LIMIT), 0 = unbegrenzt
+        waiterLimit:
+          type: object
+          example: 300
+          nullable: true
+          description: Eigene Höchstzahl an Bedienungen (Kassenprofile); leer = Standard (WAITERS_PER_ORGANIZATION_LIMIT, 200), 0 = unbegrenzt
     SetOrganizationCountryAdminDto:
       type: object
       properties:
@@ -15030,3 +15355,122 @@ components:
         code:
           type: string
           description: Code aus der E-Mail (Konten ohne Passwort)
+    CreateWaiterDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Anna Berger
+          maxLength: 100
+        shortName:
+          type: object
+          example: Anna
+          maxLength: 12
+          nullable: true
+        color:
+          type: object
+          example: "#2f7d32"
+          nullable: true
+        role:
+          type: string
+          enum: &a117
+            - service
+            - lead
+          default: service
+        permissions:
+          type: object
+          description: "Abweichungen von der Rolle: `refund`, `cashDrawer`, `discount`, `cashbook` (je true/false)"
+          example:
+            refund: true
+        eventId:
+          type: object
+          description: Nur für diese Veranstaltung (leer = organisationsweit)
+          nullable: true
+        pin:
+          type: string
+          description: "Eigene PIN (4–6 Ziffern). Ohne: vom System erzeugt. Antwort enthält die PIN einmalig."
+          example: "3958"
+      required:
+        - name
+    BulkWaiterItemDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Ben Krämer
+        shortName:
+          type: object
+          example: Ben
+        role:
+          type: string
+          enum: *a117
+      required:
+        - name
+    BulkCreateWaitersDto:
+      type: object
+      properties:
+        eventId:
+          type: object
+          description: Nur für diese Veranstaltung (leer = organisationsweit)
+          nullable: true
+        role:
+          type: string
+          enum: *a117
+          default: service
+        items:
+          maxItems: 200
+          type: array
+          items:
+            $ref: "#/components/schemas/BulkWaiterItemDto"
+      required:
+        - items
+    UpdateWaiterDto:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        shortName:
+          type: object
+          maxLength: 12
+          nullable: true
+        color:
+          type: object
+          nullable: true
+        role:
+          type: string
+          enum: *a117
+        permissions:
+          type: object
+        eventId:
+          type: object
+          nullable: true
+        isActive:
+          type: boolean
+          description: false = deaktivieren (PIN gelöscht, Sitzungen beendet)
+    ResetWaiterPinDto:
+      type: object
+      properties:
+        pin:
+          type: string
+          description: "Eigene PIN (4–6 Ziffern). Ohne: vom System erzeugt."
+    WaiterSessionLoginDto:
+      type: object
+      properties:
+        pin:
+          type: string
+          example: "3958"
+          description: PIN (4–6 Ziffern)
+      required:
+        - pin
+    WaiterSessionEndDto:
+      type: object
+      properties:
+        reason:
+          type: string
+          enum:
+            - lock
+            - switch
+            - timeout
+            - logout
+          default: lock

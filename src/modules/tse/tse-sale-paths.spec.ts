@@ -349,6 +349,8 @@ describe('Sammelzahlung, Tisch, Bestellung mit Zahlung (PaymentsBatchService.aft
     expect(signing.signPayments).toHaveBeenCalledWith(['p1', 'p2']);
     expect(signing.signZeroReceipt).toHaveBeenCalledWith('o3', {
       terminal: 'device-1',
+      waiterId: null,
+      userId: null,
     });
     expect(outcome.payments.map((p) => p.tse?.id)).toEqual(['tx-p1', 'tx-p2']);
     expect(outcome.zeroReceipts).toHaveLength(1);
@@ -496,7 +498,12 @@ describe('Erstattung, Storno (RefundsService)', () => {
     expect(signing.signOrderChange).toHaveBeenCalledWith(
       'order-1',
       [{ item, quantity: -2 }],
-      { terminal: 'device-1', userId: null },
+      {
+        terminal: 'device-1',
+        userId: null,
+        waiterId: null,
+        operatorName: undefined,
+      },
     );
   });
 });

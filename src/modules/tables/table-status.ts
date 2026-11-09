@@ -36,6 +36,13 @@ export interface TableStatusEntry {
   orderIds: string[];
   waitingSince: string | null;
   lastActivityAt: string;
+  /**
+   * Verantwortliche Bedienung (Tischbesitz): die der aeltesten Bestellung
+   * mit Bedienung. null = noch niemand (z. B. Gastbestellung).
+   */
+  waiterId: string | null;
+  /** Alle Bedienungen mit Bestellungen an diesem Tisch (aelteste zuerst). */
+  waiterIds: string[];
 }
 
 /** Zeile aus TABLE_STATUS_SQL (pg liefert numeric/bigint als string). */
@@ -58,6 +65,7 @@ export interface TableStatusOrderRow {
   matchedTableId: string | null;
   matchedLabel: string | null;
   matchedAreaId: string | null;
+  waiterId?: string | null;
 }
 
 const OPEN_PAYMENT = ['unpaid', 'partly_paid'];
@@ -83,6 +91,7 @@ export const TABLE_STATUS_SQL = `
          o.total             AS "total",
          o.paid_amount       AS "paidAmount",
          o.closed_without_payment_at AS "closedWithoutPaymentAt",
+         o.waiter_id         AS "waiterId",
          i.item_count        AS "itemCount",
          i.ready_since       AS "readySince",
          i.last_item_at      AS "lastItemAt",
@@ -189,6 +198,7 @@ interface Group {
   orderIds: string[];
   waitingSince: Date | null;
   lastActivityAt: Date | null;
+  waiterIds: string[];
 }
 
 /**
@@ -228,6 +238,7 @@ export function aggregateTableStatus(
         orderIds: [],
         waitingSince: null,
         lastActivityAt: null,
+        waiterIds: [],
       };
       groups.set(key, group);
     }
@@ -249,6 +260,9 @@ export function aggregateTableStatus(
     }
 
     group.orderIds.push(row.id);
+    if (row.waiterId && !group.waiterIds.includes(row.waiterId)) {
+      group.waiterIds.push(row.waiterId);
+    }
     group.itemCount += Number(row.itemCount ?? 0) || 0;
 
     if (open) {
@@ -295,6 +309,8 @@ export function aggregateTableStatus(
         ? (group.waitingSince ?? lastActivityAt).toISOString()
         : null,
       lastActivityAt: lastActivityAt.toISOString(),
+      waiterId: group.waiterIds[0] ?? null,
+      waiterIds: group.waiterIds,
     });
   }
 
