@@ -243,10 +243,13 @@ describe('EventsShopCheckoutController.createOrderFromCheckout', () => {
     };
     const create = (
       EventsShopCheckoutController.prototype as unknown as {
-        createOrderFromCheckout: (this: unknown, c: unknown) => Promise<Order>;
+        createOrderFromCheckout: (
+          this: unknown,
+          c: unknown,
+        ) => Promise<{ order: Order }>;
       }
     ).createOrderFromCheckout;
-    const order = await create.call(self, checkout);
+    const { order } = await create.call(self, checkout);
     return {
       order,
       items: savedItems[0],

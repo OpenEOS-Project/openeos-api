@@ -53,6 +53,7 @@ import {
   assertCashAllowed,
   OPERATING_MODE_SELECT,
   isCashAllowed,
+  isCashlessPaymentMethod,
   isOnlinePrepaymentMethod,
   isOrdersOnly,
   orderOnlyModeError,
@@ -803,7 +804,11 @@ export class RefundsService {
         ),
         isProvider: isSumUpTerminal(p),
         createdAt: new Date(p.createdAt),
-        isCash: p.paymentMethod === PaymentMethod.CASH,
+        // Bargeld und alles ausserhalb der Positivliste fuer „Bargeldlos“
+        // (Wertmarken o. Ae. waeren wie Bargeld): nie dorthin erstatten,
+        // wo Bargeld gesperrt ist. Erstattet wird immer auf die
+        // urspruengliche Zahlart, eine Auszahlung in bar gibt es nicht.
+        isCash: !isCashlessPaymentMethod(p.paymentMethod),
       }));
     // Bargeld gesperrt (Betriebsart ohne Bargeld oder DE ohne TSE):
     // nichts bar auszahlen. Erstattet wird nur auf

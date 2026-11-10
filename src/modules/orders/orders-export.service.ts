@@ -91,6 +91,13 @@ const PAYMENT_LABEL: Record<string, string> = {
   apple_pay: 'Apple Pay',
 };
 
+/** Zahlungsanbieter (`payments.payment_provider`); Bargeld hat keinen. */
+const PROVIDER_LABEL: Record<string, string> = {
+  CARD: 'Kartenterminal (extern)',
+  SUMUP: 'SumUp',
+  PAYPAL: 'PayPal',
+};
+
 /** Eine Bestellung, wie die Exportabfrage sie liefert (Postgres-Rohwerte). */
 export interface OrderExportRow {
   id: string;
@@ -119,6 +126,12 @@ export interface OrderExportRow {
   /** Verantwortliche Bedienung (Tisch), sonst die aufnehmende. */
   waiter_name: string | null;
   payment_methods: string[] | null;
+  /** Anbieter der Zahlungen (ohne Bargeld). */
+  payment_providers: string[] | null;
+  /** Transaktions-IDs beim Anbieter, aelteste Zahlung zuerst. */
+  payment_references: string[] | null;
+  /** Referenzen der Erstattungen beim Anbieter. */
+  refund_references: string[] | null;
   item_count: string | number;
 }
 
@@ -172,6 +185,15 @@ function paymentLabel(row: OrderExportRow): string {
   return labels.join(', ');
 }
 
+function providerLabel(row: OrderExportRow): string {
+  return [...new Set(row.payment_providers ?? [])]
+    .sort()
+    .map((p) => PROVIDER_LABEL[p] ?? p)
+    .join(', ');
+}
+
+const joined = (values: string[] | null) => (values ?? []).join(', ');
+
 /**
  * Spalten der Datei „Bestellungen“ (eine Zeile je Bestellung). Gastname
  * und Anmerkung stehen nur, solange sie gespeichert sind — die
@@ -218,6 +240,19 @@ export const ORDER_COLUMNS: ReadonlyArray<CsvColumn<OrderExportRow>> = [
   { header: 'Bedienung', value: (r) => csvText(r.waiter_name) },
   { header: 'Artikel', value: (r) => csvNumber(r.item_count) },
   { header: 'Zahlart', money: true, value: (r) => csvText(paymentLabel(r)) },
+  /* Zahlungsanbieter und Referenz (GoBD, Abgleich mit der Abrechnung von
+     SumUp/PayPal): Transaktions-ID der Zahlung, sonst PayPal-Order bzw.
+     SumUp-Checkout aus den Metadaten. Mehrere mit „, “. */
+  {
+    header: 'Zahlungsanbieter',
+    money: true,
+    value: (r) => csvText(providerLabel(r)),
+  },
+  {
+    header: 'Zahlungsreferenz',
+    money: true,
+    value: (r) => csvText(joined(r.payment_references)),
+  },
   { header: 'Zwischensumme', money: true, value: (r) => csvMoney(r.subtotal) },
   { header: 'Rabatt', money: true, value: (r) => csvMoney(r.discount_amount) },
   { header: 'Pfand', money: true, value: (r) => csvMoney(r.pfand_total) },
@@ -228,6 +263,11 @@ export const ORDER_COLUMNS: ReadonlyArray<CsvColumn<OrderExportRow>> = [
     header: 'Erstattet',
     money: true,
     value: (r) => csvMoney(r.refunded_amount),
+  },
+  {
+    header: 'Erstattungsreferenz',
+    money: true,
+    value: (r) => csvText(joined(r.refund_references)),
   },
   {
     header: 'Enthaltene MwSt',
@@ -332,6 +372,25 @@ const ORDER_SQL = `
             FROM payments p
            WHERE p.order_id = o.id AND p.status IN ('captured', 'refunded')
          ) AS payment_methods,
+         (SELECT array_agg(DISTINCT p.payment_provider::text)
+            FROM payments p
+           WHERE p.order_id = o.id AND p.status IN ('captured', 'refunded')
+             AND p.payment_provider::text <> 'CASH'
+         ) AS payment_providers,
+         (SELECT array_agg(ref ORDER BY created_at, id)
+            FROM (SELECT p.id, p.created_at,
+                         COALESCE(NULLIF(p.provider_transaction_id, ''),
+                                  NULLIF(p.metadata->>'paypalOrderId', ''),
+                                  NULLIF(p.metadata->>'checkoutId', '')) AS ref
+                    FROM payments p
+                   WHERE p.order_id = o.id
+                     AND p.status IN ('captured', 'refunded')) pr
+           WHERE ref IS NOT NULL
+         ) AS payment_references,
+         (SELECT array_agg(r.provider_reference ORDER BY r.created_at, r.id)
+            FROM refunds r
+           WHERE r.order_id = o.id AND NULLIF(r.provider_reference, '') IS NOT NULL
+         ) AS refund_references,
          (SELECT COALESCE(SUM(oi.quantity), 0)
             FROM order_items oi
            WHERE oi.order_id = o.id AND oi.status <> 'cancelled'

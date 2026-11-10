@@ -33,6 +33,7 @@ import { OrderPrintService } from '../print-jobs/order-print.service';
 import { cashReceivedMetadata } from '../print-jobs/receipt-tax.util';
 import {
   assertCashAllowed,
+  isCashlessPaymentMethod,
   OPERATING_MODE_SELECT,
 } from '../../common/utils/operating-mode.util';
 import { closedWithoutPaymentError } from '../orders/close-without-payment';
@@ -449,8 +450,10 @@ export class PaymentsService {
     method: PaymentMethod,
   ): Promise<void> {
     const sumup = this.getProviderForMethod(method) === PaymentProvider.SUMUP;
-    const cash = method === PaymentMethod.CASH;
-    if (!sumup && !cash) return;
+    // Bargeld und alles ausserhalb der Positivliste fuer „Bargeldlos“
+    // (kuenftige Wertmarken o. Ae.) prueft assertCashAllowed.
+    const cashLike = !isCashlessPaymentMethod(method);
+    if (!sumup && !cashLike) return;
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
       select: OPERATING_MODE_SELECT,
