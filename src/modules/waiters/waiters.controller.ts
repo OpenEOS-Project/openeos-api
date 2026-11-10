@@ -11,8 +11,9 @@ import {
   Post,
   Query,
   Req,
+  Res,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -25,8 +26,13 @@ import {
   BulkCreateWaitersDto,
   CreateWaiterDto,
   ResetWaiterPinDto,
+  SettleWaiterDto,
+  TransferTablesDto,
   UpdateWaiterDto,
 } from './dto/waiter.dto';
+import { waiterExportCsv } from './waiter-export';
+import { WaiterSettlementsService } from './waiter-settlements.service';
+import { WaiterTransferService } from './waiter-transfer.service';
 import { WaitersService, type RequestMeta } from './waiters.service';
 
 function metaOf(req: Request): RequestMeta {
@@ -45,7 +51,11 @@ function metaOf(req: Request): RequestMeta {
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:id/waiters')
 export class WaitersController {
-  constructor(private readonly waiters: WaitersService) {}
+  constructor(
+    private readonly waiters: WaitersService,
+    private readonly settlements: WaiterSettlementsService,
+    private readonly transfers: WaiterTransferService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -164,5 +174,121 @@ export class WaitersController {
     @Req() req: Request,
   ) {
     return { data: await this.waiters.remove(id, waiterId, user, metaOf(req)) };
+  }
+
+  // ------------------------------------------------------------ Abrechnung
+
+  @Get(':waiterId/summary')
+  @ApiOperation({
+    summary: 'Zwischenstand einer Bedienung',
+    description:
+      'Zahlen seit der letzten Abrechnung dieser Bedienung in der Veranstaltung (sonst ab Beginn): kassiert je Zahlart mit Trinkgeld, Storno/Erstattungen, Pfand-Auszahlungen, aufgenommen, Soll bar (informativ, Schublade je Gerät), offene Tische, Training getrennt. In „Nur Bons“ nur Mengen. `eventId` ohne Angabe: Veranstaltung der Bedienung bzw. die laufende.',
+  })
+  @ApiQuery({ name: 'eventId', required: false })
+  async summary(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('waiterId', ParseUUIDPipe) waiterId: string,
+    @CurrentUser() user: User,
+    @Query('eventId', new ParseUUIDPipe({ optional: true })) eventId?: string,
+  ) {
+    await this.waiters.assertCanManage(id, user);
+    return {
+      data: await this.settlements.summary(
+        id,
+        { kind: 'waiter', waiterId },
+        eventId ?? null,
+      ),
+    };
+  }
+
+  @Post(':waiterId/settlements')
+  @ApiOperation({
+    summary: 'Bedienung abrechnen',
+    description:
+      'Schließt den Zeitraum seit der letzten Abrechnung ab (unveränderlich, fortlaufende Nummer je Organisation; nur Testbuchungen → Training ohne Nummer). Offene Tische: 409 WAITER_OPEN_TABLES (`params.openTables`) — übergeben oder mit `force` + `note` trotzdem abrechnen. Nichts abzurechnen: 400 WAITER_SETTLEMENT_EMPTY. Mit `printerId` wird der Abrechnungsbon gedruckt.',
+  })
+  async settle(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('waiterId', ParseUUIDPipe) waiterId: string,
+    @Body() dto: SettleWaiterDto,
+    @CurrentUser() user: User,
+    @Req() req: Request,
+  ) {
+    await this.waiters.assertCanManage(id, user);
+    const result = await this.settlements.settle(
+      id,
+      { kind: 'waiter', waiterId },
+      {
+        userId: user.id,
+        waiterId: null,
+        mayForce: true,
+        deviceId: null,
+        ...metaOf(req),
+      },
+      {
+        eventId: dto.eventId ?? null,
+        countedCash: dto.countedCash ?? null,
+        force: dto.force === true,
+        note: dto.note ?? null,
+        printerId: dto.printerId ?? null,
+        print: !!dto.printerId,
+      },
+    );
+    return { data: result.settlement, meta: { printed: result.printed } };
+  }
+
+  @Post(':waiterId/transfer-tables')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Offene Tische einer Bedienung übergeben',
+    description:
+      'Alle offenen Bestellungen der Bedienung (optional nur einer Veranstaltung) bekommen eine neue verantwortliche Bedienung. Jede Übergabe steht im Bestellverlauf; die Kassen bekommen `orderTransferred`.',
+  })
+  async transferTables(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('waiterId', ParseUUIDPipe) waiterId: string,
+    @Body() dto: TransferTablesDto,
+    @CurrentUser() user: User,
+    @Req() req: Request,
+  ) {
+    await this.waiters.assertCanManage(id, user);
+    return {
+      data: await this.transfers.transferAllOpen(
+        id,
+        waiterId,
+        dto.toWaiterId,
+        { admin: true, userId: user.id, ...metaOf(req) },
+        dto.eventId ?? null,
+      ),
+    };
+  }
+
+  @Get(':waiterId/export')
+  @ApiOperation({
+    summary: 'Auskunft über eine Bedienung (Art. 15 DSGVO)',
+    description:
+      'Stammdaten (ohne PIN), Anmeldungen an Geräten, Abrechnungen und Anzahl der zugeordneten Buchungen. `format=csv` (Standard) oder `json`.',
+  })
+  @ApiQuery({ name: 'format', required: false, enum: ['csv', 'json'] })
+  async exportWaiter(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('waiterId', ParseUUIDPipe) waiterId: string,
+    @CurrentUser() user: User,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Query('format') format?: string,
+  ) {
+    const data = await this.waiters.exportData(id, waiterId, user, metaOf(req));
+    const base = `bedienung-${waiterId.slice(0, 8)}-auskunft`;
+    if (format === 'json') {
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${base}.json"`,
+      );
+      return { data };
+    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${base}.csv"`);
+    res.send(waiterExportCsv(data));
   }
 }

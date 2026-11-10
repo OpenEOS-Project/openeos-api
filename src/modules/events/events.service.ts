@@ -45,6 +45,7 @@ import {
   normalizeBusinessDayStartHour,
 } from '../../common/utils/event-schedule.util';
 import { TestOrderCleanupService } from './test-order-cleanup.service';
+import { retireEventWaiters } from '../waiters/waiter-retire';
 import {
   EventPhaseFields,
   EventPhaseService,
@@ -527,7 +528,26 @@ export class EventsService {
       });
     }
 
-    await this.eventRepository.softRemove(event);
+    // Bedienungen dieser Veranstaltung koennen sich nicht mehr anmelden:
+    // ohne Buchungen geloescht, sonst deaktiviert (die Zuordnung in
+    // Zahlungen und Erstattungen bleibt; der Loeschlauf anonymisiert sie).
+    const retired = await this.eventRepository.manager.transaction(
+      async (manager) => {
+        const result = await retireEventWaiters(
+          manager,
+          organizationId,
+          event.id,
+        );
+        await manager.getRepository(Event).softRemove(event);
+        return result;
+      },
+    );
+    for (const waiterId of retired.waiterIds) {
+      this.gatewayService.notifyWaiterUpdated(organizationId, {
+        waiterId,
+        change: 'deactivated',
+      });
+    }
 
     this.logger.log(`Event deleted: ${event.name} (${event.id})`);
   }

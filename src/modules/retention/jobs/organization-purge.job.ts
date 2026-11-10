@@ -1,3 +1,4 @@
+import { retireWaiter } from '../../waiters/waiter-retire';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 
@@ -311,6 +312,32 @@ export class OrganizationPurgeJob implements RetentionJob {
         WHERE organization_id = $1
           AND (description IS NOT NULL OR settings <> '{}'::jsonb)`,
     );
+
+    // Bedienungen: ohne Buchungen weg, sonst anonymisiert (Pseudonym auch
+    // in den Protokollen der verbliebenen Bestellungen); PINs und
+    // Anmeldungen an Geraeten weg. Abrechnungen bleiben (ohne Namen).
+    await run(
+      'waiterSessionsDeleted',
+      `DELETE FROM waiter_sessions WHERE organization_id = $1`,
+    );
+    await run(
+      'pinCredentialsDeleted',
+      `DELETE FROM pin_credentials WHERE organization_id = $1`,
+    );
+    const waiters = await select<{ id: string }>(
+      manager,
+      `SELECT id FROM waiters WHERE organization_id = $1 AND anonymized_at IS NULL`,
+      org,
+    );
+    let waitersDeleted = 0;
+    let waitersAnonymised = 0;
+    for (const waiter of waiters) {
+      const outcome = await retireWaiter(manager, waiter.id, ctx.now);
+      if (outcome === 'deleted') waitersDeleted++;
+      if (outcome === 'anonymized') waitersAnonymised++;
+    }
+    ctx.removed('waitersDeleted', waitersDeleted);
+    ctx.removed('waitersAnonymised', waitersAnonymised);
 
     // Stammdaten und Zugaenge der Organisation.
     for (const [key, table] of [

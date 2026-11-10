@@ -89,6 +89,34 @@ export interface DeviceReport {
   revenue: number;
 }
 
+/** Eine Zeile des Berichts „Bedienungen“ (je Bedienung bzw. Mitglied). */
+export interface WaiterReportRow {
+  kind: 'waiter' | 'member' | 'none';
+  waiterId: string | null;
+  userId: string | null;
+  name: string;
+  shortName: string | null;
+  color: string | null;
+  role: string | null;
+  /** Aufgenommen (Ersteller): Bestellungen, Positionen (Runden), Umsatz. */
+  orders: number;
+  items: number;
+  revenue: number;
+  /** Kassiert: Anzahl, Summe, je Zahlart, davon Trinkgeld. */
+  payments: number;
+  collected: number;
+  cashAmount: number;
+  cardAmount: number;
+  otherAmount: number;
+  tips: number;
+  /** Storno/Erstattungen ausgeloest (Betrag positiv) und Pfand ausgezahlt. */
+  refundCount: number;
+  refunds: number;
+  pfandReturned: number;
+  settlements: number;
+  openOrders: number;
+}
+
 export interface ProductReport {
   productId: string;
   productName: string;
@@ -210,6 +238,10 @@ export const REPORT_MONEY_KEYS = new Set([
   'attributedRefunds',
   'unassignedRefunds',
   'refunds',
+  'collected',
+  'cashAmount',
+  'cardAmount',
+  'otherAmount',
   'percentage',
 ]);
 
@@ -965,6 +997,196 @@ export class ReportsService {
     }));
   }
 
+  /**
+   * Bericht „Bedienungen“ (bedienungen-plan.md §7): dieselben Zahlen wie die
+   * Kellnerabrechnung je Bedienung bzw. Mitglied über einen Zeitraum
+   * (Buchungszeitpunkt) bzw. eine Veranstaltung, ohne Testbuchungen. Eine
+   * Zeile „Ohne Bedienung“ sammelt, was niemandem zugeordnet ist (Shop,
+   * Kassen ohne Bedienung). Nur Mengen in „Nur Bons“ (Controller).
+   */
+  async getWaitersReport(
+    organizationId: string,
+    queryDto: QueryReportsDto,
+    user: User,
+  ): Promise<WaiterReportRow[]> {
+    await this.checkPermission(organizationId, user.id);
+    const manager = this.orderRepository.manager;
+    const params: unknown[] = [
+      organizationId,
+      queryDto.eventId ?? null,
+      queryDto.startDate ? startOfDay(queryDto.startDate) : null,
+      queryDto.endDate ? endOfDay(queryDto.endDate) : null,
+    ];
+    const window = (alias: string, eventColumn = `${alias}.event_id`) =>
+      `($2::uuid IS NULL OR ${eventColumn} = $2)
+       AND ($3::timestamptz IS NULL OR ${alias}.created_at >= $3)
+       AND ($4::timestamptz IS NULL OR ${alias}.created_at <= $4)`;
+    const key = (waiter: string, member: string) =>
+      `CASE WHEN ${waiter} IS NOT NULL THEN 'w:' || ${waiter}
+            WHEN ${member} IS NOT NULL THEN 'u:' || ${member} ELSE 'none' END`;
+
+    type Row = Record<string, string | number | null> & { key: string };
+    const query = async (
+      sql: string,
+      values: unknown[] = params,
+    ): Promise<Row[]> => await manager.query(sql, values);
+
+    const [orders, items, payments, refunds, pfand, settlements, open] =
+      await Promise.all([
+        query(`SELECT ${key('o.created_by_waiter_id', 'o.created_by_user_id')} AS key,
+                      count(*)::int AS orders
+                 FROM orders o
+                WHERE o.organization_id = $1 AND NOT o.is_test AND o.status <> 'cancelled'
+                  AND ${window('o')}
+                GROUP BY 1`),
+        query(`SELECT ${key('oi.added_by_waiter_id', 'oi.added_by_user_id')} AS key,
+                      COALESCE(sum(oi.quantity - oi.refunded_quantity), 0)::int AS items,
+                      COALESCE(sum(oi.total_price), 0) AS revenue
+                 FROM order_items oi JOIN orders o ON o.id = oi.order_id
+                WHERE o.organization_id = $1 AND NOT o.is_test AND o.status <> 'cancelled'
+                  AND oi.status <> 'cancelled' AND ${window('oi', 'o.event_id')}
+                GROUP BY 1`),
+        query(`SELECT ${key('p.processed_by_waiter_id', 'p.processed_by_user_id')} AS key,
+                      count(*)::int AS payments, COALESCE(sum(p.amount), 0) AS collected,
+                      COALESCE(sum(p.amount) FILTER (WHERE p.payment_method = 'cash'), 0) AS cash,
+                      COALESCE(sum(p.amount) FILTER (WHERE p.payment_method IN ('card', 'sumup_terminal')), 0) AS card,
+                      COALESCE(sum(p.tip_amount), 0) AS tips
+                 FROM payments p JOIN orders o ON o.id = p.order_id
+                WHERE o.organization_id = $1 AND NOT o.is_test
+                  AND p.status IN ('captured', 'refunded') AND ${window('p', 'o.event_id')}
+                GROUP BY 1`),
+        query(`SELECT ${key('r.waiter_id', 'r.user_id')} AS key,
+                      count(*)::int AS count, COALESCE(sum(abs(r.amount)), 0) AS amount
+                 FROM refunds r
+                WHERE r.organization_id = $1 AND NOT r.is_test AND ${window('r')}
+                GROUP BY 1`),
+        query(`SELECT ${key('pr.waiter_id', 'pr.created_by_user_id')} AS key,
+                      COALESCE(sum(abs(pr.total_amount)), 0) AS amount
+                 FROM pfand_returns pr
+                WHERE pr.organization_id = $1 AND NOT pr.is_test AND ${window('pr')}
+                GROUP BY 1`),
+        query(`SELECT ${key('s.waiter_id', 's.user_id')} AS key, count(*)::int AS count
+                 FROM waiter_settlements s
+                WHERE s.organization_id = $1 AND NOT s.is_test AND ${window('s')}
+                GROUP BY 1`),
+        query(
+          `SELECT ${key('o.waiter_id', 'NULL::uuid')} AS key, count(*)::int AS count
+                 FROM orders o
+                WHERE o.organization_id = $1 AND NOT o.is_test AND o.waiter_id IS NOT NULL
+                  AND o.status NOT IN ('cancelled', 'completed')
+                  AND o.payment_status IN ('unpaid', 'partly_paid')
+                  AND o.closed_without_payment_at IS NULL
+                  AND ($2::uuid IS NULL OR o.event_id = $2)
+                GROUP BY 1`,
+          params.slice(0, 2),
+        ),
+      ]);
+
+    const rows = new Map<string, WaiterReportRow>();
+    const row = (k: string): WaiterReportRow => {
+      let entry = rows.get(k);
+      if (!entry) {
+        const [kind, id] = k === 'none' ? ['none', null] : k.split(':');
+        entry = {
+          kind: kind === 'w' ? 'waiter' : kind === 'u' ? 'member' : 'none',
+          waiterId: kind === 'w' ? id : null,
+          userId: kind === 'u' ? id : null,
+          name: 'Ohne Bedienung',
+          shortName: null,
+          color: null,
+          role: null,
+          orders: 0,
+          items: 0,
+          revenue: 0,
+          payments: 0,
+          collected: 0,
+          cashAmount: 0,
+          cardAmount: 0,
+          otherAmount: 0,
+          tips: 0,
+          refundCount: 0,
+          refunds: 0,
+          pfandReturned: 0,
+          settlements: 0,
+          openOrders: 0,
+        };
+        rows.set(k, entry);
+      }
+      return entry;
+    };
+    const n = (value: string | number | null | undefined) => Number(value ?? 0);
+    for (const r of orders) row(r.key).orders = n(r.orders);
+    for (const r of items) {
+      row(r.key).items = n(r.items);
+      row(r.key).revenue = round2(n(r.revenue));
+    }
+    for (const r of payments) {
+      const entry = row(r.key);
+      entry.payments = n(r.payments);
+      entry.collected = round2(n(r.collected));
+      entry.cashAmount = round2(n(r.cash));
+      entry.cardAmount = round2(n(r.card));
+      entry.otherAmount = round2(n(r.collected) - n(r.cash) - n(r.card));
+      entry.tips = round2(n(r.tips));
+    }
+    for (const r of refunds) {
+      row(r.key).refundCount = n(r.count);
+      row(r.key).refunds = round2(n(r.amount));
+    }
+    for (const r of pfand) row(r.key).pfandReturned = round2(n(r.amount));
+    for (const r of settlements) row(r.key).settlements = n(r.count);
+    for (const r of open) row(r.key).openOrders = n(r.count);
+
+    const waiterIds = [...rows.values()]
+      .map((r) => r.waiterId)
+      .filter((id): id is string => !!id);
+    const userIds = [...rows.values()]
+      .map((r) => r.userId)
+      .filter((id): id is string => !!id);
+    const waiters: {
+      id: string;
+      name: string;
+      short_name: string | null;
+      color: string | null;
+      role: string;
+    }[] = waiterIds.length
+      ? await manager.query(
+          `SELECT id, name, short_name, color, role FROM waiters
+            WHERE organization_id = $1 AND id = ANY($2::uuid[])`,
+          [organizationId, waiterIds],
+        )
+      : [];
+    const users: { id: string; name: string | null }[] = userIds.length
+      ? await manager.query(
+          `SELECT id, NULLIF(trim(concat_ws(' ', first_name, last_name)), '') AS name
+             FROM users WHERE id = ANY($1::uuid[])`,
+          [userIds],
+        )
+      : [];
+    for (const entry of rows.values()) {
+      if (entry.waiterId) {
+        const w = waiters.find((x) => x.id === entry.waiterId);
+        entry.name = w?.name ?? 'Bedienung (gelöscht)';
+        entry.shortName = w?.short_name ?? null;
+        entry.color = w?.color ?? null;
+        entry.role = w?.role ?? null;
+      } else if (entry.userId) {
+        entry.name =
+          users.find((x) => x.id === entry.userId)?.name ??
+          'Mitglied (gelöscht)';
+        entry.role = 'member';
+      }
+    }
+    const order = { waiter: 0, member: 1, none: 2 } as const;
+    return [...rows.values()].sort(
+      (a, b) =>
+        order[a.kind] - order[b.kind] ||
+        b.collected - a.collected ||
+        b.orders - a.orders ||
+        a.name.localeCompare(b.name, 'de'),
+    );
+  }
+
   async getInventoryReport(
     eventId: string,
     user: User,
@@ -1100,6 +1322,13 @@ export class ReportsService {
         break;
       case 'categories':
         reportData = await this.getCategoriesReport(
+          organizationId,
+          queryDto,
+          user,
+        );
+        break;
+      case 'waiters':
+        reportData = await this.getWaitersReport(
           organizationId,
           queryDto,
           user,

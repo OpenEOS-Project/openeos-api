@@ -734,7 +734,8 @@ Beginn/Ende, Probelauf und Fehler in `retention_runs` – ohne Inhalte.
 | Datenart (`category`) | Was | Frist (Standard) | Verfahren |
 |---|---|---|---|
 | `guest_data` | Name, Telefon, E-Mail und Anmerkungen von Gästen in Bestellungen, Shop-Checkouts, Bestellungen am Tisch, Druckaufträgen | 30 Tage nach dem Ende der Veranstaltung (ohne Enddatum: nach der Bestellung, nur abgeschlossene) | Felder leeren; Bestellung bleibt ohne Personenbezug |
-| `helper_data` | Schichtanmeldungen mit Name, E-Mail, Telefon, Anmerkungen, Notizen, Änderungsvorschläge, Helfer-Links | 30 Tage nach der letzten Schicht des Plans | löschen; Plan und Schichten bleiben |
+| `helper_data` | Schichtanmeldungen mit Name, E-Mail, Telefon, Anmerkungen, Notizen, Änderungsvorschläge, Helfer-Links | 30 Tage nach der letzten Schicht des Plans | löschen; Plan und Schichten bleiben; Bedienungen verlieren den Verweis auf die Anmeldung |
+| `waiter_data` | Bedienungen (Name, Kurzname, Farbe, PIN-Prüfwert), ihre Anmeldungen an Geräten, ihr Name in Storno-/Erstattungsprotokollen | veranstaltungsgebunden 30 Tage nach Ende (bzw. Löschung) der Veranstaltung; organisationsweit 30 Tage nach Deaktivierung oder 12 Monate ohne Anmeldung; Anmeldungen 90 Tage | ohne Buchungen löschen, sonst anonymisieren („Bedienung N“) und Protokollnamen pseudonymisieren; Steuerarchiv (`tse_transactions.operator_name`, Kassenabschlüsse, Kassenbuch) und Abrechnungen bleiben |
 | `auth_records` | abgelaufene Sitzungen, Einmalcodes, Anmelde- und Helfer-Links, vertrauenswürdige Geräte, Passwort-/E-Mail-Änderungslinks | nach Ablauf (1 Tag Puffer) | löschen |
 | `auth_records` | angenommene/abgelaufene Einladungen, widerrufene/abgelaufene API-Tokens | 90 Tage | löschen |
 | `audit_logs` | Admin-Protokoll | 90 Tage | löschen; Einträge zu Abrechnung, Cloud-TSE, Kassenabschluss und Betriebsart bleiben ohne IP/Browser |
@@ -892,6 +893,8 @@ Der Super-Admin sieht sie mit den übrigen Läufen und Einzellöschungen unter
 | `RETENTION_CATEGORIES` | alle (kommagetrennte Liste zum Einschränken) |
 | `RETENTION_CONTACT_EMAIL` | `OPERATOR_EMAIL` – Adresse für Exportanfragen in der Löschankündigung |
 | `RETENTION_GUEST_DATA_DAYS` / `RETENTION_HELPER_DATA_DAYS` | 30 (min. 30) |
+| `RETENTION_WAITER_DATA_DAYS` | 30 (min. 30) – Bedienungen: nach Ende der Veranstaltung bzw. nach Deaktivierung |
+| `RETENTION_WAITER_INACTIVE_MONTHS` / `RETENTION_WAITER_SESSION_DAYS` | 12 / 90 – organisationsweite Bedienungen ohne Anmeldung; Anmeldungen an Geräten |
 | `RETENTION_AUDIT_LOG_DAYS` / `RETENTION_STALE_CREDENTIAL_DAYS` | 90 |
 | `RETENTION_SUPPORT_MONTHS` / `RETENTION_CONTACT_MONTHS` | 12 / 6 |
 | `RETENTION_INACTIVE_ORG_MONTHS` / `RETENTION_INACTIVE_USER_MONTHS` | 24 / 24 |

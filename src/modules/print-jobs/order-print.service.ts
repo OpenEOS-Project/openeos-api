@@ -30,6 +30,7 @@ import {
 import {
   CANCELLATION_TICKET_TEMPLATE,
   PFAND_RETURN_RECEIPT_TEMPLATE,
+  WAITER_SETTLEMENT_TEMPLATE,
   REFUND_RECEIPT_TEMPLATE,
 } from './builtin-templates';
 
@@ -775,6 +776,46 @@ export class OrderPrintService {
     } catch (error) {
       this.logger.error(
         `Failed to print pfand return receipt for org ${organizationId}: ${(error as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Kellnerabrechnung bzw. Zwischenstand (Vorlage `waiter_settlement`) auf
+   * den gewaehlten Drucker, sonst den Kassenbon-Drucker des Geraets (bzw.
+   * der Organisation). Liefert, ob ein Druckauftrag entstanden ist.
+   */
+  async printWaiterSettlement(
+    organizationId: string,
+    target: { printerId?: string | null; deviceId?: string | null },
+    data: Record<string, unknown>,
+  ): Promise<boolean> {
+    try {
+      const printerId =
+        target.printerId ||
+        (
+          await this.printRoutingService.resolveOrderPrinter({
+            organizationId,
+            orderDeviceId: target.deviceId ?? null,
+            workflow: 'receipt',
+          })
+        ).printerId;
+      if (!printerId) return false;
+      await this.printJobsService.createFromWorkflow(
+        organizationId,
+        printerId,
+        null,
+        null,
+        1,
+        { organization: await this.buildOrgPayload(organizationId), ...data },
+        null,
+        WAITER_SETTLEMENT_TEMPLATE,
+      );
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to print waiter settlement for org ${organizationId}: ${(error as Error).message}`,
       );
       return false;
     }

@@ -5,6 +5,7 @@ import {
   REFUND_RECEIPT_TEMPLATE,
   TSE_PRINT_BLOCK,
   TSE_RECEIPT_TEMPLATES,
+  WAITER_SETTLEMENT_TEMPLATE,
   agentTemplateMap,
   withTseBlock,
 } from './builtin-templates';
@@ -21,6 +22,16 @@ describe('builtin print templates and the Cloud-TSE block', () => {
       expect(source).toContain(TSE_PRINT_BLOCK);
       expect(source.trimEnd().endsWith('<<CUT>>')).toBe(true);
     }
+  });
+
+  it('serves the waiter settlement without TSE block, with signature lines', () => {
+    const source = BUILTIN_PRINT_TEMPLATES[WAITER_SETTLEMENT_TEMPLATE];
+    expect(TSE_RECEIPT_TEMPLATES).not.toContain(WAITER_SETTLEMENT_TEMPLATE);
+    expect(source).not.toContain('tse.');
+    expect(source).toContain('Kasse / Schichtleitung');
+    expect(source).toContain('{% if signatures|default(true) %}');
+    expect(source.trimEnd().endsWith('<<CUT>>')).toBe(true);
+    expect(agentTemplateMap([])[WAITER_SETTLEMENT_TEMPLATE]).toBe(source);
   });
 
   it('prints every field the contract requires (§8.6)', () => {

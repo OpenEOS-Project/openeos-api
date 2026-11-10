@@ -14,6 +14,7 @@ import {
   Organization,
   Payment,
   Refund,
+  Waiter,
 } from '../../database/entities';
 import {
   OPERATING_MODE_SELECT,
@@ -77,6 +78,11 @@ export interface OrderHistoryRow {
   eventId: string | null;
   createdByDeviceId: string | null;
   deviceName: string | null;
+  /** Verantwortliche Bedienung (Tisch), sonst die aufnehmende. */
+  waiterId: string | null;
+  waiterName: string | null;
+  waiterShortName: string | null;
+  waiterColor: string | null;
   paymentMethods: string[];
   items: {
     id: string;
@@ -287,6 +293,11 @@ export class OrderHistoryService {
       true,
     )
       .leftJoin('o.createdByDevice', 'd')
+      .leftJoin(
+        Waiter,
+        'w',
+        'w.id = COALESCE(o.waiter_id, o.created_by_waiter_id)',
+      )
       .select([
         'o.id AS id',
         'o.order_number AS "orderNumber"',
@@ -312,6 +323,10 @@ export class OrderHistoryService {
         'o.event_id AS "eventId"',
         'o.created_by_device_id AS "createdByDeviceId"',
         'd.name AS "deviceName"',
+        'w.id AS "waiterId"',
+        'w.name AS "waiterName"',
+        'w.short_name AS "waiterShortName"',
+        'w.color AS "waiterColor"',
         `ARRAY(SELECT DISTINCT pm.payment_method::text FROM payments pm
            WHERE pm.order_id = o.id AND pm.status IN ('captured', 'refunded'))
            AS "paymentMethods"`,
@@ -495,6 +510,14 @@ export class OrderHistoryService {
       ...order.items.map((i) => i.addedByWaiterId),
       ...payments.map((p) => p.processedByWaiterId),
       ...refunds.flatMap((r) => [r.waiterId, r.approvedByWaiterId]),
+      // Tischuebergaben: von/an
+      ...events.flatMap((e) =>
+        e.type === 'transferred'
+          ? [e.data?.fromWaiterId, e.data?.toWaiterId].map((v) =>
+              typeof v === 'string' ? v : null,
+            )
+          : [],
+      ),
     ].filter((id): id is string => !!id);
     const waiterRows: {
       id: string;
@@ -717,6 +740,20 @@ export class OrderHistoryService {
         userId: e.userId,
         actorName: e.actorName,
         data: e.data,
+        ...(e.type === 'transferred'
+          ? {
+              fromWaiter: waiterOf(
+                typeof e.data?.fromWaiterId === 'string'
+                  ? e.data.fromWaiterId
+                  : null,
+              ),
+              toWaiter: waiterOf(
+                typeof e.data?.toWaiterId === 'string'
+                  ? e.data.toWaiterId
+                  : null,
+              ),
+            }
+          : {}),
       })),
     };
   }

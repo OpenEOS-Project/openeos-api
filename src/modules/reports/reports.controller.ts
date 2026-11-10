@@ -1,4 +1,12 @@
-import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -9,7 +17,9 @@ import {
 import { ApiTokenAccess } from '../../common/decorators';
 import { TokenScope } from '../api-tokens/api-scopes';
 import type { Response } from 'express';
-import { ReportsService } from './reports.service';
+import { ReportsService, countsOnly } from './reports.service';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import type { AppRequest } from '../../common/types/request.types';
 import { GatewayService } from '../gateway/gateway.service';
 import { QueryReportsDto, ExportReportsDto, ReportExportFormat } from './dto';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -233,6 +243,34 @@ export class ReportsController {
     return { data: report };
   }
 
+  /*
+   * Bewusst ohne API-Token/MCP: Personendaten des Kassenpersonals nur in
+   * der Verwaltung (bedienungen-plan.md Entscheidung 14).
+   */
+  @Get('waiters')
+  @Roles(Role.MEMBER)
+  @ApiOperation({
+    operationId: 'getWaitersReport',
+    summary: 'Bericht je Bedienung',
+    description:
+      'Je Bedienung bzw. Mitglied: aufgenommen (Bestellungen, Positionen, Umsatz), kassiert je Zahlart mit Trinkgeld, Storno/Erstattungen, Pfand-Auszahlungen, Abrechnungen und offene Tische; ohne Testbuchungen, Zeitraum nach Buchungszeit. Zeile `kind: none` = ohne Bedienung. In „Nur Bons“ nur Mengen. Modulrecht Auswertung; nicht mit API-Token.',
+  })
+  async getWaitersReport(
+    @CurrentOrganization() organizationId: string,
+    @Query() queryDto: QueryReportsDto,
+    @CurrentUser() user: User,
+  ) {
+    const report = await this.reportsService.getWaitersReport(
+      organizationId,
+      queryDto,
+      user,
+    );
+    const ordersOnly =
+      (await this.reportsService.getOperatingMode(organizationId)) ===
+      'orders_only';
+    return { data: ordersOnly ? countsOnly(report) : report };
+  }
+
   @ApiTokenAccess(TokenScope.READ)
   @Get('inventory')
   @Roles(Role.MEMBER)
@@ -306,7 +344,16 @@ export class ReportsController {
     @Query('type') reportType: string,
     @Res() res: unknown,
     @CurrentUser() user: User,
+    @Req() req: AppRequest,
   ) {
+    // Bedienungen: Personendaten, nicht ueber API-Token/MCP.
+    if (reportType === 'waiters' && req.apiToken) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.API_TOKEN_NOT_ALLOWED,
+        message: 'Der Bericht „Bedienungen“ ist mit API-Token nicht verfügbar.',
+      });
+    }
     const result = await this.reportsService.exportReport(
       organizationId,
       reportType || 'sales',

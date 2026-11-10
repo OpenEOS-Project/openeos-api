@@ -77,6 +77,14 @@ export class Waiter extends BaseEntity {
   })
   lastUsedAt: Date | null;
 
+  /** Seit wann deaktiviert (Frist des Loeschlaufs `waiter_data`). */
+  @Column({
+    name: 'deactivated_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  deactivatedAt: Date | null;
+
   @Column({
     name: 'anonymized_at',
     type: 'timestamp with time zone',
@@ -91,7 +99,7 @@ export class Waiter extends BaseEntity {
   @JoinColumn({ name: 'organization_id' })
   organization?: Organization;
 
-  @ManyToOne(() => Event, { onDelete: 'CASCADE', nullable: true })
+  @ManyToOne(() => Event, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn({ name: 'event_id' })
   event?: Event | null;
 }
