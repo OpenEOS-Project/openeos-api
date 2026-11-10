@@ -50,7 +50,7 @@ describe('buildChecklist', () => {
     expect(items.shop_legal).toBeUndefined(); // kein Shop, keine QR-Codes
     expect(items.tse).toBeUndefined(); // bargeldlos braucht keine TSE
     expect(items.event_active).toBeUndefined();
-    expect(list.every((i) => i.url.startsWith(APP))).toBe(true);
+    expect(list.every((i) => new URL(i.url).origin === APP)).toBe(true);
   });
 
   it('nichts eingerichtet: offene Punkte mit Direktlinks', () => {
