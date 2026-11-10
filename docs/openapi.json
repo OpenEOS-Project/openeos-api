@@ -19788,6 +19788,90 @@
         ]
       }
     },
+    "/api/organizations/{id}/waiters/{waiterId}/tip-payouts": {
+      "get": {
+        "description": "Arbeitnehmer (Lohnkonto)? Offenes Kartentrinkgeld (unbare Zahlungen dieser Bedienung abzüglich Erstattungen und Auszahlungen) und bisherige Auszahlungen mit TSE-Beleg.",
+        "operationId": "waiters_tipPayouts",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "waiterId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Kartentrinkgeld einer Bedienung",
+        "tags": [
+          "Waiters"
+        ]
+      },
+      "post": {
+        "description": "Nur für Bedienungen mit „Arbeitnehmer (Lohnkonto)“ (sonst 409 TIP_PAYOUT_NOT_EMPLOYEE: bei Ehrenamtlichen gehört das Trinkgeld dem Verein). Eigener Kassenbeleg TrinkgeldAN −x / Bar −x (Cloud-TSE), Empfänger, Quittung mit Unterschrift; mindert den Soll-Bestand. Bargeld muss erlaubt sein. Betrag höchstens das offene Kartentrinkgeld (400 TIP_PAYOUT_AMOUNT_INVALID).",
+        "operationId": "waiters_payOutTips",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "waiterId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TipPayoutDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Kartentrinkgeld bar auszahlen",
+        "tags": [
+          "Waiters"
+        ]
+      }
+    },
     "/api/organizations/{id}/waiters/{waiterId}/transfer-tables": {
       "post": {
         "description": "Alle offenen Bestellungen der Bedienung (optional nur einer Veranstaltung) bekommen eine neue verantwortliche Bedienung. Jede Übergabe steht im Bestellverlauf; die Kassen bekommen `orderTransferred`.",
@@ -19881,6 +19965,44 @@
           }
         ],
         "summary": "Auskunft über eine Bedienung (Art. 15 DSGVO)",
+        "tags": [
+          "Waiters"
+        ]
+      }
+    },
+    "/api/organizations/{id}/waiter-settlements/live": {
+      "get": {
+        "description": "Für eine Kassen-Nachschau (§ 146b AO): je Bedienung bzw. Mitglied mit Buchungen seit der letzten Abrechnung in der Veranstaltung (ohne Angabe: die laufende) das Soll bar, wo das Bargeld liegt (Schublade je Gerät), kassiert je Zahlart, Trinkgeld, Erstattungen, Pfand-Auszahlungen, offene Tische und bei Arbeitnehmern das offene Kartentrinkgeld. Zeitpunkt `generatedAt`.",
+        "operationId": "waiterSettlements_live",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Live-Kassensturz je Bedienung",
         "tags": [
           "Waiters"
         ]
@@ -20265,6 +20387,86 @@
           }
         },
         "summary": "Abrechnen an der Kasse",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/waiter/live-cash-audit": {
+      "get": {
+        "description": "Soll bar jeder Bedienung seit ihrer letzten Abrechnung in der laufenden Veranstaltung, für eine Kassen-Nachschau. Nur Schichtleitung bzw. Admin-Mitglied (sonst 403 WAITER_NOT_PERMITTED).",
+        "operationId": "deviceWaiters_liveCashAudit",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Live-Kassensturz (Schichtleitung)",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/waiter/tip-payouts": {
+      "post": {
+        "description": "Wie die Verwaltung: nur für Bedienungen mit „Arbeitnehmer (Lohnkonto)“, eigener TSE-Beleg TrinkgeldAN −x / Bar −x, Quittung auf dem Bondrucker des Geräts. Nur Schichtleitung bzw. Admin-Mitglied.",
+        "operationId": "deviceWaiters_payOutTips",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceTipPayoutDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Kartentrinkgeld bar auszahlen (Schichtleitung)",
         "tags": [
           "Device API"
         ]
@@ -26487,6 +26689,31 @@
           "printerId": {
             "type": "string",
             "description": "Drucker für den Abrechnungsbon (Verwaltung). Ohne: kein Druck."
+          },
+          "payOutCardTips": {
+            "type": "boolean",
+            "description": "Offenes Kartentrinkgeld gleich bar auszahlen (nur Bedienungen mit „Arbeitnehmer (Lohnkonto)“; eigener TSE-Beleg TrinkgeldAN, Quittung)."
+          }
+        }
+      },
+      "TipPayoutDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "example": 5.2,
+            "description": "Betrag in Euro; ohne: das ganze offene Kartentrinkgeld."
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "object",
+            "maxLength": 500
+          },
+          "printerId": {
+            "type": "string",
+            "description": "Drucker für die Quittung (Verwaltung)."
           }
         }
       },
@@ -26577,6 +26804,10 @@
             "type": "string",
             "description": "Drucker für den Abrechnungsbon (Verwaltung). Ohne: kein Druck."
           },
+          "payOutCardTips": {
+            "type": "boolean",
+            "description": "Offenes Kartentrinkgeld gleich bar auszahlen (nur Bedienungen mit „Arbeitnehmer (Lohnkonto)“; eigener TSE-Beleg TrinkgeldAN, Quittung)."
+          },
           "waiterId": {
             "type": "string",
             "description": "Andere Bedienung abrechnen (Schichtleitung). Ohne: sich selbst."
@@ -26585,6 +26816,31 @@
             "type": "boolean",
             "default": true,
             "description": "Bon drucken"
+          }
+        }
+      },
+      "DeviceTipPayoutDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "example": 5.2,
+            "description": "Betrag in Euro; ohne: das ganze offene Kartentrinkgeld."
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "object",
+            "maxLength": 500
+          },
+          "printerId": {
+            "type": "string",
+            "description": "Drucker für die Quittung (Verwaltung)."
+          },
+          "waiterId": {
+            "type": "string",
+            "description": "Bedienung; ohne: sich selbst (nur Schichtleitung)."
           }
         }
       },

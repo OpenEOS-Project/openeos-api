@@ -39,7 +39,11 @@ import {
 } from './waiter-operator';
 import { retireEventWaiters } from './waiter-retire';
 import { WaiterSessionsService } from './waiter-sessions.service';
-import { WaiterSettlementsService } from './waiter-settlements.service';
+import { WaiterCashAuditService } from './waiter-cash-audit.service';
+import {
+  settlementPrintData,
+  WaiterSettlementsService,
+} from './waiter-settlements.service';
 import { WaiterTransferService } from './waiter-transfer.service';
 import { WaitersService } from './waiters.service';
 
@@ -434,6 +438,131 @@ describeWithDb('Kellnerabrechnung against Postgres', () => {
     }) as unknown as Device;
 
   // ------------------------------------------------------------- Rechnung
+
+  it('Cloud-TSE (Frage 7): the settlement is secured as SonstigerVorgang with Soll, Ist and Differenz; the view shows it', async () => {
+    const w = await world();
+    const anna = await waiter(w, 'Anna Berger');
+    const o1 = await order(w, { creator: anna.id, total: 10, paid: 10 });
+    await payment(o1, { amount: 10, waiterId: anna.id, deviceId: w.deviceA });
+    const signSettlement = jest.fn(
+      async (input: { organizationId: string; settlementId: string }) => {
+        await sql(
+          `INSERT INTO tse_transactions (organization_id, kind, process_type, process_data, status, client_id,
+             transaction_number, signature_counter, finish_time, lines)
+           VALUES ($1, 'settlement', 'SonstigerVorgang', 'x', 'signed', 'OEOS-1', 7, 99, now(), $2)`,
+          [
+            input.organizationId,
+            JSON.stringify({ settlementId: input.settlementId }),
+          ],
+        );
+        return null;
+      },
+    );
+    const signed = new WaiterSettlementsService(ds, undefined, {
+      signSettlement,
+    } as never);
+    const result = await signed.settle(
+      w.orgId,
+      { kind: 'waiter', waiterId: anna.id },
+      { userId: w.admin.id, waiterId: null, mayForce: true },
+      { countedCash: 9.5 },
+    );
+    expect(signSettlement).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settlementId: result.settlement.id,
+        number: result.settlement.number,
+        subjectName: 'Anna Berger',
+        expected: 10,
+        counted: 9.5,
+        difference: -0.5,
+      }),
+    );
+    expect(result.settlement.tse).toMatchObject({
+      failed: false,
+      transactionNumber: 7,
+      signatureCounter: 99,
+    });
+    // Nachdruck = „Kopie“ mit TSE-Angaben.
+    const data = settlementPrintData(result.settlement, { reprint: true });
+    expect(data).toMatchObject({
+      copy: true,
+      tse: { transaction_number: 7 },
+    });
+  });
+
+  it('Live-Kassensturz and card tip payout (Fragen 5, 7): only for employees, limited to open card tips, signed, reduces the drawer', async () => {
+    const w = await world();
+    const anna = await waiter(w, 'Anna Berger');
+    const max = await waiter(w, 'Max Minijob');
+    await sql(`UPDATE waiters SET is_employee = true WHERE id = $1`, [max.id]);
+    const o1 = await order(w, { creator: max.id, total: 20, paid: 20 });
+    await payment(o1, {
+      amount: 20,
+      tip: 3,
+      method: 'sumup_terminal',
+      waiterId: max.id,
+      deviceId: w.deviceA,
+    });
+    const o2 = await order(w, { creator: anna.id, total: 10, paid: 10 });
+    await payment(o2, {
+      amount: 10,
+      tip: 1,
+      method: 'sumup_terminal',
+      waiterId: anna.id,
+      deviceId: w.deviceA,
+    });
+    const signTipPayout = jest.fn(() =>
+      Promise.resolve({ id: randomUUID(), status: 'signed' } as never),
+    );
+    const audit = new WaiterCashAuditService(ds, settlements, {
+      signTipPayout,
+      forTransaction: () => Promise.resolve(null),
+    } as never);
+
+    const live = await audit.live(w.orgId);
+    expect(live.rows.map((r) => [r.subject.name, r.openCardTips])).toEqual([
+      ['Anna Berger', null],
+      ['Max Minijob', 3],
+    ]);
+
+    // Ehrenamtliche: gesperrt.
+    expect(
+      await reasonOf(
+        audit.payOut(w.orgId, anna.id, { userId: null, waiterId: null }),
+      ),
+    ).toBe('TIP_PAYOUT_NOT_EMPLOYEE');
+    // Mehr als offen: abgelehnt.
+    expect(
+      await reasonOf(
+        audit.payOut(
+          w.orgId,
+          max.id,
+          { userId: null, waiterId: null },
+          { amount: 5 },
+        ),
+      ),
+    ).toBe('TIP_PAYOUT_AMOUNT_INVALID');
+    const { payout } = await audit.payOut(
+      w.orgId,
+      max.id,
+      { userId: null, waiterId: null, deviceId: w.deviceA },
+      { amount: 2, eventId: w.eventId },
+    );
+    expect(payout).toMatchObject({ amount: 2, waiterName: 'Max Minijob' });
+    expect(signTipPayout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amountCents: 200,
+        recipientWaiterId: max.id,
+        recipientName: 'Max Minijob',
+        training: false,
+      }),
+    );
+    expect((await audit.tipPayoutStatus(w.orgId, max.id)).openCardTips).toBe(1);
+    // Unveraenderlich.
+    await expect(
+      sql(`UPDATE tip_payouts SET amount = 9 WHERE id = $1`, [payout.id]),
+    ).rejects.toThrow(/immutable/);
+  });
 
   it('sums cash, card, tips, refunds and deposits per server; test orders only count as training', async () => {
     const w = await world();

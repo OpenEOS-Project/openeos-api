@@ -25,6 +25,8 @@ import {
   cashbook,
   closingInput,
   failed,
+  settlement,
+  tipPayout,
   lateSigned,
   master,
   pfandReturn,
@@ -752,6 +754,66 @@ describe('DSFinV-K export (own validator)', () => {
     expect(
       rowsOf(zip, 'datapayment.csv').find((p) => p.BON_ID === heads[3].BON_ID),
     ).toMatchObject({ ZAHLART_TYP: 'Keine' });
+  });
+
+  it('Kellnerabrechnung (Frage 7): AVSonstige with SonstigerVorgang, figures in BON_NOTIZ, no money', () => {
+    const seq = new Sequence();
+    const tx = settlement(seq, {
+      number: 12,
+      name: 'Anna Berger',
+      expected: 123.4,
+      counted: 120,
+    });
+    expect(tx.processData).toBe(
+      'Kellnerabrechnung^12^Soll:123.40^Ist:120.00^Differenz:-3.40',
+    );
+    const { zip, result } = exportOf([closingInput(1, Z1, [tx])]);
+    expectValid(result);
+    const [head] = rowsOf(zip, 'transactions.csv');
+    expect(head).toMatchObject({
+      BON_TYP: 'AVSonstige',
+      BON_NAME: 'Kellnerabrechnung',
+      UMS_BRUTTO: '0,00',
+      BON_NOTIZ:
+        'Kellnerabrechnung Nr. 12 Anna Berger: Soll 123,40 €, Ist 120,00 €, Differenz -3,40 €',
+    });
+    expect(rowsOf(zip, 'transactions_tse.csv')[0]).toMatchObject({
+      TSE_TA_VORGANGSART: 'SonstigerVorgang',
+      TSE_VORGANGSDATEN: tx.processData,
+    });
+    expect(rowsOf(zip, 'datapayment.csv')[0].ZAHLART_TYP).toBe('Keine');
+    expect(rowsOf(zip, 'cashpointclosing.csv')[0].Z_SE_ZAHLUNGEN).toBe('0,00');
+  });
+
+  it('card tip payout to an employee (Frage 5): TrinkgeldAN −x, Bar −x, recipient in KUNDE_NAME/ID', () => {
+    const seq = new Sequence();
+    const tx = tipPayout(seq, {
+      amount: 5.2,
+      name: 'Max Minijob',
+      waiterId: 'w-42',
+    });
+    expect(tx.processData).toBe('Beleg^0.00_0.00_0.00_0.00_-5.20^-5.20:Bar');
+    for (const settings of [VAT_LIABLE, VAT_EXEMPT]) {
+      const { zip, result } = exportOf([
+        closingInput(1, Z1, [tx], { settings }),
+      ]);
+      expectValid(result);
+      const [head] = rowsOf(zip, 'transactions.csv');
+      expect(head).toMatchObject({
+        BON_TYP: 'Beleg',
+        BON_NAME: 'Trinkgeld-Auszahlung',
+        KUNDE_NAME: 'Max Minijob',
+        KUNDE_ID: 'w-42',
+        UMS_BRUTTO: '-5,20',
+      });
+      const [line] = rowsOf(zip, 'lines.csv');
+      expect(line.GV_TYP).toBe('TrinkgeldAN');
+      expect(rowsOf(zip, 'lines_vat.csv')[0].UST_SCHLUESSEL).toBe('5');
+      expect(rowsOf(zip, 'datapayment.csv')[0]).toMatchObject({
+        ZAHLART_TYP: 'Bar',
+        BASISWAEH_BETRAG: '-5,20',
+      });
+    }
   });
 
   it('Pfand transition (Frage 2): the Altsaldo share is PfandRueckzahlung with key 5, the rest at the pfand type rate', () => {

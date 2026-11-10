@@ -705,6 +705,22 @@ describeWithDb('DSFinV-K closings against Postgres', () => {
     ).toEqual({ amount: 140, fromBusinessDate: today });
   });
 
+  it('Kassenbuch: card tip payouts to employees reduce the drawer Soll', async () => {
+    const w = await world();
+    const actor = { deviceId: w.deviceId };
+    await cashbook.create(w.orgId, { type: 'deposit', amount: 100 }, actor);
+    await sql(
+      `INSERT INTO tip_payouts (organization_id, waiter_id, waiter_name, amount, device_id)
+       VALUES ($1, $2, 'Max Minijob', 5.2, $3)`,
+      [w.orgId, randomUUID(), w.deviceId],
+    );
+    const day = await cashbook.day(w.orgId, undefined, w.deviceId);
+    expect(day.total).toMatchObject({ tipPayouts: -5.2, expected: 94.8 });
+    await sql(`DELETE FROM tip_payouts WHERE organization_id = $1`, [
+      w.orgId,
+    ]).catch(() => undefined);
+  });
+
   it('Kleinunternehmer → umsatzsteuerpflichtig (Frage 9): closing first, then the master data change', async () => {
     const w = await world({ vatExempt: true });
     const seq = new Sequence();

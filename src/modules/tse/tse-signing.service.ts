@@ -47,8 +47,11 @@ import { rowsOf } from './tse-sql.util';
 import { TseOutageService } from './tse-outage.service';
 import {
   PROCESS_TYPE_ORDER,
+  PROCESS_TYPE_OTHER,
   PROCESS_TYPE_RECEIPT,
   bestellungProcessData,
+  settlementProcessData,
+  tipPayoutProcessData,
   cashbookProcessData,
   depositReturnSlots,
   emptySlots,
@@ -709,6 +712,108 @@ export class TseSigningService {
     }
   }
 
+  /**
+   * Kellnerabrechnung (nicht Training) als `SonstigerVorgang` mit Soll,
+   * gezaehltem Ist und Differenz. Bezug ueber `lines.settlementId` (die
+   * Abrechnung selbst ist unveraenderlich).
+   */
+  async signSettlement(input: {
+    organizationId: string;
+    settlementId: string;
+    number: number | null;
+    eventId: string | null;
+    subjectName: string;
+    expected: number | null;
+    counted: number | null;
+    difference: number | null;
+    terminal?: string | null;
+    userId?: string | null;
+    waiterId?: string | null;
+  }): Promise<TseReceiptView | null> {
+    try {
+      if (!(await this.isActive(input.organizationId))) return null;
+      const c = (v: number | null) => (v === null ? null : cents(v));
+      return this.sign({
+        organizationId: input.organizationId,
+        kind: 'settlement',
+        processType: PROCESS_TYPE_OTHER,
+        processData: settlementProcessData({
+          number: input.number,
+          expectedCents: c(input.expected),
+          countedCents: c(input.counted),
+          differenceCents: c(input.difference),
+        }),
+        training: false,
+        amountCents: 0,
+        lines: {
+          settlementId: input.settlementId,
+          settlementNumber: input.number,
+          subjectName: input.subjectName,
+          expected: input.expected,
+          counted: input.counted,
+          difference: input.difference,
+        },
+        eventId: input.eventId,
+        terminal: input.terminal ?? null,
+        userId: input.userId ?? null,
+        waiterId: input.waiterId ?? null,
+      });
+    } catch (error) {
+      this.logger.error(
+        `TSE settlement ${input.settlementId} failed: ${(error as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Barauszahlung von Kartentrinkgeld an eine angestellte Bedienung:
+   * Kassenbeleg mit TrinkgeldAN −x, Bar −x; Empfaenger in der Kopie
+   * (DSFinV-K KUNDE_NAME/KUNDE_ID).
+   */
+  async signTipPayout(input: {
+    organizationId: string;
+    tipPayoutId: string;
+    eventId: string | null;
+    amountCents: number;
+    recipientWaiterId: string;
+    recipientName: string;
+    training: boolean;
+    terminal?: string | null;
+    userId?: string | null;
+    waiterId?: string | null;
+  }): Promise<TseReceiptView | null> {
+    try {
+      if (!(await this.isActive(input.organizationId))) return null;
+      const amount = -Math.abs(input.amountCents);
+      return this.sign({
+        organizationId: input.organizationId,
+        kind: 'tip_payout',
+        processType: PROCESS_TYPE_RECEIPT,
+        processData: input.training
+          ? tipPayoutProcessData(amount).replace(/^Beleg/, 'AVTraining')
+          : tipPayoutProcessData(amount),
+        training: input.training,
+        amountCents: amount,
+        lines: {
+          tipPayoutId: input.tipPayoutId,
+          amountCents: amount,
+          recipientWaiterId: input.recipientWaiterId,
+          recipientName: input.recipientName,
+        },
+        eventId: input.eventId,
+        terminal: input.terminal ?? null,
+        userId: input.userId ?? null,
+        waiterId: input.waiterId ?? null,
+      });
+    } catch (error) {
+      this.logger.error(
+        `TSE tip payout ${input.tipPayoutId} failed: ${(error as Error).message}`,
+      );
+      return null;
+    }
+  }
+
   // ----------------------------------------------- Bestellvorgaenge
 
   /**
@@ -873,6 +978,12 @@ export class TseSigningService {
       );
       return null;
     }
+  }
+
+  /** Ein Vorgang nach ID (Trinkgeld-Auszahlung, Kellnerabrechnung). */
+  async forTransaction(id: string): Promise<TseReceiptView | null> {
+    const tx = await this.txRepository.findOne({ where: { id } });
+    return tx ? (await this.viewsFor([tx]))[0] : null;
   }
 
   async forRefund(refundId: string): Promise<TseReceiptView | null> {

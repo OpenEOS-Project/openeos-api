@@ -460,7 +460,9 @@ const WAITER_SETTLEMENT_SOURCE = `{# Zeichen pro Zeile: \`columns\` des Druckers
 {% if number is defined and number %}
 <<CENTER>><<BOLD>>{{ "Nr. " ~ number }}<</BOLD>><</CENTER>>
 {% endif %}
-{% if reprint %}
+{% if copy is defined and copy %}
+<<CENTER>><<BOLD>>-- KOPIE --<</BOLD>><</CENTER>>
+{% elif reprint %}
 <<CENTER>><<BOLD>>-- NACHDRUCK --<</BOLD>><</CENTER>>
 {% endif %}
 {{ line }}
@@ -522,6 +524,26 @@ const WAITER_SETTLEMENT_SOURCE = `{# Zeichen pro Zeile: \`columns\` des Druckers
 {% if training is defined and training %}
 {{ line }}
 {{ ("Training (nicht im Geld): " ~ training)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if tse is defined and tse %}
+{{ line }}
+{% if tse.failed %}
+<<BOLD>>TSE nicht erreichbar<</BOLD>>
+{% endif %}
+{% if tse.bon_number %}
+{{ ("Beleg-Nr.: " ~ tse.bon_number)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if not tse.failed %}
+{{ ("TSE-Transaktion: " ~ tse.transaction_number)|wordwrap(cols, true, "\\n") }}
+{{ ("Signaturzaehler: " ~ tse.signature_counter)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% endif %}
+{% if tip_payout is defined and tip_payout %}
+{{ line }}
+<<BOLD>>{{ row("TRINKGELD BAR AUSGEZAHLT:", tip_payout|currency) if cols >= 36 else "TRINKGELD AUSGEZAHLT:" }}<</BOLD>>
+{% if cols < 36 %}
+<<BOLD>>{{ tip_payout|currency|rjust(cols) }}<</BOLD>>
+{% endif %}
 {% endif %}
 {% if signatures|default(true) %}
 {{ sep }}
