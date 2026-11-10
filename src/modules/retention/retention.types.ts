@@ -16,6 +16,7 @@ export const RETENTION_CATEGORIES = [
   'contact_requests',
   'assistant_imports',
   'webhook_deliveries',
+  'receipt_links',
   'organization_inactivity',
   'organization_purge',
   'user_accounts',

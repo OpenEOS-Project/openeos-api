@@ -10746,6 +10746,7 @@ paths:
               - contact_requests
               - assistant_imports
               - webhook_deliveries
+              - receipt_links
               - organization_inactivity
               - organization_purge
               - user_accounts
@@ -11912,6 +11913,89 @@ paths:
           description: ""
       summary: Tisch bzw. Bestellung übergeben
       tags: *a112
+  /api/device-api/receipts/link:
+    post:
+      description: Erzeugt einen Link auf den Kassenbeleg der Bestellungen (gleicher Inhalt wie der gedruckte Bon, ohne Gästeangaben). Der Link enthält ein zufälliges 128-Bit-Token, gespeichert wird nur dessen SHA-256. Gültig `RECEIPT_LINK_DAYS` Tage (Standard 90). 409 `RECEIPT_NOT_AVAILABLE` in der Betriebsart „Nur Bons“ oder ohne Zahlung.
+      operationId: receiptsDevice_link
+      parameters:
+        - &a113
+          name: X-Device-Token
+          in: header
+          description: Device authentication token
+          required: true
+          schema:
+            type: string
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiptOrdersDto"
+      responses:
+        "200":
+          description: ""
+      summary: Digitalen Beleg als Link (QR-Code) ausgeben
+      tags: &a114
+        - Device API
+  /api/device-api/receipts/email:
+    post:
+      description: "Schickt den Kassenbeleg als HTML mit PDF-Anhang. Absendername ist der Verein, Antworten gehen an seine Kontaktadresse. Die Adresse wird nicht gespeichert und nicht protokolliert; im Verlauf der Bestellung steht nur „Beleg per E-Mail“. Grenzen: `RECEIPT_EMAIL_DEVICE_LIMIT_PER_HOUR` je Gerät (Standard 30) und `RECEIPT_EMAIL_ORDER_LIMIT` je Bestellung (Standard 5), sonst 429 `RECEIPT_EMAIL_RATE_LIMITED`."
+      operationId: receiptsDevice_email
+      parameters:
+        - *a113
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendReceiptEmailDto"
+      responses:
+        "200":
+          description: ""
+      summary: Digitalen Beleg per E-Mail schicken
+      tags: *a114
+  /api/public/receipts/{token}:
+    get:
+      description: Beleg-Bausteine (wie gedruckter Bon) und die rechtlichen Angaben des Vereins. 404 `RECEIPT_LINK_NOT_FOUND`, wenn der Link abgelaufen oder unbekannt ist.
+      operationId: receiptsPublic_view
+      parameters:
+        - name: token
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      summary: Digitalen Beleg anzeigen
+      tags: &a115
+        - Public Receipts
+  /api/public/receipts/{token}/pdf:
+    get:
+      operationId: receiptsPublic_pdf
+      parameters:
+        - name: token
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      summary: Digitalen Beleg als PDF herunterladen
+      tags: *a115
 info:
   title: OpenEOS API
   description: |-
@@ -13217,7 +13301,7 @@ components:
       properties:
         paymentMethod:
           type: string
-          enum: &a114
+          enum: &a117
             - cash
             - card
             - sumup_terminal
@@ -13287,7 +13371,7 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: &a115
+          enum: &a118
             - normal
             - high
             - rush
@@ -13295,7 +13379,7 @@ components:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: &a116
+          enum: &a119
             - pos
             - online
             - qr_order
@@ -13303,7 +13387,7 @@ components:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: &a117
+          enum: &a120
             - table_service
             - counter_pickup
         items:
@@ -13382,7 +13466,7 @@ components:
           type: string
         reasonCode:
           type: string
-          enum: &a113
+          enum: &a116
             - wrong_order
             - quality
             - not_delivered
@@ -13419,7 +13503,7 @@ components:
             $ref: "#/components/schemas/RefundItemSelectionDto"
         reasonCode:
           type: string
-          enum: *a113
+          enum: *a116
         reasonText:
           type: string
           example: Gast hat es sich anders überlegt
@@ -13464,7 +13548,7 @@ components:
           description: "Zahlung, über die erstattet wird. Ohne: von der jüngsten Zahlung rückwärts."
         reasonCode:
           type: string
-          enum: *a113
+          enum: *a116
         reasonText:
           type: string
           example: Burger kalt
@@ -13537,7 +13621,7 @@ components:
             type: string
         paymentMethod:
           type: string
-          enum: *a114
+          enum: *a117
           example: cash
         amountReceived:
           type: number
@@ -13767,17 +13851,17 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: *a115
+          enum: *a118
         source:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: *a116
+          enum: *a119
         fulfillmentType:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: *a117
+          enum: *a120
         items:
           description: Liste der Bestellpositionen
           type: array
@@ -13937,7 +14021,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: &a118
+          enum: &a121
             - fixed
             - manual
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
@@ -13974,7 +14058,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: *a118
+          enum: *a121
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
         amount:
           type: number
@@ -14006,7 +14090,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: &a119
+          enum: &a122
             - 19
             - 7
             - 0
@@ -14037,7 +14121,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: *a119
+          enum: *a122
           default: 19
           description: "Umsatzsteuersatz des Pfands in Prozent: der Satz der Getränke/Waren, für die dieses Pfand gilt (meist 19). Pfand gehört zum Entgelt; die Rückgabe mindert Umsatz und Umsatzsteuer zum selben Satz. Steuerbefreite Organisationen (Kleinunternehmer) weisen trotzdem keine MwSt aus."
         isActive:
@@ -14235,7 +14319,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: &a120
+          enum: &a123
             - rect
             - round
         x:
@@ -14319,7 +14403,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: *a120
+          enum: *a123
         x:
           type: number
         y:
@@ -16103,6 +16187,7 @@ components:
               - contact_requests
               - assistant_imports
               - webhook_deliveries
+              - receipt_links
               - organization_inactivity
               - organization_purge
               - user_accounts
@@ -16189,7 +16274,7 @@ components:
           description: Abonnierte Ereignisse (mindestens eines)
           items:
             type: string
-            enum: &a121
+            enum: &a124
               - order.created
               - order.paid
               - order.completed
@@ -16230,7 +16315,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a121
+            enum: *a124
         active:
           type: boolean
           description: Ein- oder ausschalten. Einschalten setzt eine automatische Abschaltung und die Fehlerserie zurück.
@@ -16256,7 +16341,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: &a122
+          enum: &a125
             - service
             - lead
           default: service
@@ -16286,7 +16371,7 @@ components:
           example: Ben
         role:
           type: string
-          enum: *a122
+          enum: *a125
       required:
         - name
     BulkCreateWaitersDto:
@@ -16298,7 +16383,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: *a122
+          enum: *a125
           default: service
         items:
           maxItems: 200
@@ -16322,7 +16407,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: *a122
+          enum: *a125
         permissions:
           type: object
         eventId:
@@ -16439,3 +16524,30 @@ components:
           description: Alle offenen Bestellungen desselben Tisches dieser Bedienung mit übergeben.
       required:
         - toWaiterId
+    ReceiptOrdersDto:
+      type: object
+      properties:
+        orderIds:
+          description: Bestellungen, deren Kassenbeleg ausgegeben wird (je Bestellung die letzte Zahlung, wie beim Nachdruck). 1–20.
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+        - orderIds
+    SendReceiptEmailDto:
+      type: object
+      properties:
+        orderIds:
+          description: Bestellungen, deren Kassenbeleg ausgegeben wird (je Bestellung die letzte Zahlung, wie beim Nachdruck). 1–20.
+          type: array
+          items:
+            type: string
+            format: uuid
+        email:
+          type: string
+          description: E-Mail-Adresse des Gastes. Wird nur für den Versand verwendet und nicht gespeichert.
+          example: gast@example.org
+      required:
+        - orderIds
+        - email

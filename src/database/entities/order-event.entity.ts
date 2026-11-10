@@ -19,6 +19,10 @@ export const ORDER_EVENT_TYPES = [
   'refund_receipt_reprinted',
   /** Tisch bzw. Bestellung an eine andere Bedienung uebergeben. */
   'transferred',
+  /** Digitaler Beleg: QR-Code/Link erzeugt (ohne Gaesteangaben). */
+  'receipt_link_created',
+  /** Beleg per E-Mail (nur Ergebnis, keine Adresse). */
+  'receipt_emailed',
 ] as const;
 export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number];
 

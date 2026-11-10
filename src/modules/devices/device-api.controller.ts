@@ -1879,6 +1879,7 @@ export class DeviceApiController {
     }
 
     const printType = body.type || 'tickets';
+    let printed: boolean | undefined;
 
     if (printType === 'tickets') {
       await this.orderPrintService.handleOrderCreated(organizationId, {
@@ -1906,21 +1907,27 @@ export class DeviceApiController {
         });
       }
 
-      await this.orderPrintService.handlePaymentReceived(organizationId, {
-        // Nachdruck: gespeicherte TSE-Daten, keine neue Transaktion. Druckt
-        // auch ohne automatischen Kassenbon; „NACHDRUCK“, wenn schon einer
-        // gedruckt wurde.
-        onDemand: true,
-        tse: (await this.tseSigning?.forPayment(lastPayment.id)) ?? null,
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        paymentId: lastPayment.id,
-        amount: Number(lastPayment.amount),
-        paymentMethod: lastPayment.paymentMethod,
-        isFullyPaid: order.paymentStatus === PaymentStatus.PAID,
-        order,
-        amountReceived: lastPayment.metadata?.amountReceived,
-      });
+      // Knopf „Bon drucken“: druckt auch ohne automatischen Kassenbon, auf
+      // den Bon-Drucker dieser Kasse (sonst der Organisation).
+      printed = await this.orderPrintService.handlePaymentReceived(
+        organizationId,
+        {
+          printDeviceId: device.id,
+          // Nachdruck: gespeicherte TSE-Daten, keine neue Transaktion.
+          tse: (await this.tseSigning?.forPayment(lastPayment.id)) ?? null,
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          paymentId: lastPayment.id,
+          amount: Number(lastPayment.amount),
+          paymentMethod: lastPayment.paymentMethod,
+          isFullyPaid: order.paymentStatus === PaymentStatus.PAID,
+          order,
+          amountReceived: lastPayment.metadata?.amountReceived,
+          // Druckt auch ohne automatischen Kassenbon; „NACHDRUCK“, wenn
+          // schon einer gedruckt wurde.
+          onDemand: true,
+        },
+      );
     }
 
     this.logger.log(
@@ -1939,7 +1946,10 @@ export class DeviceApiController {
       printType,
     );
 
-    return { data: { success: true } };
+    // `printed` nur beim Kassenbon: false = kein Bon-Drucker gefunden.
+    return {
+      data: { success: true, ...(printed === undefined ? {} : { printed }) },
+    };
   }
 
   // Station display endpoints

@@ -54,6 +54,36 @@ export function refundReasonLabel(
   return label ?? extra ?? null;
 }
 
+/** Zahlung, zu der ein Kassenbon entsteht (Druck oder digitaler Beleg). */
+export interface ReceiptPaymentData {
+  orderId: string;
+  orderNumber: string;
+  paymentId: string;
+  amount: number;
+  paymentMethod: string;
+  isFullyPaid: boolean;
+  order: Order | null;
+  /** Bei Barzahlung: erhaltener Betrag aus `payment.metadata`, fuers Rueckgeld. */
+  amountReceived?: unknown;
+  /**
+   * TSE-Daten des Kassenbelegs (oder Ausfallvermerk). Der Bon entsteht
+   * erst nach der Signatur (AEAO zu § 146a Nr. 2.5).
+   */
+  tse?: TseReceiptView | null;
+  /**
+   * Geraet, dessen Bon-Drucker gilt (Knopf „Bon drucken“ an einer anderen
+   * Kasse als der, die bestellt hat). Standard: Geraet der Bestellung.
+   */
+  printDeviceId?: string | null;
+  /**
+   * Auf Wunsch gedruckt („Bon drucken“/Nachdruck an der Kasse): druckt
+   * auch, wenn der automatische Kassenbon aus ist. Gab es fuer diese
+   * Zahlung schon einen Kassenbon, ist es ein Nachdruck (Vermerk
+   * „NACHDRUCK“, eine spaet eingetroffene Signatur gekennzeichnet).
+   */
+  onDemand?: boolean;
+}
+
 @Injectable()
 export class OrderPrintService {
   private readonly logger = new Logger(OrderPrintService.name);
@@ -531,41 +561,89 @@ export class OrderPrintService {
     }
   }
 
+  /**
+   * Daten des Kassenbons (`receipt`) einer Zahlung — dieselben fuer den
+   * gedruckten Bon und den digitalen Beleg (QR-Code, E-Mail, PDF), damit
+   * beide nicht auseinanderlaufen koennen.
+   */
+  async receiptPayload(
+    organizationId: string,
+    data: ReceiptPaymentData,
+    options: { reprint?: boolean } = {},
+  ): Promise<Record<string, unknown>> {
+    const reprint = options.reprint === true;
+    const isTest = await this.isTestOrder(data.order);
+    // Receipt template needs organization + monetary detail. Load org once.
+    const org = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: ['id', 'name', 'settings'],
+    });
+    const orgPayload = org ? organizationPrintBlock(org) : undefined;
+    // The receipt's items_list iterates a top-level `items` array
+    // (item.quantity/name/total/...). Without it the receipt prints no
+    // products. Load + map the order items just like the kitchen path.
+    const receiptItems = await this.orderItemRepository.find({
+      where: { orderId: data.orderId },
+      order: { createdAt: 'ASC' },
+    });
+    const staff = await this.orderStaff(data.order);
+    return {
+      ...this.buildOrderPayload(data.order, staff),
+      organization: orgPayload,
+      items: receiptItems
+        .filter((it) => it.status !== OrderItemStatus.CANCELLED)
+        .map((it) => ({
+          quantity: it.quantity,
+          name: it.productName,
+          total: it.totalPrice,
+          notes: it.notes ?? null,
+          options: this.formatOptions(it),
+        })),
+      total: data.order?.total,
+      subtotal: data.order?.subtotal,
+      // MwSt je Satz aus den Positionen; fehlt bei steuerbefreiten
+      // Organisationen ganz, damit der Bon keine MwSt-Zeile druckt.
+      ...buildReceiptTax(
+        receiptItems,
+        data.order?.discountAmount,
+        org?.settings?.vatExempt,
+      ),
+      // Pfand (deposit) is part of `total` but not `subtotal`, which is
+      // why total > subtotal. Expose it so the receipt can show it.
+      pfand_total: data.order?.pfandTotal ?? null,
+      discount_amount: data.order?.discountAmount ?? null,
+      paid_amount: data.order?.paidAmount,
+      change: cashChange(data.paymentMethod, data.amount, data.amountReceived),
+      payment_method: data.paymentMethod,
+      // Anzeigename („Bar“, „Karte (SumUp)“ …) statt des Rohwerts.
+      payment_label: paymentMethodLabel(data.paymentMethod),
+      paymentId: data.paymentId,
+      amount: data.amount,
+      isFullyPaid: data.isFullyPaid,
+      is_test: isTest,
+      reprint,
+      tse: tsePrintBlock(data.tse, { reprint }),
+    };
+  }
+
+  /**
+   * Kassenbon nach der Zahlung. Automatisch nur mit der Einstellung
+   * „Kassenbon“ (Ausloeser Zahlung); `onDemand` (Knopf „Bon drucken“ an
+   * der Kasse, Nachdruck) druckt auch, wenn der automatische Bon aus ist.
+   * Liefert, ob ein Druckauftrag entstanden ist.
+   */
   async handlePaymentReceived(
     organizationId: string,
-    data: {
-      orderId: string;
-      orderNumber: string;
-      paymentId: string;
-      amount: number;
-      paymentMethod: string;
-      isFullyPaid: boolean;
-      order: Order | null;
-      /** Bei Barzahlung: erhaltener Betrag aus `payment.metadata`, fuers Rueckgeld. */
-      amountReceived?: unknown;
-      /**
-       * TSE-Daten des Kassenbelegs (oder Ausfallvermerk). Der Bon entsteht
-       * erst nach der Signatur (AEAO zu § 146a Nr. 2.5).
-       */
-      tse?: TseReceiptView | null;
-      /**
-       * Auf Wunsch gedruckt („Bon drucken“/Nachdruck an der Kasse): druckt
-       * auch, wenn der automatische Kassenbon aus ist. Gab es fuer diese
-       * Zahlung schon einen Kassenbon, ist es ein Nachdruck (Vermerk
-       * „NACHDRUCK“, eine spaet eingetroffene Signatur gekennzeichnet).
-       */
-      onDemand?: boolean;
-    },
-  ): Promise<void> {
+    data: ReceiptPaymentData,
+  ): Promise<boolean> {
     try {
       const orderFlow = (await this.getOrderFlow(organizationId)) ?? {};
       const orderDeviceId: string | null =
         data.order?.createdByDeviceId ?? null;
-      const isTest = await this.isTestOrder(data.order);
 
       // Betriebsart „Nur Bons“: keine Kassenbons (keine Preise, keine
       // Zahlungen; Online-Zahlungen aus der Zeit davor eingeschlossen).
-      if (await this.hidesPrices(organizationId)) return;
+      if (await this.hidesPrices(organizationId)) return false;
 
       // Receipt printing on payment.
       const receipt = orderFlow.receiptPrinting;
@@ -573,90 +651,35 @@ export class OrderPrintService {
       // Opt-in: only print a receipt when explicitly enabled (consistent with
       // order-ticket printing). An unset/null receiptPrinting means "off", so
       // deactivating it actually stops the receipt.
-      if (
-        data.onDemand ||
-        (receipt?.enabled && trigger === 'payment_received')
-      ) {
-        const reprint =
-          data.onDemand === true &&
-          (await this.receiptPrintedBefore(organizationId, data.paymentId));
-        const { printerId } =
-          await this.printRoutingService.resolveOrderPrinter({
-            organizationId,
-            orderDeviceId,
-            workflow: 'receipt',
-          });
-        if (printerId) {
-          // Receipt template needs organization + monetary detail. Load org once.
-          const org = await this.organizationRepository.findOne({
-            where: { id: organizationId },
-            select: ['id', 'name', 'settings'],
-          });
-          const orgPayload = org ? organizationPrintBlock(org) : undefined;
-          // The receipt's items_list iterates a top-level `items` array
-          // (item.quantity/name/total/...). Without it the receipt prints no
-          // products. Load + map the order items just like the kitchen path.
-          const receiptItems = await this.orderItemRepository.find({
-            where: { orderId: data.orderId },
-            order: { createdAt: 'ASC' },
-          });
-          const staff = await this.orderStaff(data.order);
-          await this.printJobsService.createFromWorkflow(
-            organizationId,
-            printerId,
-            receipt?.templateId || null,
-            data.orderId,
-            1,
-            {
-              ...this.buildOrderPayload(data.order, staff),
-              organization: orgPayload,
-              items: receiptItems
-                .filter((it) => it.status !== OrderItemStatus.CANCELLED)
-                .map((it) => ({
-                  quantity: it.quantity,
-                  name: it.productName,
-                  total: it.totalPrice,
-                  notes: it.notes ?? null,
-                  options: this.formatOptions(it),
-                })),
-              total: data.order?.total,
-              subtotal: data.order?.subtotal,
-              // MwSt je Satz aus den Positionen; fehlt bei steuerbefreiten
-              // Organisationen ganz, damit der Bon keine MwSt-Zeile druckt.
-              ...buildReceiptTax(
-                receiptItems,
-                data.order?.discountAmount,
-                org?.settings?.vatExempt,
-              ),
-              // Pfand (deposit) is part of `total` but not `subtotal`, which is
-              // why total > subtotal. Expose it so the receipt can show it.
-              pfand_total: data.order?.pfandTotal ?? null,
-              discount_amount: data.order?.discountAmount ?? null,
-              paid_amount: data.order?.paidAmount,
-              change: cashChange(
-                data.paymentMethod,
-                data.amount,
-                data.amountReceived,
-              ),
-              payment_method: data.paymentMethod,
-              // Anzeigename („Bar“, „Karte (SumUp)“ …) statt des Rohwerts.
-              payment_label: paymentMethodLabel(data.paymentMethod),
-              paymentId: data.paymentId,
-              amount: data.amount,
-              isFullyPaid: data.isFullyPaid,
-              is_test: isTest,
-              reprint,
-              tse: tsePrintBlock(data.tse, { reprint }),
-            },
-            null,
-            'receipt',
-          );
-        }
-      }
+      const automatic = !!receipt?.enabled && trigger === 'payment_received';
+      if (!automatic && !data.onDemand) return false;
+      // Auf Wunsch und schon einmal gedruckt: Nachdruck (Vermerk, ggf.
+      // spaet eingetroffene Signatur).
+      const reprint =
+        data.onDemand === true &&
+        (await this.receiptPrintedBefore(organizationId, data.paymentId));
+      const { printerId } = await this.printRoutingService.resolveOrderPrinter({
+        organizationId,
+        orderDeviceId: data.printDeviceId ?? orderDeviceId,
+        workflow: 'receipt',
+      });
+      if (!printerId) return false;
+      await this.printJobsService.createFromWorkflow(
+        organizationId,
+        printerId,
+        receipt?.templateId || null,
+        data.orderId,
+        1,
+        await this.receiptPayload(organizationId, data, { reprint }),
+        null,
+        'receipt',
+      );
+      return true;
     } catch (error) {
       this.logger.error(
         `Failed to handle payment received printing for org ${organizationId}: ${(error as Error).message}`,
       );
+      return false;
     }
   }
 
