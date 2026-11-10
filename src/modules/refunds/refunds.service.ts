@@ -1141,6 +1141,9 @@ export class RefundsService {
         deviceId: actor.deviceId ?? refund.deviceId,
         deviceName: refund.device?.name ?? null,
         reprint: true,
+        // Gespeicherter Gegenbeleg (keine neue Transaktion); bisher fehlte
+        // der TSE-Block im Nachdruck.
+        tse: (await this.tseSigning?.forRefund(refund.id)) ?? null,
       },
     );
     await this.recordEvent(
