@@ -4,6 +4,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import {
+  HospitalityReceipt,
   Order,
   OrderEvent,
   Organization,
@@ -75,6 +76,7 @@ describeWithDb('ReceiptsService against Postgres', () => {
       ds.getRepository(Organization),
       ds.getRepository(PrintTemplate),
       ds.getRepository(OrderEvent),
+      ds.getRepository(HospitalityReceipt),
       print as unknown as OrderPrintService,
       email as unknown as EmailService,
       { platformLegal: { imprintUrl: null, privacyUrl: null } } as never,

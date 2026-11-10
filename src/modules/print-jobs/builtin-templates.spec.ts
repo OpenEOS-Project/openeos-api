@@ -6,6 +6,7 @@ import {
   TSE_PRINT_BLOCK,
   TSE_RECEIPT_TEMPLATES,
   WAITER_SETTLEMENT_TEMPLATE,
+  HOSPITALITY_RECEIPT_TEMPLATE,
   agentTemplateMap,
   withTseBlock,
 } from './builtin-templates';
@@ -32,6 +33,28 @@ describe('builtin print templates and the Cloud-TSE block', () => {
     expect(source).toContain('{% if signatures|default(true) %}');
     expect(source.trimEnd().endsWith('<<CUT>>')).toBe(true);
     expect(agentTemplateMap([])[WAITER_SETTLEMENT_TEMPLATE]).toBe(source);
+  });
+
+  it('serves the hospitality receipt, rendering the block list', () => {
+    const source = BUILTIN_PRINT_TEMPLATES[HOSPITALITY_RECEIPT_TEMPLATE];
+    expect(TSE_RECEIPT_TEMPLATES).not.toContain(HOSPITALITY_RECEIPT_TEMPLATE);
+    expect(source).toContain('{% for b in blocks|default([]) %}');
+    for (const type of [
+      'banner',
+      'heading',
+      'title',
+      'row',
+      'item',
+      'rule',
+      'mono',
+      'qr',
+      'fill',
+    ]) {
+      expect(source).toContain(`b.type == "${type}"`);
+    }
+    expect(source).toContain('wordwrap(cols, true, "\\n")');
+    expect(source.trimEnd().endsWith('<<CUT>>')).toBe(true);
+    expect(agentTemplateMap([])[HOSPITALITY_RECEIPT_TEMPLATE]).toBe(source);
   });
 
   it('prints every field the contract requires (§8.6)', () => {

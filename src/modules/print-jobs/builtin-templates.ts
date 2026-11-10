@@ -19,6 +19,75 @@ export const ORDER_TICKET_TEMPLATE = 'order_ticket';
 export const PFAND_RETURN_RECEIPT_TEMPLATE = 'pfand_return_receipt';
 /** Kellnerabrechnung bzw. Zwischenstand (bedienungen-plan.md §9). */
 export const WAITER_SETTLEMENT_TEMPLATE = 'waiter_settlement';
+/** Bewirtungsbeleg (openeos-web#9). */
+export const HOSPITALITY_RECEIPT_TEMPLATE = 'hospitality_receipt';
+
+/**
+ * Bewirtungsbeleg: Die API schickt den fertigen Aufbau als `blocks`
+ * (dieselben Bausteine wie Beleg-Seite, PDF und Mail, Text ohne Umlaute);
+ * die Vorlage setzt ihn auf die Zeilenbreite. Nur vom Server ausgeliefert.
+ */
+const HOSPITALITY_RECEIPT_SOURCE = `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
+   Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
+{% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}
+{% for b in blocks|default([]) %}
+{% if b.type == "banner" %}
+<<CENTER>><<BOLD>>{{ ("** " ~ b.text ~ " **")|wordwrap(cols, true, "\\n") }}<</BOLD>><</CENTER>>
+{% elif b.type == "heading" %}
+<<CENTER>><<BOLD>><<BIG>>{{ b.text|wordwrap(cols // 2, true, "\\n") }}<</BIG>><</BOLD>><</CENTER>>
+{% elif b.type == "title" %}
+<<CENTER>><<BOLD>>{{ b.text|wordwrap(cols, true, "\\n") }}<</BOLD>><</CENTER>>
+{% elif b.type == "center" %}
+<<CENTER>>{{ b.text|wordwrap(cols, true, "\\n") }}<</CENTER>>
+{% elif b.type == "text" and b.bold %}
+<<BOLD>>{{ b.text|wordwrap(cols, true, "\\n") }}<</BOLD>>
+{% elif b.type == "text" or b.type == "note" %}
+{{ b.text|wordwrap(cols, true, "\\n") }}
+{% elif b.type == "row" %}
+{% set label = b.label ~ ":" %}
+{% if label|length + b.value|length + 1 <= cols %}
+{% if b.bold %}
+<<BOLD>>{{ label }}{{ b.value|rjust(cols - label|length) }}<</BOLD>>
+{% else %}
+{{ label }}{{ b.value|rjust(cols - label|length) }}
+{% endif %}
+{% else %}
+{{ label|wordwrap(cols, true, "\\n") }}
+{% if b.value|length <= cols %}
+{{ b.value|rjust(cols) }}
+{% else %}
+{{ b.value|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% endif %}
+{% elif b.type == "item" %}
+{% set qty = "%-3s"|format(b.qty) %}
+{% set name_width = cols - qty|length - b.amount|length - 2 %}
+{% set name_lines = (b.name|wordwrap(name_width, true, "\\n")).split("\\n") %}
+{{ qty }} {{ name_lines[0].ljust(name_width) }} {{ b.amount }}
+{% for rest in name_lines[1:] %}
+{{ " " * (qty|length + 1) }}{{ rest }}
+{% endfor %}
+{% elif b.type == "rule" %}
+{{ ("=" if b.double else "-") * cols }}
+{% elif b.type == "mono" %}
+{% if b.label %}
+{{ (b.label ~ ":")|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{{ b.text|wordwrap(cols, true, "\\n") }}
+{% elif b.type == "qr" %}
+<<CENTER>><<QRCODE:{{ b.value }}>><</CENTER>>
+{% elif b.type == "fill" %}
+
+{{ (b.label ~ ":")|wordwrap(cols, true, "\\n") }}
+{% for n in range(b.lines) %}
+
+{{ "_" * cols }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+<<FEED:3>>
+<<CUT>>
+`;
 
 /**
  * Bestellbon wie die Vorlage `order_ticket.jinja2` des Drucker-Agenten,
@@ -578,6 +647,7 @@ export const BUILTIN_PRINT_TEMPLATES: Record<string, string> = {
   [RECEIPT_TEMPLATE]: RECEIPT_SOURCE,
   [PFAND_RETURN_RECEIPT_TEMPLATE]: PFAND_RETURN_RECEIPT_SOURCE,
   [WAITER_SETTLEMENT_TEMPLATE]: WAITER_SETTLEMENT_SOURCE,
+  [HOSPITALITY_RECEIPT_TEMPLATE]: HOSPITALITY_RECEIPT_SOURCE,
   [CANCELLATION_TICKET_TEMPLATE]: `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
    Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
 {% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}

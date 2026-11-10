@@ -11996,6 +11996,124 @@ paths:
           description: ""
       summary: Digitalen Beleg als PDF herunterladen
       tags: *a115
+  /api/device-api/hospitality-receipts/check:
+    get:
+      description: Vorhandener Beleg zu den Bestellungen, Betrag, ob der Name des Bewirtenden Pflicht ist (über 250 €), fehlende Stammdaten des Vereins, Sammelbezeichnungen unter den Artikeln und der erlaubte Tag der Bewirtung.
+      operationId: hospitalityDevice_check
+      parameters:
+        - &a116
+          name: X-Device-Token
+          in: header
+          description: Device authentication token
+          required: true
+          schema:
+            type: string
+        - name: orderIds
+          required: true
+          in: query
+          description: Kommagetrennte Bestell-IDs
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      summary: Bewirtungsbeleg vorbereiten
+      tags: &a117
+        - Device API
+  /api/device-api/hospitality-receipts:
+    post:
+      description: "Vergibt die nächste Nummer (B-JJJJ-NNNN, lückenlos je Organisation und Jahr) und speichert den Beleg unveränderlich. 409 `HOSPITALITY_MASTER_DATA_REQUIRED` (`params.missing`), 409 `HOSPITALITY_ITEMS_NOT_SPECIFIC`, 400 `HOSPITALITY_RECIPIENT_REQUIRED` über 250 €, 409 `HOSPITALITY_RECEIPT_EXISTS`. Gibt es für genau diese Bestellungen schon einen Beleg, kommt er zurück (`existing: true`)."
+      operationId: hospitalityDevice_issue
+      parameters:
+        - *a116
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueHospitalityReceiptDto"
+      responses:
+        "200":
+          description: ""
+      summary: Bewirtungsbeleg ausstellen
+      tags: *a117
+  /api/device-api/hospitality-receipts/{id}/print:
+    post:
+      description: "Bon-Drucker dieser Kasse (sonst der Organisation). Ab der zweiten Ausgabe mit „KOPIE“. `printed: false`, wenn kein Drucker gefunden wurde."
+      operationId: hospitalityDevice_print
+      parameters:
+        - *a116
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      summary: Bewirtungsbeleg drucken
+      tags: *a117
+  /api/device-api/hospitality-receipts/{id}/link:
+    post:
+      operationId: hospitalityDevice_link
+      parameters:
+        - *a116
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      summary: Bewirtungsbeleg als Link (QR-Code)
+      tags: *a117
+  /api/device-api/hospitality-receipts/{id}/email:
+    post:
+      description: HTML + PDF. Die Adresse wird nicht gespeichert; gleiche Grenzen wie beim Kassenbeleg.
+      operationId: hospitalityDevice_email
+      parameters:
+        - *a116
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HospitalityEmailDto"
+      responses:
+        "200":
+          description: ""
+      summary: Bewirtungsbeleg per E-Mail
+      tags: *a117
 info:
   title: OpenEOS API
   description: |-
@@ -13301,7 +13419,7 @@ components:
       properties:
         paymentMethod:
           type: string
-          enum: &a117
+          enum: &a119
             - cash
             - card
             - sumup_terminal
@@ -13371,7 +13489,7 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: &a118
+          enum: &a120
             - normal
             - high
             - rush
@@ -13379,7 +13497,7 @@ components:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: &a119
+          enum: &a121
             - pos
             - online
             - qr_order
@@ -13387,7 +13505,7 @@ components:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: &a120
+          enum: &a122
             - table_service
             - counter_pickup
         items:
@@ -13466,7 +13584,7 @@ components:
           type: string
         reasonCode:
           type: string
-          enum: &a116
+          enum: &a118
             - wrong_order
             - quality
             - not_delivered
@@ -13503,7 +13621,7 @@ components:
             $ref: "#/components/schemas/RefundItemSelectionDto"
         reasonCode:
           type: string
-          enum: *a116
+          enum: *a118
         reasonText:
           type: string
           example: Gast hat es sich anders überlegt
@@ -13548,7 +13666,7 @@ components:
           description: "Zahlung, über die erstattet wird. Ohne: von der jüngsten Zahlung rückwärts."
         reasonCode:
           type: string
-          enum: *a116
+          enum: *a118
         reasonText:
           type: string
           example: Burger kalt
@@ -13621,7 +13739,7 @@ components:
             type: string
         paymentMethod:
           type: string
-          enum: *a117
+          enum: *a119
           example: cash
         amountReceived:
           type: number
@@ -13851,17 +13969,17 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: *a118
+          enum: *a120
         source:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: *a119
+          enum: *a121
         fulfillmentType:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: *a120
+          enum: *a122
         items:
           description: Liste der Bestellpositionen
           type: array
@@ -14021,7 +14139,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: &a121
+          enum: &a123
             - fixed
             - manual
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
@@ -14058,7 +14176,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: *a121
+          enum: *a123
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
         amount:
           type: number
@@ -14090,7 +14208,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: &a122
+          enum: &a124
             - 19
             - 7
             - 0
@@ -14121,7 +14239,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: *a122
+          enum: *a124
           default: 19
           description: "Umsatzsteuersatz des Pfands in Prozent: der Satz der Getränke/Waren, für die dieses Pfand gilt (meist 19). Pfand gehört zum Entgelt; die Rückgabe mindert Umsatz und Umsatzsteuer zum selben Satz. Steuerbefreite Organisationen (Kleinunternehmer) weisen trotzdem keine MwSt aus."
         isActive:
@@ -14319,7 +14437,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: &a123
+          enum: &a125
             - rect
             - round
         x:
@@ -14403,7 +14521,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: *a123
+          enum: *a125
         x:
           type: number
         y:
@@ -16274,7 +16392,7 @@ components:
           description: Abonnierte Ereignisse (mindestens eines)
           items:
             type: string
-            enum: &a124
+            enum: &a126
               - order.created
               - order.paid
               - order.completed
@@ -16315,7 +16433,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a124
+            enum: *a126
         active:
           type: boolean
           description: Ein- oder ausschalten. Einschalten setzt eine automatische Abschaltung und die Fehlerserie zurück.
@@ -16341,7 +16459,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: &a125
+          enum: &a127
             - service
             - lead
           default: service
@@ -16371,7 +16489,7 @@ components:
           example: Ben
         role:
           type: string
-          enum: *a125
+          enum: *a127
       required:
         - name
     BulkCreateWaitersDto:
@@ -16383,7 +16501,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: *a125
+          enum: *a127
           default: service
         items:
           maxItems: 200
@@ -16407,7 +16525,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: *a125
+          enum: *a127
         permissions:
           type: object
         eventId:
@@ -16550,4 +16668,34 @@ components:
           example: gast@example.org
       required:
         - orderIds
+        - email
+    IssueHospitalityReceiptDto:
+      type: object
+      properties:
+        orderIds:
+          description: Bestellungen, deren Kassenbeleg ausgegeben wird (je Bestellung die letzte Zahlung, wie beim Nachdruck). 1–20.
+          type: array
+          items:
+            type: string
+            format: uuid
+        recipientName:
+          type: string
+          description: Name des Bewirtenden bzw. der Firma (Leistungsempfänger). Pflicht, wenn der Rechnungsbetrag über 250 € liegt.
+          example: Muster GmbH
+        recipientAddress:
+          type: string
+          description: Anschrift des Leistungsempfängers (optional, für den Vorsteuerabzug über 250 €).
+        serviceDate:
+          type: string
+          description: "Tag der Bewirtung (JJJJ-MM-TT), Standard: Tag der Bestellung. Erlaubt: Vortag der Bestellung bis heute."
+          example: 2026-11-11
+      required:
+        - orderIds
+    HospitalityEmailDto:
+      type: object
+      properties:
+        email:
+          type: string
+          description: E-Mail-Adresse. Wird nur für den Versand verwendet und nicht gespeichert.
+      required:
         - email

@@ -23,6 +23,10 @@ export const ORDER_EVENT_TYPES = [
   'receipt_link_created',
   /** Beleg per E-Mail (nur Ergebnis, keine Adresse). */
   'receipt_emailed',
+  /** Bewirtungsbeleg ausgestellt (Nummer). */
+  'hospitality_receipt_issued',
+  /** Bewirtungsbeleg ausgegeben (Druck, QR-Code, E-Mail; Original/Kopie). */
+  'hospitality_receipt_output',
 ] as const;
 export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number];
 

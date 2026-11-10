@@ -65,7 +65,10 @@ export const USER_ACTIVITY_SQL = `GREATEST(
                  AND n.cancel_reason = 'kept'), u.created_at)
   )`;
 
-/** Bestellungen einer Organisation ($1), auf die das Steuerarchiv verweist. */
+/**
+ * Bestellungen einer Organisation ($1), auf die das Steuerarchiv verweist
+ * (TSE-Vorgaenge, Bewirtungsbelege).
+ */
 export const FISCAL_ORDER_IDS_SQL = `
   SELECT t.order_id FROM tse_transactions t
    WHERE t.organization_id = $1 AND t.order_id IS NOT NULL
@@ -76,4 +79,8 @@ export const FISCAL_ORDER_IDS_SQL = `
   UNION
   SELECT r.order_id FROM refunds r
     JOIN tse_transactions t ON t.refund_id = r.id
-   WHERE t.organization_id = $1`;
+   WHERE t.organization_id = $1
+  UNION
+  SELECT h.order_id FROM hospitality_receipt_orders h
+    JOIN hospitality_receipts hr ON hr.id = h.hospitality_receipt_id
+   WHERE h.organization_id = $1 AND NOT hr.is_test`;

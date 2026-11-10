@@ -32,6 +32,7 @@ import {
   PFAND_RETURN_RECEIPT_TEMPLATE,
   WAITER_SETTLEMENT_TEMPLATE,
   REFUND_RECEIPT_TEMPLATE,
+  HOSPITALITY_RECEIPT_TEMPLATE,
 } from './builtin-templates';
 
 const REASON_LABELS: Record<string, string> = {
@@ -871,6 +872,46 @@ export class OrderPrintService {
     } catch (error) {
       this.logger.error(
         `Failed to print waiter settlement for org ${organizationId}: ${(error as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Bewirtungsbeleg (Vorlage `hospitality_receipt`) auf den Bon-Drucker
+   * des Geraets, sonst der Organisation. Die Bausteine kommen fertig
+   * (ASCII) aus dem Beleg-Modul. Liefert, ob ein Druckauftrag entstand.
+   */
+  async printHospitalityReceipt(
+    organizationId: string,
+    data: {
+      deviceId: string | null;
+      orderId: string | null;
+      isTest: boolean;
+      blocks: unknown[];
+    },
+  ): Promise<boolean> {
+    try {
+      const { printerId } = await this.printRoutingService.resolveOrderPrinter({
+        organizationId,
+        orderDeviceId: data.deviceId,
+        workflow: 'receipt',
+      });
+      if (!printerId) return false;
+      await this.printJobsService.createFromWorkflow(
+        organizationId,
+        printerId,
+        null,
+        data.orderId,
+        1,
+        { blocks: data.blocks, is_test: data.isTest },
+        null,
+        HOSPITALITY_RECEIPT_TEMPLATE,
+      );
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to print hospitality receipt for org ${organizationId}: ${(error as Error).message}`,
       );
       return false;
     }

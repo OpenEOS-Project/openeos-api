@@ -751,7 +751,7 @@ Beginn/Ende, Probelauf und Fehler in `retention_runs` – ohne Inhalte.
 | `user_accounts` | Benutzerkonten ohne bestehende Organisation | Ankündigung nach 24 Monaten ohne Nutzung, Löschung frühestens 30 Tage später | anonymisieren (Name, E-Mail, Zugangsdaten, Tokens, Avatar) |
 | `user_accounts` | geplante Kontolöschung (einziges Mitglied einer Organisation hat sein Konto gelöscht) | zum Termin der endgültigen Löschung der Organisation, erst nachdem sie endgültig gelöscht ist | anonymisieren wie oben, Bestätigungsmail |
 | `deletion_reminders` | Erinnerungen vor Schließung bzw. endgültiger Löschung | 30, 10 und 1 Tag vor dem Termin (die Ankündigung ist die 30-Tage-Mail) | Mail an die Admins bzw. an das Konto; jede Stufe höchstens einmal |
-| `fiscal_archive` | Steuerarchiv | 10 Jahre ab Ende des Kalenderjahres | nur zählen, nie löschen |
+| `fiscal_archive` | Steuerarchiv (TSE-Vorgänge und -Exporte, Kassenabschlüsse, Kassenbuch, Bewirtungsbelege mit Name des Bewirtenden) | 10 Jahre ab Ende des Kalenderjahres | nur zählen, nie löschen; Bestellungen mit Bewirtungsbeleg bleiben auch beim endgültigen Löschen der Organisation |
 
 Regeln, die für alle Läufe gelten:
 

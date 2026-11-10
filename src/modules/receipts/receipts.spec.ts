@@ -312,6 +312,7 @@ describe('ReceiptsService', () => {
       } as never,
       { findOne: jest.fn(() => Promise.resolve(null)) } as never,
       events as never,
+      { findOne: jest.fn(() => Promise.resolve(null)) } as never,
       print as unknown as OrderPrintService,
       email as unknown as EmailService,
       { platformLegal: { imprintUrl: null, privacyUrl: null } } as never,

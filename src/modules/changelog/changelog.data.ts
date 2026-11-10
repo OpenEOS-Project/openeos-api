@@ -20,6 +20,22 @@ export const CHANGELOG: ChangelogEintrag[] = [
     datum: '2026-11-09',
     art: 'neu',
     titel: {
+      de: 'Bewirtungsbeleg an der Kasse',
+      en: 'Hospitality receipt at the till',
+    },
+    kurz: {
+      de: 'Gäste, die geschäftlich bewirten, bekommen an der Kasse einen Bewirtungsbeleg mit eigener Nummer – gedruckt, als QR-Code oder per E-Mail.',
+      en: 'Guests who entertain on business get a hospitality receipt with its own number at the till – printed, as a QR code or by e-mail.',
+    },
+    text: {
+      de: 'Unter „Beleg“ gibt es nach dem Kassieren und im Verlauf jetzt „Bewirtungsbeleg“. Die Kasse stellt eine Rechnung mit fortlaufender Nummer (B-2026-0001) aus: Name, Anschrift und Steuernummer deines Vereins, Tag der Bewirtung, jede Position einzeln, Netto, Umsatzsteuer und Brutto je Steuersatz (bei Kleinunternehmern der Hinweis auf § 19 UStG), Trinkgeld als eigene Zeile und die TSE-Angaben. Über 250 € trägt die Kasse den Namen des Bewirtenden ein. Darunter stehen Leerzeilen für Anlass, Teilnehmer und Unterschrift, die der Gast von Hand ausfüllt. Der Beleg wird unveränderlich gespeichert und zehn Jahre aufbewahrt; jeder weitere Ausdruck ist als „Kopie“ markiert. Dafür brauchst du den offiziellen Namen, die Anschrift und – über 250 € – die Steuernummer deines Vereins in den Einstellungen. Danke an till-mueller für die Idee.',
+      en: 'Under "Receipt" there is now "Hospitality receipt" after taking payment and in the history. The till issues an invoice with its own consecutive number (B-2026-0001): your club’s name, address and tax number, the day of the hospitality, every item on its own, net, VAT and gross per rate (for small businesses the note on § 19 UStG), the tip on its own line and the TSE details. Above 250 € the till adds the name of the host. Below are blank lines for occasion, guests and signature, which the guest fills in by hand. The receipt is stored unchangeable and kept for ten years; every further print is marked "Copy". For this you need your club’s official name, address and – above 250 € – tax number in the settings. Thanks to till-mueller for the idea.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
       de: 'Beleg per QR-Code oder E-Mail',
       en: 'Receipt by QR code or e-mail',
     },
