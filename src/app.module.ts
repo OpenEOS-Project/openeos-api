@@ -71,6 +71,7 @@ import { RetentionModule } from './modules/retention';
 import { WebhooksModule } from './modules/webhooks';
 import { ReceiptsModule } from './modules/receipts';
 import { EventPhaseModule } from './modules/events/event-phase.module';
+import { EventNotificationsModule } from './modules/event-notifications';
 import {
   OrganizationClosureGuard,
   OrganizationClosureModule,
@@ -226,6 +227,8 @@ import { WaiterCoreModule, WaitersModule } from './modules/waiters';
     // Ausgehende Webhooks (AGB Ziffer 10.2)
     WebhooksModule,
     ReceiptsModule,
+    // Erinnerungen zu Veranstaltungen an die Admins
+    EventNotificationsModule,
   ],
   controllers: [],
   providers: [

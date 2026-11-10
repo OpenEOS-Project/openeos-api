@@ -141,6 +141,11 @@ export class EmailService {
     });
   }
 
+  /** Ist der Mailversand eingerichtet (`EMAIL_ENABLED`)? */
+  get enabled(): boolean {
+    return this.isEnabled;
+  }
+
   async sendEmail(options: SendEmailOptions): Promise<boolean> {
     const recipient = options.redactRecipient ? '(Gast)' : options.to;
     if (!this.isEnabled) {

@@ -38,6 +38,7 @@ import {
 import { EmailService } from '../email/email.service';
 import { normalizeLegalSettings } from './legal/legal-settings.util';
 import { normalizeWaiterSettings } from '../waiters/waiter-settings';
+import { normalizeEventReminderSettings } from '../event-notifications/event-notification-settings';
 import {
   initialOperatingMode,
   keepCountryMirror,
@@ -367,6 +368,14 @@ export class OrganizationsService {
        wie den Rest der Einstellungen ungesehen abzulegen. */
     if (incomingSettings && 'legal' in incomingSettings) {
       incomingSettings.legal = normalizeLegalSettings(incomingSettings.legal);
+    }
+    if (incomingSettings && 'eventReminders' in incomingSettings) {
+      incomingSettings.eventReminders = {
+        ...normalizeEventReminderSettings(
+          organization.settings?.eventReminders,
+        ),
+        ...normalizeEventReminderSettings(incomingSettings.eventReminders),
+      };
     }
     if (incomingSettings && 'waiters' in incomingSettings) {
       incomingSettings.waiters = normalizeWaiterSettings(

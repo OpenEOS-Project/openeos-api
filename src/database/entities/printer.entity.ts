@@ -98,6 +98,18 @@ export class Printer extends BaseEntity {
   })
   lastSeenAt: Date | null;
 
+  /**
+   * Zuletzt einen Testdruck an diesen Drucker geschickt (Verwaltung). Der
+   * Agent bestaetigt Testdrucke nicht; die Checkliste vor dem Fest
+   * (Erinnerungsmail) fragt nur, ob ueberhaupt einer versucht wurde.
+   */
+  @Column({
+    name: 'last_test_print_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  lastTestPrintAt: Date | null;
+
   // Relations
   @ManyToOne(() => Organization, (org) => org.printers, {
     onDelete: 'SET NULL',

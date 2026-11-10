@@ -11,8 +11,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *   Adresse im Verlauf der Bestellung (`order_events`, Typ
  *   `receipt_emailed`).
  */
-export class AddReceiptLinks1841700000000 implements MigrationInterface {
-  name = 'AddReceiptLinks1841700000000';
+export class AddReceiptLinks1841900000000 implements MigrationInterface {
+  name = 'AddReceiptLinks1841900000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

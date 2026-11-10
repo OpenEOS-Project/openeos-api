@@ -14465,6 +14465,10 @@ components:
           type: boolean
           example: true
           description: Push-Benachrichtigungen
+        eventReminders:
+          type: boolean
+          example: true
+          description: "Erinnerungen zu Veranstaltungen per E-Mail (nur Admins: Checkliste eine Woche vorher, Vortag, Rückblick)"
     DashboardWidgetSizeDto:
       type: object
       properties:
