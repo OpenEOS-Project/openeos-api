@@ -1,5 +1,8 @@
 import type { TsePrintBlock } from '../tse/tse-view';
-import type { ReceiptTaxLine } from '../print-jobs/receipt-tax.util';
+import {
+  VAT_EXEMPT_NOTICE,
+  type ReceiptTaxLine,
+} from '../print-jobs/receipt-tax.util';
 import { headerBlocks, tseBlocks, type ReceiptBlock } from './receipt-blocks';
 import { euro, ratePercent, type ReceiptDocument } from './receipt-document';
 
@@ -74,9 +77,8 @@ export function collectiveItemNames(names: string[]): string[] {
   return [...new Set(names.filter(isCollectiveItemName))];
 }
 
-/** Zahlung eines Belegs (Trinkgeld, Referenz des Terminals/Anbieters). */
+/** Zahlung eines Belegs (Referenz des Terminals bzw. Anbieters). */
 export interface HospitalityPayment {
-  tip: number;
   reference: string | null;
 }
 
@@ -93,8 +95,9 @@ export interface HospitalitySnapshot {
   pfand: number;
   discount: number;
   taxLines: ReceiptTaxLine[];
-  /** Rechnungsbetrag brutto ohne Trinkgeld. */
+  /** Rechnungsbetrag brutto (mit Trinkgeld, wie GESAMT auf dem Bon). */
   total: number;
+  /** Trinkgeld (Teil von `total`, eigene Zeile). */
   tip: number;
   paymentLabels: string[];
   paymentReferences: string[];
@@ -158,7 +161,7 @@ export function hospitalitySnapshot(input: {
       ? []
       : [...byRate.values()].sort((a, b) => b.rate - a.rate),
     total: round2(docs.reduce((s, d) => s + d.total, 0)),
-    tip: round2(input.payments.reduce((s, p) => s + (Number(p.tip) || 0), 0)),
+    tip: round2(docs.reduce((s, d) => s + (d.tip ?? 0), 0)),
     paymentLabels: labels,
     paymentReferences: references,
     cashlessOnly: input.cashlessOnly,
@@ -212,9 +215,8 @@ export interface HospitalityRecordView {
   snapshot: HospitalitySnapshot;
 }
 
-/** Hinweis bei steuerbefreiten Vereinen (§ 34a UStDV, kein Steuerausweis). */
-export const VAT_EXEMPT_NOTE =
-  'Steuerfrei gem. § 19 UStG (Kleinunternehmerregelung).';
+/** Hinweis bei steuerbefreiten Vereinen (§ 34a UStDV), wie auf dem Bon. */
+export const VAT_EXEMPT_NOTE = VAT_EXEMPT_NOTICE;
 
 /**
  * Der Bewirtungsbeleg als Bausteine (Seite, PDF, Mail, Druck). `copy`:
@@ -301,6 +303,10 @@ export function hospitalityBlocks(
       name: 'Rabatt',
       amount: euro(-s.discount),
     });
+  // Trinkgeld als eigene Zeile (BMF 19.11.2025 Rn. 8); es steckt im
+  // Rechnungsbetrag, an den Verein auch in der Umsatzsteuer (wie der Bon).
+  if (s.tip > 0)
+    out.push({ type: 'item', qty: '', name: 'Trinkgeld', amount: euro(s.tip) });
   out.push({ type: 'rule', double: true });
   if (s.vatExempt || s.taxLines.length === 0) {
     out.push({
@@ -330,7 +336,7 @@ export function hospitalityBlocks(
     if (untaxed > 0)
       out.push({
         type: 'row',
-        label: 'Nicht steuerbar / 0 %',
+        label: 'Ohne Umsatzsteuer',
         value: euro(untaxed),
       });
     out.push({
@@ -347,15 +353,6 @@ export function hospitalityBlocks(
       type: 'row',
       label: 'Rechnungsbetrag brutto',
       value: euro(s.total),
-      bold: true,
-    });
-  }
-  if (s.tip > 0) {
-    out.push({ type: 'row', label: 'Trinkgeld', value: euro(s.tip) });
-    out.push({
-      type: 'row',
-      label: 'Gesamt inkl. Trinkgeld',
-      value: euro(round2(s.total + s.tip)),
       bold: true,
     });
   }
@@ -390,7 +387,7 @@ export function hospitalityBlocks(
   out.push({
     type: 'row',
     label: 'Höhe der Aufwendungen',
-    value: euro(round2(s.total + s.tip)),
+    value: euro(s.total),
   });
   out.push({ type: 'fill', label: 'Anlass der Bewirtung', lines: 2 });
   out.push({ type: 'fill', label: 'Bewirtete Personen (Namen)', lines: 4 });

@@ -55,7 +55,7 @@ export class HospitalityReceipt {
   })
   recipientAddress: string | null;
 
-  /** Rechnungsbetrag brutto (ohne Trinkgeld). */
+  /** Rechnungsbetrag brutto (mit Trinkgeld, wie GESAMT auf dem Bon). */
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   total: string;
 

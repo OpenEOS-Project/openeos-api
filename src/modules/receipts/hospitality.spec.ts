@@ -131,16 +131,15 @@ describe('Bewirtungsbeleg: content', () => {
     vatExempt: false,
     cashlessOnly: false,
     documents: [
-      doc(),
+      doc({ total: 14, tip_amount: 2 }),
       doc({
         order_number: '20261111-0002',
+        total: 13,
+        tip_amount: 1,
         tse: { ...TSE, transaction_number: 4413 },
       }),
     ],
-    payments: [
-      { tip: 2, reference: null },
-      { tip: 1, reference: null },
-    ],
+    payments: [{ reference: null }, { reference: null }],
   });
   const record = {
     number: 'B-2026-0001',
@@ -152,7 +151,7 @@ describe('Bewirtungsbeleg: content', () => {
   };
 
   it('merges orders, VAT per rate and tips', () => {
-    expect(snapshot.total).toBe(24);
+    expect(snapshot.total).toBe(27);
     expect(snapshot.tip).toBe(3);
     expect(snapshot.items).toHaveLength(4);
     expect(snapshot.taxLines).toEqual([
@@ -181,9 +180,9 @@ describe('Bewirtungsbeleg: content', () => {
       'USt 19 %: 1,60 €',
       'Netto 7 %: 13,08 €',
       'USt 7 %: 0,92 €',
-      'Rechnungsbetrag brutto: 24,00 €',
-      'Trinkgeld: 3,00 €',
-      'Gesamt inkl. Trinkgeld: 27,00 €',
+      'Trinkgeld  3,00 €',
+      'Ohne Umsatzsteuer: 3,00 €',
+      'Rechnungsbetrag brutto: 27,00 €',
       'Zahlungsart: Karte (SumUp)',
       'TSE-Transaktion: 4412',
       'TSE-Transaktion: 4413',
@@ -211,13 +210,13 @@ describe('Bewirtungsbeleg: content', () => {
       vatExempt: true,
       cashlessOnly: false,
       documents: [doc()],
-      payments: [{ tip: 0, reference: null }],
+      payments: [{ reference: null }],
     });
     expect(exempt.taxLines).toEqual([]);
     const t = text(
       hospitalityBlocks({ ...record, snapshot: exempt }, { copy: false }),
     );
-    expect(t).toContain('Steuerfrei gem. § 19 UStG');
+    expect(t).toContain('Steuerfrei nach § 19 Abs. 1 UStG (Kleinunternehmer)');
     expect(t).not.toMatch(/USt \d|Netto|MwSt/);
     expect(t).not.toContain('Trinkgeld');
   });
@@ -228,7 +227,7 @@ describe('Bewirtungsbeleg: content', () => {
       vatExempt: false,
       cashlessOnly: true,
       documents: [doc({ tse: null })],
-      payments: [{ tip: 0, reference: 'TX-42' }],
+      payments: [{ reference: 'TX-42' }],
     });
     const t = text(
       hospitalityBlocks({ ...record, snapshot: cashless }, { copy: false }),
@@ -246,7 +245,7 @@ describe('Bewirtungsbeleg: content', () => {
       documents: [
         doc({ is_test: true, tse: { ...TSE, failed: true, status: 'failed' } }),
       ],
-      payments: [{ tip: 0, reference: null }],
+      payments: [{ reference: null }],
     });
     const t = text(
       hospitalityBlocks(
@@ -323,7 +322,7 @@ describe('HospitalityReceiptsService.issue', () => {
           },
           timeZone: 'Europe/Berlin',
           documents,
-          payments: [{ tipAmount: 0, providerTransactionId: null }],
+          payments: [{ providerTransactionId: null }],
         }),
       ),
     };

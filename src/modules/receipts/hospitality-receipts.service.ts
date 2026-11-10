@@ -179,7 +179,6 @@ export class HospitalityReceiptsService {
       cashlessOnly: !isCashAllowed(organization),
       documents,
       payments: payments.map((p) => ({
-        tip: Number(p.tipAmount) || 0,
         reference: p.providerTransactionId ?? null,
       })),
     });
