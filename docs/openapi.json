@@ -15314,7 +15314,7 @@
     },
     "/api/setup": {
       "post": {
-        "description": "Zwei Modi verfügbar: \"single\" für Einzelbetrieb (Admin + Organisation mit unbegrenzten Credits), \"multi\" für Multi-Mandanten/SaaS (Super-Admin ohne Organisation)",
+        "description": "Zwei Modi verfügbar: \"single\" für Einzelbetrieb (Admin + Organisation; mit DEPLOYMENT_MODE=selfhosted ohne Abrechnung), \"multi\" für Multi-Mandanten/SaaS (Super-Admin ohne Organisation, Freischaltung je Veranstaltungstag)",
         "operationId": "setup_performSetup",
         "parameters": [],
         "requestBody": {
@@ -23181,7 +23181,7 @@
           "hasCashDrawer": {
             "type": "boolean",
             "example": false,
-            "description": "Ob eine Kassenschublade angeschlossen ist"
+            "description": "Ob eine Kassenlade angeschlossen ist"
           }
         },
         "required": [
@@ -23249,7 +23249,7 @@
           "hasCashDrawer": {
             "type": "boolean",
             "example": false,
-            "description": "Ob eine Kassenschublade angeschlossen ist"
+            "description": "Ob eine Kassenlade angeschlossen ist"
           }
         }
       },

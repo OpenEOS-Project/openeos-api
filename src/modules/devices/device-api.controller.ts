@@ -1436,7 +1436,7 @@ export class DeviceApiController {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.CASH_DRAWER_NOT_CONFIGURED,
-        message: 'Keine Kassenschublade konfiguriert',
+        message: 'Keine Kassenlade eingerichtet',
       });
     }
 
@@ -1456,7 +1456,7 @@ export class DeviceApiController {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.PRINTER_HAS_NO_CASH_DRAWER,
-        message: 'Drucker hat keine Kassenschublade',
+        message: 'An diesem Drucker hängt keine Kassenlade',
       });
     }
 
