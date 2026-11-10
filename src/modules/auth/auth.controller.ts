@@ -844,7 +844,7 @@ export class AuthController {
     };
   }
 
-  private sanitizeUser(user: User): Partial<User> {
+  private sanitizeUser(user: User): Partial<User> & { hasPassword: boolean } {
     const {
       passwordHash,
       passwordResetToken,
@@ -858,6 +858,9 @@ export class AuthController {
       pendingEmailToken,
       ...sanitized
     } = user;
-    return sanitized;
+    /* Konten ohne Passwort (nur Anmeldelink) brauchen beim Aendern von
+       Passwort und E-Mail-Adresse kein aktuelles Passwort; die Oberflaeche
+       blendet das Feld danach aus. */
+    return { ...sanitized, hasPassword: !!passwordHash };
   }
 }

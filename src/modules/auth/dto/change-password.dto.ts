@@ -1,11 +1,23 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MinLength, MaxLength, Matches } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsOptional,
+  IsString,
+  MinLength,
+  MaxLength,
+  Matches,
+} from 'class-validator';
 
 export class ChangePasswordDto {
-  @ApiProperty({ example: 'OldPass123!', description: 'Aktuelles Passwort' })
+  /* Konten ohne Passwort (nur Anmeldelink, `hasPassword: false` in
+     GET /auth/me) setzen hier ihr erstes und schicken keins mit. */
+  @ApiPropertyOptional({
+    example: 'OldPass123!',
+    description:
+      'Aktuelles Passwort. Pflicht, wenn das Konto schon eins hat (`hasPassword`); Konten ohne Passwort lassen es weg und legen ihr erstes fest.',
+  })
+  @IsOptional()
   @IsString()
-  @MinLength(1, { message: 'Aktuelles Passwort ist erforderlich' })
-  currentPassword: string;
+  currentPassword?: string;
 
   @ApiProperty({
     example: 'NewSecurePass123!',

@@ -4758,7 +4758,7 @@ paths:
       tags: *a42
   /api/users/me/email/verify:
     post:
-      description: Verify and complete email change
+      description: Completes an email change with the token from the confirmation mail sent to the new address. No session required.
       operationId: users_verifyEmailChange
       parameters: []
       requestBody:
@@ -4772,10 +4772,8 @@ paths:
           description: Email changed successfully
         "400":
           description: Invalid or expired token
-        "401":
-          description: Unauthorized
-      security:
-        - JWT-auth: []
+        "409":
+          description: Email already in use
       summary: Verify email change
       tags: *a42
   /api/users/me/preferences:
@@ -12597,6 +12595,10 @@ components:
         isSuperAdmin:
           type: boolean
           example: false
+        hasPassword:
+          type: boolean
+          example: true
+          description: "Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (PATCH /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort."
         lastLoginAt:
           type: object
           example: 2024-01-15T10:30:00.000Z
@@ -12616,6 +12618,7 @@ components:
         - lastName
         - isActive
         - isSuperAdmin
+        - hasPassword
         - lastLoginAt
         - createdAt
         - updatedAt
@@ -12699,6 +12702,10 @@ components:
         isSuperAdmin:
           type: boolean
           example: false
+        hasPassword:
+          type: boolean
+          example: true
+          description: "Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (PATCH /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort."
         lastLoginAt:
           type: object
           example: 2024-01-15T10:30:00.000Z
@@ -12722,6 +12729,7 @@ components:
         - lastName
         - isActive
         - isSuperAdmin
+        - hasPassword
         - lastLoginAt
         - createdAt
         - updatedAt
@@ -12802,7 +12810,7 @@ components:
         currentPassword:
           type: string
           example: OldPass123!
-          description: Aktuelles Passwort
+          description: Aktuelles Passwort. Pflicht, wenn das Konto schon eins hat (`hasPassword`); Konten ohne Passwort lassen es weg und legen ihr erstes fest.
         newPassword:
           type: string
           example: NewSecurePass123!
@@ -12810,7 +12818,6 @@ components:
           minLength: 8
           maxLength: 72
       required:
-        - currentPassword
         - newPassword
     CurrentUserWithLimitsDto:
       type: object
@@ -12833,6 +12840,10 @@ components:
         isSuperAdmin:
           type: boolean
           example: false
+        hasPassword:
+          type: boolean
+          example: true
+          description: "Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (PATCH /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort."
         lastLoginAt:
           type: object
           example: 2024-01-15T10:30:00.000Z
@@ -12864,6 +12875,7 @@ components:
         - lastName
         - isActive
         - isSuperAdmin
+        - hasPassword
         - lastLoginAt
         - createdAt
         - updatedAt
@@ -14731,10 +14743,9 @@ components:
         password:
           type: string
           example: MeinPasswort123!
-          description: Aktuelles Passwort zur Bestätigung
+          description: Aktuelles Passwort zur Bestätigung. Pflicht, wenn das Konto eins hat (`hasPassword` in GET /auth/me); Konten ohne Passwort lassen es weg.
       required:
         - newEmail
-        - password
     VerifyEmailChangeDto:
       type: object
       properties:
