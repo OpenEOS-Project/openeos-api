@@ -513,15 +513,16 @@ describe('Schutz gegen neue unsignierte Zahlungswege', () => {
   /**
    * Dateien, die eine Zahlung auf CAPTURED setzen (oder so anlegen), und
    * wie sie zur TSE stehen. Ein neuer Zahlungsweg muss hier eingetragen
-   * werden — und signieren, ausser er ist Online-Vorkasse ohne Barzahlung
-   * vor Ort (BMF-FAQ Anwendungsbereich 2/10, fiskaly-spec.md F6).
+   * werden — und signieren. Auch die Online-Vorkasse (Shop, QR mit PayPal)
+   * signiert, sobald die Organisation eine aktive Cloud-TSE hat
+   * (Steuerberater 2026-11-10, Frage 20; dsfinvk/README.md).
    */
-  const PATHS: Record<string, 'signed' | 'online_prepaid' | 'read_only'> = {
+  const PATHS: Record<string, 'signed' | 'read_only'> = {
     'modules/payments/payments-batch.service.ts': 'signed',
     'modules/payments/payments.service.ts': 'signed',
     'modules/devices/device-api.controller.ts': 'signed',
-    'modules/online-orders/online-orders.service.ts': 'online_prepaid',
-    'modules/events/events-shop-checkout.controller.ts': 'online_prepaid',
+    'modules/online-orders/online-orders.service.ts': 'signed',
+    'modules/events/events-shop-checkout.controller.ts': 'signed',
     'modules/refunds/refunds.service.ts': 'read_only',
     'modules/refunds/order-history.service.ts': 'read_only',
     'modules/reports/reports.service.ts': 'read_only',
