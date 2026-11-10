@@ -20663,6 +20663,224 @@
           "Public Receipts"
         ]
       }
+    },
+    "/api/device-api/hospitality-receipts/check": {
+      "get": {
+        "description": "Vorhandener Beleg zu den Bestellungen, Betrag, ob der Name des Bewirtenden Pflicht ist (über 250 €), fehlende Stammdaten des Vereins, Sammelbezeichnungen unter den Artikeln und der erlaubte Tag der Bewirtung.",
+        "operationId": "hospitalityDevice_check",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orderIds",
+            "required": true,
+            "in": "query",
+            "description": "Kommagetrennte Bestell-IDs",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Bewirtungsbeleg vorbereiten",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/hospitality-receipts": {
+      "post": {
+        "description": "Vergibt die nächste Nummer (B-JJJJ-NNNN, lückenlos je Organisation und Jahr) und speichert den Beleg unveränderlich. 409 `HOSPITALITY_MASTER_DATA_REQUIRED` (`params.missing`), 409 `HOSPITALITY_ITEMS_NOT_SPECIFIC`, 400 `HOSPITALITY_RECIPIENT_REQUIRED` über 250 €, 409 `HOSPITALITY_RECEIPT_EXISTS`. Gibt es für genau diese Bestellungen schon einen Beleg, kommt er zurück (`existing: true`).",
+        "operationId": "hospitalityDevice_issue",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueHospitalityReceiptDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Bewirtungsbeleg ausstellen",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/hospitality-receipts/{id}/print": {
+      "post": {
+        "description": "Bon-Drucker dieser Kasse (sonst der Organisation). Ab der zweiten Ausgabe mit „KOPIE“. `printed: false`, wenn kein Drucker gefunden wurde.",
+        "operationId": "hospitalityDevice_print",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Bewirtungsbeleg drucken",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/hospitality-receipts/{id}/link": {
+      "post": {
+        "operationId": "hospitalityDevice_link",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Bewirtungsbeleg als Link (QR-Code)",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/hospitality-receipts/{id}/email": {
+      "post": {
+        "description": "HTML + PDF. Die Adresse wird nicht gespeichert; gleiche Grenzen wie beim Kassenbeleg.",
+        "operationId": "hospitalityDevice_email",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HospitalityEmailDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Bewirtungsbeleg per E-Mail",
+        "tags": [
+          "Device API"
+        ]
+      }
     }
   },
   "info": {
@@ -26896,6 +27114,48 @@
         },
         "required": [
           "orderIds",
+          "email"
+        ]
+      },
+      "IssueHospitalityReceiptDto": {
+        "type": "object",
+        "properties": {
+          "orderIds": {
+            "description": "Bestellungen, deren Kassenbeleg ausgegeben wird (je Bestellung die letzte Zahlung, wie beim Nachdruck). 1–20.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "recipientName": {
+            "type": "string",
+            "description": "Name des Bewirtenden bzw. der Firma (Leistungsempfänger). Pflicht, wenn der Rechnungsbetrag über 250 € liegt.",
+            "example": "Muster GmbH"
+          },
+          "recipientAddress": {
+            "type": "string",
+            "description": "Anschrift des Leistungsempfängers (optional, für den Vorsteuerabzug über 250 €)."
+          },
+          "serviceDate": {
+            "type": "string",
+            "description": "Tag der Bewirtung (JJJJ-MM-TT), Standard: Tag der Bestellung. Erlaubt: Vortag der Bestellung bis heute.",
+            "example": "2026-11-11"
+          }
+        },
+        "required": [
+          "orderIds"
+        ]
+      },
+      "HospitalityEmailDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "E-Mail-Adresse. Wird nur für den Versand verwendet und nicht gespeichert."
+          }
+        },
+        "required": [
           "email"
         ]
       }

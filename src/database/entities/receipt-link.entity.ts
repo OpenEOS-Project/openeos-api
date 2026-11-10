@@ -31,6 +31,17 @@ export class ReceiptLink {
   @Column({ name: 'order_ids', type: 'uuid', array: true })
   orderIds: string[];
 
+  /** `receipt` (Kassenbeleg) oder `hospitality` (Bewirtungsbeleg). */
+  @Column({ type: 'varchar', length: 20, default: 'receipt' })
+  kind: 'receipt' | 'hospitality';
+
+  @Column({ name: 'hospitality_receipt_id', type: 'uuid', nullable: true })
+  hospitalityReceiptId: string | null;
+
+  /** Ausgabe als „Kopie“ (Bewirtungsbeleg schon einmal ausgegeben). */
+  @Column({ type: 'boolean', default: false })
+  copy: boolean;
+
   @Column({ name: 'created_by_device_id', type: 'uuid', nullable: true })
   createdByDeviceId: string | null;
 

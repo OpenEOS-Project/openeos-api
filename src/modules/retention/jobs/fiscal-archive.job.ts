@@ -3,7 +3,8 @@ import type { RetentionJob, RetentionRunContext } from '../retention.types';
 
 /**
  * Steuerarchiv (TSE-Exporte, Kassenabschluesse mit DSFinV-K-Export,
- * signierte Kassenvorgaenge einschliesslich Training, Kassenbuch):
+ * signierte Kassenvorgaenge einschliesslich Training, Kassenbuch,
+ * Bewirtungsbelege):
  * aufbewahrt `RETENTION_FISCAL_ARCHIVE_YEARS` (10) Jahre ab dem Schluss des
  * Kalenderjahres der Entstehung, auch nach dem Ende der Organisation.
  *
@@ -25,7 +26,8 @@ export class FiscalArchiveJob implements RetentionJob {
          (SELECT count(*)::int FROM tse_transactions WHERE extract(year FROM created_at) <= $1) AS "tseTransactions",
          (SELECT count(*)::int FROM tse_exports WHERE extract(year FROM created_at) <= $1) AS "tseExports",
          (SELECT count(*)::int FROM cash_point_closings WHERE extract(year FROM business_date) <= $1) AS "cashPointClosings",
-         (SELECT count(*)::int FROM cashbook_entries WHERE extract(year FROM business_date) <= $1) AS "cashbookEntries"`,
+         (SELECT count(*)::int FROM cashbook_entries WHERE extract(year FROM business_date) <= $1) AS "cashbookEntries",
+         (SELECT count(*)::int FROM hospitality_receipts WHERE NOT is_test AND year <= $1) AS "hospitalityReceipts"`,
       [lastDueYear],
     );
     for (const [key, value] of Object.entries(row ?? {})) {

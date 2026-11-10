@@ -14,7 +14,10 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, MoreThan, Not, Repository } from 'typeorm';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
-import { isOrdersOnly } from '../../common/utils/operating-mode.util';
+import {
+  OPERATING_MODE_SELECT,
+  isOrdersOnly,
+} from '../../common/utils/operating-mode.util';
 import { DeploymentService } from '../../common/services/deployment.service';
 import { Order, PaymentStatus } from '../../database/entities/order.entity';
 import { OrderEvent } from '../../database/entities/order-event.entity';
@@ -25,6 +28,8 @@ import {
 } from '../../database/entities/payment.entity';
 import { PrintTemplate } from '../../database/entities/print-template.entity';
 import { ReceiptLink } from '../../database/entities/receipt-link.entity';
+import { HospitalityReceipt } from '../../database/entities/hospitality-receipt.entity';
+import { hospitalityBlocks, type HospitalitySnapshot } from './hospitality';
 import { EmailService } from '../email/email.service';
 import { resolveOrderTimeZone } from '../orders/order-numbering';
 import {
@@ -52,7 +57,7 @@ export interface ReceiptActor {
 
 /** Ein Beleg auf der oeffentlichen Seite. */
 export interface PublicReceipt {
-  kind: 'receipt';
+  kind: 'receipt' | 'hospitality';
   orderNumber: string;
   isTest: boolean;
   blocks: ReceiptBlock[];
@@ -63,6 +68,13 @@ export interface PublicReceiptView {
   expiresAt: string;
   receipts: PublicReceipt[];
   legal: PublicLegalInfo;
+}
+
+/** Zusatz eines Links auf einen Bewirtungsbeleg. */
+export interface ReceiptLinkExtra {
+  kind: 'hospitality';
+  hospitalityReceiptId: string;
+  copy: boolean;
 }
 
 /** Hoechstens so viele Bestellungen in einem Link (Tisch mit mehreren Bons). */
@@ -146,6 +158,8 @@ export class ReceiptsService {
     private readonly templateRepository: Repository<PrintTemplate>,
     @InjectRepository(OrderEvent)
     private readonly orderEventRepository: Repository<OrderEvent>,
+    @InjectRepository(HospitalityReceipt)
+    private readonly hospitalityRepository: Repository<HospitalityReceipt>,
     private readonly orderPrintService: OrderPrintService,
     private readonly emailService: EmailService,
     private readonly deployment: DeploymentService,
@@ -178,13 +192,7 @@ export class ReceiptsService {
   private async organization(organizationId: string): Promise<Organization> {
     const org = await this.organizationRepository.findOne({
       where: { id: organizationId },
-      select: {
-        id: true,
-        name: true,
-        settings: true,
-        country: true,
-        operatingMode: true,
-      },
+      select: { ...OPERATING_MODE_SELECT, name: true, billingAddress: true },
     });
     if (!org) throw this.notAvailable();
     return org;
@@ -228,6 +236,8 @@ export class ReceiptsService {
     organization: Organization;
     timeZone: string;
     documents: ReceiptDocument[];
+    /** Je Bestellung die Zahlung des Belegs (gleiche Reihenfolge). */
+    payments: Payment[];
   }> {
     const ids = [...new Set(orderIds)];
     if (ids.length === 0 || ids.length > MAX_RECEIPT_ORDERS) {
@@ -250,6 +260,7 @@ export class ReceiptsService {
     const byId = new Map(orders.map((o) => [o.id, o]));
     const showWaiter = await this.templateShowsWaiter(organization);
     const documents: ReceiptDocument[] = [];
+    const payments: Payment[] = [];
     for (const id of ids) {
       const order = byId.get(id)!;
       const payment = await this.paymentRepository.findOne({
@@ -257,6 +268,7 @@ export class ReceiptsService {
         order: { createdAt: 'DESC' },
       });
       if (!payment) throw this.notAvailable();
+      payments.push(payment);
       const tse = (await this.tseSigning?.forPayment(payment.id)) ?? null;
       const payload = await this.orderPrintService.receiptPayload(
         organizationId,
@@ -278,14 +290,16 @@ export class ReceiptsService {
       organization,
       timeZone: resolveOrderTimeZone(organization.settings?.timezone),
       documents,
+      payments,
     };
   }
 
   // ---------------------------------------------------------------- Link
 
-  private async saveLink(
+  async saveLink(
     actor: ReceiptActor,
     orderIds: string[],
+    extra: ReceiptLinkExtra | null = null,
   ): Promise<{ url: string; token: string; expiresAt: Date }> {
     const token = newReceiptToken();
     const expiresAt = new Date(Date.now() + this.linkDays * 86_400_000);
@@ -296,6 +310,7 @@ export class ReceiptsService {
       createdByDeviceId: actor.deviceId,
       createdByUserId: actor.userId,
       expiresAt,
+      ...(extra ?? {}),
     });
     return { url: `${this.appUrl}/beleg/${token}`, token, expiresAt };
   }
@@ -413,24 +428,64 @@ export class ReceiptsService {
       });
     }
     await this.assertMailAllowed(actor, orderIds);
-    const { organization, timeZone, documents } = await this.documents(
+    const { timeZone, documents } = await this.documents(
       actor.organizationId,
       orderIds,
     );
-    const pages = documents.map((doc) => receiptBlocks(doc, timeZone));
-    const link = await this.saveLink(actor, orderIds);
+    await this.sendBlocksByEmail(actor, orderIds, address, {
+      label: 'Kassenbeleg',
+      filename: `Beleg-${documents[0].orderNumber}.pdf`,
+      link: null,
+      pages: () => documents.map((doc) => receiptBlocks(doc, timeZone)),
+      checked: true,
+    });
+    return { sent: true };
+  }
+
+  /**
+   * Beleg-Bausteine per Mail (Kassen- oder Bewirtungsbeleg): Adresse und
+   * Grenzen pruefen, Link anlegen, senden, Ergebnis ohne Adresse im
+   * Verlauf der Bestellung.
+   */
+  async sendBlocksByEmail(
+    actor: ReceiptActor,
+    orderIds: string[],
+    email: string,
+    options: {
+      label: string;
+      filename: string;
+      link: ReceiptLinkExtra | null;
+      pages: (timeZone: string) => ReceiptBlock[][];
+      /** Adresse und Grenzen schon geprueft. */
+      checked?: boolean;
+    },
+  ): Promise<void> {
+    const address = email.trim();
+    if (!options.checked) {
+      if (!isPlausibleEmail(address)) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.RECEIPT_EMAIL_INVALID,
+          message: 'Bitte gib eine gültige E-Mail-Adresse ein.',
+        });
+      }
+      await this.assertMailAllowed(actor, orderIds);
+    }
+    const organization = await this.organization(actor.organizationId);
+    const timeZone = resolveOrderTimeZone(organization.settings?.timezone);
+    const link = await this.saveLink(actor, orderIds, options.link);
     const ok = await this.deliver({
       to: address,
       organization,
-      label: 'Kassenbeleg',
-      pages,
+      label: options.label,
+      pages: options.pages(timeZone),
       linkUrl: link.url,
       linkExpiresAt: link.expiresAt,
-      filename: `Beleg-${documents[0].orderNumber}.pdf`,
+      filename: options.filename,
     });
     await this.recordEvents(actor, orderIds, 'receipt_emailed', {
       status: ok ? 'sent' : 'failed',
-      kind: 'receipt',
+      kind: options.link?.kind ?? 'receipt',
     });
     if (!ok) {
       throw new HttpException(
@@ -441,7 +496,6 @@ export class ReceiptsService {
         HttpStatus.BAD_GATEWAY,
       );
     }
-    return { sent: true };
   }
 
   /** Mail mit Beleg-Bausteinen, PDF und QR-Bildern verschicken. */
@@ -551,6 +605,9 @@ export class ReceiptsService {
 
   async publicView(token: string): Promise<PublicReceiptView> {
     const link = await this.resolveLink(token);
+    if (link.kind === 'hospitality' && link.hospitalityReceiptId) {
+      return this.publicHospitalityView(link);
+    }
     const { organization, timeZone, documents } =
       await this.linkDocuments(link);
     return {
@@ -566,18 +623,59 @@ export class ReceiptsService {
     };
   }
 
+  /** Bewirtungsbeleg aus dem gespeicherten Schnappschuss (unveraenderlich). */
+  private async publicHospitalityView(
+    link: ReceiptLink,
+  ): Promise<PublicReceiptView> {
+    const receipt = await this.hospitalityRepository.findOne({
+      where: {
+        id: link.hospitalityReceiptId!,
+        organizationId: link.organizationId,
+      },
+    });
+    if (!receipt) throw this.linkGone();
+    const organization = await this.organization(link.organizationId);
+    const timeZone = resolveOrderTimeZone(organization.settings?.timezone);
+    return {
+      organizationName: organization.name,
+      expiresAt: link.expiresAt.toISOString(),
+      receipts: [
+        {
+          kind: 'hospitality',
+          orderNumber: receipt.number ?? 'TEST',
+          isTest: receipt.isTest,
+          blocks: hospitalityBlocks(
+            {
+              number: receipt.number,
+              issuedAt: receipt.issuedAt,
+              serviceDate: receipt.serviceDate,
+              recipientName: receipt.recipientName,
+              recipientAddress: receipt.recipientAddress,
+              snapshot: receipt.snapshot as unknown as HospitalitySnapshot,
+            },
+            { copy: link.copy, timeZone },
+          ),
+        },
+      ],
+      legal: toPublicLegalInfo(organization, this.deployment.platformLegal),
+    };
+  }
+
   async publicPdf(token: string): Promise<{ filename: string; pdf: Buffer }> {
     const view = await this.publicView(token);
+    const hospitality = view.receipts[0]?.kind === 'hospitality';
+    const label = hospitality ? 'Bewirtungsbeleg' : 'Kassenbeleg';
     const pdf = await renderReceiptPdf(
       view.receipts.map((r) => ({ blocks: r.blocks })),
       {
-        title: `Kassenbeleg ${view.organizationName}`,
+        title: `${label} ${view.organizationName}`,
         author: view.organizationName,
       },
     );
     const number = view.receipts[0]?.orderNumber ?? 'Beleg';
+    const prefix = hospitality ? 'Bewirtungsbeleg' : 'Beleg';
     return {
-      filename: `Beleg-${number.replace(/[^A-Za-z0-9-]/g, '')}.pdf`,
+      filename: `${prefix}-${number.replace(/[^A-Za-z0-9-]/g, '')}.pdf`,
       pdf,
     };
   }

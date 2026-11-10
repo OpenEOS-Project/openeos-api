@@ -159,6 +159,13 @@ export const ErrorCodes = {
   RECEIPT_EMAIL_RATE_LIMITED: 'RECEIPT_EMAIL_RATE_LIMITED',
   // Versand der Beleg-Mail fehlgeschlagen — 502
   RECEIPT_EMAIL_FAILED: 'RECEIPT_EMAIL_FAILED',
+  // Bewirtungsbeleg: Name, Anschrift (und ueber 250 € Steuernummer/USt-IdNr.)
+  // des Vereins fehlen — 409, `params.missing`
+  HOSPITALITY_MASTER_DATA_REQUIRED: 'HOSPITALITY_MASTER_DATA_REQUIRED',
+  // Sammelbezeichnung wie „Speisen und Getränke“ als Artikelname — 409, `params.items`
+  HOSPITALITY_ITEMS_NOT_SPECIFIC: 'HOSPITALITY_ITEMS_NOT_SPECIFIC',
+  // Bestellung(en) schon in einem anderen Bewirtungsbeleg — 409
+  HOSPITALITY_RECEIPT_EXISTS: 'HOSPITALITY_RECEIPT_EXISTS',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -306,6 +313,12 @@ export const ErrorMessages: Record<ErrorCode, string> = {
     'Zu dieser Bestellung gibt es keinen Beleg',
   [ErrorCodes.RECEIPT_EMAIL_RATE_LIMITED]:
     'Gerade wurden zu viele Belege per E-Mail verschickt – bitte versuch es gleich noch einmal',
+  [ErrorCodes.HOSPITALITY_MASTER_DATA_REQUIRED]:
+    'Für den Bewirtungsbeleg fehlen Angaben zu deinem Verein',
+  [ErrorCodes.HOSPITALITY_ITEMS_NOT_SPECIFIC]:
+    'Sammelbezeichnungen wie „Speisen und Getränke“ reichen auf einem Bewirtungsbeleg nicht',
+  [ErrorCodes.HOSPITALITY_RECEIPT_EXISTS]:
+    'Für diese Bestellung gibt es schon einen Bewirtungsbeleg',
   [ErrorCodes.RECEIPT_EMAIL_FAILED]:
     'Die E-Mail konnte nicht verschickt werden – bitte versuch es noch einmal',
 };
@@ -632,6 +645,9 @@ export const ErrorReasons = {
   WEBHOOKS_DISABLED: 'WEBHOOKS_DISABLED',
   RECEIPT_EMAIL_INVALID: 'RECEIPT_EMAIL_INVALID',
   RECEIPT_ORDERS_INVALID: 'RECEIPT_ORDERS_INVALID',
+  HOSPITALITY_RECEIPT_NOT_FOUND: 'HOSPITALITY_RECEIPT_NOT_FOUND',
+  HOSPITALITY_RECIPIENT_REQUIRED: 'HOSPITALITY_RECIPIENT_REQUIRED',
+  HOSPITALITY_SERVICE_DATE_INVALID: 'HOSPITALITY_SERVICE_DATE_INVALID',
 } as const;
 
 export type ErrorReason = (typeof ErrorReasons)[keyof typeof ErrorReasons];
