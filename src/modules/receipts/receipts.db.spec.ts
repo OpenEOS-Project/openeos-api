@@ -209,7 +209,7 @@ describeWithDb('ReceiptsService against Postgres', () => {
     const text = dump.map((r) => r.t).join('\n');
     expect(text).toContain('receipt_emailed');
     expect(text).not.toMatch(/gast\d@example\.org/);
-    expect(text).not.toMatch(/example\.org/);
+    expect(text).not.toContain('example.org');
   });
 
   it('retention job deletes expired links only', async () => {
