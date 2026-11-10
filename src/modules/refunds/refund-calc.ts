@@ -285,13 +285,65 @@ export function taxableByRate(c: Composition): Map<number, number> {
   return out;
 }
 
+/**
+ * Trinkgeld je Steuersatz (Cent) — Trinkgeld an den umsatzsteuerpflichtigen
+ * Verein (`TrinkgeldAG`) ist Entgelt (Abschn. 10.1 Abs. 5 UStAE) und teilt
+ * den Satz der Hauptleistung (Steuerberater 2026-11-10, Fragen 3–5). Bei
+ * gemischten Bons im Verhaeltnis der **Nettoentgelte** der Waren je Satz
+ * (analog Abschn. 10.1 Abs. 8 Satz 4 UStAE), Pfand zaehlt nicht mit.
+ * Rundungsrest auf den groessten Anteil. Ohne Ware (z. B. reine
+ * Trinkgeld-Erstattung) `fallback` (Standard: Satz 19 %, Regel der
+ * Verfahrensdokumentation fuer Trinkgeld ohne Bon).
+ *
+ * Vorzeichen bleibt erhalten (Erstattung negativ).
+ */
+export function tipByRate(
+  goods: Map<number, number>,
+  tipCents: number,
+  fallback: Map<number, number> | null = null,
+): Map<number, number> {
+  const out = new Map<number, number>();
+  const tip = Math.round(tipCents);
+  if (!tip) return out;
+  const sign = tip < 0 ? -1 : 1;
+  const abs = Math.abs(tip);
+  let weights = [...goods.entries()]
+    .filter(([, value]) => value > 0)
+    .map(([rate, value]) => [rate, (value * 100) / (100 + rate)] as const);
+  if (weights.length === 0 && fallback) {
+    weights = [...fallback.entries()]
+      .filter(([, value]) => Math.abs(value) > 0)
+      .map(([rate, value]) => [rate, Math.abs(value)] as const);
+  }
+  const total = weights.reduce((sum, [, w]) => sum + w, 0);
+  if (total <= 0) {
+    out.set(19, sign * abs);
+    return out;
+  }
+  let assigned = 0;
+  let largest = weights[0];
+  for (const entry of weights) {
+    const share = Math.floor((abs * entry[1]) / total);
+    out.set(entry[0], (out.get(entry[0]) ?? 0) + share);
+    assigned += share;
+    if (entry[1] > largest[1]) largest = entry;
+  }
+  out.set(largest[0], (out.get(largest[0]) ?? 0) + (abs - assigned));
+  for (const [rate, value] of out) out.set(rate, sign * value);
+  return out;
+}
+
 /** MwSt-Zeilen (negativ) aus einer Zusammensetzung (Cent, positiv). */
 export function refundTaxLines(
   c: Composition,
   vatExempt: boolean | undefined,
+  /** Trinkgeld an den Verein: Anteile je Satz (Cent, positiv). */
+  tipShares: Map<number, number> | null = null,
 ): RefundTaxLine[] {
   if (vatExempt !== false) return [];
-  return [...taxableByRate(c).entries()]
+  const taxable = taxableByRate(c);
+  for (const [rate, value] of tipShares ?? []) addTo(taxable, rate, value);
+  return [...taxable.entries()]
     .filter(([rate, value]) => rate > 0 && value > 0)
     .sort(([a], [b]) => b - a)
     .map(([rate, value]) => {

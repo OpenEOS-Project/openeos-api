@@ -80,7 +80,9 @@ export type DsfinvkTxKind =
   | 'order'
   | 'order_cancellation'
   | 'abort'
-  | 'cashbook';
+  | 'cashbook'
+  | 'settlement'
+  | 'tip_payout';
 
 /** Verweis eines Vorgangs auf einen anderen (Bon_Referenzen, REF_TYP Transaktion). */
 export interface DsfinvkReference {

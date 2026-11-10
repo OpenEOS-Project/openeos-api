@@ -27,6 +27,7 @@ import {
   type SettlementTotals,
 } from '../../database/entities/waiter-settlement.entity';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { TseSigningService } from '../tse/tse-signing.service';
 import { rowsOf } from '../tse/tse-sql.util';
 import {
   buildSettlementTotals,
@@ -114,7 +115,22 @@ export interface SettlementView {
   deviceId: string | null;
   deviceName: string | null;
   printedAt: Date | null;
+  /**
+   * Cloud-TSE: die Abrechnung ist als `SonstigerVorgang` mit Soll, Ist und
+   * Differenz abgesichert (Steuerberater 2026-11-10, Frage 7). null ohne
+   * TSE bzw. bei Training.
+   */
+  tse: SettlementTse | null;
   createdAt: Date;
+}
+
+export interface SettlementTse {
+  status: string;
+  failed: boolean;
+  bonNumber: number | null;
+  transactionNumber: number | null;
+  signatureCounter: number | null;
+  finishTime: string | null;
 }
 
 const BERLIN = 'Europe/Berlin';
@@ -129,6 +145,15 @@ const DATE_TIME = new Intl.DateTimeFormat('de-DE', {
 
 export function printDateTime(value: Date | string | null): string {
   return value ? DATE_TIME.format(new Date(value)).replace(',', '') : '';
+}
+
+/** Person einer gespeicherten Abrechnung. */
+function subject_(
+  s: Pick<WaiterSettlement, 'waiterId' | 'userId'>,
+): SettlementSubject {
+  return s.waiterId
+    ? { kind: 'waiter', waiterId: s.waiterId }
+    : { kind: 'member', userId: s.userId ?? '' };
 }
 
 /** Spalten der Person je Tabelle (feste Liste, nie aus der Anfrage). */
@@ -171,6 +196,7 @@ export class WaiterSettlementsService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @Optional() private readonly orderPrint?: OrderPrintService,
+    @Optional() private readonly tseSigning?: TseSigningService,
   ) {}
 
   // ------------------------------------------------------------ Lesen
@@ -489,6 +515,29 @@ export class WaiterSettlementsService {
     );
     await this.audit(organizationId, saved, actor);
 
+    // Cloud-TSE: Abrechnung als SonstigerVorgang absichern — vor dem Bon
+    // (Training ohne Nummer nicht). Wirft nie.
+    if (!saved.isTest && this.tseSigning) {
+      const subject = await this.subjectView(
+        this.dataSource.manager,
+        organizationId,
+        subject_(saved),
+      );
+      await this.tseSigning.signSettlement({
+        organizationId,
+        settlementId: saved.id,
+        number: saved.number,
+        eventId: saved.eventId,
+        subjectName: subject.name,
+        expected: saved.cashExpected,
+        counted: saved.cashCounted,
+        difference: saved.difference,
+        terminal: actor.deviceId ?? null,
+        userId: actor.userId,
+        waiterId: actor.waiterId,
+      });
+    }
+
     let printed = false;
     if (options.print !== false && (options.printerId || actor.deviceId)) {
       printed = await this.print(organizationId, saved.id, {
@@ -589,6 +638,53 @@ export class WaiterSettlementsService {
       target,
       summaryPrintData(summary, deviceName),
     );
+  }
+
+  /** TSE-Vorgang je Abrechnung (Bezug ueber `lines.settlementId`). */
+  private async settlementTse(
+    ids: string[],
+  ): Promise<Map<string, SettlementTse>> {
+    const out = new Map<string, SettlementTse>();
+    if (!ids.length) return out;
+    try {
+      const rows = rowsOf<{
+        settlement_id: string;
+        status: string;
+        bon_id: string | null;
+        transaction_number: string | null;
+        signature_counter: string | null;
+        finish_time: Date | null;
+      }>(
+        await this.dataSource.query(
+          `SELECT DISTINCT ON (lines->>'settlementId') lines->>'settlementId' AS settlement_id,
+                  status, bon_id, transaction_number, signature_counter, finish_time
+             FROM tse_transactions
+            WHERE kind = 'settlement' AND lines->>'settlementId' = ANY($1::text[])
+            ORDER BY lines->>'settlementId', created_at DESC`,
+          [ids],
+        ),
+      );
+      const n = (v: string | null) => (v === null ? null : Number(v));
+      for (const r of rows) {
+        const signed = r.status === 'signed' || r.status === 'training';
+        out.set(r.settlement_id, {
+          status: r.status,
+          failed: !signed,
+          bonNumber: n(r.bon_id),
+          transactionNumber: n(r.transaction_number),
+          signatureCounter: signed ? n(r.signature_counter) : null,
+          finishTime:
+            signed && r.finish_time
+              ? new Date(r.finish_time).toISOString()
+              : null,
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Settlement TSE lookup failed: ${(error as Error).message}`,
+      );
+    }
+    return out;
   }
 
   // ------------------------------------------------------------ Hilfen
@@ -794,6 +890,7 @@ export class WaiterSettlementsService {
       ),
     );
     const byId = new Map(rows.map((r) => [r.id, r]));
+    const tseById = await this.settlementTse(ids);
     return ids
       .map((id) => byId.get(id))
       .filter((r): r is (typeof rows)[number] => !!r)
@@ -860,6 +957,7 @@ export class WaiterSettlementsService {
           deviceId: r.device_id,
           deviceName: r.device_name,
           printedAt: r.printed_at,
+          tse: tseById.get(r.id) ?? null,
           createdAt: r.created_at,
         };
       });
@@ -1011,6 +1109,18 @@ export function settlementPrintData(
     number: view.number,
     is_test: view.isTest,
     reprint: options.reprint === true,
+    // Nachdruck = Kopie; die Abrechnung entsteht und bleibt elektronisch
+    // (Steuerberater 2026-11-10, Frage 8).
+    copy: options.reprint === true,
+    tse: view.tse
+      ? {
+          failed: view.tse.failed,
+          bon_number: view.tse.bonNumber,
+          transaction_number: view.tse.transactionNumber,
+          signature_counter: view.tse.signatureCounter,
+          finish_time: view.tse.finishTime,
+        }
+      : null,
     waiter_name: view.subject.name,
     event_name: view.eventName,
     period_from: printDateTime(view.periodFrom),

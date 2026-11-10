@@ -1,3 +1,4 @@
+import { WaiterCashAuditService } from './waiter-cash-audit.service';
 import {
   Body,
   Controller,
@@ -27,6 +28,7 @@ import {
   CreateWaiterDto,
   ResetWaiterPinDto,
   SettleWaiterDto,
+  TipPayoutDto,
   TransferTablesDto,
   UpdateWaiterDto,
 } from './dto/waiter.dto';
@@ -55,6 +57,7 @@ export class WaitersController {
     private readonly waiters: WaitersService,
     private readonly settlements: WaiterSettlementsService,
     private readonly transfers: WaiterTransferService,
+    private readonly cashAudit: WaiterCashAuditService,
   ) {}
 
   @Get()
@@ -234,7 +237,67 @@ export class WaitersController {
         print: !!dto.printerId,
       },
     );
-    return { data: result.settlement, meta: { printed: result.printed } };
+    // Kartentrinkgeld gleich mit auszahlen (nur Arbeitnehmer).
+    const tipPayout = dto.payOutCardTips
+      ? await this.cashAudit.payOut(
+          id,
+          waiterId,
+          { userId: user.id, waiterId: null, deviceId: null },
+          {
+            eventId: result.settlement.eventId,
+            settlementId: result.settlement.id,
+            printerId: dto.printerId ?? null,
+            print: !!dto.printerId,
+          },
+        )
+      : null;
+    return {
+      data: result.settlement,
+      meta: { printed: result.printed, tipPayout: tipPayout?.payout ?? null },
+    };
+  }
+
+  @Get(':waiterId/tip-payouts')
+  @ApiOperation({
+    summary: 'Kartentrinkgeld einer Bedienung',
+    description:
+      'Arbeitnehmer (Lohnkonto)? Offenes Kartentrinkgeld (unbare Zahlungen dieser Bedienung abzüglich Erstattungen und Auszahlungen) und bisherige Auszahlungen mit TSE-Beleg.',
+  })
+  async tipPayouts(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('waiterId', ParseUUIDPipe) waiterId: string,
+    @CurrentUser() user: User,
+  ) {
+    await this.waiters.assertCanManage(id, user);
+    return { data: await this.cashAudit.tipPayoutStatus(id, waiterId) };
+  }
+
+  @Post(':waiterId/tip-payouts')
+  @ApiOperation({
+    summary: 'Kartentrinkgeld bar auszahlen',
+    description:
+      'Nur für Bedienungen mit „Arbeitnehmer (Lohnkonto)“ (sonst 409 TIP_PAYOUT_NOT_EMPLOYEE: bei Ehrenamtlichen gehört das Trinkgeld dem Verein). Eigener Kassenbeleg TrinkgeldAN −x / Bar −x (Cloud-TSE), Empfänger, Quittung mit Unterschrift; mindert den Soll-Bestand. Bargeld muss erlaubt sein. Betrag höchstens das offene Kartentrinkgeld (400 TIP_PAYOUT_AMOUNT_INVALID).',
+  })
+  async payOutTips(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('waiterId', ParseUUIDPipe) waiterId: string,
+    @Body() dto: TipPayoutDto,
+    @CurrentUser() user: User,
+  ) {
+    await this.waiters.assertCanManage(id, user);
+    const result = await this.cashAudit.payOut(
+      id,
+      waiterId,
+      { userId: user.id, waiterId: null, deviceId: null },
+      {
+        amount: dto.amount ?? null,
+        eventId: dto.eventId ?? null,
+        note: dto.note ?? null,
+        printerId: dto.printerId ?? null,
+        print: !!dto.printerId,
+      },
+    );
+    return { data: result.payout, meta: { printed: result.printed } };
   }
 
   @Post(':waiterId/transfer-tables')

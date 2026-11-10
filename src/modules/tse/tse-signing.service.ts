@@ -30,6 +30,7 @@ import {
   rateMapFrom,
   rateRecord,
   scaleComposition,
+  tipByRate,
   unitGross,
   type Composition,
 } from '../refunds/refund-calc';
@@ -46,8 +47,11 @@ import { rowsOf } from './tse-sql.util';
 import { TseOutageService } from './tse-outage.service';
 import {
   PROCESS_TYPE_ORDER,
+  PROCESS_TYPE_OTHER,
   PROCESS_TYPE_RECEIPT,
   bestellungProcessData,
+  settlementProcessData,
+  tipPayoutProcessData,
   cashbookProcessData,
   depositReturnSlots,
   emptySlots,
@@ -65,6 +69,9 @@ import {
   type TseReceiptView,
   type TseUnitInfo,
 } from './tse-view';
+
+/** Trinkgeld an den Verein (TrinkgeldAG) oder an angestellte Bedienung (TrinkgeldAN). */
+export type TipRecipient = 'employer' | 'employee';
 
 /** Wer einen Vorgang ausgeloest hat. */
 export interface TseActor {
@@ -414,8 +421,18 @@ export class TseSigningService {
 
       const amountCents = cents(payment.amount);
       const composition = paymentComposition(order, payment);
+      // Trinkgeld: an den Verein (TrinkgeldAG, Satz der Hauptleistung
+      // anteilig) — ausser die kassierende Bedienung ist Arbeitnehmer
+      // (TrinkgeldAN, kein Entgelt). Steuerbefreit: 0-%-Slot.
+      const tipRecipient = await this.tipRecipientFor(
+        payment.processedByWaiterId,
+      );
+      const tipShares =
+        composition.tip && tipRecipient === 'employer' && !vatExempt
+          ? tipByRate(composition.goods, composition.tip)
+          : null;
       const slots = fitSlots(
-        slotsFromComposition(composition, vatExempt),
+        slotsFromComposition(composition, vatExempt, 1, tipShares),
         amountCents,
       );
       const training = order.isTest === true;
@@ -435,7 +452,11 @@ export class TseSigningService {
         ),
         training,
         amountCents,
-        lines: receiptLines(order, payment, composition),
+        lines: {
+          ...receiptLines(order, payment, composition),
+          tipRecipient,
+          ...(tipShares ? { tipByRate: rateRecord(tipShares) } : {}),
+        },
         eventId: order.eventId,
         orderId: order.id,
         paymentId: payment.id,
@@ -520,10 +541,6 @@ export class TseSigningService {
       const vatExempt = await this.vatExempt(refund.organizationId);
       const amountCents = cents(refund.amount); // negativ
       const composition = refundComposition(refund);
-      const slots = fitSlots(
-        slotsFromComposition(composition, vatExempt, -1),
-        amountCents,
-      );
       const training = refund.isTest === true || refund.status === 'test';
       const original = refund.paymentId
         ? await this.txRepository.findOne({
@@ -531,6 +548,30 @@ export class TseSigningService {
             order: { createdAt: 'DESC' },
           })
         : null;
+      // Trinkgeld spiegelbildlich zum Ursprungsbeleg: gleicher Empfaenger,
+      // AG-Anteile je Satz wie die erstattete Ware (sonst wie im Original).
+      // Ursprung ohne Kennzeichen (Bestand) → wie damals im 0-%-Slot.
+      const originalLines = original?.lines ?? {};
+      const tipRecipient =
+        originalLines.tipRecipient === 'employee' ||
+        originalLines.tipRecipient === 'employer'
+          ? (originalLines.tipRecipient as TipRecipient)
+          : null;
+      const tipShares =
+        composition.tip && tipRecipient === 'employer' && !vatExempt
+          ? tipByRate(
+              composition.goods,
+              composition.tip,
+              rateMapFrom(
+                originalLines.tipByRate as Record<string, unknown>,
+                true,
+              ),
+            )
+          : null;
+      const slots = fitSlots(
+        slotsFromComposition(composition, vatExempt, -1, tipShares),
+        amountCents,
+      );
       return this.sign({
         organizationId: refund.organizationId,
         kind: 'refund',
@@ -561,6 +602,8 @@ export class TseSigningService {
           pfand: Number(refund.pfandAmount),
           pfandByRate: rateRecord(composition.pfand),
           tip: Number(refund.tipAmount),
+          ...(tipRecipient ? { tipRecipient } : {}),
+          ...(tipShares ? { tipByRate: rateRecord(tipShares) } : {}),
           paymentMethod: refund.paymentMethod,
         },
         eventId: refund.eventId,
@@ -664,6 +707,108 @@ export class TseSigningService {
     } catch (error) {
       this.logger.error(
         `TSE cashbook entry ${input.entryId} failed: ${(error as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Kellnerabrechnung (nicht Training) als `SonstigerVorgang` mit Soll,
+   * gezaehltem Ist und Differenz. Bezug ueber `lines.settlementId` (die
+   * Abrechnung selbst ist unveraenderlich).
+   */
+  async signSettlement(input: {
+    organizationId: string;
+    settlementId: string;
+    number: number | null;
+    eventId: string | null;
+    subjectName: string;
+    expected: number | null;
+    counted: number | null;
+    difference: number | null;
+    terminal?: string | null;
+    userId?: string | null;
+    waiterId?: string | null;
+  }): Promise<TseReceiptView | null> {
+    try {
+      if (!(await this.isActive(input.organizationId))) return null;
+      const c = (v: number | null) => (v === null ? null : cents(v));
+      return this.sign({
+        organizationId: input.organizationId,
+        kind: 'settlement',
+        processType: PROCESS_TYPE_OTHER,
+        processData: settlementProcessData({
+          number: input.number,
+          expectedCents: c(input.expected),
+          countedCents: c(input.counted),
+          differenceCents: c(input.difference),
+        }),
+        training: false,
+        amountCents: 0,
+        lines: {
+          settlementId: input.settlementId,
+          settlementNumber: input.number,
+          subjectName: input.subjectName,
+          expected: input.expected,
+          counted: input.counted,
+          difference: input.difference,
+        },
+        eventId: input.eventId,
+        terminal: input.terminal ?? null,
+        userId: input.userId ?? null,
+        waiterId: input.waiterId ?? null,
+      });
+    } catch (error) {
+      this.logger.error(
+        `TSE settlement ${input.settlementId} failed: ${(error as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Barauszahlung von Kartentrinkgeld an eine angestellte Bedienung:
+   * Kassenbeleg mit TrinkgeldAN −x, Bar −x; Empfaenger in der Kopie
+   * (DSFinV-K KUNDE_NAME/KUNDE_ID).
+   */
+  async signTipPayout(input: {
+    organizationId: string;
+    tipPayoutId: string;
+    eventId: string | null;
+    amountCents: number;
+    recipientWaiterId: string;
+    recipientName: string;
+    training: boolean;
+    terminal?: string | null;
+    userId?: string | null;
+    waiterId?: string | null;
+  }): Promise<TseReceiptView | null> {
+    try {
+      if (!(await this.isActive(input.organizationId))) return null;
+      const amount = -Math.abs(input.amountCents);
+      return this.sign({
+        organizationId: input.organizationId,
+        kind: 'tip_payout',
+        processType: PROCESS_TYPE_RECEIPT,
+        processData: input.training
+          ? tipPayoutProcessData(amount).replace(/^Beleg/, 'AVTraining')
+          : tipPayoutProcessData(amount),
+        training: input.training,
+        amountCents: amount,
+        lines: {
+          tipPayoutId: input.tipPayoutId,
+          amountCents: amount,
+          recipientWaiterId: input.recipientWaiterId,
+          recipientName: input.recipientName,
+        },
+        eventId: input.eventId,
+        terminal: input.terminal ?? null,
+        userId: input.userId ?? null,
+        waiterId: input.waiterId ?? null,
+      });
+    } catch (error) {
+      this.logger.error(
+        `TSE tip payout ${input.tipPayoutId} failed: ${(error as Error).message}`,
       );
       return null;
     }
@@ -835,6 +980,12 @@ export class TseSigningService {
     }
   }
 
+  /** Ein Vorgang nach ID (Trinkgeld-Auszahlung, Kellnerabrechnung). */
+  async forTransaction(id: string): Promise<TseReceiptView | null> {
+    const tx = await this.txRepository.findOne({ where: { id } });
+    return tx ? (await this.viewsFor([tx]))[0] : null;
+  }
+
   async forRefund(refundId: string): Promise<TseReceiptView | null> {
     const tx = await this.txRepository.findOne({
       where: { refundId },
@@ -862,6 +1013,29 @@ export class TseSigningService {
       order: { createdAt: 'ASC' },
     });
     return this.viewsFor(txs.filter((t) => t.kind !== 'abort'));
+  }
+
+  /**
+   * Empfaenger des Trinkgelds einer Zahlung: `employee` nur fuer eine
+   * Bedienung mit „Arbeitnehmer (Lohnkonto)“ (`waiters.is_employee`), sonst
+   * der Verein (Ehrenamtliche liefern ab; Mitglieder/Geraete ohne
+   * Bedienung ebenso).
+   */
+  async tipRecipientFor(
+    waiterId: string | null | undefined,
+  ): Promise<TipRecipient> {
+    if (!waiterId) return 'employer';
+    try {
+      const rows = rowsOf<{ is_employee: boolean }>(
+        await this.txRepository.query(
+          `SELECT is_employee FROM waiters WHERE id = $1`,
+          [waiterId],
+        ),
+      );
+      return rows[0]?.is_employee === true ? 'employee' : 'employer';
+    } catch {
+      return 'employer';
+    }
   }
 
   private async vatExempt(organizationId: string): Promise<boolean> {

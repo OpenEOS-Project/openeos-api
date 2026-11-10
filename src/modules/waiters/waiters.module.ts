@@ -1,3 +1,5 @@
+import { TseModule } from '../tse/tse.module';
+import { WaiterCashAuditService } from './waiter-cash-audit.service';
 import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
@@ -31,13 +33,19 @@ import { WaiterTransferService } from './waiter-transfer.service';
     ]),
     forwardRef(() => GatewayModule),
     PrintJobsModule,
+    TseModule,
   ],
   controllers: [
     WaitersController,
     WaiterSettlementsController,
     DeviceWaitersController,
   ],
-  providers: [WaitersService, WaiterSettlementsService, WaiterTransferService],
-  exports: [WaitersService, WaiterSettlementsService],
+  providers: [
+    WaitersService,
+    WaiterSettlementsService,
+    WaiterTransferService,
+    WaiterCashAuditService,
+  ],
+  exports: [WaitersService, WaiterSettlementsService, WaiterCashAuditService],
 })
 export class WaitersModule {}

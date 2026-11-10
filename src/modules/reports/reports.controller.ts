@@ -74,7 +74,7 @@ export class ReportsController {
     operationId: 'getVatReport',
     summary: 'Umsatz und Umsatzsteuer je Steuersatz',
     description:
-      'Je Steuersatz: Warenwert, Pfand aus Verkäufen, Pfand-Rückgaben (negativ), Brutto, enthaltene Umsatzsteuer und Netto im Zeitraum, optional je Veranstaltung. Pfand gehört zum Entgelt und steht beim Satz seiner Pfandart; Buchungen von vor 2026-11 ohne Satz stehen bei 0 %. Trinkgeld ist nicht enthalten. Steuerbefreite Organisationen (`vatExempt: true`): alles bei 0 % ohne Steuer. Scope `read` und Modulrecht Auswertung.',
+      'Je Steuersatz: Warenwert, Pfand aus Verkäufen, Pfand-Rückgaben (negativ), Trinkgeld an den Verein, Brutto, enthaltene Umsatzsteuer und Netto im Zeitraum, optional je Veranstaltung. Pfand gehört zum Entgelt und steht beim Satz seiner Pfandart; Buchungen von vor 2026-11 ohne Satz und Rückgaben gegen den Pfand-Altsaldo stehen bei 0 %. Trinkgeld an den Verein (TrinkgeldAG) steht anteilig beim Satz der Ware, Trinkgeld angestellter Bedienungen (TrinkgeldAN) nur nachrichtlich in `employeeTips`. Steuerbefreite Organisationen (`vatExempt: true`): alles bei 0 % ohne Steuer. Scope `read` und Modulrecht Auswertung.',
   })
   async getVatReport(
     @CurrentOrganization() organizationId: string,
@@ -87,6 +87,27 @@ export class ReportsController {
       user,
     );
     return { data: report };
+  }
+
+  @ApiTokenAccess(TokenScope.READ)
+  @Get('small-business')
+  @Roles(Role.MEMBER)
+  @ApiOperation({
+    operationId: 'getSmallBusinessStatus',
+    summary: 'Kleinunternehmer-Grenzen (§ 19 UStG)',
+    description:
+      'Umsatz in OpenEOS im laufenden und im Vorjahr (Zahlungen ohne Test, abzüglich Erstattungen und Pfand-Auszahlungen, Kalenderjahr Europe/Berlin) gegen die Grenzen des § 19 UStG (25.000 € Vorjahr, 100.000 € laufendes Jahr). `warning`: `approaching` ab 80 % der 100.000 €, `exceeded` darüber bzw. Vorjahr über 25.000 €. Nur ein Anhaltspunkt: Umsätze außerhalb von OpenEOS fehlen. Scope `read` und Modulrecht Auswertung.',
+  })
+  async getSmallBusinessStatus(
+    @CurrentOrganization() organizationId: string,
+    @CurrentUser() user: User,
+  ) {
+    return {
+      data: await this.reportsService.getSmallBusinessStatus(
+        organizationId,
+        user,
+      ),
+    };
   }
 
   @ApiTokenAccess(TokenScope.READ)

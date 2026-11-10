@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsNumber,
@@ -126,4 +127,13 @@ export class CashbookQueryDto {
   @IsOptional()
   @IsString()
   deviceId?: string;
+}
+
+export class ChangeVatStatusDto {
+  @ApiProperty({
+    description:
+      'true = Kleinunternehmer (steuerfrei nach § 19 UStG), false = umsatzsteuerpflichtig (ab sofort)',
+  })
+  @IsBoolean()
+  vatExempt: boolean;
 }

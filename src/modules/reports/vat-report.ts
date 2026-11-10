@@ -1,4 +1,5 @@
 import type { PfandReturnLine } from '../../database/entities/pfand-return.entity';
+import { legacyCentsOf } from '../pfand-types/pfand-legacy-balance';
 import { mapSum, pfandFromRecord, rateMapFrom } from '../refunds/refund-calc';
 
 /**
@@ -13,7 +14,12 @@ import { mapSum, pfandFromRecord, rateMapFrom } from '../refunds/refund-calc';
  *
  * Buchungen von vor der Umstellung (2026-11) haben fuer Pfand keinen Satz
  * gespeichert; sie stehen — wie damals auf Bon, TSE und im Bericht — bei
- * 0 % (nicht steuerbar). Trinkgeld ist kein Entgelt und fehlt hier.
+ * 0 % (nicht steuerbar).
+ *
+ * Trinkgeld an den Verein (TrinkgeldAG) ist Entgelt und steht anteilig
+ * beim Satz der Ware seiner Bestellung (Steuerberater 2026-11-10, Frage 3);
+ * Trinkgeld angestellter Bedienungen (TrinkgeldAN) ist kein Entgelt und
+ * steht nur nachrichtlich in `employeeTips`.
  * Steuerbefreite Organisationen (Kleinunternehmer, `vatExempt !== false`)
  * weisen keine Umsatzsteuer aus: alle Betraege stehen dann bei 0 % ohne
  * Steuer.
@@ -27,7 +33,9 @@ export interface VatReportRow {
   deposits: number;
   /** Pfand-Rueckgaben (negativ). */
   depositReturns: number;
-  /** Summe brutto = goods + deposits + depositReturns. */
+  /** Trinkgeld an den Verein (TrinkgeldAG), anteilig je Satz. */
+  tips: number;
+  /** Summe brutto = goods + deposits + depositReturns + tips. */
   gross: number;
   /** Enthaltene Umsatzsteuer. */
   tax: number;
@@ -40,6 +48,8 @@ export interface VatReport {
   vatExempt: boolean;
   rows: VatReportRow[];
   total: Omit<VatReportRow, 'rate'>;
+  /** Trinkgeld angestellter Bedienungen (TrinkgeldAN, kein Entgelt), nachrichtlich. */
+  employeeTips: number;
 }
 
 /** Warenwert und Pfand je Satz in Cent (Verkauf, positiv). */
@@ -78,12 +88,17 @@ export function buildVatReport(input: {
   /** Positionen der Pfand-Auszahlungen. */
   pfandReturnLines: Pick<
     PfandReturnLine,
-    'unitAmount' | 'quantity' | 'vatRate'
+    'unitAmount' | 'quantity' | 'vatRate' | 'legacyCents'
   >[];
+  /** Trinkgeld: an den Verein je Satz (Cent), an Arbeitnehmer gesamt (Cent). */
+  tips?: { clubByRate: Map<number, number>; employeeCents: number };
 }): VatReport {
   const goods = new Map<number, number>();
   const deposits = new Map<number, number>();
   const returns = new Map<number, number>();
+  const tips = new Map<number, number>();
+  for (const [rate, value] of input.tips?.clubByRate ?? [])
+    add(tips, rate, value);
   for (const [rate, value] of input.sales.goodsByRate) add(goods, rate, value);
   for (const [rate, value] of input.sales.depositsByRate)
     add(deposits, rate, value);
@@ -95,9 +110,14 @@ export function buildVatReport(input: {
       add(deposits, rate, -value);
   }
   for (const line of input.pfandReturnLines) {
-    const cents =
-      Math.round(Number(line.unitAmount) * 100) * Number(line.quantity);
-    add(returns, Number(line.vatRate ?? 0) || 0, -Math.abs(cents));
+    const cents = Math.abs(
+      Math.round(Number(line.unitAmount) * 100) * Number(line.quantity),
+    );
+    // Anteil gegen den Pfand-Altsaldo (bzw. Bestand ohne Satz) bei 0 %:
+    // mindert keine Steuer (Steuerberater 2026-11-10, Frage 2).
+    const legacy = legacyCentsOf(line);
+    add(returns, 0, -legacy);
+    add(returns, Number(line.vatRate ?? 0) || 0, -(cents - legacy));
   }
 
   // Steuerbefreit: alles bei 0 %, keine Steuer.
@@ -106,23 +126,26 @@ export function buildVatReport(input: {
   const g = collapse(goods);
   const d = collapse(deposits);
   const r = collapse(returns);
+  const t = collapse(tips);
 
-  const rates = [...new Set([...g.keys(), ...d.keys(), ...r.keys()])].sort(
-    (a, b) => b - a,
-  );
+  const rates = [
+    ...new Set([...g.keys(), ...d.keys(), ...r.keys(), ...t.keys()]),
+  ].sort((a, b) => b - a);
   const rows: VatReportRow[] = [];
   for (const rate of rates) {
     const goodsCents = g.get(rate) ?? 0;
     const depositCents = d.get(rate) ?? 0;
     const returnCents = r.get(rate) ?? 0;
-    const grossCents = goodsCents + depositCents + returnCents;
-    if (!goodsCents && !depositCents && !returnCents) continue;
+    const tipCents = t.get(rate) ?? 0;
+    const grossCents = goodsCents + depositCents + returnCents + tipCents;
+    if (!goodsCents && !depositCents && !returnCents && !tipCents) continue;
     const taxCents = input.vatExempt ? 0 : taxOf(grossCents, rate);
     rows.push({
       rate,
       goods: euros(goodsCents),
       deposits: euros(depositCents),
       depositReturns: euros(returnCents),
+      tips: euros(tipCents),
       gross: euros(grossCents),
       tax: euros(taxCents),
       net: euros(grossCents - taxCents),
@@ -137,9 +160,11 @@ export function buildVatReport(input: {
       goods: sum('goods'),
       deposits: sum('deposits'),
       depositReturns: sum('depositReturns'),
+      tips: sum('tips'),
       gross: sum('gross'),
       tax: sum('tax'),
       net: sum('net'),
     },
+    employeeTips: euros(input.tips?.employeeCents ?? 0),
   };
 }

@@ -4296,6 +4296,27 @@ paths:
       summary: Pfandarten auflisten
       tags: *a38
       x-api-token-scope: read
+  /api/organizations/{organizationId}/pfand-types/legacy-balance:
+    get:
+      description: "Offener Altsaldo: Pfand, das vor der Umstellung (2026-11) ohne Umsatzsteuer verkauft und noch nicht zurückgegeben wurde. Rückgaben werden zuerst dagegen gebucht (ohne Steuerminderung, DSFinV-K Schlüssel 5). Beträge in Euro; `applies` = false bei steuerbefreiten Organisationen. Scope `read`."
+      operationId: getPfandLegacyBalance
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a37
+        - API-token: []
+      summary: Pfand-Altsaldo
+      tags: *a38
+      x-api-token-scope: read
   /api/organizations/{organizationId}/pfand-types/{pfandTypeId}:
     get:
       description: Eine Pfandart der Organisation. Scope `read`.
@@ -7439,6 +7460,7 @@ paths:
               - tse_kept_for_next_month
               - tse_keep_revoked
               - dsfinvk_closing_requested
+              - vat_status_changed
               - dsfinvk_exported
               - waiter_created
               - waiter_updated
@@ -7881,7 +7903,7 @@ paths:
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/vat:
     get:
-      description: "Je Steuersatz: Warenwert, Pfand aus Verkäufen, Pfand-Rückgaben (negativ), Brutto, enthaltene Umsatzsteuer und Netto im Zeitraum, optional je Veranstaltung. Pfand gehört zum Entgelt und steht beim Satz seiner Pfandart; Buchungen von vor 2026-11 ohne Satz stehen bei 0 %. Trinkgeld ist nicht enthalten. Steuerbefreite Organisationen (`vatExempt: true`): alles bei 0 % ohne Steuer. Scope `read` und Modulrecht Auswertung."
+      description: "Je Steuersatz: Warenwert, Pfand aus Verkäufen, Pfand-Rückgaben (negativ), Trinkgeld an den Verein, Brutto, enthaltene Umsatzsteuer und Netto im Zeitraum, optional je Veranstaltung. Pfand gehört zum Entgelt und steht beim Satz seiner Pfandart; Buchungen von vor 2026-11 ohne Satz und Rückgaben gegen den Pfand-Altsaldo stehen bei 0 %. Trinkgeld an den Verein (TrinkgeldAG) steht anteilig beim Satz der Ware, Trinkgeld angestellter Bedienungen (TrinkgeldAN) nur nachrichtlich in `employeeTips`. Steuerbefreite Organisationen (`vatExempt: true`): alles bei 0 % ohne Steuer. Scope `read` und Modulrecht Auswertung."
       operationId: getVatReport
       parameters:
         - name: eventId
@@ -7932,6 +7954,26 @@ paths:
         - *a74
         - API-token: []
       summary: Umsatz und Umsatzsteuer je Steuersatz
+      tags: *a75
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/small-business:
+    get:
+      description: "Umsatz in OpenEOS im laufenden und im Vorjahr (Zahlungen ohne Test, abzüglich Erstattungen und Pfand-Auszahlungen, Kalenderjahr Europe/Berlin) gegen die Grenzen des § 19 UStG (25.000 € Vorjahr, 100.000 € laufendes Jahr). `warning`: `approaching` ab 80 % der 100.000 €, `exceeded` darüber bzw. Vorjahr über 25.000 €. Nur ein Anhaltspunkt: Umsätze außerhalb von OpenEOS fehlen. Scope `read` und Modulrecht Auswertung."
+      operationId: getSmallBusinessStatus
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a74
+        - API-token: []
+      summary: Kleinunternehmer-Grenzen (§ 19 UStG)
       tags: *a75
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/products:
@@ -10604,6 +10646,28 @@ paths:
       security: *a97
       summary: Create a cash point closing now (admins)
       tags: *a98
+  /api/organizations/{id}/vat-status:
+    post:
+      description: "Kleinunternehmer (`vatExempt: true`) ↔ umsatzsteuerpflichtig (`vatExempt: false`), z. B. „ab sofort umsatzsteuerpflichtig“ beim Überschreiten der Grenzen des § 19 UStG. Schließt vorher alle offenen Vorgänge ab (Kassenabschluss, DSFinV-K Tz. 3), dann Stammdatenwechsel, Protokoll `vat_status_changed`, Verlauf `settings.vatStatusHistory`. Fehler: 409 DSFINVK_PENDING_TRANSACTIONS."
+      operationId: dsfinvk_changeVatStatus
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeVatStatusDto"
+      responses:
+        "200":
+          description: ""
+      security: *a97
+      summary: Change the VAT status after a cash point closing (admins)
+      tags: *a98
   /api/organizations/{id}/dsfinvk/closings/{closingId}/download:
     get:
       description: ZIP des Abschlusses aus dem Archiv (`TSE_EXPORT_DIR/<org>/dsfinvk/`), Header `X-Checksum-SHA256`.
@@ -11625,6 +11689,53 @@ paths:
       security: *a107
       summary: Bedienung abrechnen
       tags: *a108
+  /api/organizations/{id}/waiters/{waiterId}/tip-payouts:
+    get:
+      description: Arbeitnehmer (Lohnkonto)? Offenes Kartentrinkgeld (unbare Zahlungen dieser Bedienung abzüglich Erstattungen und Auszahlungen) und bisherige Auszahlungen mit TSE-Beleg.
+      operationId: waiters_tipPayouts
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: waiterId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a107
+      summary: Kartentrinkgeld einer Bedienung
+      tags: *a108
+    post:
+      description: "Nur für Bedienungen mit „Arbeitnehmer (Lohnkonto)“ (sonst 409 TIP_PAYOUT_NOT_EMPLOYEE: bei Ehrenamtlichen gehört das Trinkgeld dem Verein). Eigener Kassenbeleg TrinkgeldAN −x / Bar −x (Cloud-TSE), Empfänger, Quittung mit Unterschrift; mindert den Soll-Bestand. Bargeld muss erlaubt sein. Betrag höchstens das offene Kartentrinkgeld (400 TIP_PAYOUT_AMOUNT_INVALID)."
+      operationId: waiters_payOutTips
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: waiterId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TipPayoutDto"
+      responses:
+        "201":
+          description: ""
+      security: *a107
+      summary: Kartentrinkgeld bar auszahlen
+      tags: *a108
   /api/organizations/{id}/waiters/{waiterId}/transfer-tables:
     post:
       description: Alle offenen Bestellungen der Bedienung (optional nur einer Veranstaltung) bekommen eine neue verantwortliche Bedienung. Jede Übergabe steht im Bestellverlauf; die Kassen bekommen `orderTransferred`.
@@ -11681,6 +11792,29 @@ paths:
       security: *a107
       summary: Auskunft über eine Bedienung (Art. 15 DSGVO)
       tags: *a108
+  /api/organizations/{id}/waiter-settlements/live:
+    get:
+      description: "Für eine Kassen-Nachschau (§ 146b AO): je Bedienung bzw. Mitglied mit Buchungen seit der letzten Abrechnung in der Veranstaltung (ohne Angabe: die laufende) das Soll bar, wo das Bargeld liegt (Schublade je Gerät), kassiert je Zahlart, Trinkgeld, Erstattungen, Pfand-Auszahlungen, offene Tische und bei Arbeitnehmern das offene Kartentrinkgeld. Zeitpunkt `generatedAt`."
+      operationId: waiterSettlements_live
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+        - name: eventId
+          required: false
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: &a109
+        - JWT-auth: []
+      summary: Live-Kassensturz je Bedienung
+      tags: &a110
+        - Waiters
   /api/organizations/{id}/waiter-settlements:
     get:
       description: Neueste zuerst (höchstens 500). Filter `eventId`, `waiterId`. Jede Abrechnung enthält den Schnappschuss der Zahlen (`totals`), offene Tische, „trotz offener Tische“ mit Notiz und wer abgerechnet hat.
@@ -11704,11 +11838,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a109
-        - JWT-auth: []
+      security: *a109
       summary: Kellnerabrechnungen
-      tags: &a110
-        - Waiters
+      tags: *a110
   /api/organizations/{id}/waiter-settlements/{settlementId}:
     get:
       operationId: waiterSettlements_findOne
@@ -11884,6 +12016,46 @@ paths:
         "201":
           description: ""
       summary: Abrechnen an der Kasse
+      tags: *a112
+  /api/device-api/waiter/live-cash-audit:
+    get:
+      description: Soll bar jeder Bedienung seit ihrer letzten Abrechnung in der laufenden Veranstaltung, für eine Kassen-Nachschau. Nur Schichtleitung bzw. Admin-Mitglied (sonst 403 WAITER_NOT_PERMITTED).
+      operationId: deviceWaiters_liveCashAudit
+      parameters:
+        - *a111
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      summary: Live-Kassensturz (Schichtleitung)
+      tags: *a112
+  /api/device-api/waiter/tip-payouts:
+    post:
+      description: "Wie die Verwaltung: nur für Bedienungen mit „Arbeitnehmer (Lohnkonto)“, eigener TSE-Beleg TrinkgeldAN −x / Bar −x, Quittung auf dem Bondrucker des Geräts. Nur Schichtleitung bzw. Admin-Mitglied."
+      operationId: deviceWaiters_payOutTips
+      parameters:
+        - *a111
+        - name: X-Waiter-Session
+          in: header
+          description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceTipPayoutDto"
+      responses:
+        "201":
+          description: ""
+      summary: Kartentrinkgeld bar auszahlen (Schichtleitung)
       tags: *a112
   /api/device-api/orders/{orderId}/transfer:
     post:
@@ -16260,6 +16432,14 @@ components:
       required:
         - categories
         - products
+    ChangeVatStatusDto:
+      type: object
+      properties:
+        vatExempt:
+          type: boolean
+          description: true = Kleinunternehmer (steuerfrei nach § 19 UStG), false = umsatzsteuerpflichtig (ab sofort)
+      required:
+        - vatExempt
     CreateCashbookEntryDto:
       type: object
       properties:
@@ -16472,6 +16652,10 @@ components:
           type: object
           description: Nur für diese Veranstaltung (leer = organisationsweit)
           nullable: true
+        isEmployee:
+          type: boolean
+          description: "Arbeitnehmer (Lohnkonto): Trinkgeld als TrinkgeldAN, Kartentrinkgeld-Auszahlung möglich. Standard false (ehrenamtlich → Trinkgeld an den Verein, TrinkgeldAG)."
+          default: false
         pin:
           type: string
           description: "Eigene PIN (4–6 Ziffern). Ohne: vom System erzeugt. Antwort enthält die PIN einmalig."
@@ -16531,6 +16715,10 @@ components:
         eventId:
           type: object
           nullable: true
+        isEmployee:
+          type: boolean
+          description: "Arbeitnehmer (Lohnkonto): Trinkgeld als TrinkgeldAN, Kartentrinkgeld-Auszahlung möglich. Standard false (ehrenamtlich → Trinkgeld an den Verein, TrinkgeldAG)."
+          default: false
         isActive:
           type: boolean
           description: false = deaktivieren (PIN gelöscht, Sitzungen beendet)
@@ -16560,6 +16748,24 @@ components:
         printerId:
           type: string
           description: "Drucker für den Abrechnungsbon (Verwaltung). Ohne: kein Druck."
+        payOutCardTips:
+          type: boolean
+          description: Offenes Kartentrinkgeld gleich bar auszahlen (nur Bedienungen mit „Arbeitnehmer (Lohnkonto)“; eigener TSE-Beleg TrinkgeldAN, Quittung).
+    TipPayoutDto:
+      type: object
+      properties:
+        amount:
+          type: number
+          example: 5.2
+          description: "Betrag in Euro; ohne: das ganze offene Kartentrinkgeld."
+        eventId:
+          type: string
+        note:
+          type: object
+          maxLength: 500
+        printerId:
+          type: string
+          description: Drucker für die Quittung (Verwaltung).
     TransferTablesDto:
       type: object
       properties:
@@ -16623,6 +16829,9 @@ components:
         printerId:
           type: string
           description: "Drucker für den Abrechnungsbon (Verwaltung). Ohne: kein Druck."
+        payOutCardTips:
+          type: boolean
+          description: Offenes Kartentrinkgeld gleich bar auszahlen (nur Bedienungen mit „Arbeitnehmer (Lohnkonto)“; eigener TSE-Beleg TrinkgeldAN, Quittung).
         waiterId:
           type: string
           description: "Andere Bedienung abrechnen (Schichtleitung). Ohne: sich selbst."
@@ -16630,6 +16839,24 @@ components:
           type: boolean
           default: true
           description: Bon drucken
+    DeviceTipPayoutDto:
+      type: object
+      properties:
+        amount:
+          type: number
+          example: 5.2
+          description: "Betrag in Euro; ohne: das ganze offene Kartentrinkgeld."
+        eventId:
+          type: string
+        note:
+          type: object
+          maxLength: 500
+        printerId:
+          type: string
+          description: Drucker für die Quittung (Verwaltung).
+        waiterId:
+          type: string
+          description: "Bedienung; ohne: sich selbst (nur Schichtleitung)."
     TransferOrderDto:
       type: object
       properties:

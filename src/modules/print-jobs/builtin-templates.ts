@@ -295,6 +295,10 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 {% if pfand_total is defined and pfand_total and pfand_total|float > 0 %}
 {{ row("Pfand:", pfand_total|float|currency) }}
 {% endif %}
+{# Trinkgeld steckt in GESAMT; an den Verein ist es Entgelt und in der MwSt. #}
+{% if tip_amount is defined and tip_amount and tip_amount|float > 0 %}
+{{ row("Trinkgeld:", tip_amount|float|currency) }}
+{% endif %}
 {# Preise sind brutto: ausgewiesen wird die enthaltene MwSt, je Satz eine
    Zeile. Bei gemischten Saetzen schickt die API keinen \`tax_rate\` — die alte
    Einzelzeile haette dann pauschal "19%" neben die Gesamtsumme geschrieben. #}
@@ -304,6 +308,9 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 {% endfor %}
 {% elif tax_amount is defined %}
 {{ row("enth. MwSt " ~ tax_rate|default("19") ~ "%:", tax_amount|currency) }}
+{% endif %}
+{% if vat_exempt_notice is defined and vat_exempt_notice %}
+{{ vat_exempt_notice|replace("§", "Par.")|wordwrap(cols, true, "\\n") }}
 {% endif %}
 <<BOLD>>{{ row("GESAMT:", total|default(0)|currency) }}<</BOLD>>
 {{ line }}
@@ -387,6 +394,9 @@ vom {{ original_created_at|strftime("%d.%m.%Y %H:%M") }}
 {{ row("enth. MwSt " ~ (tl.rate|int if tl.rate == tl.rate|int else tl.rate) ~ "%:", tl.tax|currency) }}
 {% endfor %}
 {% endif %}
+{% if vat_exempt_notice is defined and vat_exempt_notice %}
+{{ vat_exempt_notice|replace("§", "Par.")|wordwrap(cols, true, "\\n") }}
+{% endif %}
 <<BOLD>>{{ row("ERSTATTET:", total|default(0)|currency) }}<</BOLD>>
 {{ line }}
 {{ ("Rueckgabe: " ~ payment_label|default(payment_method))|wordwrap(cols, true, "\\n") }}
@@ -469,6 +479,9 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 {{ row("enth. MwSt " ~ (tl.rate|int if tl.rate == tl.rate|int else tl.rate) ~ "%:", tl.tax|currency) }}
 {% endfor %}
 {% endif %}
+{% if vat_exempt_notice is defined and vat_exempt_notice %}
+{{ vat_exempt_notice|replace("§", "Par.")|wordwrap(cols, true, "\\n") }}
+{% endif %}
 <<BOLD>>{{ row("AUSGEZAHLT:", total|default(0)|currency) }}<</BOLD>>
 {{ line }}
 {{ ("Zahlungsart: " ~ payment_label|default("Bar"))|wordwrap(cols, true, "\\n") }}
@@ -516,7 +529,9 @@ const WAITER_SETTLEMENT_SOURCE = `{# Zeichen pro Zeile: \`columns\` des Druckers
 {% if number is defined and number %}
 <<CENTER>><<BOLD>>{{ "Nr. " ~ number }}<</BOLD>><</CENTER>>
 {% endif %}
-{% if reprint %}
+{% if copy is defined and copy %}
+<<CENTER>><<BOLD>>-- KOPIE --<</BOLD>><</CENTER>>
+{% elif reprint %}
 <<CENTER>><<BOLD>>-- NACHDRUCK --<</BOLD>><</CENTER>>
 {% endif %}
 {{ line }}
@@ -578,6 +593,26 @@ const WAITER_SETTLEMENT_SOURCE = `{# Zeichen pro Zeile: \`columns\` des Druckers
 {% if training is defined and training %}
 {{ line }}
 {{ ("Training (nicht im Geld): " ~ training)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if tse is defined and tse %}
+{{ line }}
+{% if tse.failed %}
+<<BOLD>>TSE nicht erreichbar<</BOLD>>
+{% endif %}
+{% if tse.bon_number %}
+{{ ("Beleg-Nr.: " ~ tse.bon_number)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if not tse.failed %}
+{{ ("TSE-Transaktion: " ~ tse.transaction_number)|wordwrap(cols, true, "\\n") }}
+{{ ("Signaturzaehler: " ~ tse.signature_counter)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% endif %}
+{% if tip_payout is defined and tip_payout %}
+{{ line }}
+<<BOLD>>{{ row("TRINKGELD BAR AUSGEZAHLT:", tip_payout|currency) if cols >= 36 else "TRINKGELD AUSGEZAHLT:" }}<</BOLD>>
+{% if cols < 36 %}
+<<BOLD>>{{ tip_payout|currency|rjust(cols) }}<</BOLD>>
+{% endif %}
 {% endif %}
 {% if signatures|default(true) %}
 {{ sep }}

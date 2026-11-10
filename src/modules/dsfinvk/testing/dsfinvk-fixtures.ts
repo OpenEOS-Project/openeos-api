@@ -4,10 +4,13 @@ import {
   type OrderItem,
 } from '../../../database/entities/order-item.entity';
 import type { Payment } from '../../../database/entities/payment.entity';
-import { cents } from '../../refunds/refund-calc';
+import { cents, rateRecord, tipByRate } from '../../refunds/refund-calc';
 import {
   PROCESS_TYPE_ORDER,
+  PROCESS_TYPE_OTHER,
   PROCESS_TYPE_RECEIPT,
+  settlementProcessData,
+  tipPayoutProcessData,
   abortProcessData,
   bestellungProcessData,
   cashbookProcessData,
@@ -212,6 +215,13 @@ export interface SaleSpec {
   items: ItemSpec[];
   discount?: number;
   tip?: number;
+  /**
+   * Trinkgeld-Empfaenger wie `TseSigningService.signPayment` (ab
+   * 2026-11-11): `employer` (Standard, TrinkgeldAG anteilig je Satz),
+   * `employee` (Bedienung mit Arbeitnehmer-Flag, TrinkgeldAN, 0 %),
+   * `legacy` (Bestand ohne Kennzeichen: 0-%-Slot, Organisations-Einstellung).
+   */
+  tipRecipient?: 'employer' | 'employee' | 'legacy';
   method?: string;
   training?: boolean;
   /** Teilbetrag statt Gesamtsumme (anteilige Zahlung). */
@@ -277,8 +287,13 @@ export function sale(
   } as unknown as Payment;
   const composition = paymentComposition(order, payment);
   const amountCents = cents(amount);
+  const recipient = spec.tipRecipient ?? 'employer';
+  const tipShares =
+    composition.tip && recipient === 'employer' && !settings.vatExempt
+      ? tipByRate(composition.goods, composition.tip)
+      : null;
   const slots = fitSlots(
-    slotsFromComposition(composition, settings.vatExempt),
+    slotsFromComposition(composition, settings.vatExempt, 1, tipShares),
     amountCents,
   );
   const processData = kassenbelegProcessData(
@@ -296,7 +311,11 @@ export function sale(
     processData,
     training: spec.training ?? false,
     amountCents,
-    lines: receiptLines(order, payment, composition),
+    lines: {
+      ...receiptLines(order, payment, composition),
+      ...(recipient === 'legacy' ? {} : { tipRecipient: recipient }),
+      ...(tipShares ? { tipByRate: rateRecord(tipShares) } : {}),
+    },
     orderId: spec.orderId ?? `order-${spec.orderNumber ?? '42'}-0000-4000-8000`,
     orderNumber: spec.orderNumber ?? '42',
     tableNumber: spec.tableNumber ?? null,
@@ -459,6 +478,8 @@ export function pfandReturn(
     quantity: number;
     /** Satz der Pfandart (ab 2026-11); fehlt = Bestand, 0-%-Slot. */
     vatRate?: number;
+    /** Anteil gegen den Pfand-Altsaldo (Cent, ohne Steuerminderung). */
+    legacyCents?: number;
   }[],
   terminal = TERMINAL_2,
   vatExempt = false,
@@ -533,6 +554,62 @@ export function cashbook(
     amountCents,
     lines: { cashbookType: type, amountCents, note },
     terminal,
+  });
+}
+
+/** Kellnerabrechnung (SonstigerVorgang, TseSigningService.signSettlement). */
+export function settlement(
+  seq: Sequence,
+  spec: {
+    number: number;
+    name: string;
+    expected: number;
+    counted: number | null;
+  },
+): DsfinvkTransaction {
+  const difference =
+    spec.counted === null
+      ? null
+      : Math.round((spec.counted - spec.expected) * 100) / 100;
+  const c = (v: number | null) => (v === null ? null : cents(v));
+  return signed(seq, TSE_A, {
+    kind: 'settlement',
+    processType: PROCESS_TYPE_OTHER,
+    processData: settlementProcessData({
+      number: spec.number,
+      expectedCents: c(spec.expected),
+      countedCents: c(spec.counted),
+      differenceCents: c(difference),
+    }),
+    amountCents: 0,
+    lines: {
+      settlementId: `s-${spec.number}`,
+      settlementNumber: spec.number,
+      subjectName: spec.name,
+      expected: spec.expected,
+      counted: spec.counted,
+      difference,
+    },
+  });
+}
+
+/** Barauszahlung von Kartentrinkgeld (TseSigningService.signTipPayout). */
+export function tipPayout(
+  seq: Sequence,
+  spec: { amount: number; name: string; waiterId: string },
+): DsfinvkTransaction {
+  const amountCents = -cents(spec.amount);
+  return signed(seq, TSE_A, {
+    kind: 'tip_payout',
+    processType: PROCESS_TYPE_RECEIPT,
+    processData: tipPayoutProcessData(amountCents),
+    amountCents,
+    lines: {
+      tipPayoutId: 'tp-1',
+      amountCents,
+      recipientWaiterId: spec.waiterId,
+      recipientName: spec.name,
+    },
   });
 }
 

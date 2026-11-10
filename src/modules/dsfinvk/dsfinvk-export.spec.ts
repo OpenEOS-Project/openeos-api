@@ -25,6 +25,8 @@ import {
   cashbook,
   closingInput,
   failed,
+  settlement,
+  tipPayout,
   lateSigned,
   master,
   pfandReturn,
@@ -474,9 +476,128 @@ describe('DSFinV-K export (own validator)', () => {
       )!;
     };
     expect(run(VAT_LIABLE).GV_TYP).toBe('TrinkgeldAG');
+  });
+
+  /** Bonpos_USt-Zeile einer Position (USt-Schluessel steht dort). */
+  const vatOf = (
+    zip: Parameters<typeof rowsOf>[0],
+    line: Record<string, string>,
+  ) =>
+    rowsOf(zip, 'lines_vat.csv').find(
+      (v) => v.BON_ID === line.BON_ID && v.POS_ZEILE === line.POS_ZEILE,
+    )!;
+
+  it('legacy tips (signed before 2026-11-11, no recipient): 0 % slot, GV_TYP from the old org setting', () => {
+    const run = (settings: typeof VAT_LIABLE) => {
+      const seq = new Sequence();
+      const tx = sale(seq, settings, {
+        items: [{ name: 'Wein', quantity: 1, price: 6, rate: 19 }],
+        tip: 1.5,
+        method: 'card',
+        tipRecipient: 'legacy',
+      });
+      const { zip, result } = exportOf([
+        closingInput(1, Z1, [tx], { settings }),
+      ]);
+      expectValid(result);
+      const line = rowsOf(zip, 'lines.csv').find(
+        (l) => l.ARTIKELTEXT === 'Trinkgeld',
+      )!;
+      return { ...line, UST_SCHLUESSEL: vatOf(zip, line).UST_SCHLUESSEL };
+    };
+    expect(run(VAT_LIABLE)).toMatchObject({
+      GV_TYP: 'TrinkgeldAG',
+      UST_SCHLUESSEL: '5',
+    });
     expect(run({ ...VAT_LIABLE, tipRecipient: 'employee' }).GV_TYP).toBe(
       'TrinkgeldAN',
     );
+  });
+
+  it('club tip (Frage 3): TrinkgeldAG split onto 19 %/7 % by net amounts, Bonpos_USt and closing per key', () => {
+    const seq = new Sequence();
+    const tx = sale(seq, VAT_LIABLE, {
+      items: [
+        { name: 'Bier', quantity: 2, price: 4.5, rate: 19 },
+        { name: 'Brezel', quantity: 1, price: 2.9, rate: 7 },
+      ],
+      tip: 1,
+    });
+    expect(tx.processData).toBe('Beleg^9.74_3.16_0.00_0.00_0.00^12.90:Bar');
+    const { zip, result } = exportOf([closingInput(1, Z1, [tx])]);
+    expectValid(result);
+    const tips = rowsOf(zip, 'lines.csv').filter(
+      (l) => l.ARTIKELTEXT === 'Trinkgeld',
+    );
+    expect(tips.map((t) => t.GV_TYP)).toEqual(['TrinkgeldAG', 'TrinkgeldAG']);
+    const tipVat = tips.map((t) => vatOf(zip, t));
+    expect(
+      tipVat.map((v) => [v.UST_SCHLUESSEL, v.POS_BRUTTO, v.POS_UST]).sort(),
+    ).toEqual([
+      ['1', '0,74', '0,12'],
+      ['2', '0,26', '0,02'],
+    ]);
+    const gv = rowsOf(zip, 'businesscases.csv').filter(
+      (g) => g.GV_TYP === 'TrinkgeldAG',
+    );
+    expect(gv.map((g) => [g.UST_SCHLUESSEL, g.Z_UMS_BRUTTO]).sort()).toEqual([
+      ['1', '0,74'],
+      ['2', '0,26'],
+    ]);
+  });
+
+  it('employee tip (Arbeitnehmer-Flag): TrinkgeldAN with key 5, also for a Kleinunternehmer next to key 6', () => {
+    for (const settings of [VAT_LIABLE, VAT_EXEMPT]) {
+      const seq = new Sequence();
+      const tx = sale(seq, settings, {
+        items: [{ name: 'Bier', quantity: 2, price: 4.5, rate: 19 }],
+        tip: 1,
+        method: 'card',
+        tipRecipient: 'employee',
+      });
+      const { zip, result } = exportOf([
+        closingInput(1, Z1, [tx], { settings }),
+      ]);
+      expectValid(result);
+      const tip = rowsOf(zip, 'lines.csv').find(
+        (l) => l.ARTIKELTEXT === 'Trinkgeld',
+      )!;
+      expect([tip.GV_TYP, vatOf(zip, tip).UST_SCHLUESSEL]).toEqual([
+        'TrinkgeldAN',
+        '5',
+      ]);
+      const heads = rowsOf(zip, 'transactions_vat.csv');
+      if (settings.vatExempt) {
+        expect(
+          heads.map((h) => [h.UST_SCHLUESSEL, h.BON_BRUTTO]).sort(),
+        ).toEqual([
+          ['5', '1,00'],
+          ['6', '9,00'],
+        ]);
+      }
+    }
+  });
+
+  it('Kleinunternehmer (Frage 9): club tip is TrinkgeldAG with key 6, no VAT', () => {
+    const seq = new Sequence();
+    const tx = sale(seq, VAT_EXEMPT, {
+      items: [{ name: 'Bier', quantity: 2, price: 4.5, rate: 19 }],
+      tip: 1,
+    });
+    const { zip, result } = exportOf([
+      closingInput(1, Z1, [tx], { settings: VAT_EXEMPT }),
+    ]);
+    expectValid(result);
+    const tip = rowsOf(zip, 'lines.csv').find(
+      (l) => l.ARTIKELTEXT === 'Trinkgeld',
+    )!;
+    expect([tip.GV_TYP, vatOf(zip, tip).UST_SCHLUESSEL]).toEqual([
+      'TrinkgeldAG',
+      '6',
+    ]);
+    expect(
+      rowsOf(zip, 'vat.csv').find((v) => v.UST_SCHLUESSEL === '6')!.UST_BESCHR,
+    ).toBe('steuerfrei – Kleinunternehmer § 19 UStG');
   });
 
   it('refunds and storno: full storno sets BON_STORNO and references the original across closings', () => {
@@ -635,6 +756,111 @@ describe('DSFinV-K export (own validator)', () => {
     ).toMatchObject({ ZAHLART_TYP: 'Keine' });
   });
 
+  it('Kellnerabrechnung (Frage 7): AVSonstige with SonstigerVorgang, figures in BON_NOTIZ, no money', () => {
+    const seq = new Sequence();
+    const tx = settlement(seq, {
+      number: 12,
+      name: 'Anna Berger',
+      expected: 123.4,
+      counted: 120,
+    });
+    expect(tx.processData).toBe(
+      'Kellnerabrechnung^12^Soll:123.40^Ist:120.00^Differenz:-3.40',
+    );
+    const { zip, result } = exportOf([closingInput(1, Z1, [tx])]);
+    expectValid(result);
+    const [head] = rowsOf(zip, 'transactions.csv');
+    expect(head).toMatchObject({
+      BON_TYP: 'AVSonstige',
+      BON_NAME: 'Kellnerabrechnung',
+      UMS_BRUTTO: '0,00',
+      BON_NOTIZ:
+        'Kellnerabrechnung Nr. 12 Anna Berger: Soll 123,40 €, Ist 120,00 €, Differenz -3,40 €',
+    });
+    expect(rowsOf(zip, 'transactions_tse.csv')[0]).toMatchObject({
+      TSE_TA_VORGANGSART: 'SonstigerVorgang',
+      TSE_VORGANGSDATEN: tx.processData,
+    });
+    expect(rowsOf(zip, 'datapayment.csv')[0].ZAHLART_TYP).toBe('Keine');
+    expect(rowsOf(zip, 'cashpointclosing.csv')[0].Z_SE_ZAHLUNGEN).toBe('0,00');
+  });
+
+  it('card tip payout to an employee (Frage 5): TrinkgeldAN −x, Bar −x, recipient in KUNDE_NAME/ID', () => {
+    const seq = new Sequence();
+    const tx = tipPayout(seq, {
+      amount: 5.2,
+      name: 'Max Minijob',
+      waiterId: 'w-42',
+    });
+    expect(tx.processData).toBe('Beleg^0.00_0.00_0.00_0.00_-5.20^-5.20:Bar');
+    for (const settings of [VAT_LIABLE, VAT_EXEMPT]) {
+      const { zip, result } = exportOf([
+        closingInput(1, Z1, [tx], { settings }),
+      ]);
+      expectValid(result);
+      const [head] = rowsOf(zip, 'transactions.csv');
+      expect(head).toMatchObject({
+        BON_TYP: 'Beleg',
+        BON_NAME: 'Trinkgeld-Auszahlung',
+        KUNDE_NAME: 'Max Minijob',
+        KUNDE_ID: 'w-42',
+        UMS_BRUTTO: '-5,20',
+      });
+      const [line] = rowsOf(zip, 'lines.csv');
+      expect(line.GV_TYP).toBe('TrinkgeldAN');
+      expect(rowsOf(zip, 'lines_vat.csv')[0].UST_SCHLUESSEL).toBe('5');
+      expect(rowsOf(zip, 'datapayment.csv')[0]).toMatchObject({
+        ZAHLART_TYP: 'Bar',
+        BASISWAEH_BETRAG: '-5,20',
+      });
+    }
+  });
+
+  it('Pfand transition (Frage 2): the Altsaldo share is PfandRueckzahlung with key 5, the rest at the pfand type rate', () => {
+    const seq = new Sequence();
+    // 3 Becher à 2 € (19 %), davon 4 € gegen den Altsaldo (ohne USt verkauft).
+    const tx = pfandReturn(seq, [
+      {
+        name: 'Becher',
+        unitAmount: 2,
+        quantity: 3,
+        vatRate: 19,
+        legacyCents: 400,
+      },
+    ]);
+    expect(tx.processData).toBe('Beleg^-2.00_0.00_0.00_0.00_-4.00^-6.00:Bar');
+    const { zip, result } = exportOf([closingInput(1, Z1, [tx])]);
+    expectValid(result);
+    const lines = rowsOf(zip, 'lines.csv');
+    const vat = rowsOf(zip, 'lines_vat.csv');
+    expect(
+      lines.map((l) => [
+        l.GV_TYP,
+        l.ARTIKELTEXT,
+        vat.find((v) => v.POS_ZEILE === l.POS_ZEILE)!.UST_SCHLUESSEL,
+        vat.find((v) => v.POS_ZEILE === l.POS_ZEILE)!.POS_BRUTTO,
+        vat.find((v) => v.POS_ZEILE === l.POS_ZEILE)!.POS_UST,
+      ]),
+    ).toEqual([
+      ['PfandRueckzahlung', 'Pfandrückgabe Becher', '1', '-2,00', '-0,32'],
+      [
+        'PfandRueckzahlung',
+        'Pfandrückgabe Becher (Altsaldo vor USt-Umstellung)',
+        '5',
+        '-4,00',
+        '0,00',
+      ],
+    ]);
+    expect(
+      rowsOf(zip, 'transactions_vat.csv')
+        .map((h) => [h.UST_SCHLUESSEL, h.BON_BRUTTO, h.BON_UST])
+        .sort(),
+    ).toEqual([
+      ['1', '-2,00', '-0,32'],
+      ['5', '-4,00', '0,00'],
+    ]);
+  });
+
   it('late signature (Frage 16): stays an outage receipt, signature stored with TSE_TA_FEHLER „Signatur nach Belegausgabe“', () => {
     const seq = new Sequence();
     const late = lateSigned(
@@ -742,9 +968,9 @@ describe('DSFinV-K export (own validator)', () => {
       z.map((r) => [r.GV_TYP, r.GV_NAME, r.UST_SCHLUESSEL, r.Z_UMS_BRUTTO]),
     ).toEqual([
       ['Umsatz', '', '6', '10,00'],
-      ['Anfangsbestand', 'Wechselgeld', '5', '150,00'],
-      ['Geldtransit', 'Einlage', '5', '50,00'],
-      ['Geldtransit', 'Entnahme', '5', '-120,00'],
+      ['Anfangsbestand', 'Restbestand Vorabschluss', '5', '150,00'],
+      ['Geldtransit', 'Abschöpfung an Vereinskasse', '5', '-120,00'],
+      ['Geldtransit', 'Wechselgeld aus Vereinskasse', '5', '50,00'],
       ['DifferenzSollIst', 'Kassensturz', '5', '-1,50'],
     ]);
     expect(rowsOf(zip, 'cashpointclosing.csv')[0].Z_SE_BARZAHLUNGEN).toBe(

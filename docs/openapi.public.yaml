@@ -959,6 +959,28 @@ paths:
       tags:
         - Pfand
       x-api-token-scope: catalog:write
+  /api/organizations/{organizationId}/pfand-types/legacy-balance:
+    get:
+      description: "Offener Altsaldo: Pfand, das vor der Umstellung (2026-11) ohne Umsatzsteuer verkauft und noch nicht zurückgegeben wurde. Rückgaben werden zuerst dagegen gebucht (ohne Steuerminderung, DSFinV-K Schlüssel 5). Beträge in Euro; `applies` = false bei steuerbefreiten Organisationen. Scope `read`."
+      operationId: getPfandLegacyBalance
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a6
+        - API-token: []
+      summary: Pfand-Altsaldo
+      tags:
+        - Pfand
+      x-api-token-scope: read
   /api/organizations/{organizationId}/pfand-types/{pfandTypeId}:
     get:
       description: Eine Pfandart der Organisation. Scope `read`.
@@ -2265,7 +2287,7 @@ paths:
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/vat:
     get:
-      description: "Je Steuersatz: Warenwert, Pfand aus Verkäufen, Pfand-Rückgaben (negativ), Brutto, enthaltene Umsatzsteuer und Netto im Zeitraum, optional je Veranstaltung. Pfand gehört zum Entgelt und steht beim Satz seiner Pfandart; Buchungen von vor 2026-11 ohne Satz stehen bei 0 %. Trinkgeld ist nicht enthalten. Steuerbefreite Organisationen (`vatExempt: true`): alles bei 0 % ohne Steuer. Scope `read` und Modulrecht Auswertung."
+      description: "Je Steuersatz: Warenwert, Pfand aus Verkäufen, Pfand-Rückgaben (negativ), Trinkgeld an den Verein, Brutto, enthaltene Umsatzsteuer und Netto im Zeitraum, optional je Veranstaltung. Pfand gehört zum Entgelt und steht beim Satz seiner Pfandart; Buchungen von vor 2026-11 ohne Satz und Rückgaben gegen den Pfand-Altsaldo stehen bei 0 %. Trinkgeld an den Verein (TrinkgeldAG) steht anteilig beim Satz der Ware, Trinkgeld angestellter Bedienungen (TrinkgeldAN) nur nachrichtlich in `employeeTips`. Steuerbefreite Organisationen (`vatExempt: true`): alles bei 0 % ohne Steuer. Scope `read` und Modulrecht Auswertung."
       operationId: getVatReport
       parameters:
         - name: eventId
@@ -2316,6 +2338,27 @@ paths:
         - *a13
         - API-token: []
       summary: Umsatz und Umsatzsteuer je Steuersatz
+      tags:
+        - Berichte
+      x-api-token-scope: read
+  /api/organizations/{organizationId}/reports/small-business:
+    get:
+      description: "Umsatz in OpenEOS im laufenden und im Vorjahr (Zahlungen ohne Test, abzüglich Erstattungen und Pfand-Auszahlungen, Kalenderjahr Europe/Berlin) gegen die Grenzen des § 19 UStG (25.000 € Vorjahr, 100.000 € laufendes Jahr). `warning`: `approaching` ab 80 % der 100.000 €, `exceeded` darüber bzw. Vorjahr über 25.000 €. Nur ein Anhaltspunkt: Umsätze außerhalb von OpenEOS fehlen. Scope `read` und Modulrecht Auswertung."
+      operationId: getSmallBusinessStatus
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+      responses:
+        "200":
+          description: ""
+      security:
+        - *a13
+        - API-token: []
+      summary: Kleinunternehmer-Grenzen (§ 19 UStG)
       tags:
         - Berichte
       x-api-token-scope: read

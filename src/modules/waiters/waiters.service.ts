@@ -80,6 +80,8 @@ export interface WaiterView {
   permissions: WaiterPermissions;
   effectivePermissions: Record<string, boolean>;
   eventId: string | null;
+  /** Arbeitnehmer (Lohnkonto): TrinkgeldAN, Auszahlung von Kartentrinkgeld. */
+  isEmployee: boolean;
   isActive: boolean;
   hasPin: boolean;
   pinLength: number | null;
@@ -235,6 +237,7 @@ export class WaitersService {
             color: dto.color ?? WAITER_COLORS[count % WAITER_COLORS.length],
             role: dto.role ?? 'service',
             permissions: cleanPermissions(dto.permissions),
+            isEmployee: dto.isEmployee === true,
             isActive: true,
             createdByUserId: user.id,
           }),
@@ -353,6 +356,7 @@ export class WaitersService {
         current.shortName = dto.shortName || null;
       if (dto.color !== undefined) current.color = dto.color;
       if (dto.role !== undefined) current.role = dto.role;
+      if (dto.isEmployee !== undefined) current.isEmployee = dto.isEmployee;
       if (dto.permissions !== undefined) {
         current.permissions = cleanPermissions(dto.permissions);
       }
@@ -759,6 +763,7 @@ export class WaitersService {
       permissions: w.permissions ?? {},
       effectivePermissions: effectiveWaiterPermissions(w.role, w.permissions),
       eventId: w.eventId,
+      isEmployee: w.isEmployee === true,
       isActive: w.isActive,
       hasPin: withPin.has(w.id),
       pinLength: lengths.find((l) => l.owner_id === w.id)?.pin_length ?? null,
@@ -780,6 +785,7 @@ export class WaitersService {
       role: w.role,
       permissions: w.permissions,
       eventId: w.eventId,
+      isEmployee: w.isEmployee === true,
       isActive: w.isActive,
     };
   }

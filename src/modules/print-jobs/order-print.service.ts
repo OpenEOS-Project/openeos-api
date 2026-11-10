@@ -16,7 +16,11 @@ import { Order } from '../../database/entities/order.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
 import { PrintJobsService } from './print-jobs.service';
 import { PrintRoutingService } from './print-routing.service';
-import { buildReceiptTax, cashChange } from './receipt-tax.util';
+import {
+  buildReceiptTax,
+  cashChange,
+  vatExemptNotice,
+} from './receipt-tax.util';
 import type { Refund } from '../../database/entities/refund.entity';
 import type { PfandReturn } from '../../database/entities/pfand-return.entity';
 import { tsePrintBlock, type TseReceiptView } from '../tse/tse-view';
@@ -544,6 +548,36 @@ export class OrderPrintService {
       .filter(Boolean);
   }
 
+  /**
+   * Trinkgeld dieser Zahlung an eine angestellte Bedienung (TrinkgeldAN,
+   * Flag „Arbeitnehmer (Lohnkonto)“)? Sonst gehoert es dem Verein.
+   */
+  private async tipToEmployee(paymentId: string): Promise<boolean> {
+    try {
+      const rows: { is_employee: boolean }[] =
+        await this.organizationRepository.manager.query(
+          `SELECT w.is_employee FROM payments p
+             JOIN waiters w ON w.id = p.processed_by_waiter_id
+            WHERE p.id = $1`,
+          [paymentId],
+        );
+      return rows[0]?.is_employee === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** `settings.vatExempt` der Organisation (fuer den § 19-Hinweis). */
+  private async orgVatExempt(
+    organizationId: string,
+  ): Promise<boolean | undefined> {
+    const org = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: ['id', 'settings'],
+    });
+    return org?.settings?.vatExempt;
+  }
+
   /** Gab es fuer diese Zahlung schon einen Kassenbon (Druckauftrag)? */
   private async receiptPrintedBefore(
     organizationId: string,
@@ -608,7 +642,14 @@ export class OrderPrintService {
         receiptItems,
         data.order?.discountAmount,
         org?.settings?.vatExempt,
+        {
+          amount: data.order?.tipAmount,
+          toClub: !(await this.tipToEmployee(data.paymentId)),
+        },
       ),
+      ...vatExemptNotice(org?.settings?.vatExempt),
+      // Trinkgeld steckt in GESAMT; eigene Zeile auf dem Bon.
+      tip_amount: Number(data.order?.tipAmount) || 0,
       // Pfand (deposit) is part of `total` but not `subtotal`, which is
       // why total > subtotal. Expose it so the receipt can show it.
       pfand_total: data.order?.pfandTotal ?? null,
@@ -740,6 +781,7 @@ export class OrderPrintService {
           pfand_amount: Number(refund.pfandAmount) || 0,
           tip_amount: Number(refund.tipAmount) || 0,
           tax_lines: taxLines,
+          ...vatExemptNotice(await this.orgVatExempt(organizationId)),
           tax_amount: Number(refund.taxTotal) || 0,
           total: Number(refund.amount),
           payment_method: refund.paymentMethod,
@@ -818,6 +860,7 @@ export class OrderPrintService {
         {
           organization: await this.buildOrgPayload(organizationId),
           ...pfandReturnPrintData(pfandReturn),
+          ...vatExemptNotice(await this.orgVatExempt(organizationId)),
           event_name: event?.name ?? null,
           device_name: data.deviceName ?? null,
           actor_name: data.actorName ?? null,

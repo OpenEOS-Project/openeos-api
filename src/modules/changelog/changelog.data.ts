@@ -36,6 +36,70 @@ export const CHANGELOG: ChangelogEintrag[] = [
     datum: '2026-11-09',
     art: 'neu',
     titel: {
+      de: 'Live-Kassensturz und Trinkgeld-Auszahlung',
+      en: 'Live cash check and tip payout',
+    },
+    kurz: {
+      de: 'Der Live-Kassensturz zeigt jederzeit, wie viel Bargeld jede Bedienung haben muss; Kellnerabrechnungen sind mit Cloud-TSE abgesichert, und angestellten Bedienungen zahlst du Kartentrinkgeld mit Beleg aus.',
+      en: 'The live cash check shows at any time how much cash every server should have; server settlements are secured with the Cloud-TSE, and you pay out card tips to employed servers with a receipt.',
+    },
+    text: {
+      de: 'Unter „Kellnerabrechnungen“ findest du den Live-Kassensturz: für jede Bedienung das Soll bar seit ihrer letzten Abrechnung, wo das Geld liegt, Kartenzahlungen, Trinkgeld und offene Tische – praktisch, wenn das Finanzamt zur Kassen-Nachschau kommt. Die Schichtleitung sieht ihn auch an der Kasse. Mit Cloud-TSE wird jede Kellnerabrechnung mit Soll, gezähltem Betrag und Differenz von der TSE abgesichert; ein Nachdruck trägt den Vermerk „Kopie“. Kellnerabrechnungen werden ausschließlich elektronisch erzeugt und aufbewahrt. Für Bedienungen mit „Arbeitnehmer (Lohnkonto)“ kannst du offenes Kartentrinkgeld bar auszahlen – mit eigenem Beleg und Quittung, auch direkt bei der Abrechnung. Bei Ehrenamtlichen gehört das Trinkgeld dem Verein, deshalb ist die Auszahlung dort gesperrt.',
+      en: 'Under "Server settlements" you find the live cash check: for every server the expected cash since their last settlement, where the money is, card payments, tips and open tables – handy when the tax office comes for a cash inspection. Shift leads see it at the till too. With the Cloud-TSE every server settlement is secured with the expected amount, the counted amount and the difference; a reprint is marked "Copy". Server settlements are created and kept electronically only. For servers marked "Employee (payroll)" you can pay out open card tips in cash – with its own receipt and acknowledgement, also right at the settlement. For volunteers the tips belong to the club, so the payout is blocked there.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'verbessert',
+    titel: {
+      de: 'Trinkgeld mit dem richtigen Steuersatz',
+      en: 'Tips with the right VAT rate',
+    },
+    kurz: {
+      de: 'Trinkgeld, das in die Vereinskasse geht, wird jetzt mit dem Steuersatz der Speisen und Getränke versteuert; Trinkgeld angestellter Bedienungen bleibt steuerfrei.',
+      en: 'Tips that go to the club are now taxed at the rate of the food and drinks; tips of employed servers stay tax-free.',
+    },
+    text: {
+      de: 'Nach Rücksprache mit einem Steuerberater gilt: Trinkgeld an einen umsatzsteuerpflichtigen Verein gehört zum Entgelt. OpenEOS verteilt es deshalb im Verhältnis der Nettobeträge auf 7 % und 19 % – auf dem Bon, in der Cloud-TSE, im DSFinV-K-Export und im Bericht „Umsatzsteuer“. Der Bon zeigt das Trinkgeld als eigene Zeile. Nur wenn eine Bedienung „Arbeitnehmer (Lohnkonto)“ ist, gilt ihr Trinkgeld als Trinkgeld an Angestellte (steuerfrei). Das stellst du jetzt je Bedienung ein, nicht mehr für den ganzen Verein. Ehrenamtliche Helfer sind keine Arbeitnehmer. Kleinunternehmer weisen weiterhin keine Steuer aus.',
+      en: 'After consulting a tax advisor: tips paid to a VAT-liable club are part of the consideration. OpenEOS therefore splits them onto 7 % and 19 % in proportion to the net amounts – on the receipt, in the Cloud-TSE, in the DSFinV-K export and in the "VAT" report. The receipt shows the tip as its own line. Only if a server is marked "Employee (payroll)" do their tips count as tips to employees (tax-free). You now set this per server instead of for the whole club. Volunteers are not employees. Small businesses still show no VAT.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'verbessert',
+    titel: {
+      de: 'Kleinunternehmer-Hinweis auf jedem Beleg',
+      en: 'Small business notice on every receipt',
+    },
+    kurz: {
+      de: 'Bons von Kleinunternehmern tragen jetzt den Hinweis auf die Steuerbefreiung nach § 19 UStG; dazu warnt das Dashboard, wenn dein Umsatz die Grenze erreicht.',
+      en: 'Receipts of small businesses now carry the notice on the tax exemption under § 19 UStG; the dashboard warns you when your revenue approaches the limit.',
+    },
+    text: {
+      de: 'Kassenbon, Erstattungsbeleg und Pfandrückgabe zeigen bei Kleinunternehmern „Steuerfrei nach § 19 Abs. 1 UStG (Kleinunternehmer)“ und nie einen Steuerbetrag. Erreicht dein Umsatz in OpenEOS 80 % der 100.000-€-Grenze im laufenden Jahr, siehst du einen Hinweis im Dashboard. Wirst du umsatzsteuerpflichtig, stellst du das mit Cloud-TSE über „Steuerstatus ändern“ um: OpenEOS erstellt vorher einen Kassenabschluss, damit alle bisherigen Buchungen noch steuerfrei abgeschlossen sind.',
+      en: 'For small businesses, receipts, refund receipts and deposit returns show "Tax-exempt under § 19 (1) UStG (small business)" and never a VAT amount. When your revenue in OpenEOS reaches 80 % of the 100,000 € limit of the current year, the dashboard shows a notice. If you become VAT-liable and use the Cloud-TSE, switch via "Change tax status": OpenEOS creates a cash point closing first so that all earlier bookings are closed as tax-exempt.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'verbessert',
+    titel: {
+      de: 'Kassenbuch: Wechselgeld aus der Vereinskasse',
+      en: 'Cash book: change money from the club cash box',
+    },
+    kurz: {
+      de: 'Wechselgeld aus der Vereinskasse buchst du jetzt als „Wechselgeld aus Vereinskasse“, den Anfangsbestand nur noch für den Rest vom letzten Abschluss.',
+      en: 'Change money from the club cash box is now booked as "Change money from club cash box"; the opening balance is only for what was left at the last closing.',
+    },
+    text: {
+      de: 'Nach Rücksprache mit einem Steuerberater ist der Anfangsbestand nur das Bargeld, das beim Öffnen schon in der Kasse liegt. OpenEOS schlägt dafür den zuletzt gezählten Bestand vor. Wechselgeld, das du aus der Vereinskasse holst, ist ein Geldtransit („Wechselgeld aus Vereinskasse“), das Abschöpfen am Ende ebenso („Abschöpfung an Vereinskasse“). Bisherige Einträge bleiben gültig. Gibt der Verein Pfandbecher zurück, die vor der Umstellung im November ohne Umsatzsteuer verkauft wurden, mindern sie die Steuer nicht mehr: OpenEOS bucht sie zuerst gegen diesen Altsaldo und zeigt den Rest in den Pfand-Einstellungen.',
+      en: 'After consulting a tax advisor, the opening balance is only the cash already in the drawer when you open it. OpenEOS suggests the last counted amount for it. Change money you take from the club cash box is a cash transfer ("Change money from club cash box"), and so is skimming at the end ("Transfer to club cash box"). Existing entries stay valid. Returned deposit cups that were sold without VAT before the switch in November no longer reduce VAT: OpenEOS books them against this old balance first and shows what is left in the deposit settings.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
       de: 'Beleg per QR-Code oder E-Mail',
       en: 'Receipt by QR code or e-mail',
     },

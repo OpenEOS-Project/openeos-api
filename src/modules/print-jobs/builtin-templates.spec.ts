@@ -28,7 +28,11 @@ describe('builtin print templates and the Cloud-TSE block', () => {
   it('serves the waiter settlement without TSE block, with signature lines', () => {
     const source = BUILTIN_PRINT_TEMPLATES[WAITER_SETTLEMENT_TEMPLATE];
     expect(TSE_RECEIPT_TEMPLATES).not.toContain(WAITER_SETTLEMENT_TEMPLATE);
-    expect(source).not.toContain('tse.');
+    // Kein voller TSE-Block (kein Kassenbeleg), nur der Hinweis auf den
+    // abgesicherten Vorgang; Nachdruck als „Kopie“ (Steuerberater Frage 8).
+    expect(source).not.toContain('tse.client_id');
+    expect(source).toContain('tse.transaction_number');
+    expect(source).toContain('-- KOPIE --');
     expect(source).toContain('Kasse / Schichtleitung');
     expect(source).toContain('{% if signatures|default(true) %}');
     expect(source.trimEnd().endsWith('<<CUT>>')).toBe(true);
@@ -178,5 +182,18 @@ describe('builtin print templates and the Cloud-TSE block', () => {
       '{{ payment_label|default(payment_method) }}',
     );
     expect(map[RECEIPT_TEMPLATE]).toContain(TSE_PRINT_BLOCK);
+  });
+
+  it('prints the tip and the § 19 notice (Steuerberater 2026-11-10, Fragen 3 und 9)', () => {
+    const receipt = BUILTIN_PRINT_TEMPLATES.receipt;
+    expect(receipt).toContain('row("Trinkgeld:", tip_amount|float|currency)');
+    for (const name of ['receipt', 'refund_receipt', 'pfand_return_receipt']) {
+      expect({
+        name,
+        notice: BUILTIN_PRINT_TEMPLATES[name].includes(
+          'vat_exempt_notice|replace("§", "Par.")|wordwrap(cols, true, "\\n")',
+        ),
+      }).toEqual({ name, notice: true });
+    }
   });
 });

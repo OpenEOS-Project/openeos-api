@@ -607,6 +607,79 @@ export class CashPointClosingService {
   }
 
   /**
+   * Steuerstatus wechseln (Steuerberater 2026-11-10, Frage 9/10): z. B.
+   * Kleinunternehmer → „ab sofort umsatzsteuerpflichtig“, weil 25.000 €
+   * im Vorjahr bzw. 100.000 € im laufenden Jahr ueberschritten sind (schon
+   * der Umsatz, mit dem die Grenze ueberschritten wird, ist steuerpflichtig).
+   *
+   * Erst ein Kassenabschluss bis jetzt — alle bisherigen Vorgaenge werden
+   * mit dem alten Status (USt-Schluessel 6 bzw. 1/2) abgeschlossen —, dann
+   * der Stammdatenwechsel (DSFinV-K Tz. 3: Stammdaten je Abschluss; der
+   * naechste Abschluss traegt den neuen Status). Protokoll
+   * `vat_status_changed` und Verlauf in `settings.vatStatusHistory`.
+   * Laufende Vorgaenge → 409 DSFINVK_PENDING_TRANSACTIONS (kurz warten).
+   */
+  async changeVatStatus(
+    organizationId: string,
+    user: User,
+    vatExempt: boolean,
+    meta: RequestMeta,
+  ): Promise<{
+    vatExempt: boolean;
+    changed: boolean;
+    closings: CashPointClosingView[];
+  }> {
+    const organization = await this.units.assertAdmin(organizationId, user);
+    const before =
+      (organization.settings as { vatExempt?: boolean } | null)?.vatExempt !==
+      false;
+    if (before === vatExempt) {
+      return { vatExempt, changed: false, closings: [] };
+    }
+    const at = new Date();
+    const created = await this.closeUpTo(organizationId, at, {
+      trigger: 'manual',
+      userId: user.id,
+    });
+    const entry = {
+      at: at.toISOString(),
+      vatExempt,
+      userId: user.id,
+      zNr: created.length ? created[created.length - 1].zNr : null,
+    };
+    await this.dataSource.query(
+      `UPDATE organizations
+          SET settings = jsonb_set(
+                jsonb_set(COALESCE(settings, '{}'::jsonb), '{vatExempt}', to_jsonb($2::boolean), true),
+                '{vatStatusHistory}',
+                COALESCE(settings->'vatStatusHistory', '[]'::jsonb) || jsonb_build_array($3::jsonb),
+                true),
+              updated_at = now()
+        WHERE id = $1`,
+      [organizationId, vatExempt, JSON.stringify(entry)],
+    );
+    await this.units.audit(
+      AdminAction.VAT_STATUS_CHANGED,
+      organizationId,
+      null,
+      {
+        userId: user.id,
+        meta,
+        details: {
+          from: before ? 'vat_exempt' : 'vat_liable',
+          to: vatExempt ? 'vat_exempt' : 'vat_liable',
+          closings: created.map((c) => c.zNr),
+          at: entry.at,
+        },
+      },
+    );
+    this.logger.log(
+      `VAT status of ${organizationId} changed to ${vatExempt ? 'exempt' : 'liable'} after ${created.length} closing(s)`,
+    );
+    return { vatExempt, changed: true, closings: created.map(closingView) };
+  }
+
+  /**
    * Abschluesse fuer einen Export: nach Geschaeftstagen (`from`/`to`,
    * inklusive) oder Z-Nummern (`zFrom`/`zTo`).
    */

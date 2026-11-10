@@ -163,9 +163,16 @@ export class PfandReturnsService {
       taxLines: pfandReturnTaxLines(lines, organization?.settings?.vatExempt),
     });
     // Belegnummer `P-JJJJMMTT-NNNN` und Insert in einer Transaktion.
+    // Uebergang (Steuerberater 2026-11-10, Frage 2): zuerst gegen den
+    // Altsaldo ohne USt verkaufter Becher buchen — ohne Steuerminderung.
     await savePfandReturnWithNumber(
       this.pfandReturnRepository.manager,
       pfandReturn,
+      new Date(),
+      {
+        consumeLegacyBalance:
+          !isTest && organization?.settings?.vatExempt === false,
+      },
     );
 
     this.logger.log(

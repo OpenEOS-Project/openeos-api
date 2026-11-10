@@ -11,6 +11,9 @@ import { TseUnit } from './tse-unit.entity';
  * - `order_cancellation`: Storno von Bestellpositionen (Bestellung-V1, negative Mengen)
  * - `abort`: Abschluss einer haengengebliebenen Transaktion (AVBelegabbruch)
  * - `cashbook`: Kassenbuch (Anfangsbestand, Einlage, Entnahme, Kassensturz-Differenz)
+ * - `settlement`: Kellnerabrechnung (SonstigerVorgang mit Soll/Ist/Differenz)
+ * - `tip_payout`: Auszahlung von Kartentrinkgeld an angestellte Bedienung
+ *   (TrinkgeldAN negativ, bar)
  */
 export type TseTransactionKind =
   | 'receipt'
@@ -19,7 +22,9 @@ export type TseTransactionKind =
   | 'order'
   | 'order_cancellation'
   | 'abort'
-  | 'cashbook';
+  | 'cashbook'
+  | 'settlement'
+  | 'tip_payout';
 
 /**
  * - `pending`: Anfrage an die TSE laeuft (oder Prozess brach ab)
