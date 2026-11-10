@@ -17,8 +17,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Abgeschlossene Abschluesse sind unveraenderlich und bleiben, wie sie sind
  * (ihr `BON_NOTIZ` nennt die nachtraegliche Signatur bereits).
  */
-export class KeepLateTseSignaturesAsOutage1841600000000 implements MigrationInterface {
-  name = 'KeepLateTseSignaturesAsOutage1841600000000';
+export class KeepLateTseSignaturesAsOutage1842000000000 implements MigrationInterface {
+  name = 'KeepLateTseSignaturesAsOutage1842000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

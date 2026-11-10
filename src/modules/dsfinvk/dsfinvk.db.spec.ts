@@ -19,7 +19,7 @@ import {
   cashbookProcessData,
   clientIdForOrganization,
 } from '../tse/tse-process-data';
-import { KeepLateTseSignaturesAsOutage1841600000000 } from '../../database/migrations/1841600000000-KeepLateTseSignaturesAsOutage';
+import { KeepLateTseSignaturesAsOutage1842000000000 } from '../../database/migrations/1842000000000-KeepLateTseSignaturesAsOutage';
 import { rowsOf } from '../tse/tse-sql.util';
 import { CashbookService } from './cashbook.service';
 import { CashPointClosingService } from './cash-point-closing.service';
@@ -273,7 +273,7 @@ describeWithDb('DSFinV-K closings against Postgres', () => {
     );
     const runner = ds.createQueryRunner();
     try {
-      await new KeepLateTseSignaturesAsOutage1841600000000().up(runner);
+      await new KeepLateTseSignaturesAsOutage1842000000000().up(runner);
     } finally {
       await runner.release();
     }
