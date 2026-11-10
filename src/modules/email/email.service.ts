@@ -124,6 +124,11 @@ export class EmailService {
     });
   }
 
+  /** Ist der Mailversand eingerichtet (`EMAIL_ENABLED`)? */
+  get enabled(): boolean {
+    return this.isEnabled;
+  }
+
   async sendEmail(options: SendEmailOptions): Promise<boolean> {
     if (!this.isEnabled) {
       this.logger.debug(

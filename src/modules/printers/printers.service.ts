@@ -421,10 +421,34 @@ export class PrintersService {
     this.logger.log(
       `Test print dispatched for printer ${printer.name} (${printer.id}) job=${jobId}`,
     );
+    this.rememberTestPrint(printer.id);
     return {
       success: true,
       message: 'Testdruck wurde an den Drucker gesendet',
     };
+  }
+
+  /**
+   * Zeitpunkt des Testdrucks festhalten (Checkliste der Erinnerungsmail vor
+   * dem Fest). Nebensache: ein Fehler hier darf den Testdruck nicht stoeren.
+   */
+  private rememberTestPrint(printerId: string): void {
+    try {
+      void Promise.resolve(
+        this.printerRepository.update(
+          { id: printerId },
+          { lastTestPrintAt: new Date() },
+        ),
+      ).catch((error: Error) =>
+        this.logger.warn(
+          `Test print time for printer ${printerId} not stored: ${error.message}`,
+        ),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Test print time for printer ${printerId} not stored: ${(error as Error).message}`,
+      );
+    }
   }
 
   private async validateDeviceForOrg(

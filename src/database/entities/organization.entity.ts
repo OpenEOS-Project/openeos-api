@@ -139,6 +139,16 @@ export interface OrganizationSettings {
   };
   /** Bedienungen (Kassenprofile mit PIN), bedienungen-plan.md §4. */
   waiters?: OrganizationWaiterSettings;
+  /**
+   * „Erinnerungen zu Veranstaltungen“ an die Admins, je Mail ein Schalter
+   * (Standard an). Siehe modules/event-notifications.
+   */
+  eventReminders?: {
+    weekBefore?: boolean;
+    dayBefore?: boolean;
+    afterEvent?: boolean;
+    notBooked?: boolean;
+  };
 }
 
 /**
