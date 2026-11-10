@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { PaymentMethod } from '../../database/entities/payment.entity';
 import {
+  CASHLESS_PAYMENT_METHODS,
   OPERATING_MODES,
   assertCashAllowed,
   assertOrderOnlyCompletable,
@@ -11,6 +12,7 @@ import {
   handOverOnCompletion,
   initialOperatingMode,
   isCashAllowed,
+  isCashlessPaymentMethod,
   isCertificateAvailable,
   isOnlinePrepaymentMethod,
   itemsStillInProduction,
@@ -216,13 +218,20 @@ describe('operating mode helper', () => {
     expect(response.message).toContain('Cloud-TSE');
   });
 
-  it('only PayPal and SumUp Online count as online prepayment', () => {
-    expect(isOnlinePrepaymentMethod(PaymentMethod.PAYPAL)).toBe(true);
-    expect(isOnlinePrepaymentMethod(PaymentMethod.SUMUP_ONLINE)).toBe(true);
+  it('PayPal, SumUp Online, Google Pay and Apple Pay count as online prepayment', () => {
+    for (const m of [
+      PaymentMethod.PAYPAL,
+      PaymentMethod.SUMUP_ONLINE,
+      PaymentMethod.GOOGLE_PAY,
+      PaymentMethod.APPLE_PAY,
+    ]) {
+      expect(isOnlinePrepaymentMethod(m)).toBe(true);
+    }
     for (const m of [
       PaymentMethod.CASH,
       PaymentMethod.CARD,
       PaymentMethod.SUMUP_TERMINAL,
+      'voucher',
       null,
     ]) {
       expect(isOnlinePrepaymentMethod(m)).toBe(false);
@@ -249,6 +258,103 @@ describe('operating mode helper', () => {
     expect(incoming.address.country).toBe('AT');
     keepCountryMirror(incoming, null);
     expect(incoming.address).toEqual({ city: 'Wien' });
+  });
+});
+
+describe('„Bargeldlos“: positive list of payment methods (AEAO zu § 146a Nr. 1.2)', () => {
+  const cashless = {
+    country: 'DE',
+    operatingMode: 'cashless',
+    operatingModeLegacy: false,
+  };
+
+  function reasonOf(fn: () => void): string | undefined {
+    try {
+      fn();
+      return undefined;
+    } catch (e) {
+      return ((e as ForbiddenException).getResponse() as { reason?: string })
+        .reason;
+    }
+  }
+
+  it('lists card (terminal/SumUp) and online PSP payments only', () => {
+    expect([...CASHLESS_PAYMENT_METHODS].sort()).toEqual(
+      [
+        'apple_pay',
+        'card',
+        'google_pay',
+        'paypal',
+        'sumup_online',
+        'sumup_terminal',
+      ].sort(),
+    );
+    // Jede heutige Zahlart ausser Bargeld steht auf der Liste — kommt eine
+    // neue dazu (Wertmarke, Guthaben …), ist sie in „Bargeldlos“ gesperrt,
+    // bis sie hier ausdruecklich aufgenommen wird.
+    for (const m of Object.values(PaymentMethod)) {
+      expect(isCashlessPaymentMethod(m)).toBe(m !== PaymentMethod.CASH);
+    }
+    expect(isCashlessPaymentMethod(null)).toBe(false);
+    expect(isCashlessPaymentMethod(undefined)).toBe(false);
+  });
+
+  it.each(CASHLESS_PAYMENT_METHODS.map((m) => [m]))(
+    'cashless accepts %s',
+    (method) => {
+      expect(codeOf(() => assertCashAllowed(cashless, method))).toBeNull();
+    },
+  );
+
+  it.each([['voucher'], ['token'], ['credit'], ['customer_account']])(
+    'cashless rejects a method that is not on the list (%s) with 403 and a reason',
+    (method) => {
+      expect(codeOf(() => assertCashAllowed(cashless, method))).toBe(
+        'CASH_PAYMENTS_DISABLED',
+      );
+      expect(reasonOf(() => assertCashAllowed(cashless, method))).toBe(
+        'PAYMENT_METHOD_NOT_ALLOWED_CASHLESS',
+      );
+      let error: unknown;
+      try {
+        assertCashAllowed(cashless, method);
+      } catch (e) {
+        error = e;
+      }
+      expect((error as ForbiddenException).getStatus()).toBe(403);
+      const response = (error as ForbiddenException).getResponse() as {
+        message: string;
+        params: { method: string };
+      };
+      expect(response.message).toContain('Deine Organisation');
+      expect(response.message).toContain('Wertmarken');
+      expect(response.params).toEqual({ method });
+    },
+  );
+
+  it('cash in cashless keeps the plain cash error (no reason)', () => {
+    expect(reasonOf(() => assertCashAllowed(cashless, 'cash'))).toBeUndefined();
+    expect(reasonOf(() => assertCashAllowed(cashless))).toBeUndefined();
+  });
+
+  it('orders_only still rejects every payment, full treats unknown methods like cash', () => {
+    const ordersOnly = { ...cashless, operatingMode: 'orders_only' };
+    expect(codeOf(() => assertCashAllowed(ordersOnly, 'voucher'))).toBe(
+      'ORDER_ONLY_MODE',
+    );
+    // Karte und Online sperrt dort assertPaymentsAllowed (jede Zahlung).
+    expect(codeOf(() => assertPaymentsAllowed(ordersOnly))).toBe(
+      'ORDER_ONLY_MODE',
+    );
+    // Alle Funktionen in DE ohne TSE: was nicht auf der Liste steht, braucht
+    // wie Bargeld eine TSE; mit TSE bzw. ausserhalb DE geht es.
+    const full = { ...cashless, operatingMode: 'full' };
+    expect(codeOf(() => assertCashAllowed(full, 'voucher'))).toBe(
+      'TSE_REQUIRED_FOR_CASH',
+    );
+    expect(
+      codeOf(() => assertCashAllowed({ ...full, country: 'AT' }, 'voucher')),
+    ).toBeNull();
   });
 });
 

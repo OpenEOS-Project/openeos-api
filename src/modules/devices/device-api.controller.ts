@@ -66,6 +66,7 @@ import { OrganizationViewService } from '../organizations/organization-view.serv
 import type { TseReceiptView } from '../tse/tse-view';
 import {
   assertCashAllowed,
+  isCashlessPaymentMethod,
   assertPaymentsAllowed,
   handOverOnCompletion,
   isOrdersOnly,
@@ -2184,6 +2185,8 @@ export class DeviceApiController {
    * - Bargeld nur, wo die Betriebsart es erlaubt (`assertCashAllowed`:
    *   nicht in `cashless`, in Deutschland nur mit TSE). Ohne Zahlart gilt
    *   der Vorgang als reiner Bargeldvorgang (Kassenlade).
+   * - In `cashless` nur die Positivliste (Karte, SumUp, Online); jede
+   *   andere Zahlart geht durch `assertCashAllowed` und wird abgewiesen.
    */
   private async assertPaymentMethodAllowed(
     organizationId: string,
@@ -2195,8 +2198,10 @@ export class DeviceApiController {
     const sumup =
       method !== undefined &&
       this.getProviderForMethod(method) === PaymentProvider.SUMUP;
-    const cash = method === undefined || method === PaymentMethod.CASH;
-    if (!sumup && !cash) return;
+    // Alles ausserhalb der Positivliste (Bargeld, kuenftige Wertmarken
+    // o. Ae.) braucht die Organisation fuer die Pruefung der Betriebsart.
+    const cashLike = method === undefined || !isCashlessPaymentMethod(method);
+    if (!sumup && !cashLike) return;
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
       select: OPERATING_MODE_SELECT,

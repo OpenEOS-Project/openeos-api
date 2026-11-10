@@ -14,6 +14,8 @@ import { DeviceApiController } from '../devices/device-api.controller';
 import { GatewayService } from '../gateway/gateway.service';
 import { PfandReturnsService } from '../pfand-types/pfand-returns.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
+import { getMetadataStorage } from 'class-validator';
+import { CreateRefundDto } from '../refunds/dto/refund.dto';
 import { allocateRefundFor } from '../refunds/refund-calc';
 import { PaymentsService } from './payments.service';
 
@@ -192,11 +194,79 @@ describe('Betriebsart „Bargeldlos“ — Kasse (DeviceApiController)', () => {
     );
     return {
       controller,
+      orderRepository,
       paymentRepository,
       gatewayService,
       pfandReturnRepository,
     };
   }
+
+  async function expectNotOnList(call: Promise<unknown>): Promise<void> {
+    await expect(call).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(call).rejects.toMatchObject({
+      response: {
+        code: 'CASH_PAYMENTS_DISABLED',
+        reason: 'PAYMENT_METHOD_NOT_ALLOWED_CASHLESS',
+      },
+    });
+  }
+
+  it('positive list: a method that is not card/online (e.g. a future voucher) is rejected', async () => {
+    const { controller, paymentRepository } = setup(true);
+
+    await expectNotOnList(
+      controller.createPayment(device, {
+        orderId: 'order-1',
+        amount: 10,
+        paymentMethod: 'voucher' as PaymentMethod,
+      }),
+    );
+    await expectNotOnList(
+      controller.createSplitPayment(device, {
+        orderId: 'order-1',
+        amount: 5,
+        paymentMethod: 'voucher' as PaymentMethod,
+        items: [{ orderItemId: 'item-1', quantity: 1 }],
+      }),
+    );
+    expect(paymentRepository.save).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [PaymentMethod.PAYPAL],
+    [PaymentMethod.SUMUP_ONLINE],
+    [PaymentMethod.GOOGLE_PAY],
+    [PaymentMethod.APPLE_PAY],
+  ])('positive list: %s goes through', async (paymentMethod) => {
+    const { controller, paymentRepository } = setup(true);
+
+    await controller.createPayment(device, {
+      orderId: 'order-1',
+      amount: 10,
+      paymentMethod,
+    });
+    expect(paymentRepository.save).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([['online'], ['qr_order']])(
+    'cash on a %s order (shop/QR) at the till is rejected like any cash payment',
+    async (source) => {
+      const { controller, orderRepository, paymentRepository } = setup(true);
+      orderRepository.findOne.mockImplementation(() =>
+        Promise.resolve({ ...openOrder(), source } as Order),
+      );
+
+      await expectCashDisabled(
+        controller.createPayment(device, {
+          orderId: 'order-1',
+          amount: 10,
+          paymentMethod: PaymentMethod.CASH,
+          amountReceived: 10,
+        }),
+      );
+      expect(paymentRepository.save).not.toHaveBeenCalled();
+    },
+  );
 
   it('POST /device-api/payments: rejects cash, books nothing', async () => {
     const { controller, paymentRepository } = setup(true);
@@ -341,7 +411,7 @@ describe('Betriebsart „Bargeldlos“ — Verwaltung (PaymentsService)', () => 
       organizationRepository as never,
       orderPrintService as never,
     );
-    return { service, paymentRepository };
+    return { service, orderRepository, paymentRepository };
   }
 
   it('POST /organizations/:id/payments: rejects cash', async () => {
@@ -394,6 +464,43 @@ describe('Betriebsart „Bargeldlos“ — Verwaltung (PaymentsService)', () => 
       user,
     );
     expect(paymentRepository.save).toHaveBeenCalledTimes(2);
+  });
+
+  it('positive list: a method that is not card/online is rejected', async () => {
+    const { service, paymentRepository } = setup(true);
+
+    const call = service.create(
+      ORG_ID,
+      {
+        orderId: 'order-1',
+        amount: 10,
+        paymentMethod: 'voucher' as PaymentMethod,
+      },
+      user,
+    );
+    await expect(call).rejects.toMatchObject({
+      response: {
+        code: 'CASH_PAYMENTS_DISABLED',
+        reason: 'PAYMENT_METHOD_NOT_ALLOWED_CASHLESS',
+      },
+    });
+    expect(paymentRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('admin cash payment on a shop/QR order is rejected', async () => {
+    const { service, orderRepository, paymentRepository } = setup(true);
+    orderRepository.findOne.mockImplementation(() =>
+      Promise.resolve({ ...openOrder(), source: 'qr_order' } as Order),
+    );
+
+    await expectCashDisabled(
+      service.create(
+        ORG_ID,
+        { orderId: 'order-1', amount: 10, paymentMethod: PaymentMethod.CASH },
+        user,
+      ),
+    );
+    expect(paymentRepository.save).not.toHaveBeenCalled();
   });
 
   it('full mode: cash still works', async () => {
@@ -457,6 +564,42 @@ describe('Betriebsart „Bargeldlos“ — Erstattung (allocateRefundFor)', () =
       allocation: null,
       cashBlocked: true,
     });
+  });
+
+  it('online prepayments are refunded to the provider, never in cash', () => {
+    const online = {
+      id: 'paypal',
+      refundable: 1200,
+      isProvider: false,
+      isCash: false,
+      createdAt: at(0),
+    };
+    expect(allocateRefundFor([online], 1200, null, true)).toEqual({
+      allocation: [{ paymentId: 'paypal', amount: 1200 }],
+      cashBlocked: false,
+    });
+    // Mehr als online bezahlt: abgewiesen, kein Rest aus der Kasse.
+    expect(allocateRefundFor([online], 1500, null, true)).toEqual({
+      allocation: null,
+      cashBlocked: false,
+    });
+  });
+
+  it('a refund request has no way to choose cash (method always = original payment)', () => {
+    const properties = getMetadataStorage()
+      .getTargetValidationMetadatas(CreateRefundDto, '', true, false)
+      .map((m) => m.propertyName);
+    expect(properties).toEqual(expect.arrayContaining(['mode', 'paymentId']));
+    for (const forbidden of [
+      'paymentMethod',
+      'method',
+      'refundMethod',
+      'toCash',
+      'cash',
+      'payoutMethod',
+    ]) {
+      expect(properties).not.toContain(forbidden);
+    }
   });
 
   it('a plain shortfall without cash stays a normal error', () => {

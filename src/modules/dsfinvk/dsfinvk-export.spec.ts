@@ -189,6 +189,44 @@ describe('DSFinV-K export (own validator)', () => {
     });
   });
 
+  it('discount vouchers (Rabattgutscheine) are Rabatt, never a voucher payment', () => {
+    // Rabattgutscheine (src/modules/discount-vouchers) sind kostenlose
+    // Vorlagen des Vereins: sie mindern die Bestellung (`discountAmount`
+    // + `discountReason`), es wird nichts „an Geldes statt“ angenommen —
+    // also `Rabatt` je USt-Schluessel, keine Gutschein-Einloesung und
+    // keine Zahlart dafuer (Tz. 4.2.4; Anhang C).
+    const seq = new Sequence();
+    const tx = sale(seq, VAT_LIABLE, {
+      items: [
+        { name: 'Bier', quantity: 2, price: 4.0, rate: 19 },
+        { name: 'Bratwurst', quantity: 1, price: 4.5, rate: 7 },
+      ],
+      discount: 4.0,
+      method: 'cash',
+    });
+    const { zip, result } = exportOf([closingInput(1, Z1, [tx])]);
+    expectValid(result);
+    const lines = rowsOf(zip, 'lines.csv');
+    expect(lines.filter((l) => l.GV_TYP === 'Rabatt')).toHaveLength(2);
+    for (const line of lines) {
+      expect(line.GV_TYP).not.toMatch(/gutschein/i);
+      expect(line.GUTSCHEIN_NR).toBe('');
+    }
+    expect(
+      linesWithVat(zip, 'Rabatt').reduce(
+        (sum, [, brutto]) => sum + Number(brutto.replace(',', '.')),
+        0,
+      ),
+    ).toBeCloseTo(-4, 2);
+    // Gezahlt wird nur der Rest — bar, keine Zahlart „Keine“/Gutschein.
+    expect(
+      rowsOf(zip, 'datapayment.csv').map((p) => [
+        p.ZAHLART_TYP,
+        p.BASISWAEH_BETRAG,
+      ]),
+    ).toEqual([['Bar', '8,50']]);
+  });
+
   it('variants: options are listed in Bonpos_Zusatzinfo', () => {
     const seq = new Sequence();
     const tx = sale(seq, VAT_LIABLE, {
