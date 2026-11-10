@@ -70,6 +70,7 @@ import { DsfinvkModule } from './modules/dsfinvk';
 import { RetentionModule } from './modules/retention';
 import { WebhooksModule } from './modules/webhooks';
 import { EventPhaseModule } from './modules/events/event-phase.module';
+import { EventNotificationsModule } from './modules/event-notifications';
 import {
   OrganizationClosureGuard,
   OrganizationClosureModule,
@@ -224,6 +225,8 @@ import { WaiterCoreModule, WaitersModule } from './modules/waiters';
     WaitersModule,
     // Ausgehende Webhooks (AGB Ziffer 10.2)
     WebhooksModule,
+    // Erinnerungen zu Veranstaltungen an die Admins
+    EventNotificationsModule,
   ],
   controllers: [],
   providers: [

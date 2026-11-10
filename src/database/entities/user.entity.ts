@@ -22,6 +22,12 @@ export interface UserPreferences {
   notifications: {
     email: boolean;
     push: boolean;
+    /**
+     * Erinnerungen zu Veranstaltungen (nur Admins: Checkliste, Vortag,
+     * Rueckblick). Fehlt der Wert, sind sie an; `email: false` schaltet
+     * sie ebenfalls ab.
+     */
+    eventReminders?: boolean;
   };
   dashboard?: {
     /** Ordered list of enabled dashboard widget ids */

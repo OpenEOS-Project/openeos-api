@@ -129,6 +129,84 @@ export function ersatzlink(url: string): string {
 <a href="${url}" style="font-family:${MONO};font-size:12px;color:${FARBE.gruen};text-decoration:underline;word-break:break-all">${escapeHtml(sichtbar)}</a></p>`;
 }
 
+export interface CheckZeile {
+  /** `ok` ✓, `todo` ✗, `info` – */
+  stand: 'ok' | 'todo' | 'info';
+  titel: string;
+  text: string;
+  url: string;
+  linkText: string;
+}
+
+const CHECK_ZEICHEN: Record<CheckZeile['stand'], string> = {
+  ok: '&#10003;',
+  todo: '&#10007;',
+  info: '&ndash;',
+};
+
+/**
+ * Checkliste mit Stand je Zeile (✓ erledigt, ✗ offen, – Hinweis) und
+ * einem Link in die App. Das Zeichen steht zusaetzlich als Text da, damit
+ * die Bedeutung nicht nur an der Farbe haengt.
+ */
+export function checkliste(zeilen: CheckZeile[]): string {
+  const farbe = (stand: CheckZeile['stand']) =>
+    stand === 'ok'
+      ? { grund: FARBE.gruen, ink: FARBE.flaeche }
+      : stand === 'todo'
+        ? { grund: FARBE.warnInk, ink: FARBE.flaeche }
+        : { grund: FARBE.linie, ink: FARBE.mute };
+  const inhalt = zeilen
+    .map((z) => {
+      const f = farbe(z.stand);
+      return `
+    <tr>
+      <td width="34" valign="top" style="width:34px;padding:12px 10px 12px 0;border-bottom:1px solid ${FARBE.linie}">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" valign="middle" width="24" height="24" bgcolor="${f.grund}" style="width:24px;height:24px;border-radius:12px;font-family:${SANS};font-size:14px;font-weight:bold;line-height:24px;color:${f.ink}">${CHECK_ZEICHEN[z.stand]}</td></tr></table>
+      </td>
+      <td valign="top" style="padding:12px 0;border-bottom:1px solid ${FARBE.linie};font-family:${SANS}">
+        <p style="margin:0 0 3px;font-size:15px;font-weight:bold;line-height:1.35;color:${FARBE.ink}">${escapeHtml(z.titel)}</p>
+        <p style="margin:0 0 5px;font-size:13px;line-height:1.5;color:${FARBE.mute}">${escapeHtml(z.text)}</p>
+        <a href="${z.url}" style="font-size:13px;font-weight:bold;color:${FARBE.gruen};text-decoration:underline">${escapeHtml(z.linkText)} &rarr;</a>
+      </td>
+    </tr>`;
+    })
+    .join('');
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-top:1px solid ${FARBE.linie}">${inhalt}</table>`;
+}
+
+/** Eine Reihe von Links untereinander, jeder mit kurzer Erklaerung. */
+export function linkliste(
+  titel: string,
+  links: { text: string; url: string; hinweis?: string }[],
+): string {
+  const inhalt = links
+    .map(
+      (l) => `
+    <tr><td style="padding:9px 0;border-bottom:1px solid ${FARBE.linie};font-family:${SANS}">
+      <a href="${l.url}" style="font-size:15px;font-weight:bold;color:${FARBE.gruen};text-decoration:underline">${escapeHtml(l.text)} &rarr;</a>${
+        l.hinweis
+          ? `<br /><span style="font-size:13px;line-height:1.5;color:${FARBE.mute}">${escapeHtml(l.hinweis)}</span>`
+          : ''
+      }
+    </td></tr>`,
+    )
+    .join('');
+  return `
+<p style="margin:0 0 6px;font-family:${MONO};font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:${FARBE.mute}">${escapeHtml(titel)}</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%">${inhalt}</table>`;
+}
+
+/** Kleine Zwischenueberschrift in Mono, wie ueber dem Datenblock. */
+export function zwischentitel(text: string): string {
+  return `<p style="margin:0 0 6px;font-family:${MONO};font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:${FARBE.mute}">${escapeHtml(text)}</p>`;
+}
+
+/** Kleingedrucktes am Ende des Inhalts, etwa wie man Mails abbestellt. */
+export function fussnote(text: string, roh = false): string {
+  return `<p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${FARBE.mute}">${roh ? text : escapeHtml(text)}</p>`;
+}
+
 export interface RahmenOptionen {
   /** Steht im Kopf rechts, in Großbuchstaben — worum es geht. */
   kontext: string;
@@ -141,6 +219,8 @@ export interface RahmenOptionen {
   /** Titel im Browser, wenn die Mail dort geöffnet wird. */
   titel?: string;
   appUrl: string;
+  /** Ziel des Links „Benachrichtigungen“ im Fuß (Standard: Einstellungen). */
+  benachrichtigungenUrl?: string;
 }
 
 /**
@@ -192,7 +272,7 @@ a{color:${FARBE.gruen}}
   <p style="margin:0;font-family:${SANS};font-size:12px;line-height:1.6;color:${FARBE.mute}">
     <a href="https://openeos.de" style="color:${FARBE.gruen};text-decoration:underline">openeos.de</a> &nbsp;&middot;&nbsp;
     <a href="https://docs.openeos.de" style="color:${FARBE.gruen};text-decoration:underline">Handbuch</a> &nbsp;&middot;&nbsp;
-    <a href="${o.appUrl}/settings" style="color:${FARBE.mute};text-decoration:underline">Benachrichtigungen</a>
+    <a href="${o.benachrichtigungenUrl ?? `${o.appUrl}/settings`}" style="color:${FARBE.mute};text-decoration:underline">Benachrichtigungen</a>
   </p>
 </td></tr>
 

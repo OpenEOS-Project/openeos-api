@@ -79,6 +79,15 @@ export class NotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   push?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'Erinnerungen zu Veranstaltungen per E-Mail (nur Admins: Checkliste eine Woche vorher, Vortag, Rückblick)',
+  })
+  @IsOptional()
+  @IsBoolean()
+  eventReminders?: boolean;
 }
 
 export class OnboardingPreferencesDto {
