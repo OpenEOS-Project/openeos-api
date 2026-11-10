@@ -18228,6 +18228,7 @@
                 "contact_requests",
                 "assistant_imports",
                 "webhook_deliveries",
+                "receipt_links",
                 "organization_inactivity",
                 "organization_purge",
                 "user_accounts",
@@ -20207,6 +20208,145 @@
         "summary": "Tisch bzw. Bestellung übergeben",
         "tags": [
           "Device API"
+        ]
+      }
+    },
+    "/api/device-api/receipts/link": {
+      "post": {
+        "description": "Erzeugt einen Link auf den Kassenbeleg der Bestellungen (gleicher Inhalt wie der gedruckte Bon, ohne Gästeangaben). Der Link enthält ein zufälliges 128-Bit-Token, gespeichert wird nur dessen SHA-256. Gültig `RECEIPT_LINK_DAYS` Tage (Standard 90). 409 `RECEIPT_NOT_AVAILABLE` in der Betriebsart „Nur Bons“ oder ohne Zahlung.",
+        "operationId": "receiptsDevice_link",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReceiptOrdersDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Digitalen Beleg als Link (QR-Code) ausgeben",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/receipts/email": {
+      "post": {
+        "description": "Schickt den Kassenbeleg als HTML mit PDF-Anhang. Absendername ist der Verein, Antworten gehen an seine Kontaktadresse. Die Adresse wird nicht gespeichert und nicht protokolliert; im Verlauf der Bestellung steht nur „Beleg per E-Mail“. Grenzen: `RECEIPT_EMAIL_DEVICE_LIMIT_PER_HOUR` je Gerät (Standard 30) und `RECEIPT_EMAIL_ORDER_LIMIT` je Bestellung (Standard 5), sonst 429 `RECEIPT_EMAIL_RATE_LIMITED`.",
+        "operationId": "receiptsDevice_email",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendReceiptEmailDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Digitalen Beleg per E-Mail schicken",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/public/receipts/{token}": {
+      "get": {
+        "description": "Beleg-Bausteine (wie gedruckter Bon) und die rechtlichen Angaben des Vereins. 404 `RECEIPT_LINK_NOT_FOUND`, wenn der Link abgelaufen oder unbekannt ist.",
+        "operationId": "receiptsPublic_view",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Digitalen Beleg anzeigen",
+        "tags": [
+          "Public Receipts"
+        ]
+      }
+    },
+    "/api/public/receipts/{token}/pdf": {
+      "get": {
+        "operationId": "receiptsPublic_pdf",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Digitalen Beleg als PDF herunterladen",
+        "tags": [
+          "Public Receipts"
         ]
       }
     }
@@ -25844,6 +25984,7 @@
                 "contact_requests",
                 "assistant_imports",
                 "webhook_deliveries",
+                "receipt_links",
                 "organization_inactivity",
                 "organization_purge",
                 "user_accounts",
@@ -26323,6 +26464,44 @@
         },
         "required": [
           "toWaiterId"
+        ]
+      },
+      "ReceiptOrdersDto": {
+        "type": "object",
+        "properties": {
+          "orderIds": {
+            "description": "Bestellungen, deren Kassenbeleg ausgegeben wird (je Bestellung die letzte Zahlung, wie beim Nachdruck). 1–20.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "orderIds"
+        ]
+      },
+      "SendReceiptEmailDto": {
+        "type": "object",
+        "properties": {
+          "orderIds": {
+            "description": "Bestellungen, deren Kassenbeleg ausgegeben wird (je Bestellung die letzte Zahlung, wie beim Nachdruck). 1–20.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "email": {
+            "type": "string",
+            "description": "E-Mail-Adresse des Gastes. Wird nur für den Versand verwendet und nicht gespeichert.",
+            "example": "gast@example.org"
+          }
+        },
+        "required": [
+          "orderIds",
+          "email"
         ]
       }
     }

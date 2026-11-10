@@ -527,6 +527,8 @@ describe('Schutz gegen neue unsignierte Zahlungswege', () => {
     'modules/reports/reports.service.ts': 'read_only',
     'modules/devices/devices.service.ts': 'read_only',
     'database/entities/payment.entity.ts': 'read_only',
+    // Digitaler Beleg: liest nur, welche Zahlung einen Beleg hat.
+    'modules/receipts/receipts.service.ts': 'read_only',
   };
 
   function files(dir: string): string[] {

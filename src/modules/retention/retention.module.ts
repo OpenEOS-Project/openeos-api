@@ -11,6 +11,7 @@ import { WebhooksModule } from '../webhooks/webhooks.module';
 import { WebhookDeliveryService } from '../webhooks/webhook-delivery.service';
 import { AssistantImportsJob } from './jobs/assistant-imports.job';
 import { WebhookDeliveriesJob } from './jobs/webhook-deliveries.job';
+import { ReceiptLinksJob } from './jobs/receipt-links.job';
 import { AuditLogsJob } from './jobs/audit-logs.job';
 import { AuthRecordsJob } from './jobs/auth-records.job';
 import { ContactRequestsJob } from './jobs/contact-requests.job';
@@ -80,6 +81,7 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
           new ContactRequestsJob(),
           new AssistantImportsJob(menuImports),
           new WebhookDeliveriesJob(webhookDeliveries),
+          new ReceiptLinksJob(),
           new OrganizationInactivityJob(notices),
           new OrganizationPurgeJob(notices, options),
           new UserAccountsJob(notices, options),

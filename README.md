@@ -745,6 +745,7 @@ Beginn/Ende, Probelauf und Fehler in `retention_runs` – ohne Inhalte.
 | `contact_requests` | Anfragen über die Website | 6 Monate nach „erledigt“ | löschen |
 | `assistant_imports` | hochgeladene Speisekarten / Vorschläge | 24 Stunden / 30 Tage (stündlicher Job im Assistenten, hier protokolliert) | löschen |
 | `webhook_deliveries` | Zustellprotokoll der Webhooks (gesendeter Inhalt, ggf. mit Gästeangaben, erste 1 KB der Antwort) | 30 Tage (`WEBHOOKS_DELIVERY_RETENTION_DAYS`; stündlicher Job im Webhook-Modul, hier protokolliert) | löschen |
+| `receipt_links` | Links auf digitale Belege (QR-Code an der Kasse, Beleg-Mail): Prüfwert des Tokens, Bestellungen, Ablaufdatum – keine Gästeangaben | nach Ablauf (Standard 90 Tage, `RECEIPT_LINK_DAYS`) | löschen; der Beleg selbst bleibt als Kassendatum im Steuerarchiv |
 | `organization_inactivity` | Organisationen ohne Nutzung | Ankündigung nach 24 Monaten, Schließung frühestens 30 Tage später | Mail an die Admins mit Exportlink, dann wie „Organisation löschen“ |
 | `organization_purge` | gelöschte bzw. geschlossene Organisationen | Ankündigung, endgültig nach Exportfrist (30 Tage) und frühestens 30 Tage nach der Ankündigung | Kundendaten löschen; Steuerarchiv, Abrechnungsdaten des Betreibers und die Organisation als gesperrte Hülle (Name, Anschrift, Steuernummer) bleiben |
 | `user_accounts` | Benutzerkonten ohne bestehende Organisation | Ankündigung nach 24 Monaten ohne Nutzung, Löschung frühestens 30 Tage später | anonymisieren (Name, E-Mail, Zugangsdaten, Tokens, Avatar) |

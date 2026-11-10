@@ -24,6 +24,21 @@ export interface SendEmailOptions {
   subject: string;
   html: string;
   text?: string;
+  /** Anzeigename statt „OpenEOS“ (Absenderadresse bleibt dieselbe). */
+  fromName?: string;
+  replyTo?: string;
+  attachments?: {
+    filename: string;
+    content: Buffer;
+    contentType: string;
+    /** Inline-Bild (`<img src="cid:…">`). */
+    cid?: string;
+  }[];
+  /**
+   * Empfaenger nicht ins Log schreiben (Beleg-Mails an Gaeste: die Adresse
+   * wird nur fuer den Versand verwendet und nirgends gespeichert).
+   */
+  redactRecipient?: boolean;
 }
 
 /**
@@ -65,6 +80,7 @@ export class EmailService {
   private transporter: Transporter<SMTPTransport.SentMessageInfo> | null = null;
   private readonly isEnabled: boolean;
   private readonly fromAddress: string;
+  private readonly fromEmail: string;
   readonly appUrl: string;
 
   constructor(private readonly configService: ConfigService) {
@@ -73,6 +89,7 @@ export class EmailService {
       this.configService.get<string>('email.from') || 'noreply@openeos.de';
     const fromName =
       this.configService.get<string>('email.fromName') || 'OpenEOS';
+    this.fromEmail = fromEmail;
     this.fromAddress = `${fromName} <${fromEmail}>`;
     // Public app URL — used for verify links, registration confirmations, etc.
     // Fallback points at the hosted production frontend so a missing env var
@@ -125,9 +142,10 @@ export class EmailService {
   }
 
   async sendEmail(options: SendEmailOptions): Promise<boolean> {
+    const recipient = options.redactRecipient ? '(Gast)' : options.to;
     if (!this.isEnabled) {
       this.logger.debug(
-        `[DEV] Would send email to ${options.to}: ${options.subject}`,
+        `[DEV] Would send email to ${recipient}: ${options.subject}`,
       );
       this.logger.debug(
         `[DEV] Content: ${options.text || options.html.substring(0, 200)}...`,
@@ -142,18 +160,22 @@ export class EmailService {
 
     try {
       const info = await this.transporter.sendMail({
-        from: this.fromAddress,
+        from: options.fromName
+          ? { name: options.fromName, address: this.fromEmail }
+          : this.fromAddress,
         to: options.to,
+        ...(options.replyTo ? { replyTo: options.replyTo } : {}),
         subject: options.subject,
         html: options.html,
         text: options.text || this.stripHtml(options.html),
+        ...(options.attachments ? { attachments: options.attachments } : {}),
       });
 
-      this.logger.log(`Email sent to ${options.to}: ${info.messageId}`);
+      this.logger.log(`Email sent to ${recipient}: ${info.messageId}`);
       return true;
     } catch (error) {
       this.logger.error(
-        `Failed to send email to ${options.to}: ${(error as Error).message}`,
+        `Failed to send email to ${recipient}: ${(error as Error).message}`,
       );
       return false;
     }

@@ -69,6 +69,7 @@ import { TseModule } from './modules/tse';
 import { DsfinvkModule } from './modules/dsfinvk';
 import { RetentionModule } from './modules/retention';
 import { WebhooksModule } from './modules/webhooks';
+import { ReceiptsModule } from './modules/receipts';
 import { EventPhaseModule } from './modules/events/event-phase.module';
 import {
   OrganizationClosureGuard,
@@ -224,6 +225,7 @@ import { WaiterCoreModule, WaitersModule } from './modules/waiters';
     WaitersModule,
     // Ausgehende Webhooks (AGB Ziffer 10.2)
     WebhooksModule,
+    ReceiptsModule,
   ],
   controllers: [],
   providers: [

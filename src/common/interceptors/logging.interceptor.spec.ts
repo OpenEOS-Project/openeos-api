@@ -141,3 +141,20 @@ describe('redactBodyValue (Debug-Log ohne PINs)', () => {
     });
   });
 });
+
+describe('receipt links and guest e-mails stay out of the log', () => {
+  it('replaces the receipt token in the path and the e-mail in the body', () => {
+    const { requestLogPath, redactBodyValue } = jest.requireActual<
+      typeof import('./logging.interceptor')
+    >('./logging.interceptor');
+    expect(
+      requestLogPath('/api/public/receipts/AbCdEfGhIjKlMnOpQrStUv/pdf'),
+    ).toBe('/api/public/receipts/:token/pdf');
+    expect(
+      JSON.stringify(
+        { orderIds: ['x'], email: 'gast@example.org' },
+        redactBodyValue,
+      ),
+    ).not.toContain('gast@example.org');
+  });
+});

@@ -151,6 +151,14 @@ export const ErrorCodes = {
   CASHBOOK_TYPE_INVALID: 'CASHBOOK_TYPE_INVALID',
   // Webhooks auf diesem Server ausgeschaltet (WEBHOOKS_ENABLED=false) — 503
   WEBHOOKS_DISABLED: 'WEBHOOKS_DISABLED',
+  // Digitaler Beleg: Link abgelaufen oder unbekannt — 404
+  RECEIPT_LINK_NOT_FOUND: 'RECEIPT_LINK_NOT_FOUND',
+  // Kein Kassenbeleg (Nur Bons, keine Zahlung, fremde Bestellung) — 409
+  RECEIPT_NOT_AVAILABLE: 'RECEIPT_NOT_AVAILABLE',
+  // Zu viele Beleg-Mails von diesem Geraet bzw. zu dieser Bestellung — 429
+  RECEIPT_EMAIL_RATE_LIMITED: 'RECEIPT_EMAIL_RATE_LIMITED',
+  // Versand der Beleg-Mail fehlgeschlagen — 502
+  RECEIPT_EMAIL_FAILED: 'RECEIPT_EMAIL_FAILED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
@@ -292,6 +300,14 @@ export const ErrorMessages: Record<ErrorCode, string> = {
   [ErrorCodes.CASHBOOK_TYPE_INVALID]: 'Unbekannte Kassenbuch-Buchung',
   [ErrorCodes.WEBHOOKS_DISABLED]:
     'Webhooks sind auf diesem Server ausgeschaltet',
+  [ErrorCodes.RECEIPT_LINK_NOT_FOUND]:
+    'Dieser Beleg ist nicht (mehr) verfügbar. Frag an der Kasse nach einem neuen.',
+  [ErrorCodes.RECEIPT_NOT_AVAILABLE]:
+    'Zu dieser Bestellung gibt es keinen Beleg',
+  [ErrorCodes.RECEIPT_EMAIL_RATE_LIMITED]:
+    'Gerade wurden zu viele Belege per E-Mail verschickt – bitte versuch es gleich noch einmal',
+  [ErrorCodes.RECEIPT_EMAIL_FAILED]:
+    'Die E-Mail konnte nicht verschickt werden – bitte versuch es noch einmal',
 };
 
 /**
@@ -608,6 +624,8 @@ export const ErrorReasons = {
   WEBHOOK_NOT_FOUND: 'WEBHOOK_NOT_FOUND',
   WEBHOOK_URL_INVALID: 'WEBHOOK_URL_INVALID',
   WEBHOOKS_DISABLED: 'WEBHOOKS_DISABLED',
+  RECEIPT_EMAIL_INVALID: 'RECEIPT_EMAIL_INVALID',
+  RECEIPT_ORDERS_INVALID: 'RECEIPT_ORDERS_INVALID',
 } as const;
 
 export type ErrorReason = (typeof ErrorReasons)[keyof typeof ErrorReasons];
