@@ -15,6 +15,7 @@ import {
   FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -30,7 +31,7 @@ import {
   RequestEmailChangeDto,
   VerifyEmailChangeDto,
 } from './dto';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, Public } from '../../common/decorators';
 import { User } from '../../database/entities';
 import { UploadsService } from '../uploads/uploads.service';
 import { UploadCategory } from '../uploads/dto';
@@ -163,16 +164,22 @@ export class UsersController {
     };
   }
 
+  /* Oeffentlich wie /auth/verify-email: der Link aus der Mail wird oft
+     auf einem anderen Geraet geoeffnet (Handy), wo niemand angemeldet ist.
+     Der Token (32 Zufallsbytes, 24 h, nur gehasht gespeichert) ist der
+     Nachweis. */
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('me/email/verify')
   @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary: 'Verify email change',
-    description: 'Verify and complete email change',
+    description:
+      'Completes an email change with the token from the confirmation mail sent to the new address. No session required.',
   })
   @ApiResponse({ status: 200, description: 'Email changed successfully' })
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 409, description: 'Email already in use' })
   async verifyEmailChange(@Body() dto: VerifyEmailChangeDto) {
     const updatedUser = await this.usersService.verifyEmailChange(dto.token);
     return {
@@ -281,7 +288,7 @@ export class UsersController {
     return { message: `${count} Session(s) wurden beendet` };
   }
 
-  private sanitizeUser(user: User): Partial<User> {
+  private sanitizeUser(user: User): Partial<User> & { hasPassword: boolean } {
     const {
       passwordHash,
       passwordResetToken,
@@ -293,6 +300,6 @@ export class UsersController {
       pendingEmailToken,
       ...sanitized
     } = user;
-    return sanitized;
+    return { ...sanitized, hasPassword: !!passwordHash };
   }
 }
