@@ -941,23 +941,36 @@ export class DeviceApiController {
       `Device order created: ${completeOrder.orderNumber} (${completeOrder.id}) by device ${device.name}`,
     );
 
-    // Cloud-TSE: Bestellvorgang (Tisch ohne sofortige Zahlung) bzw. Beleg
-    // ueber 0,00 — laeuft parallel zum Kuechenbon, die Antwort wartet.
-    const orderSigning: Promise<TseReceiptView | null> = created.settled
-      ? Promise.resolve(null)
-      : created.zeroPaid
-        ? (this.tseSigning?.signZeroReceipt(completeOrder.id, {
-            terminal: device.id,
-            waiterId: attribution.waiterId,
-            userId: attribution.userId,
-            operatorName: attribution.name,
-          }) ?? Promise.resolve(null))
-        : (this.tseSigning?.signOrderCreated(completeOrder.id, {
-            terminal: device.id,
-            waiterId: attribution.waiterId,
-            userId: attribution.userId,
-            operatorName: attribution.name,
-          }) ?? Promise.resolve(null));
+    // Cloud-TSE vor jedem Kuechen-/Stationsbon („keine Kuechenbons ohne
+    // TSE-Spur“, Steuerberater 2026-11-10, Frage 19): sofort bezahlt →
+    // Kassenbelege der Zahlungen; ohne Zahlung (Tisch, „Senden“ an der
+    // Theke) → Bestellvorgang (Bestellung-V1); voll rabattiert → Beleg ueber
+    // 0,00. Erfassung und Zahlung kommen an der Kasse in einer Anfrage, die
+    // Transaktion beginnt also mit der Erfassung im System. Signieren wirft
+    // nie und ist durch TSE_SIGN_BUDGET_MS begrenzt; bei Ausfall druckt die
+    // Kueche trotzdem (der Ausfall ist protokolliert).
+    const signer = {
+      terminal: device.id,
+      waiterId: attribution.waiterId,
+      userId: attribution.userId,
+      operatorName: attribution.name,
+    };
+    let orderTse: TseReceiptView | null = null;
+    if (created.settled) {
+      await this.paymentsBatchService.signSettled(created.settled, {
+        deviceId: device.id,
+        waiterId: attribution.waiterId,
+        userId: attribution.userId,
+      });
+    } else if (created.zeroPaid) {
+      orderTse =
+        (await this.tseSigning?.signZeroReceipt(completeOrder.id, signer)) ??
+        null;
+    } else {
+      orderTse =
+        (await this.tseSigning?.signOrderCreated(completeOrder.id, signer)) ??
+        null;
+    }
 
     // Print station tickets and notify admin order list
     if (completeOrder.items && completeOrder.items.length > 0) {
@@ -1011,7 +1024,7 @@ export class DeviceApiController {
     }
 
     // Zahlungsereignisse und Kassenbon nach dem Küchenbon; die Kassenbelege
-    // werden vorher signiert (TSE), der Bon traegt die Signatur.
+    // sind oben schon signiert (TSE), der Bon traegt die Signatur.
     if (created.settled) {
       await this.paymentsBatchService.afterCommit(
         organizationId,
@@ -1026,7 +1039,7 @@ export class DeviceApiController {
 
     return {
       data: Object.assign(completeOrder, {
-        tseTransactions: collectTseViews(await orderSigning, created.settled),
+        tseTransactions: collectTseViews(orderTse, created.settled),
       }),
     };
   }
@@ -1909,8 +1922,10 @@ export class DeviceApiController {
           isFullyPaid: order.paymentStatus === PaymentStatus.PAID,
           order,
           amountReceived: lastPayment.metadata?.amountReceived,
+          // Druckt auch ohne automatischen Kassenbon; „NACHDRUCK“, wenn
+          // schon einer gedruckt wurde.
+          onDemand: true,
         },
-        { manual: true },
       );
     }
 

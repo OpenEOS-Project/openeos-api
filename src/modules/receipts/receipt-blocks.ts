@@ -36,7 +36,7 @@ export function tseBlocks(tse: TsePrintBlock | null): ReceiptBlock[] {
   const out: ReceiptBlock[] = [{ type: 'rule' }];
   if (tse.failed) {
     out.push(
-      { type: 'center', text: 'TSE ausgefallen' },
+      { type: 'center', text: 'TSE nicht erreichbar' },
       { type: 'center', text: 'Beleg ohne Signatur', muted: true },
       { type: 'row', label: 'Kassen-ID', value: tse.client_id },
     );
@@ -51,6 +51,12 @@ export function tseBlocks(tse: TsePrintBlock | null): ReceiptBlock[] {
         type: 'mono',
         label: 'TSE-Seriennummer',
         text: tse.serial_number,
+      });
+    if (tse.order_start_time)
+      out.push({
+        type: 'row',
+        label: 'Bestellbeginn',
+        value: tse.order_start_time,
       });
     return out;
   }
@@ -81,6 +87,12 @@ export function tseBlocks(tse: TsePrintBlock | null): ReceiptBlock[] {
     { type: 'row', label: 'Zeitformat', value: tse.log_time_format ?? '' },
     { type: 'mono', label: 'Signatur', text: tse.signature ?? '' },
   );
+  if (tse.order_start_time)
+    out.push({
+      type: 'row',
+      label: 'Bestellbeginn',
+      value: tse.order_start_time,
+    });
   if (tse.qr_code) out.push({ type: 'qr', value: tse.qr_code });
   return out;
 }

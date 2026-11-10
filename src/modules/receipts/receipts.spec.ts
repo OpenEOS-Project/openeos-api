@@ -34,6 +34,8 @@ const TSE: TsePrintBlock = {
   log_time_format: 'unixTime',
   public_key: 'PUB',
   qr_code: 'V0;OE-1234;Kassenbeleg-V1;...',
+  late_signature: null,
+  order_start_time: null,
 };
 
 function payload(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -141,7 +143,7 @@ describe('digital receipt document', () => {
     );
     const blocks = receiptBlocks(doc);
     const text = blocksToText(blocks);
-    expect(text).toContain('TSE ausgefallen');
+    expect(text).toContain('TSE nicht erreichbar');
     expect(text).not.toContain('Signatur:');
     expect(blocks.some((b) => b.type === 'qr')).toBe(false);
   });

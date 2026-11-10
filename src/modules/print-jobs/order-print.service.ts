@@ -75,6 +75,13 @@ export interface ReceiptPaymentData {
    * Kasse als der, die bestellt hat). Standard: Geraet der Bestellung.
    */
   printDeviceId?: string | null;
+  /**
+   * Auf Wunsch gedruckt („Bon drucken“/Nachdruck an der Kasse): druckt
+   * auch, wenn der automatische Kassenbon aus ist. Gab es fuer diese
+   * Zahlung schon einen Kassenbon, ist es ein Nachdruck (Vermerk
+   * „NACHDRUCK“, eine spaet eingetroffene Signatur gekennzeichnet).
+   */
+  onDemand?: boolean;
 }
 
 @Injectable()
@@ -536,6 +543,24 @@ export class OrderPrintService {
       .filter(Boolean);
   }
 
+  /** Gab es fuer diese Zahlung schon einen Kassenbon (Druckauftrag)? */
+  private async receiptPrintedBefore(
+    organizationId: string,
+    paymentId: string,
+  ): Promise<boolean> {
+    try {
+      const rows: unknown[] = await this.organizationRepository.manager.query(
+        `SELECT 1 FROM print_jobs
+          WHERE organization_id = $1 AND payload->>'paymentId' = $2
+          LIMIT 1`,
+        [organizationId, paymentId],
+      );
+      return Array.isArray(rows) && rows.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Daten des Kassenbons (`receipt`) einer Zahlung — dieselben fuer den
    * gedruckten Bon und den digitalen Beleg (QR-Code, E-Mail, PDF), damit
@@ -544,7 +569,9 @@ export class OrderPrintService {
   async receiptPayload(
     organizationId: string,
     data: ReceiptPaymentData,
+    options: { reprint?: boolean } = {},
   ): Promise<Record<string, unknown>> {
+    const reprint = options.reprint === true;
     const isTest = await this.isTestOrder(data.order);
     // Receipt template needs organization + monetary detail. Load org once.
     const org = await this.organizationRepository.findOne({
@@ -594,20 +621,20 @@ export class OrderPrintService {
       amount: data.amount,
       isFullyPaid: data.isFullyPaid,
       is_test: isTest,
-      tse: tsePrintBlock(data.tse),
+      reprint,
+      tse: tsePrintBlock(data.tse, { reprint }),
     };
   }
 
   /**
    * Kassenbon nach der Zahlung. Automatisch nur mit der Einstellung
-   * „Kassenbon“ (Ausloeser Zahlung); `manual` (Knopf „Bon drucken“ an der
-   * Kasse, Nachdruck) druckt auch, wenn der automatische Bon aus ist.
+   * „Kassenbon“ (Ausloeser Zahlung); `onDemand` (Knopf „Bon drucken“ an
+   * der Kasse, Nachdruck) druckt auch, wenn der automatische Bon aus ist.
    * Liefert, ob ein Druckauftrag entstanden ist.
    */
   async handlePaymentReceived(
     organizationId: string,
     data: ReceiptPaymentData,
-    options: { manual?: boolean } = {},
   ): Promise<boolean> {
     try {
       const orderFlow = (await this.getOrderFlow(organizationId)) ?? {};
@@ -625,7 +652,12 @@ export class OrderPrintService {
       // order-ticket printing). An unset/null receiptPrinting means "off", so
       // deactivating it actually stops the receipt.
       const automatic = !!receipt?.enabled && trigger === 'payment_received';
-      if (!automatic && !options.manual) return false;
+      if (!automatic && !data.onDemand) return false;
+      // Auf Wunsch und schon einmal gedruckt: Nachdruck (Vermerk, ggf.
+      // spaet eingetroffene Signatur).
+      const reprint =
+        data.onDemand === true &&
+        (await this.receiptPrintedBefore(organizationId, data.paymentId));
       const { printerId } = await this.printRoutingService.resolveOrderPrinter({
         organizationId,
         orderDeviceId: data.printDeviceId ?? orderDeviceId,
@@ -638,7 +670,7 @@ export class OrderPrintService {
         receipt?.templateId || null,
         data.orderId,
         1,
-        await this.receiptPayload(organizationId, data),
+        await this.receiptPayload(organizationId, data, { reprint }),
         null,
         'receipt',
       );
@@ -718,7 +750,7 @@ export class OrderPrintService {
           device_name: data.deviceName ?? null,
           reprint: data.reprint === true,
           is_test: isTest,
-          tse: tsePrintBlock(data.tse),
+          tse: tsePrintBlock(data.tse, { reprint: data.reprint === true }),
         },
         null,
         REFUND_RECEIPT_TEMPLATE,

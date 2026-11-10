@@ -35,8 +35,12 @@ interface StartedSnapshot {
  * 3. Verlorene Antworten: ist ein `failed`-Vorgang mit bekannter
  *    Transaktionsnummer nicht mehr offen, fragt der Abgleich
  *    `getLastTransactionResponse` (teuer, hoechstens einmal je TSE und
- *    Lauf) und uebernimmt die Signatur, wenn die Nummer passt
- *    (`recovered_at`; der Bon trug den Ausfallvermerk).
+ *    Lauf) und speichert die Signatur, wenn die Nummer passt
+ *    (`recovered_at`). Der Vorgang **bleibt `failed`**: der Bon wurde ohne
+ *    Signatur ausgegeben und bleibt ein Ausfallbeleg (AEAO zu § 146a Nr.
+ *    2.2.3.3, 2.5.2). DSFinV-K: Signatur in `TSE_Transaktionen` mit
+ *    `TSE_TA_FEHLER` „Signatur nach Belegausgabe“ (Steuerberater 2026-11-10,
+ *    Frage 16).
  * 4. Offene Ausfaelle schliessen, wenn die TSE danach wieder signiert hat
  *    (Ausfaelle, die eine andere Instanz geoeffnet hat).
  *
@@ -245,15 +249,16 @@ export class TseReconcileService {
         (t) => Number(t.transactionNumber) === last.transactionNumber,
       );
       if (!match) return;
+      // Status bleibt `failed` (Ausfallbeleg) — nur die Signatur wird
+      // nachgetragen, gekennzeichnet als „Signatur nach Belegausgabe“.
       await this.txRepository.update(match.id, {
-        status: match.training ? 'training' : 'signed',
         signatureCounter: String(last.signatureCounter),
         signatureValue: last.signatureValue,
         finishTime: new Date(last.signatureCreationTime * 1000),
         recoveredAt: new Date(),
       });
       this.logger.log(
-        `Lost TSE response recovered for transaction ${match.id}`,
+        `Late TSE signature stored for transaction ${match.id} (receipt stays an outage receipt)`,
       );
     } catch (error) {
       this.logger.debug(`getLastTransactionResponse: ${errorCodeOf(error)}`);

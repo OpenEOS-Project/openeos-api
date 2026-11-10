@@ -88,9 +88,13 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
  * TSE-Angaben auf Kassenbeleg und Gegenbeleg (tse-swissbit-plan.md §8.6,
  * AEAO zu § 146a Nr. 2.2, DSFinV-K Anhang I): Kassen-ID (Client-ID),
  * Beleg-Nr., TSE-Seriennummer und Signatur ungekuerzt (umbrochen), Transaktionsnummer,
- * Signaturzaehler, Start/Ende in UTC wie geliefert, QR-Code (V0). Ohne
- * Signatur nur „TSE ausgefallen“, bei Training der Trainingsvermerk. Ohne
- * `tse` im Auftrag druckt der Block nichts.
+ * Signaturzaehler, Start/Ende in UTC wie geliefert, QR-Code (V0), bei
+ * Bestellungen vorher der Bestellbeginn (DSFinV-K Tz. 2.7.3). Ohne
+ * Signatur nur „TSE nicht erreichbar – Beleg ohne Signatur“ (Ausfallbeleg);
+ * kam die Signatur erst nach der Ausgabe, nennt sie nur ein Nachdruck,
+ * gekennzeichnet „Signatur nach Belegausgabe“ und ohne QR-Code. Bei
+ * Training der Trainingsvermerk. Ohne `tse` im Auftrag druckt der Block
+ * nichts.
  *
  * Gleicher Text wie in `receipt.jinja2`/`refund_receipt.jinja2` des
  * Drucker-Agenten. Der Block ist eigenstaendig (braucht weder `cols` noch
@@ -108,15 +112,24 @@ export const TSE_PRINT_BLOCK = `{# TSE-Angaben nach AEAO zu § 146a Nr. 2.2 und 
 {% set tse_cols = cols if cols is defined else columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}
 {{ "-" * tse_cols }}
 {% if tse.failed %}
-<<CENTER>><<BOLD>>TSE ausgefallen<</BOLD>><</CENTER>>
+<<CENTER>><<BOLD>>TSE nicht erreichbar<</BOLD>><</CENTER>>
 <<CENTER>>Beleg ohne Signatur<</CENTER>>
 {{ ("Kassen-ID: " ~ tse.client_id)|wordwrap(tse_cols, true, "\\n") }}
 {% if tse.bon_number %}
 {{ ("Beleg-Nr.: " ~ tse.bon_number)|wordwrap(tse_cols, true, "\\n") }}
 {% endif %}
+{% if tse.order_start_time is defined and tse.order_start_time %}
+{{ ("Bestellbeginn: " ~ tse.order_start_time)|wordwrap(tse_cols, true, "\\n") }}
+{% endif %}
 {% if tse.serial_number %}
 TSE-Seriennummer:
 {{ tse.serial_number|wordwrap(tse_cols, true, "\\n") }}
+{% endif %}
+{% if tse.late_signature is defined and tse.late_signature %}
+{{ ("Signatur nach Belegausgabe:")|wordwrap(tse_cols, true, "\\n") }}
+{{ ("TSE-Transaktion: " ~ tse.late_signature.transaction_number)|wordwrap(tse_cols, true, "\\n") }}
+{{ ("Signaturzaehler: " ~ tse.late_signature.signature_counter)|wordwrap(tse_cols, true, "\\n") }}
+{{ ("Ende:  " ~ tse.late_signature.finish_time)|wordwrap(tse_cols, true, "\\n") }}
 {% endif %}
 {% else %}
 {% if tse.training %}
@@ -130,6 +143,9 @@ TSE-Seriennummer:
 {{ tse.serial_number|wordwrap(tse_cols, true, "\\n") }}
 {{ ("TSE-Transaktion: " ~ tse.transaction_number)|wordwrap(tse_cols, true, "\\n") }}
 {{ ("Signaturzaehler: " ~ tse.signature_counter)|wordwrap(tse_cols, true, "\\n") }}
+{% if tse.order_start_time is defined and tse.order_start_time %}
+{{ ("Bestellbeginn: " ~ tse.order_start_time)|wordwrap(tse_cols, true, "\\n") }}
+{% endif %}
 {{ ("Start: " ~ tse.start_time)|wordwrap(tse_cols, true, "\\n") }}
 {{ ("Ende:  " ~ tse.finish_time)|wordwrap(tse_cols, true, "\\n") }}
 {{ ("Algorithmus: " ~ tse.signature_algorithm)|wordwrap(tse_cols, true, "\\n") }}
@@ -159,6 +175,9 @@ const RECEIPT_SOURCE =
 {% if is_test %}
 <<CENTER>><<BOLD>><<BIG>>** TESTMODUS **<</BIG>><</BOLD>><</CENTER>>
 
+{% endif %}
+{% if reprint is defined and reprint %}
+<<CENTER>><<BOLD>>-- NACHDRUCK --<</BOLD>><</CENTER>>
 {% endif %}
 <<CENTER>><<BIG>>{{ organization.name|default("OpenEOS")|wordwrap(cols // 2, true, "\\n") }}<</BIG>><</CENTER>>
 {% if organization.address is defined and organization.address %}

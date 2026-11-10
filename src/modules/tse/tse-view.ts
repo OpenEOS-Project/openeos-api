@@ -2,8 +2,17 @@ import type { TseTransaction } from '../../database/entities/tse-transaction.ent
 import type { TseUnit } from '../../database/entities/tse-unit.entity';
 import { qrCodePayload } from './tse-process-data';
 
-/** Hinweis auf Bon und Beleg bei Ausfall (AEAO zu § 146a Nr. 1.14). */
-export const TSE_FAILED_NOTICE = 'TSE ausgefallen';
+/**
+ * Hinweis auf Bon und Beleg bei Ausfall (AEAO zu § 146a Nr. 1.14.2:
+ * „eindeutige Kennzeichnung“). Gilt auch, wenn die Signatur erst nach der
+ * Belegausgabe eintrifft — der Bon bleibt ein Ausfallbeleg.
+ */
+export const TSE_FAILED_NOTICE = 'TSE nicht erreichbar – Beleg ohne Signatur';
+/**
+ * Kennzeichnung einer Signatur, die erst nach der Belegausgabe eintraf
+ * (Abgleich, verlorene Antwort). DSFinV-K: `TSE_TA_FEHLER`.
+ */
+export const TSE_LATE_SIGNATURE_NOTE = 'Signatur nach Belegausgabe';
 /** Hinweis bei Trainingsbuchungen (Testmodus, DSFinV-K AVTraining). */
 export const TSE_TRAINING_NOTICE = 'TRAININGSBUCHUNG – KEIN VERKAUF';
 
@@ -16,7 +25,10 @@ export interface TseReceiptView {
   kind: TseTransaction['kind'];
   status: TseTransaction['status'];
   training: boolean;
-  /** `TSE ausgefallen`, `TRAININGSBUCHUNG – KEIN VERKAUF` oder null. */
+  /**
+   * `TSE nicht erreichbar – Beleg ohne Signatur` (failed/pending),
+   * `TRAININGSBUCHUNG – KEIN VERKAUF` oder null.
+   */
   notice: string | null;
   processType: string;
   processData: string;
@@ -45,6 +57,24 @@ export interface TseReceiptView {
    * Organisation; null, solange die Datenbank sie noch nicht vergeben hat.
    */
   bonNumber: number | null;
+  /**
+   * Signatur, die erst nach der Belegausgabe eintraf (der Abgleich hat eine
+   * verlorene Antwort gefunden). Der Vorgang bleibt `failed`, der Beleg ein
+   * Ausfallbeleg; die Daten stehen nur zur Nachvollziehbarkeit hier.
+   */
+  lateSignature: {
+    note: string;
+    transactionNumber: number | null;
+    signatureCounter: number | null;
+    finishTime: string | null;
+    recoveredAt: string | null;
+  } | null;
+  /**
+   * Beginn der ersten abgesicherten Bestellung (Bestellung-V1) zu diesem
+   * Beleg, ISO 8601 UTC wie von der TSE; muss auf den Beleg (DSFinV-K Tz.
+   * 2.7.3). null ohne Bestellvorgang.
+   */
+  orderStartTime?: string | null;
   createdAt: string;
 }
 
@@ -78,7 +108,19 @@ export function tseReceiptView(
   const logTimeFormat = unit?.logTimeFormat ?? null;
   const publicKey = unit?.publicKey ?? null;
   const transactionNumber = toNumber(tx.transactionNumber);
-  const signatureCounter = toNumber(tx.signatureCounter);
+  // Unsigniert ausgegeben: Zaehler und Ende so, wie sie beim Druck bekannt
+  // waren (nicht) — eine spaetere Signatur steht nur in `lateSignature`.
+  const signatureCounter = signed ? toNumber(tx.signatureCounter) : null;
+  const late =
+    !signed && tx.recoveredAt && tx.signatureValue
+      ? {
+          note: TSE_LATE_SIGNATURE_NOTE,
+          transactionNumber,
+          signatureCounter: toNumber(tx.signatureCounter),
+          finishTime,
+          recoveredAt: iso(tx.recoveredAt),
+        }
+      : null;
   const qrCode =
     signed &&
     startTime &&
@@ -120,7 +162,7 @@ export function tseReceiptView(
     transactionNumber,
     signatureCounter,
     startTime,
-    finishTime,
+    finishTime: signed ? finishTime : null,
     signatureValue: signed ? tx.signatureValue : null,
     signatureAlgorithm,
     logTimeFormat,
@@ -133,6 +175,7 @@ export function tseReceiptView(
     refundId: tx.refundId ?? null,
     pfandReturnId: tx.pfandReturnId ?? null,
     bonNumber: toNumber(tx.bonId),
+    lateSignature: late,
     createdAt: iso(tx.createdAt) ?? new Date().toISOString(),
   };
 }
@@ -161,12 +204,27 @@ export interface TsePrintBlock {
   log_time_format: string | null;
   public_key: string | null;
   qr_code: string | null;
+  /**
+   * Nur beim Nachdruck eines Ausfallbelegs, dessen Signatur spaeter eintraf:
+   * gekennzeichnet „Signatur nach Belegausgabe“, ohne QR-Code (der Beleg
+   * bleibt ein Ausfallbeleg). Beim ersten Druck immer null.
+   */
+  late_signature: {
+    note: string;
+    transaction_number: number | null;
+    signature_counter: number | null;
+    finish_time: string | null;
+  } | null;
+  /** Beginn der ersten Bestellung (Bestellung-V1), DSFinV-K Tz. 2.7.3. */
+  order_start_time: string | null;
 }
 
 export function tsePrintBlock(
   view: TseReceiptView | null | undefined,
+  options: { reprint?: boolean } = {},
 ): TsePrintBlock | null {
   if (!view) return null;
+  const late = options.reprint ? view.lateSignature : null;
   return {
     status: view.status,
     failed: view.status === 'failed' || view.status === 'pending',
@@ -185,5 +243,14 @@ export function tsePrintBlock(
     log_time_format: view.logTimeFormat,
     public_key: view.publicKey,
     qr_code: view.qrCode,
+    late_signature: late
+      ? {
+          note: late.note,
+          transaction_number: late.transactionNumber,
+          signature_counter: late.signatureCounter,
+          finish_time: late.finishTime,
+        }
+      : null,
+    order_start_time: view.orderStartTime ?? null,
   };
 }

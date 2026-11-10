@@ -593,6 +593,7 @@ function setupController(
         };
       },
     ),
+    signSettled: jest.fn(),
     afterCommit: jest.fn(),
   };
   // Konstruktor-Reihenfolge siehe DeviceApiController.
@@ -923,6 +924,15 @@ describe('DeviceApiController.createOrder — Kassiermodus (F8)', () => {
       gatewayService.notifyOrderCreated.mock.invocationCallOrder[0];
     const paidAt = paymentsBatchService.afterCommit.mock.invocationCallOrder[0];
     expect(createdAt).toBeLessThan(paidAt);
+    // TSE vor dem Kuechenbon (Steuerberater 2026-11-10, Frage 19): erst die
+    // Kassenbelege signieren, dann Kuechenbon, dann Zahlungsereignis/Bon.
+    expect(paymentsBatchService.signSettled).toHaveBeenCalledTimes(1);
+    const signedAt =
+      paymentsBatchService.signSettled.mock.invocationCallOrder[0];
+    const kitchenAt =
+      orderPrintService.handleOrderCreated.mock.invocationCallOrder[0];
+    expect(signedAt).toBeLessThan(kitchenAt);
+    expect(kitchenAt).toBeLessThan(paidAt);
   });
 
   it('immediate: a failed payment rolls the order back (no order, no ticket)', async () => {

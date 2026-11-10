@@ -554,6 +554,21 @@ export function failed(
   };
 }
 
+/**
+ * Signatur nach Belegausgabe: der Bon wurde ohne Signatur gedruckt
+ * (Zeitlimit), der Abgleich fand die Signatur spaeter. Status bleibt
+ * `failed`, die Signaturdaten sind gespeichert (`recovered`).
+ */
+export function lateSigned(tx: DsfinvkTransaction): DsfinvkTransaction {
+  return {
+    ...tx,
+    status: 'failed',
+    recovered: true,
+    errorCode: 'E_TIMEOUT',
+    errorMessage: 'finishTransaction timed out after 5000 ms',
+  };
+}
+
 /** AVBelegabbruch, mit dem der Abgleich die haengende Transaktion schliesst. */
 export function abort(
   seq: Sequence,

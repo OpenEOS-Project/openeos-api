@@ -331,7 +331,7 @@ describe('OrderPrintService receipt payload', () => {
     );
     // von Hand: gedruckt
     await expect(
-      service.handlePaymentReceived('org-1', data, { manual: true }),
+      service.handlePaymentReceived('org-1', { ...data, onDemand: true }),
     ).resolves.toBe(true);
   });
 
