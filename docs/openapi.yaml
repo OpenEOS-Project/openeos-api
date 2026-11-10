@@ -12598,7 +12598,7 @@ components:
         hasPassword:
           type: boolean
           example: true
-          description: "Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (POST /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort."
+          description: "Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (PATCH /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort."
         lastLoginAt:
           type: object
           example: 2024-01-15T10:30:00.000Z
@@ -12705,7 +12705,7 @@ components:
         hasPassword:
           type: boolean
           example: true
-          description: "Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (POST /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort."
+          description: "Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (PATCH /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort."
         lastLoginAt:
           type: object
           example: 2024-01-15T10:30:00.000Z
@@ -12843,7 +12843,7 @@ components:
         hasPassword:
           type: boolean
           example: true
-          description: "Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (POST /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort."
+          description: "Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (PATCH /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort."
         lastLoginAt:
           type: object
           example: 2024-01-15T10:30:00.000Z

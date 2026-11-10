@@ -22,7 +22,7 @@ export class UserResponseDto {
   @ApiProperty({
     example: true,
     description:
-      'Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (POST /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort.',
+      'Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (PATCH /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort.',
   })
   hasPassword: boolean;
 
