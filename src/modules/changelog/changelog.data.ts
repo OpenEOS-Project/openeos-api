@@ -33,6 +33,294 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Drei Betriebsarten statt Bargeld-Schalter',
+      en: 'Three operating modes instead of a cash switch',
+    },
+    kurz: {
+      de: 'Unter „Betriebsart“ wählst du „Nur Bons“, „Bargeldlos“ oder „Alle Funktionen“; das Land deiner Organisation ist jetzt Pflicht.',
+      en: 'Under "Operating mode" you choose "Orders only", "Cashless" or "All features"; your organization’s country is now required.',
+    },
+    text: {
+      de: 'Aus dem Schalter „Bargeldloser Modus“ sind drei Betriebsarten geworden, die du als Admin unter Einstellungen → Organisation → Betriebsart wählst. „Nur Bons“ nimmt Bestellungen auf und schickt sie an Küche und Theke, ohne Preise und Zahlungen; kassiert wird außerhalb, etwa mit Wertmarken. „Bargeldlos“ bietet alles mit Karte und Online-Zahlung, nur ohne Bargeld. „Alle Funktionen“ nimmt auch Bargeld an, in Deutschland nur mit Cloud-TSE. Jede Organisation braucht dafür jetzt ein Land, bestehende fragt OpenEOS einmal danach. Sie arbeiten als „Alle Funktionen (Bestand)“ weiter, bis du wechselst; war der bargeldlose Modus an, bist du schon in „Bargeldlos“. Jeder Wechsel steht im Verlauf, und für „Nur Bons“ und „Bargeldlos“ gibt es eine Herstellerbescheinigung für deine Verfahrensdokumentation.',
+      en: 'The "Cashless mode" switch has become three operating modes, which you as an admin choose under Settings → Organization → Operating mode. "Orders only" takes orders and sends them to the kitchen and bar, without prices and payments; money is taken outside OpenEOS, for example with tokens. "Cashless" offers everything with card and online payment, just without cash. "All features" also accepts cash, in Germany only with the Cloud TSE. For this every organization now needs a country, and existing ones are asked once. They keep working as "All features (existing)" until you switch; if cashless mode was on, you are already in "Cashless". Every switch is listed in the history, and for "Orders only" and "Cashless" there is a manufacturer’s certificate for your process documentation.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Geplant, Aktiv, Beendet: Phasen einer Veranstaltung',
+      en: 'Planned, Active, Ended: the phases of an event',
+    },
+    kurz: {
+      de: 'Nach dem Freischalten testest du weiter, echt verkauft wird ab dem Vorabend, und nach dem letzten Tag bleibt bis 12 Uhr Kulanz.',
+      en: 'After activation you keep testing, real sales start the evening before, and after the last day there is grace time until noon.',
+    },
+    text: {
+      de: 'Eine freigeschaltete Veranstaltung verkauft nicht mehr sofort und unbegrenzt echt. Bis zum Verkaufsstart ist sie „Geplant“: Kasse, Tische und QR-Bestellung buchen Testbestellungen. Echte Verkäufe beginnen zwölf Stunden vor dem ersten Veranstaltungstag, bei einem Fest am 16. also am 15. um 18 Uhr, damit du schon am Aufbauabend kassieren kannst; den Vorlauf änderst du unter „Echter Verkauf beginnt vorher“. Dann werden die Testbestellungen gelöscht, deine Einrichtung bleibt. Nach dem letzten Tag hast du bis 12 Uhr Zeit für späte Deckel, danach ist die Veranstaltung „Beendet“: keine neuen Bestellungen, kassieren, erstatten und auswerten geht weiter. Mit „Vorverkauf im Shop“ nimmt dein Shop schon vorher echte Bestellungen an. Ab dem Verkaufsstart steht der Beginn fest, das Ende kannst du nur noch vorziehen.',
+      en: 'An activated event no longer sells for real straight away and without end. Until sales start it is "Planned": the till, tables and QR ordering book test orders. Real sales start twelve hours before the first event day, so for a party on the 16th that is 6 pm on the 15th, and you can already take money on the set-up evening; you change the lead time under "Real sales start earlier". Then the test orders are deleted and your setup stays. After the last day you have until noon for late tabs, then the event is "Ended": no new orders, while taking payments, refunds and reports keep working. With "Shop pre-sale" your shop takes real orders even before that. Once sales have started the start date is fixed, and the end can only be brought forward.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Neue Rechtstexte und der Bereich „Rechtliches“',
+      en: 'New legal texts and the "Legal" area',
+    },
+    kurz: {
+      de: 'AGB, Auftragsverarbeitungsvertrag, Datenschutzerklärung und Impressum sind neu; du bestätigst sie einmal und findest alles unter „Rechtliches“.',
+      en: 'Terms, data processing agreement, privacy policy and imprint are new; you confirm them once and find everything under "Legal".',
+    },
+    text: {
+      de: 'Wir haben unsere AGB, den Auftragsverarbeitungsvertrag (AVV), die Datenschutzerklärung und das Impressum neu gefasst. Sie stehen auf openeos.de als eigene Seiten mit PDF, ältere Fassungen bleiben unter ihrem Datum abrufbar. Als Admin einer Organisation bestätigst du die neuen AGB und den AVV einmal in einem Fenster nach der Anmeldung; bei der Registrierung setzt du dafür zwei Häkchen. Unter „Rechtliches“ im Benutzermenü und in den Einstellungen findest du alle Texte, welche Fassung du wann akzeptiert hast, die Liste der Unterauftragsverarbeiter, die Angaben für die Meldung deiner Kasse beim Finanzamt über ELSTER und eine Vorlage für den Datenschutzhinweis deines Shops.',
+      en: 'We have rewritten our terms (AGB), the data processing agreement (AVV), the privacy policy and the imprint. They are on openeos.de as separate pages with a PDF, and older versions stay available under their date. As an admin of an organization you confirm the new terms and the AVV once in a window after signing in; when registering you tick two boxes for it. Under "Legal" in the user menu and in the settings you find all texts, which version you accepted and when, the list of sub-processors, the details for reporting your till to the tax office via ELSTER and a template for your shop’s privacy notice.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Shop und QR-Bestellung nur mit Impressum und Datenschutzhinweis',
+      en: 'Shop and QR ordering only with imprint and privacy notice',
+    },
+    kurz: {
+      de: 'Fehlen Impressum oder Datenschutzhinweis deines Vereins, nehmen Shop und QR-Bestellung keine Bestellungen an; eine Vorlage hilft beim Datenschutzhinweis.',
+      en: 'If your club’s imprint or privacy notice is missing, the shop and QR ordering take no orders; a template helps with the privacy notice.',
+    },
+    text: {
+      de: 'Wer online verkauft, braucht ein Impressum und einen Datenschutzhinweis. Fehlt bei deiner Organisation eines davon, zeigt der Online-Shop zwar die Speisekarte, nimmt aber keine Bestellungen an, auch im Testmodus nicht; dasselbe gilt für die Bestellung per QR-Code am Tisch. In der Veranstaltung weist OpenEOS dich darauf hin und führt dich mit „Rechtliche Angaben eintragen“ direkt zum Formular. Für den Datenschutzhinweis gibt es unter „Rechtliches“ eine Vorlage: Name, Anschrift und E-Mail deiner Organisation sind schon eingesetzt, den Rest füllst du aus und übernimmst den Text mit einem Klick. Vor dem Bezahlen steht im Shop außerdem, bei wem der Gast bestellt.',
+      en: 'Anyone selling online needs an imprint and a privacy notice. If your organization lacks either of them, the online shop still shows the menu but takes no orders, not even in test mode; the same applies to ordering by QR code at the table. In the event OpenEOS points this out and takes you straight to the form with "Add legal information". For the privacy notice there is a template under "Legal": your organization’s name, address and e-mail are already filled in, you complete the rest and adopt the text with one click. Before paying, the shop now also says who the guest is ordering from.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Assistent: Speisekarte importieren und Icons vorschlagen',
+      en: 'Assistant: import your menu and suggest icons',
+    },
+    kurz: {
+      de: 'Lade Fotos, eine PDF oder den Text deiner Speisekarte hoch, und der Assistent macht daraus Kategorien und Produkte, die du vor dem Anlegen prüfst.',
+      en: 'Upload photos, a PDF or the text of your menu, and the assistant turns it into categories and products that you check before they are created.',
+    },
+    text: {
+      de: 'Der neue Assistent nimmt dir beim Einrichten Arbeit ab. Ein Admin schaltet ihn unter Einstellungen → Organisation → Assistent ein. Danach öffnest du auf der Produktseite „Importieren“ und lädst im Reiter „Speisekarte“ Fotos oder eine PDF hoch oder fügst den Text ein. Daraus entsteht ein Vorschlag mit Kategorien, Produkten, Preisen, Mehrwertsteuer, Pfand, Größen und Icons, den du in einer Tabelle prüfst; angelegt wird erst, wenn du bestätigst. Im Produktformular schlägt „Vorschlag“ bis zu drei passende Icons vor. Auf app.openeos.de läuft das Sprachmodell in einem Rechenzentrum in Deutschland. Übertragen werden nur Speisekarte und Produktnamen, und hochgeladene Dateien löscht OpenEOS spätestens nach 24 Stunden.',
+      en: 'The new assistant saves you work during setup. An admin switches it on under Settings → Organization → Assistant. Then you open "Import" on the products page and, in the "Menu" tab, upload photos or a PDF or paste the text. This becomes a suggestion with categories, products, prices, VAT, deposits, sizes and icons, which you check in a table; nothing is created until you confirm. In the product form "Suggest" proposes up to three matching icons. On app.openeos.de the language model runs in a data centre in Germany. Only the menu and product names are transferred, and OpenEOS deletes uploaded files after 24 hours at the latest.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Pfand mit Steuersatz und Beleg zur Rückgabe',
+      en: 'Deposits with a VAT rate and a return receipt',
+    },
+    kurz: {
+      de: 'Jeder Pfand-Typ hat einen Steuersatz, jede Pfandauszahlung bekommt einen Beleg, und ein neuer Bericht zeigt die Umsatzsteuer je Satz.',
+      en: 'Every deposit type has a VAT rate, every deposit payout gets a receipt, and a new report shows the VAT per rate.',
+    },
+    text: {
+      de: 'Pfand gehört steuerlich zum Entgelt und wird mit dem Satz der Ware versteuert, für die es erhoben wird. Unter „Pfand“ wählst du deshalb für jeden Pfand-Typ den Steuersatz, meist 19 %; für Becher zu Getränken und Teller zu Speisen legst du getrennte Typen an. Auf dem Kassenbon steht das Pfand als eigene Zeile und ist in der ausgewiesenen Mehrwertsteuer enthalten. Zahlst du an der Kasse Pfand aus, entsteht ein Beleg „Pfandrückgabe“ mit Belegnummer, den du druckst wie einen Kassenbon. In der Auswertung zeigt die neue Karte „Umsatzsteuer“ Ware, Pfand und Pfandrückgaben je Steuersatz, auch als CSV und PDF. Weist deine Organisation keine Umsatzsteuer aus, ändert sich nichts, und schon gebuchtes Pfand bleibt, wie es war.',
+      en: 'For tax purposes a deposit is part of the price and is taxed at the rate of the goods it is charged for. Under "Deposit" you therefore choose a VAT rate for every deposit type, usually 19 %; for cups with drinks and plates with food you create separate types. On the receipt the deposit has its own line and is included in the VAT shown. When you pay out a deposit at the till, a "Deposit return" receipt with a receipt number is created, which you print like a sales receipt. In the reports the new "VAT" card shows goods, deposits and deposit returns per rate, also as CSV and PDF. If your organization does not charge VAT, nothing changes, and deposits already booked stay as they were.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Webhooks: OpenEOS meldet sich bei deinem System',
+      en: 'Webhooks: OpenEOS notifies your system',
+    },
+    kurz: {
+      de: 'Unter „Webhooks“ lässt du dir Bestellungen, Zahlungen und andere Ereignisse sofort an eine eigene Adresse schicken.',
+      en: 'Under "Webhooks" you have orders, payments and other events sent straight to an address of your own.',
+    },
+    text: {
+      de: 'Statt dass ein Skript immer wieder nachfragt, schickt OpenEOS jetzt selbst eine Nachricht, sobald etwas passiert: wenn eine Bestellung angelegt oder bezahlt wird, bei Erstattungen, Shop-Bestellungen und Pfandrückgaben, wenn eine Veranstaltung in die nächste Phase geht oder sich ein Produkt ändert. Als Admin richtest du unter Einstellungen → Organisation → Webhooks bis zu zehn Empfänger ein und wählst die Ereignisse aus. Jede Nachricht ist signiert, damit dein System prüfen kann, dass sie von OpenEOS kommt. Im Zustellprotokoll siehst du jeden Versuch und kannst ihn wiederholen; klappt die Zustellung einen Tag lang nicht, schaltet OpenEOS den Empfänger ab und schreibt dir. Gästedaten und Testbestellungen gehen nur mit, wenn du es einschaltest.',
+      en: 'Instead of a script asking again and again, OpenEOS now sends a message itself as soon as something happens: when an order is created or paid, on refunds, shop orders and deposit returns, when an event moves to its next phase or a product changes. As an admin you set up to ten receivers under Settings → Organization → Webhooks and choose the events. Every message is signed so your system can check that it comes from OpenEOS. The delivery log shows every attempt and lets you repeat it; if delivery fails for a whole day, OpenEOS switches the receiver off and lets you know. Guest data and test orders are only included if you switch that on.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'API-Zugänge und KI-Agenten',
+      en: 'API access and AI agents',
+    },
+    kurz: {
+      de: 'Mit einem API-Token binden Skripte, Automatisierungen und KI-Agenten deine Organisation an; alle Endpunkte stehen in der API-Referenz.',
+      en: 'With an API token, scripts, automations and AI agents connect to your organization; all endpoints are listed in the API reference.',
+    },
+    text: {
+      de: 'Unter Einstellungen → Organisation → Zugänge legst du als Admin API-Tokens an, mit Namen, ausgewählten Rechten und auf Wunsch einem Ablaufdatum. Damit greifen Skripte und Automatisierungen auf Veranstaltungen, Produkte, Tische, Schichtpläne, Berichte und Bestellungen deiner Organisation zu. Über denselben Zugang verbindest du auch einen KI-Agenten, den du ohnehin nutzt: OpenEOS spricht MCP, und der Agent legt dann zum Beispiel Produkte an oder baut einen Schichtplan auf. Jede Änderung zeigt er dir erst als Vorschau, und alles landet im Protokoll. Kassieren, Zahlungen, Mitglieder und Löschen gehen nur in der App. Die API-Referenz und die Anleitung für Agenten findest du auf docs.openeos.de.',
+      en: 'Under Settings → Organization → Access you as an admin create API tokens, with a name, selected permissions and an optional expiry date. Scripts and automations use them to access your organization’s events, products, tables, shift plans, reports and orders. The same access also connects an AI agent you already use: OpenEOS speaks MCP, and the agent can then, for example, create products or build a shift plan. It shows you every change as a preview first, and everything is logged. The till, payments, members and deleting only work in the app. The API reference and the guide for agents are on docs.openeos.de.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Cloud-TSE für Bargeld kommt in Kürze',
+      en: 'Cloud TSE for cash coming soon',
+    },
+    kurz: {
+      de: 'Für Bargeld in Deutschland haben wir die Cloud-TSE vorbereitet: ohne Hardware und automatisch zur Veranstaltung. Bis dahin nutzt du „Nur Bons“ oder „Bargeldlos“.',
+      en: 'For cash in Germany we have prepared the Cloud TSE: no hardware and set up automatically for your event. Until then you use "Orders only" or "Cashless".',
+    },
+    text: {
+      de: 'Wer in Deutschland über eine elektronische Kasse Bargeld annimmt, braucht eine zertifizierte TSE. Dafür haben wir die Cloud-TSE vorbereitet; in der App steht sie noch als „Bald verfügbar“ und kommt in Kürze. Hardware brauchst du dann keine: Schaltest du in „Alle Funktionen“ eine Veranstaltung frei, richtet OpenEOS die TSE rechtzeitig vor dem Verkaufsstart selbst ein und meldet sie zum Monatsende wieder ab, derzeit im Preis der Veranstaltung inklusive. Jeder Bon trägt dann die TSE-Angaben mit QR-Code, und für eine Kassen-Nachschau des Finanzamts lädst du den DSFinV-K- und den TSE-Export mit wenigen Klicks herunter. Bis die Cloud-TSE da ist, arbeitest du in Deutschland mit „Nur Bons“ oder „Bargeldlos“.',
+      en: 'Anyone in Germany who takes cash through an electronic till needs a certified TSE. For this we have prepared the Cloud TSE; in the app it is still marked "Coming soon" and will arrive shortly. You will not need any hardware: when you activate an event in "All features", OpenEOS sets up the TSE in good time before sales start and deregisters it at the end of the month, currently included in the event price. Every receipt then carries the TSE details with a QR code, and for a cash audit by the tax office you download the DSFinV-K and TSE exports in a few clicks. Until the Cloud TSE is here, you work with "Orders only" or "Cashless" in Germany.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Kassenbuch für Wechselgeld und Kassensturz',
+      en: 'Cash book for change and cash counts',
+    },
+    kurz: {
+      de: 'Wo deine Kasse Bargeld annimmt, buchst du Anfangsbestand, Einlagen, Entnahmen und den Kassensturz und siehst den Soll-Bestand.',
+      en: 'Where your till accepts cash, you book the opening balance, cash in, cash out and the cash count and see the expected balance.',
+    },
+    text: {
+      de: 'Nimmt deine Organisation Bargeld an, findest du im Menü der Kasse jetzt das Kassenbuch. Dort buchst du zu Beginn das Wechselgeld als Anfangsbestand, zwischendurch Einlagen und Entnahmen, wenn Geld dazukommt oder in den Tresor geht, und am Ende den Kassensturz: Du gibst den gezählten Betrag ein, und die Kasse zeigt sofort die Differenz zum Soll-Bestand. Der Soll-Bestand gilt für die Schublade des jeweiligen Geräts und ergibt sich aus Anfangsbestand, Barverkäufen, Bar-Erstattungen, Pfand-Auszahlungen und deinen Buchungen. In der Verwaltung siehst du unter „Kassenbuch“ den Bestand eines Geschäftstags je Gerät und für die ganze Kasse. In „Nur Bons“ und „Bargeldlos“ ist der Menüpunkt ausgeblendet.',
+      en: 'If your organization accepts cash, the till menu now has a cash book. There you book the change at the start as the opening balance, cash in and cash out in between when money is added or goes to the safe, and the cash count at the end: you enter the amount counted, and the till immediately shows the difference to the expected balance. The expected balance applies to the drawer of each device and is made up of the opening balance, cash sales, cash refunds, deposit payouts and your bookings. In the admin area "Cash book" shows the balance of a business day per device and for the whole till. In "Orders only" and "Cashless" the menu item is hidden.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Bestellungen als CSV exportieren',
+      en: 'Export orders as CSV',
+    },
+    kurz: {
+      de: 'In der Bestellübersicht filterst du nach Zeitraum und lädst genau die gefilterten Bestellungen oder Positionen als CSV herunter.',
+      en: 'In the order list you filter by period and download exactly the filtered orders or items as CSV.',
+    },
+    text: {
+      de: 'Die Bestellübersicht in der Verwaltung hat jetzt einen Zeitraum mit „Von“ und „Bis“, der für die Liste und die Kacheln darüber gilt. Über den Knopf „Als CSV exportieren“ lädst du genau das herunter, was deine Filter gerade zeigen, über alle Seiten hinweg: als „Bestellungen“ mit einer Zeile je Bestellung oder als „Positionen“ mit einer Zeile je Artikel, samt Einzelpreis und Steuersatz. Die Datei öffnest du direkt in Excel oder LibreOffice. Exportieren dürfen Admins und Mitglieder mit der Berechtigung „Bestellungen“.',
+      en: 'The order list in the admin area now has a period with "From" and "To", which applies to the list and the tiles above it. The "Export as CSV" button downloads exactly what your filters currently show, across all pages: as "Orders" with one row per order or as "Items" with one row per item, including unit price and VAT rate. You open the file directly in Excel or LibreOffice. Admins and members with the "Orders" permission can export.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: '„Bedienung“ und „Gerät“ auf Bons',
+      en: '"Waiter" and "Device" on tickets',
+    },
+    kurz: {
+      de: 'Zwei neue Elemente im Bon-Editor drucken, wer die Bestellung aufgenommen hat und an welchem Gerät.',
+      en: 'Two new elements in the ticket editor print who took the order and on which device.',
+    },
+    text: {
+      de: 'Im Editor für Bon-Vorlagen findest du in der Gruppe „Bestellung“ die neuen Elemente „Bedienung“ und „Gerät“. „Bedienung“ druckt den Namen der Bedienung oder des Mitglieds, das die Bestellung gebucht hat, sonst den Namen des Geräts; „Gerät“ druckt immer das Gerät. Beschriftung, Ausrichtung, Fett und Groß stellst du ein wie bei den anderen Elementen, und die Zeile erscheint nur, wenn es einen Namen gibt. Der Standard-Küchenbon zeigt die Bedienung unter der Uhrzeit, Kassenbons für Gäste bleiben ohne Namen. Deine gespeicherten Vorlagen ändern sich nicht. Danke an Bier57 für die Idee und die erste Umsetzung!',
+      en: 'In the ticket template editor the "Order" group has two new elements, "Waiter" and "Device". "Waiter" prints the name of the server or member who booked the order, otherwise the name of the device; "Device" always prints the device. You set label, alignment, bold and large as for the other elements, and the line only appears if there is a name. The default kitchen ticket shows the waiter below the time, while guest receipts stay without names. Your saved templates do not change. Thanks to Bier57 for the idea and the first implementation!',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Konto und Organisation selbst löschen',
+      en: 'Delete your account and organization yourself',
+    },
+    kurz: {
+      de: 'Konto oder Organisation löschst du jetzt selbst; 30 Tage lang kannst du noch alles exportieren oder die Löschung abbrechen.',
+      en: 'You now delete your account or organization yourself; for 30 days you can still export everything or cancel the deletion.',
+    },
+    text: {
+      de: 'In deinen persönlichen Einstellungen unter „Konto“ löschst du dein Konto, als Admin unter Einstellungen → Organisation → Allgemein die ganze Organisation. Eine gelöschte Organisation bleibt danach 30 Tage lang zum Lesen da: Ein Hinweis nennt das Datum der endgültigen Löschung, und bis dahin exportierst du Auswertungen, Bestellungen und Kassendaten. E-Mails erinnern dich vorher, und mit „Löschung abbrechen“ holst du alles zurück. Bist du einziges Mitglied einer Organisation, geht sie mit deinem Konto mit, ebenfalls erst nach 30 Tagen. TSE-Daten und Kassenabschlüsse bleiben die vorgeschriebenen zehn Jahre aufbewahrt. Unter „Konto“ schaltest du außerdem jederzeit ein oder aus, ob du Neuigkeiten per E-Mail bekommst.',
+      en: 'In your personal settings under "Account" you delete your account, and as an admin under Settings → Organization → General the whole organization. A deleted organization then stays available read-only for 30 days: a notice shows the date of the final deletion, and until then you export reports, orders and till data. E-mails remind you beforehand, and "Cancel deletion" brings everything back. If you are the only member of an organization, it goes along with your account, also only after 30 days. TSE data and cash point closings are kept for the required ten years. Under "Account" you can also switch on or off at any time whether you get news by e-mail.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Notfall-Support am Veranstaltungstag',
+      en: 'Emergency support on event days',
+    },
+    kurz: {
+      de: 'Hast du eine Veranstaltung gebucht, bekommst du für kritische Störungen eine Telefonnummer, an der Kasse direkt zum Anrufen.',
+      en: 'Once you have booked an event, you get a phone number for critical problems, which you can call straight from the till.',
+    },
+    text: {
+      de: 'Fällt am Festtag die Kasse aus und es gibt keinen Umweg, hilft dir jetzt eine Telefonnummer weiter. Sobald deine Organisation eine Veranstaltung gebucht hat, steht die Nummer unter „Support“, in der Buchungsbestätigung und, solange die Veranstaltung geplant ist oder läuft, im Dashboard und bei den Veranstaltungen. An der Kasse findest du sie während des echten Verkaufs im Menü unter „Notfall-Support“ und rufst auf Tablet oder Handy direkt an. Die Nummer ist nur für Störungen gedacht, die deinen Verkauf stoppen; alles andere schreibst du wie gewohnt in den Support-Chat oder per E-Mail. Im Testmodus gibt es keinen Notfall-Support.',
+      en: 'If the till fails on the day of your event and there is no way around it, a phone number now helps. As soon as your organization has booked an event, the number is shown under "Support", in the booking confirmation and, while the event is planned or running, on the dashboard and with the events. At the till you find it in the menu under "Emergency support" during real sales and call it directly from a tablet or phone. The number is only meant for problems that stop your sales; everything else goes to the support chat or by e-mail as usual. There is no emergency support in test mode.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'verbessert',
+    titel: {
+      de: 'Buchen mit Zusammenfassung',
+      en: 'Booking with a summary',
+    },
+    kurz: {
+      de: 'Vor dem Bezahlen siehst du alles auf einen Blick und buchst mit „Kostenpflichtig buchen“; fehlende Rechnungsangaben fragt der Dialog ab.',
+      en: 'Before paying you see everything at a glance and book with "Book with obligation to pay"; the dialog asks for missing billing details.',
+    },
+    text: {
+      de: 'Beim Freischalten einer Veranstaltung zeigt der letzte Schritt jetzt eine Zusammenfassung: Veranstaltung, Termine, berechnete Veranstaltungstage, Leistung und Preis mit dem Hinweis zur Umsatzsteuer, dazu ein Link zu den AGB. Gebucht wird mit „Kostenpflichtig buchen“. Bei der Registrierung fragen wir weiterhin keine Rechnungsdaten ab. Fehlen beim ersten Kauf der offizielle Name oder die Rechnungsanschrift deiner Organisation, fragt der Dialog sie in einem kurzen Schritt ab und speichert sie bei der Organisation; beim nächsten Kauf ist alles schon da. Ändern kannst du die Angaben unter Einstellungen → Organisation.',
+      en: 'When you activate an event, the last step now shows a summary: event, dates, event days charged, service and price with the VAT note, plus a link to the terms. You book with "Book with obligation to pay". We still do not ask for billing details when you register. If your organization’s official name or billing address is missing at the first purchase, the dialog asks for them in a short step and saves them with the organization; at the next purchase everything is already there. You change the details under Settings → Organization.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'verbessert',
+    titel: {
+      de: 'Höchstzahlen für Organisationen und Mitglieder',
+      en: 'Limits for organizations and members',
+    },
+    kurz: {
+      de: 'Ein Konto kann in bis zu fünf Organisationen sein, eine Organisation hat Platz für zehn Mitglieder; der Support hebt das bei Bedarf an.',
+      en: 'An account can be in up to five organizations and an organization has room for ten members; support raises this if you need more.',
+    },
+    text: {
+      de: 'Auf app.openeos.de gelten jetzt Höchstzahlen: Ein Konto kann Mitglied in bis zu fünf Organisationen sein, und eine Organisation hat Platz für zehn Mitglieder, offene Einladungen eingerechnet. Neben „Mitglied einladen“ siehst du, wie viele Plätze belegt sind. Ist alles voll, ist der Knopf ausgegraut, und dasselbe gilt für „Neue Organisation“. Helfer aus Schichtplänen und Bedienungen zählen nicht mit. Brauchst du mehr, schreib dem Support, dann heben wir die Grenze für dich an.',
+      en: 'On app.openeos.de there are now limits: an account can be a member of up to five organizations, and an organization has room for ten members, open invitations included. Next to "Invite member" you see how many places are taken. When everything is full the button is greyed out, and the same applies to "New organization". Helpers from shift plans and servers do not count. If you need more, write to support and we raise the limit for you.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'verbessert',
+    titel: {
+      de: 'Aufgeräumte Einstellungen, verschlüsselte Zugangsdaten',
+      en: 'Tidier settings, encrypted credentials',
+    },
+    kurz: {
+      de: 'Alle Karten in den Einstellungen sehen gleich aus, und die Zugangsdaten für SumUp und PayPal liegen verschlüsselt.',
+      en: 'All cards in the settings look the same, and the credentials for SumUp and PayPal are stored encrypted.',
+    },
+    text: {
+      de: 'Jede Karte in den Einstellungen hat jetzt denselben Kopf mit Symbol, Titel und einer kurzen Erklärung, in den persönlichen Einstellungen wie in der Organisation, am Handy wie am PC. So findest du schneller, was du suchst. Unsichtbar, aber wichtig: Die Zugangsdaten deiner Zahlungsanbieter SumUp und PayPal speichert OpenEOS jetzt verschlüsselt. In der Oberfläche siehst du wie bisher nur die letzten vier Zeichen, und an deinen Einstellungen musst du nichts ändern.',
+      en: 'Every card in the settings now has the same header with an icon, a title and a short explanation, in your personal settings as well as in the organization, on the phone as on the PC. That way you find what you are looking for faster. Invisible but important: OpenEOS now stores the credentials of your payment providers SumUp and PayPal encrypted. The interface still only shows the last four characters, and you do not need to change anything in your settings.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'behoben',
+    titel: {
+      de: 'Bonzeilen, Kategorien und Rechnungshinweis',
+      en: 'Receipt lines, categories and invoice note',
+    },
+    kurz: {
+      de: 'Bons passen wieder in die Zeile, Kategorien mit gelöschten Produkten lassen sich löschen, und Rechnungen per Karte tragen den Hinweis nach § 19 UStG.',
+      en: 'Receipts fit their lines again, categories with deleted products can be deleted, and card-paid invoices carry the § 19 UStG note.',
+    },
+    text: {
+      de: 'Auf 80-mm-Druckern rutschte bei Kassen- und Bestellbons das letzte Zeichen einer Artikelzeile in die nächste Zeile, auf 58-mm-Druckern liefen lange Namen und TSE-Angaben über den Rand. Jetzt steht der Betrag rechtsbündig, lange Namen brechen sauber um, und alles passt zur Papierbreite. Eine Kategorie ließ sich nicht löschen, wenn darin einmal gelöschte Produkte lagen; das geht jetzt, und hat sie noch Produkte, sagt OpenEOS dir das. Außerdem fehlte auf Rechnungen für Freischaltungen per Karte oder Lastschrift der Hinweis, dass nach § 19 UStG keine Umsatzsteuer berechnet wird. Er steht jetzt auf allen Rechnungen.',
+      en: 'On 80 mm printers the last character of an item line on receipts and order tickets slipped onto the next line, and on 58 mm printers long names and TSE details ran over the edge. Now the amount is right-aligned, long names wrap cleanly and everything fits the paper width. A category could not be deleted if it contained products that had been deleted before; that works now, and if it still has products, OpenEOS tells you. Invoices for activations paid by card or direct debit were also missing the note that no VAT is charged under § 19 UStG. It is now on all invoices.',
+    },
+  },
+  {
     datum: '2026-10-29',
     art: 'neu',
     titel: {
