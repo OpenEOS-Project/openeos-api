@@ -34,6 +34,7 @@ describe('buildVatReport (Umsatzsteuer je Satz)', () => {
         goods: 90,
         deposits: 18,
         depositReturns: -8,
+        tips: 0,
         gross: 100,
         tax: 15.97,
         net: 84.03,
@@ -43,6 +44,7 @@ describe('buildVatReport (Umsatzsteuer je Satz)', () => {
         goods: 53.5,
         deposits: 0,
         depositReturns: 0,
+        tips: 0,
         gross: 53.5,
         tax: 3.5,
         net: 50,
@@ -52,6 +54,7 @@ describe('buildVatReport (Umsatzsteuer je Satz)', () => {
         goods: 0,
         deposits: 2,
         depositReturns: -2,
+        tips: 0,
         gross: 0,
         tax: 0,
         net: 0,
@@ -61,6 +64,7 @@ describe('buildVatReport (Umsatzsteuer je Satz)', () => {
       goods: 143.5,
       deposits: 20,
       depositReturns: -10,
+      tips: 0,
       gross: 153.5,
       tax: 19.47,
       net: 134.03,
@@ -81,10 +85,52 @@ describe('buildVatReport (Umsatzsteuer je Satz)', () => {
         goods: 153.5,
         deposits: 24,
         depositReturns: -2,
+        tips: 0,
         gross: 175.5,
         tax: 0,
         net: 175.5,
       },
+    ]);
+  });
+
+  it('club tips (TrinkgeldAG) count as consideration at the goods rates; employee tips are informational', () => {
+    const report = buildVatReport({
+      vatExempt: false,
+      sales: {
+        goodsByRate: new Map([
+          [19, 900],
+          [7, 290],
+        ]),
+        depositsByRate: new Map(),
+      },
+      goodwillRefunds: [],
+      pfandReturnLines: [],
+      tips: {
+        clubByRate: new Map([
+          [19, 74],
+          [7, 26],
+        ]),
+        employeeCents: 150,
+      },
+    });
+    expect(report.rows.map((r) => [r.rate, r.tips, r.gross, r.tax])).toEqual([
+      [19, 0.74, 9.74, 1.56],
+      [7, 0.26, 3.16, 0.21],
+    ]);
+    expect(report.total.tips).toBe(1);
+    expect(report.employeeTips).toBe(1.5);
+  });
+
+  it('Kleinunternehmer: club tips count to the 0 % turnover (Gesamtumsatz), no VAT', () => {
+    const report = buildVatReport({
+      vatExempt: true,
+      sales: { goodsByRate: new Map([[19, 900]]), depositsByRate: new Map() },
+      goodwillRefunds: [],
+      pfandReturnLines: [],
+      tips: { clubByRate: new Map([[19, 100]]), employeeCents: 0 },
+    });
+    expect(report.rows).toEqual([
+      expect.objectContaining({ rate: 0, tips: 1, gross: 10, tax: 0 }),
     ]);
   });
 });

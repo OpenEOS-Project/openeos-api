@@ -143,6 +143,8 @@ function setup(
       Object.assign(stored, org);
       return Promise.resolve(org);
     }),
+    // Steuerstatus-Wechsel: keine TSE-Vorgaenge → einfacher Schalter.
+    manager: { query: jest.fn(() => Promise.resolve([])) },
   };
   const userOrganizationRepository = {
     findOne: jest.fn(() =>

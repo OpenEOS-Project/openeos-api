@@ -80,6 +80,15 @@ export class CreateWaiterDto {
 
   @ApiPropertyOptional({
     description:
+      'Arbeitnehmer (Lohnkonto): Trinkgeld als TrinkgeldAN, Kartentrinkgeld-Auszahlung möglich. Standard false (ehrenamtlich → Trinkgeld an den Verein, TrinkgeldAG).',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isEmployee?: boolean;
+
+  @ApiPropertyOptional({
+    description:
       'Eigene PIN (4–6 Ziffern). Ohne: vom System erzeugt. Antwort enthält die PIN einmalig.',
     example: '3958',
   })
@@ -127,6 +136,15 @@ export class UpdateWaiterDto {
   @ValidateIf((_, v) => v !== null)
   @IsUUIDLoose()
   eventId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Arbeitnehmer (Lohnkonto): Trinkgeld als TrinkgeldAN, Kartentrinkgeld-Auszahlung möglich. Standard false (ehrenamtlich → Trinkgeld an den Verein, TrinkgeldAG).',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isEmployee?: boolean;
 
   @ApiPropertyOptional({
     description: 'false = deaktivieren (PIN gelöscht, Sitzungen beendet)',

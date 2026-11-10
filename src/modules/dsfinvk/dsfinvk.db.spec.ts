@@ -20,6 +20,8 @@ import {
   clientIdForOrganization,
 } from '../tse/tse-process-data';
 import { KeepLateTseSignaturesAsOutage1842000000000 } from '../../database/migrations/1842000000000-KeepLateTseSignaturesAsOutage';
+import { Order } from '../../database/entities/order.entity';
+import { ReportsService } from '../reports/reports.service';
 import { rowsOf } from '../tse/tse-sql.util';
 import { CashbookService } from './cashbook.service';
 import { CashPointClosingService } from './cash-point-closing.service';
@@ -28,6 +30,7 @@ import { readZip } from './dsfinvk-zip';
 import { parseCsv } from './dsfinvk-format';
 import {
   Sequence,
+  VAT_EXEMPT,
   VAT_LIABLE,
   failed,
   pfandReturn,
@@ -678,6 +681,108 @@ describeWithDb('DSFinV-K closings against Postgres', () => {
     const result = validateZip(file.data);
     expect(result.errors.map((e) => `${e.code} ${e.message}`)).toEqual([]);
     expect(result.stats.transactions).toBe(4);
+  });
+
+  it('Kassenbuch (Frage 6): the next day suggests the last counted amount as Anfangsbestand', async () => {
+    const w = await world();
+    const actor = { deviceId: w.deviceId };
+    await cashbook.create(w.orgId, { type: 'deposit', amount: 150 }, actor);
+    await cashbook.create(w.orgId, { type: 'cash_count', amount: 140 }, actor);
+    const today = (await cashbook.day(w.orgId, undefined, w.deviceId))
+      .businessDate;
+    expect(
+      (await cashbook.day(w.orgId, today, w.deviceId)).openingBalanceSuggestion,
+    ).toBeNull();
+    const next = new Date(`${today}T12:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    const tomorrow = next.toISOString().slice(0, 10);
+    expect(
+      (await cashbook.day(w.orgId, tomorrow, w.deviceId))
+        .openingBalanceSuggestion,
+    ).toEqual({ amount: 140, fromBusinessDate: today });
+    expect(
+      (await cashbook.day(w.orgId, tomorrow, null)).openingBalanceSuggestion,
+    ).toEqual({ amount: 140, fromBusinessDate: today });
+  });
+
+  it('Kleinunternehmer → umsatzsteuerpflichtig (Frage 9): closing first, then the master data change', async () => {
+    const w = await world({ vatExempt: true });
+    const seq = new Sequence();
+    await insert(
+      w,
+      sale(seq, VAT_EXEMPT, {
+        items: [{ name: 'Bier', quantity: 1, price: 4, rate: 19 }],
+      }),
+      new Date(Date.now() - 60_000),
+    );
+    const result = await closings.changeVatStatus(w.orgId, admin, false, {});
+    expect(result.changed).toBe(true);
+    expect(result.closings).toHaveLength(1);
+    const [org] = await sql(
+      `SELECT settings->>'vatExempt' AS exempt, jsonb_array_length(settings->'vatStatusHistory') AS history
+         FROM organizations WHERE id = $1`,
+      [w.orgId],
+    );
+    expect(org).toMatchObject({ exempt: 'false', history: 1 });
+    expect(audit).toHaveBeenCalledWith(
+      'vat_status_changed',
+      w.orgId,
+      null,
+      expect.objectContaining({
+        details: expect.objectContaining({
+          from: 'vat_exempt',
+          to: 'vat_liable',
+          closings: [result.closings[0].zNr],
+        }) as unknown,
+      }),
+    );
+    // Der Abschluss davor traegt noch den alten Status (Schluessel 6).
+    const zNr = result.closings[0].zNr;
+    const file = await closings.exportZip(
+      w.orgId,
+      admin,
+      { zFrom: zNr, zTo: zNr },
+      {},
+    );
+    const lineVat = readZip(file.data)
+      .find((e) => e.name === 'lines_vat.csv')!
+      .data.toString('utf8');
+    expect(lineVat).toContain(';6;');
+    // Nochmal derselbe Status: nichts passiert.
+    expect(
+      (await closings.changeVatStatus(w.orgId, admin, false, {})).changed,
+    ).toBe(false);
+  });
+
+  it('Kleinunternehmer-Grenzen: revenue per calendar year without test bookings', async () => {
+    const w = await world({ vatExempt: true });
+    const [order] = await sql(
+      `INSERT INTO orders (organization_id, order_number, daily_number, status, payment_status, subtotal, total, paid_amount)
+       VALUES ($1, 'G-1', 1, 'completed', 'paid', 85000, 85000, 85000) RETURNING id`,
+      [w.orgId],
+    );
+    await sql(
+      `INSERT INTO payments (order_id, amount, payment_method, payment_provider, status, created_at)
+       VALUES ($1, 85000, 'card', 'SUMUP', 'captured', now())`,
+      [order.id],
+    );
+    await sql(
+      `INSERT INTO pfand_returns (organization_id, total_amount, lines) VALUES ($1, 1000, '[]')`,
+      [w.orgId],
+    );
+    const reports = Object.create(ReportsService.prototype) as ReportsService;
+    Object.assign(reports, {
+      organizationRepository: ds.getRepository(Organization),
+      orderRepository: ds.getRepository(Order),
+      checkPermission: () => Promise.resolve(),
+    });
+    const status = await reports.getSmallBusinessStatus(w.orgId, admin);
+    expect(status).toMatchObject({
+      vatExempt: true,
+      currentYearRevenue: 84000,
+      limitCurrentYear: 100000,
+      warning: 'approaching',
+    });
   });
 
   it('Kassenbuch: per-device rows and a separate row for bookings without device', async () => {

@@ -74,6 +74,23 @@ export class PfandTypesController {
   }
 
   @ApiTokenAccess(TokenScope.READ)
+  @Get('legacy-balance')
+  @ApiOperation({
+    operationId: 'getPfandLegacyBalance',
+    summary: 'Pfand-Altsaldo',
+    description:
+      'Offener Altsaldo: Pfand, das vor der Umstellung (2026-11) ohne Umsatzsteuer verkauft und noch nicht zurückgegeben wurde. Rückgaben werden zuerst dagegen gebucht (ohne Steuerminderung, DSFinV-K Schlüssel 5). Beträge in Euro; `applies` = false bei steuerbefreiten Organisationen. Scope `read`.',
+  })
+  async legacyBalance(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @CurrentUser() user: User,
+  ) {
+    return {
+      data: await this.pfandTypesService.legacyBalance(organizationId, user),
+    };
+  }
+
+  @ApiTokenAccess(TokenScope.READ)
   @Get(':pfandTypeId')
   @ApiOperation({
     operationId: 'getPfandType',

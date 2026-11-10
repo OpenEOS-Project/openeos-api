@@ -13,6 +13,12 @@ export interface PfandReturnLine {
    * von vor der Umstellung (2026-11): die galten als nicht steuerbar (0 %).
    */
   vatRate?: number;
+  /**
+   * Anteil (Cent), der gegen den Pfand-Altsaldo gebucht wurde: Becher, die
+   * vor der Umstellung ohne USt verkauft wurden, mindern bei Rueckgabe keine
+   * Steuer (USt-Schluessel 5). Steuerberater 2026-11-10, Frage 2.
+   */
+  legacyCents?: number;
 }
 
 /** MwSt-Zeile einer Auszahlung (Betraege negativ), wie auf dem Bon. */

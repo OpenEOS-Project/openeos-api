@@ -33,8 +33,12 @@ export interface ReceiptDocument {
   subtotal: number | null;
   discount: number | null;
   pfand: number | null;
+  /** Trinkgeld (steckt in `total`; an den Verein auch in der MwSt). */
+  tip: number | null;
   /** MwSt je Satz; leer bei steuerbefreiten Organisationen (§ 19 UStG). */
   taxLines: ReceiptTaxLine[];
+  /** Kleinunternehmer: Hinweis auf die Steuerbefreiung (§ 34a UStDV). */
+  vatExemptNotice: string | null;
   total: number;
   payment: {
     method: string | null;
@@ -82,6 +86,7 @@ export function receiptDocumentFromPayload(
     : [];
   const discount = num(payload.discount_amount);
   const pfand = num(payload.pfand_total);
+  const tip = num(payload.tip_amount);
   const change = num(payload.change);
   return {
     orderId: str(payload.order_id) ?? '',
@@ -104,9 +109,11 @@ export function receiptDocumentFromPayload(
     subtotal: num(payload.subtotal),
     discount: discount && discount > 0 ? discount : null,
     pfand: pfand && pfand > 0 ? pfand : null,
+    tip: tip && tip > 0 ? tip : null,
     taxLines: Array.isArray(payload.tax_lines)
       ? (payload.tax_lines as ReceiptTaxLine[])
       : [],
+    vatExemptNotice: str(payload.vat_exempt_notice),
     total: num(payload.total) ?? 0,
     payment: {
       method: str(payload.payment_method),

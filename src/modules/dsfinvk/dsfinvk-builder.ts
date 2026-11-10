@@ -45,7 +45,9 @@ export const VAT_KEYS: DsfinvkVatKey[] = [
   },
   { key: 2, rate: 7, description: 'Ermäßigter Steuersatz (§ 12 Abs. 2 UStG)' },
   { key: 5, rate: 0, description: 'Nicht steuerbar' },
-  { key: 6, rate: 0, description: 'Umsatzsteuerfrei' },
+  // Kleinunternehmer: Umsatz ist steuerfrei (§ 19 Abs. 1 UStG n. F.), also
+  // steuerbar → Schluessel 6, nicht 5 (Steuerberater 2026-11-10, Frage 9).
+  { key: 6, rate: 0, description: 'steuerfrei – Kleinunternehmer § 19 UStG' },
 ];
 
 const KEY_RATE: Record<number, number> = { 1: 19, 2: 7, 3: 10.7, 4: 5.5 };
@@ -356,16 +358,101 @@ function depositLine(
   };
 }
 
-function tipLine(tipCents: number, ctx: Ctx): LineDraft | null {
-  if (!tipCents) return null;
-  return {
+/**
+ * Trinkgeld-Zeilen eines Vorgangs (Steuerberater 2026-11-10, Fragen 3–5):
+ * - `tipRecipient: 'employee'` (Bedienung mit „Arbeitnehmer (Lohnkonto)“):
+ *   `TrinkgeldAN`, kein Entgelt → Schluessel 5.
+ * - `tipByRate` (Trinkgeld an den umsatzsteuerpflichtigen Verein):
+ *   `TrinkgeldAG` je Satz der Hauptleistung, anteilig wie signiert.
+ * - Steuerbefreit (Kleinunternehmer): `TrinkgeldAG` mit Schluessel 6.
+ * - Bestand ohne Kennzeichen (vor 2026-11-11): wie damals signiert im
+ *   0-%-Slot, GV_TYP nach der alten Organisations-Einstellung.
+ * `tipCents` mit Vorzeichen (Erstattung negativ).
+ */
+function tipLines(
+  s: Record<string, unknown>,
+  tipCents: number,
+  ctx: Ctx,
+): LineDraft[] {
+  if (!tipCents) return [];
+  const line = (gvTyp: LineDraft['gvTyp'], key: number, gross: number) => ({
     text: 'Trinkgeld',
-    gvTyp: TIP_GV(ctx),
-    key: ctx.zeroKey,
-    grossCents: tipCents,
-    quantity: 1,
-    unitCents: tipCents,
-  };
+    gvTyp,
+    key,
+    grossCents: gross,
+    quantity: gross < 0 ? -1 : 1,
+    unitCents: Math.abs(gross),
+  });
+  if (str(s.tipRecipient) === 'employee') {
+    return [line('TrinkgeldAN', 5, tipCents)];
+  }
+  const byRate = s.tipByRate as Record<string, unknown> | undefined;
+  if (
+    str(s.tipRecipient) === 'employer' &&
+    !ctx.settings.vatExempt &&
+    byRate &&
+    typeof byRate === 'object' &&
+    Object.keys(byRate).length > 0
+  ) {
+    const weights = Object.entries(byRate).map(
+      ([rate, value]) => [Number(rate), Math.abs(num(value))] as const,
+    );
+    return proportional(weights, tipCents).map(([rate, gross]) =>
+      line('TrinkgeldAG', rateKey(rate, false, ctx.zeroKey), gross),
+    );
+  }
+  if (str(s.tipRecipient) === 'employer') {
+    return [line('TrinkgeldAG', ctx.zeroKey, tipCents)];
+  }
+  return [line(TIP_GV(ctx), ctx.zeroKey, tipCents)];
+}
+
+/** `total` (Cent, mit Vorzeichen) im Verhaeltnis der Gewichte, Rest auf das groesste. */
+function proportional(
+  weights: ReadonlyArray<readonly [number, number]>,
+  total: number,
+): [number, number][] {
+  const sum = weights.reduce((a, [, w]) => a + w, 0);
+  if (sum <= 0 || weights.length === 0) return [[19, total]];
+  const sign = total < 0 ? -1 : 1;
+  const abs = Math.abs(total);
+  let assigned = 0;
+  let largest = 0;
+  const out = weights.map(([rate, w], index) => {
+    if (w > weights[largest][1]) largest = index;
+    const share = Math.floor((abs * w) / sum);
+    assigned += share;
+    return [rate, share] as [number, number];
+  });
+  out[largest][1] += abs - assigned;
+  return out
+    .filter(([, v]) => v !== 0)
+    .map(([rate, v]) => [rate, sign * v] as [number, number]);
+}
+
+/**
+ * Der 0-%-Slot der Prozessdaten gilt fuer die Schluessel 5, 6 und 7
+ * gemeinsam. Stehen auf einem Bon Zeilen mit verschiedenen dieser
+ * Schluessel (z. B. Kleinunternehmer mit TrinkgeldAN oder steuerpflichtig
+ * mit Pfand-Altsaldo), wird der Slot im Bonkopf nach den Zeilen aufgeteilt.
+ */
+function splitZeroSlot(bon: BonDraft, zeroKey: number): void {
+  const slot = bon.vat.get(zeroKey);
+  if (slot === undefined) return;
+  let moved = 0;
+  for (const key of [5, 6, 7]) {
+    if (key === zeroKey) continue;
+    const sum = bon.lines
+      .filter((l) => l.key === key)
+      .reduce((a, l) => a + l.grossCents, 0);
+    if (!sum) continue;
+    bon.vat.set(key, (bon.vat.get(key) ?? 0) + sum);
+    moved += sum;
+  }
+  if (!moved) return;
+  const rest = slot - moved;
+  if (rest) bon.vat.set(zeroKey, rest);
+  else bon.vat.delete(zeroKey);
 }
 
 // ------------------------------------------------- Positionen je Vorgang
@@ -429,8 +516,7 @@ function receiptLines(
       const deposit = depositLine(item, item.quantity, ctx);
       if (deposit) lines.push(deposit);
     }
-    const t = tipLine(tip, ctx);
-    if (t) lines.push(t);
+    lines.push(...tipLines(s, tip, ctx));
     // Rabatt je USt-Schluessel ergibt sich beim Abstimmen (reconcile).
     return lines;
   }
@@ -471,8 +557,7 @@ function receiptLines(
       unitCents: pfand,
     });
   }
-  const t = tipLine(compTip, ctx);
-  if (t) lines.push(t);
+  lines.push(...tipLines(s, Math.round(compTip), ctx));
   if (lines.length === 0) {
     for (const [key, gross] of vat) {
       lines.push({
@@ -566,33 +651,47 @@ function refundLines(tx: DsfinvkTransaction, ctx: Ctx): LineDraft[] {
       unitCents: -pfand,
     });
   }
-  const tip = -Math.abs(cents(s.tip));
-  if (tip) {
-    lines.push({
-      text: 'Trinkgeld',
-      gvTyp: TIP_GV(ctx),
-      key: ctx.zeroKey,
-      grossCents: tip,
-      quantity: -1,
-      unitCents: -tip,
-    });
-  }
+  lines.push(...tipLines(s, -Math.abs(cents(s.tip)), ctx));
   return lines;
 }
 
 function depositReturnLines(tx: DsfinvkTransaction, ctx: Ctx): LineDraft[] {
   const s = tx.lines ?? {};
-  return arr(s.pfandLines).map((raw) => {
+  return arr(s.pfandLines).flatMap((raw) => {
     const quantity = -Math.abs(num(raw.quantity));
     const unit = cents(raw.unitAmount);
-    return {
-      text: `Pfandrückgabe ${str(raw.name)}`.trim(),
-      gvTyp: 'PfandRueckzahlung' as const,
-      key: depositKey(optionalRate(raw.vatRate), ctx),
-      grossCents: Math.round(quantity * unit),
-      quantity,
-      unitCents: unit,
-    };
+    const gross = Math.round(quantity * unit);
+    // Pfand-Altsaldo (Steuerberater 2026-11-10, Frage 2): der Anteil fuer
+    // Becher, die vor der Umstellung ohne USt verkauft wurden, mindert keine
+    // Steuer → eigene PfandRueckzahlung mit Schluessel 5 (steuerbefreit 6).
+    const legacy = Math.min(
+      Math.max(0, Math.round(num(raw.legacyCents))),
+      Math.abs(gross),
+    );
+    const name = str(raw.name);
+    const lines: LineDraft[] = [];
+    if (legacy < Math.abs(gross)) {
+      const rest = gross + legacy;
+      lines.push({
+        text: `Pfandrückgabe ${name}`.trim(),
+        gvTyp: 'PfandRueckzahlung' as const,
+        key: depositKey(optionalRate(raw.vatRate), ctx),
+        grossCents: rest,
+        quantity: legacy ? -1 : quantity,
+        unitCents: legacy ? -rest : unit,
+      });
+    }
+    if (legacy) {
+      lines.push({
+        text: `Pfandrückgabe ${name} (Altsaldo vor USt-Umstellung)`.trim(),
+        gvTyp: 'PfandRueckzahlung' as const,
+        key: ctx.zeroKey,
+        grossCents: -legacy,
+        quantity: -1,
+        unitCents: legacy,
+      });
+    }
+    return lines;
   });
 }
 
@@ -600,13 +699,25 @@ export const CASHBOOK_LINES: Record<
   string,
   { gvTyp: LineDraft['gvTyp']; text: string; gvName: string }
 > = {
+  // Steuerberater 2026-11-10, Frage 6: Anfangsbestand nur fuer den
+  // Restbestand aus dem Vorabschluss; Wechselgeld aus der Vereinskasse und
+  // die Abschoepfung am Ende sind Geldtransit (Schluessel 5), keine
+  // Privateinlage/-entnahme (der e. V. hat keine Privatsphaere).
   opening_balance: {
     gvTyp: 'Anfangsbestand',
     text: 'Anfangsbestand',
-    gvName: 'Wechselgeld',
+    gvName: 'Restbestand Vorabschluss',
   },
-  deposit: { gvTyp: 'Geldtransit', text: 'Geldtransit', gvName: 'Einlage' },
-  withdrawal: { gvTyp: 'Geldtransit', text: 'Geldtransit', gvName: 'Entnahme' },
+  deposit: {
+    gvTyp: 'Geldtransit',
+    text: 'Geldtransit',
+    gvName: 'Wechselgeld aus Vereinskasse',
+  },
+  withdrawal: {
+    gvTyp: 'Geldtransit',
+    text: 'Geldtransit',
+    gvName: 'Abschöpfung an Vereinskasse',
+  },
   cash_count: {
     gvTyp: 'DifferenzSollIst',
     text: 'DifferenzSollIst',
@@ -774,10 +885,12 @@ function draftBon(
   switch (tx.kind) {
     case 'receipt':
       bon.lines = receiptLines(tx, ctx, vat);
+      splitZeroSlot(bon, zeroKey);
       reconcile(bon, cents(s.discount) !== 0);
       break;
     case 'refund': {
       bon.lines = refundLines(tx, ctx);
+      splitZeroSlot(bon, zeroKey);
       const hasItems = arr(s.items).length > 0;
       reconcile(
         bon,
@@ -792,6 +905,7 @@ function draftBon(
     }
     case 'deposit_return':
       bon.lines = depositReturnLines(tx, ctx);
+      splitZeroSlot(bon, zeroKey);
       reconcile(bon, false, {
         text: 'Pfandrückgabe',
         gvTyp: 'PfandRueckzahlung',

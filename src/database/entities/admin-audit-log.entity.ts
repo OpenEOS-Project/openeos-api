@@ -78,6 +78,8 @@ export enum AdminAction {
   TSE_KEEP_REVOKED = 'tse_keep_revoked',
   // DSFinV-K (openeos-api#102)
   DSFINVK_CLOSING_REQUESTED = 'dsfinvk_closing_requested',
+  /** Kleinunternehmer ↔ umsatzsteuerpflichtig (nach Kassenabschluss, DSFinV-K Tz. 3). */
+  VAT_STATUS_CHANGED = 'vat_status_changed',
   DSFINVK_EXPORTED = 'dsfinvk_exported',
   // Bedienungen (bedienungen-plan.md §11)
   WAITER_CREATED = 'waiter_created',

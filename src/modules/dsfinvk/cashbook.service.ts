@@ -76,6 +76,14 @@ export interface CashbookDay {
   tseActive: boolean;
   entries: CashbookEntryView[];
   total: CashSummary;
+  /**
+   * Vorschlag fuer den Anfangsbestand: zuletzt gezaehlter Bestand vor diesem
+   * Geschaeftstag (Restbestand aus dem Vorabschluss). Anfangsbestand ist nur
+   * Bargeld, das bei der Eroeffnung schon in der Kasse liegt; Wechselgeld
+   * aus der Vereinskasse ist `deposit` = Geldtransit (Steuerberater
+   * 2026-11-10, Frage 6). null = kein frueherer Kassensturz.
+   */
+  openingBalanceSuggestion: { amount: number; fromBusinessDate: string } | null;
   devices: {
     deviceId: string | null;
     deviceName: string | null;
@@ -92,8 +100,11 @@ type DeviceFilter = string | null;
 const toCents = (value: unknown) => Math.round(Number(value ?? 0) * 100);
 
 /**
- * Kassenbuch je Geschaeftstag (6–6 Uhr): Anfangsbestand (Wechselgeld),
- * Einlage und Entnahme/Abschoepfung (Geldtransit), Kassensturz mit
+ * Kassenbuch je Geschaeftstag (6–6 Uhr): Anfangsbestand (nur Restbestand
+ * aus dem Vorabschluss, der bei Eroeffnung schon in der Kasse liegt),
+ * Wechselgeld aus der Vereinskasse und Abschoepfung an die Vereinskasse
+ * (Geldtransit, Schluessel 5 — eine Privateinlage gibt es beim e. V. nicht;
+ * Steuerberater 2026-11-10, Frage 6), Kassensturz mit
  * Differenz (DifferenzSollIst). Jede Bargeldbewegung ist ein eigener,
  * TSE-gesicherter Beleg (Kassenbeleg-V1) und steht damit im
  * DSFinV-K-Kassenabschluss. Nur, wo Bargeld erlaubt ist.
@@ -292,7 +303,46 @@ export class CashbookService {
       tseActive: organization.tseActive === true,
       entries: await this.views(entries),
       total: total.view,
+      openingBalanceSuggestion: await this.lastCountBefore(
+        organizationId,
+        date,
+        deviceId ?? ALL_DEVICES,
+      ),
       devices,
+    };
+  }
+
+  /**
+   * Zuletzt gezaehlter Bestand vor `businessDate` (je Geraet der letzte
+   * Kassensturz; ganze Kasse = Summe ueber die Geraete).
+   */
+  async lastCountBefore(
+    organizationId: string,
+    businessDate: string,
+    deviceId: DeviceFilter,
+  ): Promise<{ amount: number; fromBusinessDate: string } | null> {
+    const byDevice = deviceId !== ALL_DEVICES;
+    const rows = rowsOf<{ total: string | null; last: string | null }>(
+      await this.dataSource.query(
+        `SELECT SUM(counted_amount) AS total, MAX(business_date)::text AS last
+           FROM (
+             SELECT DISTINCT ON (device_id) device_id, counted_amount, business_date
+               FROM cashbook_entries
+              WHERE organization_id = $1 AND type = 'cash_count'
+                AND business_date < $2
+                ${byDevice ? 'AND device_id IS NOT DISTINCT FROM $3' : ''}
+              ORDER BY device_id, business_date DESC, created_at DESC
+           ) latest`,
+        byDevice
+          ? [organizationId, businessDate, deviceId]
+          : [organizationId, businessDate],
+      ),
+    );
+    const row = rows[0];
+    if (!row?.last) return null;
+    return {
+      amount: Math.round(Number(row.total ?? 0) * 100) / 100,
+      fromBusinessDate: String(row.last).slice(0, 10),
     };
   }
 

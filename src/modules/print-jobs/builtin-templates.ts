@@ -226,6 +226,10 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 {% if pfand_total is defined and pfand_total and pfand_total|float > 0 %}
 {{ row("Pfand:", pfand_total|float|currency) }}
 {% endif %}
+{# Trinkgeld steckt in GESAMT; an den Verein ist es Entgelt und in der MwSt. #}
+{% if tip_amount is defined and tip_amount and tip_amount|float > 0 %}
+{{ row("Trinkgeld:", tip_amount|float|currency) }}
+{% endif %}
 {# Preise sind brutto: ausgewiesen wird die enthaltene MwSt, je Satz eine
    Zeile. Bei gemischten Saetzen schickt die API keinen \`tax_rate\` — die alte
    Einzelzeile haette dann pauschal "19%" neben die Gesamtsumme geschrieben. #}
@@ -235,6 +239,9 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 {% endfor %}
 {% elif tax_amount is defined %}
 {{ row("enth. MwSt " ~ tax_rate|default("19") ~ "%:", tax_amount|currency) }}
+{% endif %}
+{% if vat_exempt_notice is defined and vat_exempt_notice %}
+{{ vat_exempt_notice|replace("§", "Par.")|wordwrap(cols, true, "\\n") }}
 {% endif %}
 <<BOLD>>{{ row("GESAMT:", total|default(0)|currency) }}<</BOLD>>
 {{ line }}
@@ -318,6 +325,9 @@ vom {{ original_created_at|strftime("%d.%m.%Y %H:%M") }}
 {{ row("enth. MwSt " ~ (tl.rate|int if tl.rate == tl.rate|int else tl.rate) ~ "%:", tl.tax|currency) }}
 {% endfor %}
 {% endif %}
+{% if vat_exempt_notice is defined and vat_exempt_notice %}
+{{ vat_exempt_notice|replace("§", "Par.")|wordwrap(cols, true, "\\n") }}
+{% endif %}
 <<BOLD>>{{ row("ERSTATTET:", total|default(0)|currency) }}<</BOLD>>
 {{ line }}
 {{ ("Rueckgabe: " ~ payment_label|default(payment_method))|wordwrap(cols, true, "\\n") }}
@@ -399,6 +409,9 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 {% for tl in tax_lines %}
 {{ row("enth. MwSt " ~ (tl.rate|int if tl.rate == tl.rate|int else tl.rate) ~ "%:", tl.tax|currency) }}
 {% endfor %}
+{% endif %}
+{% if vat_exempt_notice is defined and vat_exempt_notice %}
+{{ vat_exempt_notice|replace("§", "Par.")|wordwrap(cols, true, "\\n") }}
 {% endif %}
 <<BOLD>>{{ row("AUSGEZAHLT:", total|default(0)|currency) }}<</BOLD>>
 {{ line }}

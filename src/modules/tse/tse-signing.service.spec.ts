@@ -81,6 +81,10 @@ function setup(
     start?: () => Promise<unknown>;
     finish?: () => Promise<unknown>;
     budgetMs?: number;
+    /** Kassierende Bedienung ist Arbeitnehmer (Lohnkonto). */
+    employee?: boolean;
+    payment?: Record<string, unknown>;
+    original?: Record<string, unknown> | null;
   } = {},
 ) {
   const rows = new Map<string, TseTransaction>();
@@ -102,8 +106,15 @@ function setup(
       rows.set(id, { ...rows.get(id)!, ...patch });
       return Promise.resolve();
     }),
-    findOne: jest.fn(() => Promise.resolve(null)),
+    findOne: jest.fn(() => Promise.resolve(options.original ?? null)),
     exists: jest.fn(() => Promise.resolve(true)),
+    query: jest.fn((sql: string) =>
+      Promise.resolve(
+        sql.includes('is_employee FROM waiters')
+          ? [{ is_employee: options.employee === true }]
+          : [],
+      ),
+    ),
     find: jest.fn(() => Promise.resolve([])),
     // Namens-Snapshot fuer BEDIENER_NAME (Bedienung bzw. Mitglied).
     manager: {
@@ -126,6 +137,7 @@ function setup(
     itemPayments: [],
     processedByDeviceId: 'device-1',
     processedByUserId: null,
+    ...options.payment,
   };
   const startResponse = {
     transactionNumber: 17,
@@ -570,6 +582,89 @@ describe('TseSigningService — Gegenbelege, Pfand, Bestellungen', () => {
       .calls[0] as unknown as [unknown, number, { processData: string }];
     expect(finishReq.processData).toBe(
       'Beleg^0.00_0.00_0.00_0.00_0.00^0.00:Bar',
+    );
+  });
+});
+
+/**
+ * Trinkgeld (Steuerberater 2026-11-10, Fragen 3–5): an den Verein =
+ * Entgelt mit dem Satz der Hauptleistung (anteilig nach Nettoentgelten,
+ * Rest auf den groessten Anteil); TrinkgeldAN nur fuer Arbeitnehmer;
+ * Kleinunternehmer im 0-%-Slot.
+ */
+describe('TseSigningService — Trinkgeld', () => {
+  // Bier 9,00 (19 %) + Brezel 2,90 (7 %) + 1,00 Trinkgeld = 12,90.
+  const withTip = { tipAmount: 1, total: 12.9 };
+  const tipPayment = { amount: 12.9, processedByWaiterId: 'w-1' };
+
+  async function finishData(options: Parameters<typeof setup>[0]) {
+    const ctx = setup(options);
+    const view = await ctx.service.signPayment('pay-1');
+    const [, , finishReq] = ctx.client.finishTransaction.mock
+      .calls[0] as unknown as [unknown, number, { processData: string }];
+    return { ...ctx, view, processData: finishReq.processData };
+  }
+
+  it('club tip (TrinkgeldAG) is split 74/26 cents onto 19 % and 7 % by net amounts', async () => {
+    const { processData, rows } = await finishData({
+      order: withTip,
+      payment: tipPayment,
+    });
+    // netto 9,00/1,19 = 7,56 und 2,90/1,07 = 2,71 → 73,6 % / 26,4 %.
+    expect(processData).toBe('Beleg^9.74_3.16_0.00_0.00_0.00^12.90:Bar');
+    const tx = [...rows.values()][0];
+    expect(tx.lines).toMatchObject({
+      tipRecipient: 'employer',
+      tipByRate: { '19': 74, '7': 26 },
+    });
+  });
+
+  it('tip of an employee (Arbeitnehmer-Flag) is TrinkgeldAN in the 0 % slot', async () => {
+    const { processData, rows } = await finishData({
+      order: withTip,
+      payment: tipPayment,
+      employee: true,
+    });
+    expect(processData).toBe('Beleg^9.00_2.90_0.00_0.00_1.00^12.90:Bar');
+    expect([...rows.values()][0].lines).toMatchObject({
+      tipRecipient: 'employee',
+    });
+    expect([...rows.values()][0].lines).not.toHaveProperty('tipByRate');
+  });
+
+  it('Kleinunternehmer: everything incl. tip in the 0 % slot', async () => {
+    const { processData } = await finishData({
+      order: withTip,
+      payment: tipPayment,
+      vatExempt: true,
+    });
+    expect(processData).toBe('Beleg^0.00_0.00_0.00_0.00_12.90^12.90:Bar');
+  });
+
+  it('refund of a club tip mirrors the original shares', async () => {
+    const { service, client } = setup({
+      original: {
+        id: 'tx-orig',
+        lines: { tipRecipient: 'employer', tipByRate: { '19': 74, '7': 26 } },
+      },
+    });
+    await service.signRefund({
+      id: 'r-1',
+      organizationId: ORG,
+      paymentId: 'pay-1',
+      amount: -1,
+      tipAmount: 1,
+      pfandAmount: 0,
+      items: [],
+      metadata: { composition: { goods: {}, pfand: 0, tip: 100 } },
+      paymentMethod: 'cash',
+      isTest: false,
+      status: 'completed',
+    } as never);
+    const [, , finishReq] = client.finishTransaction.mock
+      .calls[0] as unknown as [unknown, number, { processData: string }];
+    expect(finishReq.processData).toBe(
+      'Beleg^-0.74_-0.26_0.00_0.00_0.00^-1.00:Bar',
     );
   });
 });

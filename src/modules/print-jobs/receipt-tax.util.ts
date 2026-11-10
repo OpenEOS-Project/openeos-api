@@ -1,5 +1,5 @@
 import { PaymentMethod } from '../../database/entities/payment.entity';
-import { depositRateOf } from '../refunds/refund-calc';
+import { depositRateOf, tipByRate } from '../refunds/refund-calc';
 import {
   OrderItem,
   OrderItemStatus,
@@ -41,7 +41,11 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
  * - Ein Rabatt mindert das Entgelt. Er gilt fuer die Waren der Bestellung
  *   (wie `order.total`: Rabatt hoechstens bis zur Zwischensumme, Pfand
  *   bleibt voll), also wird er anteilig auf die Warensaetze verteilt.
- * - Trinkgeld geht an das Personal und zaehlt nicht zum Entgelt.
+ * - Trinkgeld an den umsatzsteuerpflichtigen Verein ist Entgelt
+ *   (Abschn. 10.1 Abs. 5 UStAE) und teilt den Satz der Hauptleistung:
+ *   anteilig nach den Nettoentgelten der Waren je Satz (`tipByRate`).
+ *   Trinkgeld einer angestellten Bedienung (TrinkgeldAN) bleibt aussen vor
+ *   (`tip.toClub = false`). Steuerberater 2026-11-10, Fragen 3–5.
  * - Steuerbefreite Organisationen (Kleinunternehmer, viele Vereine) duerfen
  *   keine MwSt ausweisen. Wie bei `taxRatesFor` gilt nur ein ausdrueckliches
  *   `vatExempt: false` als steuerpflichtig.
@@ -52,10 +56,28 @@ export type ReceiptTaxItem = Pick<
 > &
   Partial<Pick<OrderItem, 'quantity' | 'depositAmount' | 'depositTaxRate'>>;
 
+/** § 19-Hinweis auf jedem Beleg eines Kleinunternehmers (§ 34a UStDV). */
+export const VAT_EXEMPT_NOTICE =
+  'Steuerfrei nach § 19 Abs. 1 UStG (Kleinunternehmer)';
+
+/**
+ * `vat_exempt_notice` fuer Bon und Gegenbeleg: bei steuerbefreiten
+ * Organisationen (nur ein ausdrueckliches `vatExempt: false` ist
+ * steuerpflichtig) immer, sonst nichts (§ 6 Satz 1 Nr. 5 KassenSichV, AEAO
+ * zu § 146a Nr. 2.4.4 Nr. 5, § 34a UStDV). Nie Steuerbetraege (§ 14c UStG).
+ */
+export function vatExemptNotice(vatExempt: boolean | undefined): {
+  vat_exempt_notice?: string;
+} {
+  return vatExempt !== false ? { vat_exempt_notice: VAT_EXEMPT_NOTICE } : {};
+}
+
 export function buildReceiptTax(
   items: ReceiptTaxItem[],
   discountAmount: number | null | undefined,
   vatExempt: boolean | undefined,
+  /** Trinkgeld der Bestellung; `toClub` = TrinkgeldAG (Entgelt). */
+  tip: { amount: number | null | undefined; toClub: boolean } | null = null,
 ): ReceiptTax {
   if (vatExempt !== false) return {};
 
@@ -81,14 +103,33 @@ export function buildReceiptTax(
   const discount = Math.min(Math.max(Number(discountAmount) || 0, 0), subtotal);
   const factor = subtotal > 0 ? (subtotal - discount) / subtotal : 0;
 
-  const rates = new Set([...grossByRate.keys(), ...depositByRate.keys()]);
+  // Trinkgeld an den Verein anteilig auf die Warensaetze (nach Rabatt).
+  const tipByRateEuro = new Map<number, number>();
+  const tipCents = Math.round((Number(tip?.amount) || 0) * 100);
+  if (tip?.toClub && tipCents > 0) {
+    const goodsCents = new Map<number, number>();
+    for (const [rate, gross] of grossByRate) {
+      goodsCents.set(rate, Math.round(gross * factor * 100));
+    }
+    for (const [rate, value] of tipByRate(goodsCents, tipCents)) {
+      tipByRateEuro.set(rate, value / 100);
+    }
+  }
+
+  const rates = new Set([
+    ...grossByRate.keys(),
+    ...depositByRate.keys(),
+    ...tipByRateEuro.keys(),
+  ]);
   const lines: ReceiptTaxLine[] = [...rates]
     // Positionen mit 0 % tragen keine Steuer und brauchen keine eigene Zeile.
     .filter((rate) => rate > 0)
     .sort((a, b) => b - a)
     .map((rate) => {
       const gross = round2(
-        (grossByRate.get(rate) ?? 0) * factor + (depositByRate.get(rate) ?? 0),
+        (grossByRate.get(rate) ?? 0) * factor +
+          (depositByRate.get(rate) ?? 0) +
+          (tipByRateEuro.get(rate) ?? 0),
       );
       const tax = round2((gross * rate) / (100 + rate));
       return { rate, net: round2(gross - tax), tax, gross };
