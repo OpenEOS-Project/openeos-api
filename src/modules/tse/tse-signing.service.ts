@@ -3,7 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 
 import { Order } from '../../database/entities/order.entity';
-import { OrderFulfillmentType } from '../../database/entities/order.entity';
+import {
+  OrderFulfillmentType,
+  PaymentStatus,
+} from '../../database/entities/order.entity';
 import {
   OrderItem,
   OrderItemStatus,
@@ -422,7 +425,7 @@ export class TseSigningService {
           { type: paymentTypeFor(payment.paymentMethod), cents: amountCents },
         ],
       };
-      return this.sign({
+      const view = await this.sign({
         organizationId: order.organizationId,
         kind: 'receipt',
         processType: PROCESS_TYPE_RECEIPT,
@@ -440,6 +443,8 @@ export class TseSigningService {
         userId: payment.processedByUserId,
         waiterId: payment.processedByWaiterId ?? null,
       });
+      if (view) view.orderStartTime = await this.orderStartTime(order.id);
+      return view;
     } catch (error) {
       this.logger.error(
         `TSE signing of payment ${paymentId} failed before the TSE call: ${(error as Error).message}`,
@@ -667,10 +672,15 @@ export class TseSigningService {
   // ----------------------------------------------- Bestellvorgaenge
 
   /**
-   * Bestellung-V1 fuer eine Bestellung im Tischbetrieb, die ohne sofortige
-   * Zahlung angelegt wurde (AEAO zu § 146a Nr. 2.2.3.5: Ware wird vor der
-   * Zahlung zubereitet). Bestellungen an der Theke mit sofortiger Zahlung
-   * sind ein Vorgang (nur Kassenbeleg).
+   * Bestellung-V1 fuer jede Bestellung, die ohne sofortige Zahlung angelegt
+   * wird — Tischbetrieb ebenso wie „Senden“ an der Theke (Kassiermodus
+   * `tab`) oder eine Bestellung in der Verwaltung. Die Ware wird vor der
+   * Zahlung zubereitet (AEAO zu § 146a Nr. 2.2.3.6.2); der Kuechenbon darf
+   * erst nach diesem Vorgang entstehen („keine Kuechenbons ohne TSE-Spur“,
+   * Steuerberater 2026-11-10, Frage 19). Bestellungen mit sofortiger
+   * Zahlung sind ein Vorgang (nur Kassenbeleg, signiert vor dem Kuechenbon).
+   * Der Beginn der ersten Bestellung steht spaeter auf dem Beleg
+   * (DSFinV-K Tz. 2.7.3, `orderStartTime`).
    */
   async signOrderCreated(
     orderId: string,
@@ -681,7 +691,7 @@ export class TseSigningService {
         where: { id: orderId },
         relations: { items: true },
       });
-      if (!order || !isTableServiceOrder(order)) return null;
+      if (!order || order.paymentStatus === PaymentStatus.PAID) return null;
       if (!(await this.isActive(order.organizationId))) return null;
       const lines = (order.items ?? [])
         .filter((i) => i.status !== OrderItemStatus.CANCELLED)
@@ -794,7 +804,35 @@ export class TseSigningService {
       where: { paymentId, kind: 'receipt' },
       order: { createdAt: 'DESC' },
     });
-    return tx ? (await this.viewsFor([tx]))[0] : null;
+    if (!tx) return null;
+    const [view] = await this.viewsFor([tx]);
+    if (tx.orderId) view.orderStartTime = await this.orderStartTime(tx.orderId);
+    return view;
+  }
+
+  /**
+   * Beginn der ersten abgesicherten Bestellung (Bestellung-V1) einer
+   * Bestellung — Startzeit der TSE, ersatzweise (Ausfall) die Systemzeit.
+   * Steht auf dem Beleg (DSFinV-K Tz. 2.7.2/2.7.3). null ohne Bestellvorgang.
+   */
+  async orderStartTime(orderId: string): Promise<string | null> {
+    try {
+      const rows = rowsOf<{ started: Date | string | null }>(
+        await this.txRepository.query(
+          `SELECT min(COALESCE(start_time, created_at)) AS started
+             FROM tse_transactions
+            WHERE order_id = $1 AND kind = 'order'`,
+          [orderId],
+        ),
+      );
+      const started = rows[0]?.started;
+      return started ? new Date(started).toISOString() : null;
+    } catch (error) {
+      this.logger.warn(
+        `Order start lookup for ${orderId} failed: ${(error as Error).message}`,
+      );
+      return null;
+    }
   }
 
   async forRefund(refundId: string): Promise<TseReceiptView | null> {

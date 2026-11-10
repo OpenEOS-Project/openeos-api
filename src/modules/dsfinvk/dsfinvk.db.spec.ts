@@ -19,6 +19,7 @@ import {
   cashbookProcessData,
   clientIdForOrganization,
 } from '../tse/tse-process-data';
+import { KeepLateTseSignaturesAsOutage1842000000000 } from '../../database/migrations/1842000000000-KeepLateTseSignaturesAsOutage';
 import { rowsOf } from '../tse/tse-sql.util';
 import { CashbookService } from './cashbook.service';
 import { CashPointClosingService } from './cash-point-closing.service';
@@ -256,6 +257,58 @@ describeWithDb('DSFinV-K closings against Postgres', () => {
     );
     return row;
   }
+
+  it('late signature (Frage 16): legacy recovered rows go back to failed, the closing marks them „Signatur nach Belegausgabe“', async () => {
+    const w = await world();
+    const seq = new Sequence();
+    const at = new Date('2026-10-20T17:00:00Z');
+    const s1 = sale(seq, VAT_LIABLE, {
+      items: [{ name: 'Bier', quantity: 1, price: 4, rate: 19 }],
+    });
+    const row = await insert(w, s1, at);
+    // Bestand: frueher als „signed“ uebernommen (recovered_at gesetzt).
+    await sql(
+      `UPDATE tse_transactions SET recovered_at = $2, error_code = 'E_TIMEOUT' WHERE id = $1`,
+      [row.id, new Date('2026-10-20T17:05:00Z')],
+    );
+    const runner = ds.createQueryRunner();
+    try {
+      await new KeepLateTseSignaturesAsOutage1842000000000().up(runner);
+    } finally {
+      await runner.release();
+    }
+    const [after] = await sql(
+      `SELECT status, signature_value FROM tse_transactions WHERE id = $1`,
+      [row.id],
+    );
+    expect(after).toMatchObject({
+      status: 'failed',
+      signature_value: s1.signatureValue,
+    });
+
+    await closings.closeUpTo(w.orgId, new Date('2026-10-21T05:00:00Z'), {
+      trigger: 'scheduled',
+    });
+    const file = await closings.exportZip(
+      w.orgId,
+      admin,
+      { from: '2026-10-20', to: '2026-10-20' },
+      {},
+    );
+    const result = validateZip(file.data);
+    expect(result.errors.map((e) => `${e.code} ${e.message}`)).toEqual([]);
+    expect(result.stats.tseFailures).toBe(1);
+    const [, first] = parseCsv(
+      readZip(file.data)
+        .find((e) => e.name === 'transactions_tse.csv')!
+        .data.toString('utf8'),
+    ).records;
+    const values = first.values.join('|');
+    expect(values).toContain(
+      'Signatur nach Belegausgabe (TSE nicht erreichbar: E_TIMEOUT',
+    );
+    expect(values).toContain(s1.signatureValue!);
+  });
 
   it('assigns gapless BON_IDs, closes per business day, exports a valid ZIP and keeps closings immutable', async () => {
     const w = await world();

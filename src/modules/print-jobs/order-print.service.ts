@@ -513,6 +513,24 @@ export class OrderPrintService {
       .filter(Boolean);
   }
 
+  /** Gab es fuer diese Zahlung schon einen Kassenbon (Druckauftrag)? */
+  private async receiptPrintedBefore(
+    organizationId: string,
+    paymentId: string,
+  ): Promise<boolean> {
+    try {
+      const rows: unknown[] = await this.organizationRepository.manager.query(
+        `SELECT 1 FROM print_jobs
+          WHERE organization_id = $1 AND payload->>'paymentId' = $2
+          LIMIT 1`,
+        [organizationId, paymentId],
+      );
+      return Array.isArray(rows) && rows.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   async handlePaymentReceived(
     organizationId: string,
     data: {
@@ -530,6 +548,13 @@ export class OrderPrintService {
        * erst nach der Signatur (AEAO zu § 146a Nr. 2.5).
        */
       tse?: TseReceiptView | null;
+      /**
+       * Auf Wunsch gedruckt („Bon drucken“/Nachdruck an der Kasse): druckt
+       * auch, wenn der automatische Kassenbon aus ist. Gab es fuer diese
+       * Zahlung schon einen Kassenbon, ist es ein Nachdruck (Vermerk
+       * „NACHDRUCK“, eine spaet eingetroffene Signatur gekennzeichnet).
+       */
+      onDemand?: boolean;
     },
   ): Promise<void> {
     try {
@@ -548,7 +573,13 @@ export class OrderPrintService {
       // Opt-in: only print a receipt when explicitly enabled (consistent with
       // order-ticket printing). An unset/null receiptPrinting means "off", so
       // deactivating it actually stops the receipt.
-      if (receipt?.enabled && trigger === 'payment_received') {
+      if (
+        data.onDemand ||
+        (receipt?.enabled && trigger === 'payment_received')
+      ) {
+        const reprint =
+          data.onDemand === true &&
+          (await this.receiptPrintedBefore(organizationId, data.paymentId));
         const { printerId } =
           await this.printRoutingService.resolveOrderPrinter({
             organizationId,
@@ -614,7 +645,8 @@ export class OrderPrintService {
               amount: data.amount,
               isFullyPaid: data.isFullyPaid,
               is_test: isTest,
-              tse: tsePrintBlock(data.tse),
+              reprint,
+              tse: tsePrintBlock(data.tse, { reprint }),
             },
             null,
             'receipt',
@@ -695,7 +727,7 @@ export class OrderPrintService {
           device_name: data.deviceName ?? null,
           reprint: data.reprint === true,
           is_test: isTest,
-          tse: tsePrintBlock(data.tse),
+          tse: tsePrintBlock(data.tse, { reprint: data.reprint === true }),
         },
         null,
         REFUND_RECEIPT_TEMPLATE,

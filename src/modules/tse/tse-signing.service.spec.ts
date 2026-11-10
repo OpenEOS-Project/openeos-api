@@ -330,7 +330,7 @@ describe('TseSigningService — Kassenbeleg einer Zahlung', () => {
     );
     expect(tsePrintBlock(view)).toMatchObject({
       failed: true,
-      notice: 'TSE ausgefallen',
+      notice: 'TSE nicht erreichbar – Beleg ohne Signatur',
     });
   });
 
@@ -509,12 +509,22 @@ describe('TseSigningService — Gegenbelege, Pfand, Bestellungen', () => {
     expect(view?.kind).toBe('deposit_return');
   });
 
-  it('signs a table-service order as Bestellung-V1, but not a counter order', async () => {
-    const counter = setup();
+  it('signs every unpaid order as Bestellung-V1 (table and counter „Senden“), never a paid one', async () => {
+    const paid = setup({ order: { paymentStatus: 'paid' } });
     await expect(
-      counter.service.signOrderCreated('order-1', { terminal: 'd' }),
+      paid.service.signOrderCreated('order-1', { terminal: 'd' }),
     ).resolves.toBeNull();
-    expect(counter.client.startTransaction).not.toHaveBeenCalled();
+    expect(paid.client.startTransaction).not.toHaveBeenCalled();
+
+    // Theke im Kassiermodus „tab“: Kuechenbon vor der Zahlung → TSE-Spur.
+    const counter = setup({
+      order: { fulfillmentType: 'counter_pickup', paymentStatus: 'unpaid' },
+    });
+    const counterView = await counter.service.signOrderCreated('order-1', {
+      terminal: 'd',
+    });
+    expect(counterView?.kind).toBe('order');
+    expect(counterView?.processType).toBe('Bestellung-V1');
 
     const table = setup({
       order: { tableNumber: '12', fulfillmentType: 'table_service' },

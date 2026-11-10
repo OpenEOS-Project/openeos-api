@@ -227,9 +227,10 @@ export class OrdersService {
 
     this.logger.log(`Order created: ${order.orderNumber} (${order.id})`);
 
-    // Cloud-TSE: Tischbestellung als Bestellvorgang (Bestellung-V1). Nicht
-    // blockierend; ohne aktive TSE passiert nichts.
-    void this.tseSigning?.signOrderCreated(order.id, { userId: user.id });
+    // Cloud-TSE: Bestellung ohne Zahlung als Bestellvorgang (Bestellung-V1),
+    // vor dem Kuechenbon („keine Kuechenbons ohne TSE-Spur“). Wirft nie,
+    // begrenzt durch das Zeitbudget; ohne aktive TSE passiert nichts.
+    await this.tseSigning?.signOrderCreated(order.id, { userId: user.id });
 
     // Trigger auto-printing asynchronously
     const createdOrder = await this.findOne(organizationId, order.id, user);
