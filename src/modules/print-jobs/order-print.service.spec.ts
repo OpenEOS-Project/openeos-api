@@ -311,4 +311,43 @@ describe('OrderPrintService receipt payload', () => {
       address: '12345 Musterstadt',
     });
   });
+
+  it('prints on „Bon drucken“ even when the automatic receipt is off', async () => {
+    const { service } = setup(true, items, {
+      orderFlow: { receiptPrinting: { enabled: false } },
+    });
+    const data = {
+      orderId: 'order-1',
+      orderNumber: 'A-1',
+      paymentId: 'pay-1',
+      amount: 24.6,
+      paymentMethod: 'card',
+      isFullyPaid: true,
+      order,
+    };
+    // automatisch: nichts
+    await expect(service.handlePaymentReceived('org-1', data)).resolves.toBe(
+      false,
+    );
+    // von Hand: gedruckt
+    await expect(
+      service.handlePaymentReceived('org-1', { ...data, onDemand: true }),
+    ).resolves.toBe(true);
+  });
+
+  it('builds the same payload for print and digital receipt', async () => {
+    const { service, payload } = setup(false, items);
+    const data = {
+      orderId: 'order-1',
+      orderNumber: 'A-1',
+      paymentId: 'pay-1',
+      amount: 24.6,
+      paymentMethod: 'cash',
+      isFullyPaid: true,
+      order,
+      amountReceived: 50,
+    };
+    await service.handlePaymentReceived('org-1', data);
+    expect(await service.receiptPayload('org-1', data)).toEqual(payload());
+  });
 });

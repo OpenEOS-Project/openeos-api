@@ -104,4 +104,5 @@ export * from './waiter-session.entity';
 export * from './waiter-settlement.entity';
 export * from './webhook-endpoint.entity';
 export * from './webhook-delivery.entity';
+export * from './receipt-link.entity';
 export * from './event-notification.entity';

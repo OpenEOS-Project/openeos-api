@@ -336,7 +336,7 @@ export class OrganizationsService {
     const next = (incoming as { vatExempt?: unknown }).vatExempt !== false;
     const current = organization.settings?.vatExempt !== false;
     if (next === current) return;
-    const rows: unknown[] = await this.organizationRepository.query(
+    const rows: unknown[] = await this.organizationRepository.manager.query(
       `SELECT 1 FROM tse_transactions WHERE organization_id = $1 LIMIT 1`,
       [organization.id],
     );

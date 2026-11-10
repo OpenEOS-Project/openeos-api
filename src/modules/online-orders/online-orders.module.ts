@@ -17,6 +17,7 @@ import { PaymentsModule } from '../payments/payments.module';
 import { SumUpModule } from '../sumup/sumup.module';
 import { PrintJobsModule } from '../print-jobs/print-jobs.module';
 import { GatewayModule } from '../gateway/gateway.module';
+import { TseModule } from '../tse/tse.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { GatewayModule } from '../gateway/gateway.module';
     SumUpModule,
     PrintJobsModule,
     forwardRef(() => GatewayModule),
+    TseModule,
   ],
   controllers: [OnlineOrdersController],
   providers: [OnlineOrdersService],

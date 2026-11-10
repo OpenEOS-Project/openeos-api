@@ -1,5 +1,6 @@
 import {
   OPERATING_MODE_SELECT,
+  assertCashAllowed,
   assertPaymentsAllowed,
 } from '../../common/utils/operating-mode.util';
 import {
@@ -65,6 +66,8 @@ import { findTableIdByLabel } from '../tables/table-lookup';
 import { escapeHtml } from '../email/email-template';
 import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-event-order-limit.util';
 import { assertLegalInfoComplete } from '../organizations/legal/legal-settings.util';
+import { TseSigningService } from '../tse/tse-signing.service';
+import type { TseReceiptView } from '../tse/tse-view';
 
 interface CreateCheckoutBody {
   email: string;
@@ -121,6 +124,9 @@ export class EventsShopCheckoutController {
     // Optional mit Rueckfall fuer von Hand gebaute Tests (Standardwerte).
     @Optional()
     private readonly eventPhaseService?: EventPhaseService,
+    // Cloud-TSE: Kassenbeleg der Online-Zahlung (ohne aktive TSE nichts).
+    @Optional()
+    private readonly tseSigning?: TseSigningService,
   ) {}
 
   private get eventPhase(): EventPhaseService {
@@ -200,12 +206,13 @@ export class EventsShopCheckoutController {
   ) {
     const event = await this.loadShopEvent(eventId);
     // Betriebsart „Nur Bons“: keine Online-Bestellung mit Vorkasse.
-    assertPaymentsAllowed(
-      await this.organizationRepository.findOne({
-        where: { id: event.organizationId },
-        select: OPERATING_MODE_SELECT,
-      }),
-    );
+    const modeOrg = await this.organizationRepository.findOne({
+      where: { id: event.organizationId },
+      select: OPERATING_MODE_SELECT,
+    });
+    assertPaymentsAllowed(modeOrg);
+    // Positivliste „Bargeldlos“: der Shop nimmt nur SumUp Online.
+    assertCashAllowed(modeOrg, PaymentMethod.SUMUP_ONLINE);
     await this.assertShopOpen(event);
 
     if (event.status === EventStatus.TEST) {
@@ -512,14 +519,12 @@ export class EventsShopCheckoutController {
         return { status: 'pending' as const };
       }
 
+      let settled: { order: Order; payment: Payment };
       try {
-        const order = await this.createOrderFromCheckout(checkout);
+        settled = await this.createOrderFromCheckout(checkout);
         checkout.status = ShopCheckoutStatus.PAID;
-        checkout.orderId = order.id;
+        checkout.orderId = settled.order.id;
         await this.shopCheckoutRepository.save(checkout);
-        // Fire-and-forget — a failed mail must never fail the settlement.
-        void this.sendOrderConfirmation(checkout, order);
-        return { status: 'paid' as const, orderNumber: order.orderNumber };
       } catch (error) {
         // Release the claim so a later verify/webhook retries order creation.
         await this.shopCheckoutRepository.update(
@@ -528,6 +533,14 @@ export class EventsShopCheckoutController {
         );
         throw error;
       }
+      // Only the claimer gets here, once per checkout: sign, then print.
+      await this.signAndPrint(settled.order, settled.payment);
+      // Fire-and-forget — a failed mail must never fail the settlement.
+      void this.sendOrderConfirmation(checkout, settled.order);
+      return {
+        status: 'paid' as const,
+        orderNumber: settled.order.orderNumber,
+      };
     }
 
     if (sumupStatus === 'FAILED' || sumupStatus === 'EXPIRED') {
@@ -626,7 +639,7 @@ export class EventsShopCheckoutController {
 
   private async createOrderFromCheckout(
     checkout: ShopCheckout,
-  ): Promise<Order> {
+  ): Promise<{ order: Order; payment: Payment }> {
     const nameParts = [
       checkout.customerName?.firstName,
       checkout.customerName?.lastName,
@@ -788,9 +801,30 @@ export class EventsShopCheckoutController {
       },
     );
 
-    // Print kitchen ticket + receipt for the paid shop order. There is no POS
+    return { order, payment };
+  }
+
+  /**
+   * Nach dem Speichern von Bestellung, Zahlung und Checkout: mit aktiver
+   * Cloud-TSE zuerst der Kassenbeleg der Online-Zahlung (Kassenbeleg-V1,
+   * Zahlart Unbar, DSFinV-K `ElZahlungsdienstleister`), dann Kuechenbon
+   * und Kassenbon mit den TSE-Daten. Ohne TSE wie bisher. Die Signatur
+   * wirft nie (bei Ausfall ein Vorgang `failed`, der Bon traegt den
+   * Vermerk); gedruckt wird ohne zu warten — ein Druckfehler bricht den
+   * Checkout nie ab.
+   */
+  private async signAndPrint(order: Order, payment: Payment): Promise<void> {
+    let tse: TseReceiptView | null = null;
+    if (
+      this.tseSigning &&
+      (await this.tseSigning.isActive(order.organizationId))
+    ) {
+      tse = await this.tseSigning.signPayment(payment.id);
+    }
+
+    // Kitchen ticket + receipt for the paid shop order. There is no POS
     // device, so routing relies on the org print settings / production-station
-    // printers. Fire-and-forget so a printing hiccup never fails checkout.
+    // printers.
     this.orderPrintService
       .handleOrderCreated(order.organizationId, {
         order,
@@ -814,13 +848,12 @@ export class EventsShopCheckoutController {
         paymentMethod: 'online',
         isFullyPaid: true,
         order,
+        tse,
       })
       .catch((err) =>
         this.logger.error(
           `Shop order ${order.id} receipt print failed: ${(err as Error)?.message}`,
         ),
       );
-
-    return order;
   }
 }

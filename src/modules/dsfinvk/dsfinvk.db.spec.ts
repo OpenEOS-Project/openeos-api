@@ -774,7 +774,7 @@ describeWithDb('DSFinV-K closings against Postgres', () => {
     Object.assign(reports, {
       organizationRepository: ds.getRepository(Organization),
       orderRepository: ds.getRepository(Order),
-      checkPermission: async () => undefined,
+      checkPermission: () => Promise.resolve(),
     });
     const status = await reports.getSmallBusinessStatus(w.orgId, admin);
     expect(status).toMatchObject({

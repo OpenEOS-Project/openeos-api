@@ -27,14 +27,21 @@ export function requestLogPath(url: string | undefined): string {
   const path = stripQueryString(url ?? '');
   return path
     .split('/')
-    .map((segment) =>
-      TOKEN_SEGMENT.test(segment) && !UUID.test(segment) ? ':token' : segment,
+    .map((segment, i, all) =>
+      (TOKEN_SEGMENT.test(segment) && !UUID.test(segment)) ||
+      // Beleg-Links (128 Bit, 22 Zeichen): /public/receipts/<token>
+      (i >= 2 && all[i - 1] === 'receipts' && all[i - 2] === 'public')
+        ? ':token'
+        : segment,
     )
     .join('/');
 }
 
-/** Felder, deren Wert nie ins Log gehoert (PIN, Passwort, Tokens). */
-const SECRET_BODY_KEY = /(?:pin|password|passwort|secret|token|code)/i;
+/**
+ * Felder, deren Wert nie ins Log gehoert (PIN, Passwort, Tokens, E-Mail-
+ * Adressen — z. B. die eines Gastes beim Beleg per E-Mail).
+ */
+const SECRET_BODY_KEY = /(?:pin|password|passwort|secret|token|code|email)/i;
 
 /** JSON-Replacer fuers Debug-Log: geheime Felder als `***`. */
 export function redactBodyValue(key: string, value: unknown): unknown {

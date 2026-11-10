@@ -1,3 +1,5 @@
+import { amountBlocks } from '../receipts/receipt-blocks';
+import { receiptDocumentFromPayload } from '../receipts/receipt-document';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { tipByRate } from '../refunds/refund-calc';
 import {
@@ -83,5 +85,27 @@ describe('buildReceiptTax with tips', () => {
     });
     expect(vatExemptNotice(true).vat_exempt_notice).toContain('§ 19');
     expect(vatExemptNotice(false)).toEqual({});
+  });
+});
+
+describe('digital receipt (same payload as the printed one)', () => {
+  it('shows the tip and the § 19 notice', () => {
+    const doc = receiptDocumentFromPayload(
+      {
+        order_number: '7',
+        items: [],
+        total: 10,
+        tip_amount: 1,
+        vat_exempt_notice: VAT_EXEMPT_NOTICE,
+      },
+      { showWaiter: false },
+    );
+    const blocks = amountBlocks(doc);
+    expect(blocks).toContainEqual({
+      type: 'row',
+      label: 'Trinkgeld',
+      value: expect.stringContaining('1,00') as unknown,
+    });
+    expect(blocks).toContainEqual({ type: 'center', text: VAT_EXEMPT_NOTICE });
   });
 });

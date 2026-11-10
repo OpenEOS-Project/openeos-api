@@ -1,4 +1,7 @@
-import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
+import {
+  assertCashAllowed,
+  assertPaymentsAllowed,
+} from '../../common/utils/operating-mode.util';
 import {
   Injectable,
   NotFoundException,
@@ -55,6 +58,8 @@ import { OrderPrintService } from '../print-jobs/order-print.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { saveOrderWithNumbers } from '../orders/order-numbering';
 import { assertLegalInfoComplete } from '../organizations/legal/legal-settings.util';
+import { TseSigningService } from '../tse/tse-signing.service';
+import type { TseReceiptView } from '../tse/tse-view';
 
 @Injectable()
 export class OnlineOrdersService {
@@ -87,6 +92,9 @@ export class OnlineOrdersService {
     // Optional mit Rueckfall fuer von Hand gebaute Tests (Standardwerte).
     @Optional()
     private readonly eventPhaseService?: EventPhaseService,
+    // Cloud-TSE: Kassenbeleg der Online-Zahlung (ohne aktive TSE nichts).
+    @Optional()
+    private readonly tseSigning?: TseSigningService,
   ) {}
 
   private get eventPhase(): EventPhaseService {
@@ -583,6 +591,9 @@ export class OnlineOrdersService {
         message: 'Organisation nicht gefunden',
       });
     }
+    // Positivliste „Bargeldlos“ (Karte, SumUp, Online): eine Zahlart, die
+    // dort nicht steht, wird abgewiesen, bevor beim Anbieter etwas entsteht.
+    assertCashAllowed(organization, payDto.paymentMethod);
 
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || '';
     const returnUrl = payDto.returnUrl || `${frontendUrl}/status`;
@@ -738,8 +749,16 @@ export class OnlineOrdersService {
       );
 
       if (capture.status === 'COMPLETED') {
+        // Nur wer den Wechsel auf CAPTURED gewinnt, bucht, signiert und
+        // druckt (doppelter Aufruf der Rueckkehrseite).
+        const claim = await this.paymentRepository.update(
+          { id: payment.id, status: payment.status },
+          { status: PaymentTransactionStatus.CAPTURED },
+        );
+        if (!claim.affected) {
+          return { data: { status: 'already_captured' } };
+        }
         payment.status = PaymentTransactionStatus.CAPTURED;
-        await this.paymentRepository.save(payment);
 
         const order = payment.order;
         order.paidAmount = Number(order.paidAmount) + Number(payment.amount);
@@ -748,6 +767,16 @@ export class OnlineOrdersService {
             ? PaymentStatus.PAID
             : PaymentStatus.PARTLY_PAID;
         await this.orderRepository.save(order);
+
+        // Cloud-TSE: Kassenbeleg der Online-Zahlung nach dem Speichern und
+        // vor Kuechen- und Kassenbon (wirft nie; ohne aktive TSE nichts).
+        let tse: TseReceiptView | null = null;
+        if (
+          this.tseSigning &&
+          (await this.tseSigning.isActive(order.organizationId))
+        ) {
+          tse = await this.tseSigning.signPayment(payment.id);
+        }
 
         // Online orders have no POS device, so the kitchen ticket + receipt are
         // triggered here once payment is captured (routing falls back to the
@@ -776,6 +805,7 @@ export class OnlineOrdersService {
             paymentMethod: 'online',
             isFullyPaid: order.paymentStatus === PaymentStatus.PAID,
             order,
+            tse,
           })
           .catch((err) =>
             this.logger.error(

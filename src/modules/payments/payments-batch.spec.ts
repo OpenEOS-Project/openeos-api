@@ -571,6 +571,24 @@ describe('PaymentsBatchService.payBatch — Betriebsart „Bargeldlos“', () =>
     expect(print.handlePaymentReceived).not.toHaveBeenCalled();
   });
 
+  it('positive list: rejects a method that is not card/online (e.g. a future voucher)', async () => {
+    const { db, pay, print } = cashlessSetup();
+
+    const call = pay({
+      orderIds: ['o1', 'o2'],
+      paymentMethod: 'voucher' as PaymentMethod,
+    });
+    await expect(call).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(call).rejects.toMatchObject({
+      response: {
+        code: 'CASH_PAYMENTS_DISABLED',
+        reason: 'PAYMENT_METHOD_NOT_ALLOWED_CASHLESS',
+      },
+    });
+    expect(db.payments).toHaveLength(0);
+    expect(print.handlePaymentReceived).not.toHaveBeenCalled();
+  });
+
   it('pays a batch by card, tip on the last order', async () => {
     const { db, pay } = cashlessSetup();
 

@@ -247,7 +247,14 @@ describeWithDb('RefundsService against Postgres', () => {
   async function order(
     w: World,
     options: {
-      pay?: 'cash' | 'sumup_terminal' | 'card' | 'paypal' | null;
+      pay?:
+        | 'cash'
+        | 'sumup_terminal'
+        | 'card'
+        | 'paypal'
+        | 'sumup_online'
+        | 'google_pay'
+        | null;
       itemStatus?: string;
       discount?: number;
       tip?: number;
@@ -659,6 +666,7 @@ describeWithDb('RefundsService against Postgres', () => {
         goods: 74,
         deposits: 4,
         depositReturns: -6,
+        tips: 0,
         gross: 72,
         tax: 11.5,
         net: 60.5,
@@ -668,6 +676,7 @@ describeWithDb('RefundsService against Postgres', () => {
         goods: 0,
         deposits: 4,
         depositReturns: -2,
+        tips: 0,
         gross: 2,
         tax: 0,
         net: 2,
@@ -957,6 +966,39 @@ describeWithDb('RefundsService against Postgres', () => {
       reasonCode: 'other',
     });
     expect(outcome.refunds[0]).toMatchObject({ paymentMethod: 'card' });
+  });
+
+  it('cashless mode: online prepayments (shop/QR) are refunded to the provider, never in cash', async () => {
+    const w = await world({ cashless: true });
+    for (const pay of ['paypal', 'sumup_online', 'google_pay'] as const) {
+      const online = await order(w, { pay });
+      const outcome = await service.createRefund(w.actor, online.orderId, {
+        mode: 'full',
+        reasonCode: 'other',
+      });
+      expect(outcome.refunds).toHaveLength(1);
+      expect(outcome.refunds[0]).toMatchObject({
+        paymentMethod: pay,
+        status: 'manual',
+      });
+      const methods = await q<{ m: string }>(
+        `SELECT payment_method::text AS m FROM refunds WHERE order_id = $1`,
+        [online.orderId],
+      );
+      expect(methods.map((r) => r.m)).toEqual([pay]);
+    }
+    expect(gateway.sendOpenCashDrawer).not.toHaveBeenCalled();
+  });
+
+  it('order-only mode: Google Pay prepayment (QR via SumUp Online) can still be refunded online', async () => {
+    const w = await world({ orderOnly: true });
+    const online = await order(w, { pay: 'google_pay' });
+    const outcome = await service.createRefund(w.actor, online.orderId, {
+      mode: 'amount',
+      amount: 2,
+      reasonCode: 'other',
+    });
+    expect(outcome.refunds[0]).toMatchObject({ paymentMethod: 'google_pay' });
   });
 
   it('is idempotent with clientRequestId', async () => {

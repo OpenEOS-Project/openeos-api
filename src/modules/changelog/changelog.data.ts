@@ -68,6 +68,22 @@ export const CHANGELOG: ChangelogEintrag[] = [
     datum: '2026-11-09',
     art: 'neu',
     titel: {
+      de: 'Beleg per QR-Code oder E-Mail',
+      en: 'Receipt by QR code or e-mail',
+    },
+    kurz: {
+      de: 'Nach dem Kassieren bietest du den Beleg als QR-Code, per E-Mail oder gedruckt an – auch später aus dem Verlauf.',
+      en: 'After taking payment you offer the receipt as a QR code, by e-mail or printed – also later from the history.',
+    },
+    text: {
+      de: 'Nach jeder Zahlung zeigt die Kasse jetzt „Beleg“: Mit „QR-Code“ scannt der Gast den Beleg mit dem Handy und öffnet ihn als Seite mit PDF zum Herunterladen, „E-Mail“ schickt ihn mit PDF-Anhang, „Bon drucken“ druckt ihn auf dem Bondrucker der Kasse – auch wenn der automatische Kassenbon aus ist. „Kein Beleg“ schließt das Fenster. Der digitale Beleg zeigt dasselbe wie der gedruckte Bon, mit MwSt, Pfand und TSE-Angaben, aber ohne Namen von Gästen. Die E-Mail-Adresse wird nur für den Versand verwendet und nicht gespeichert. Ein Beleg-Link bleibt 90 Tage gültig; aus dem Verlauf der Kasse kannst du den Beleg jederzeit neu ausgeben. So erfüllst du die Belegausgabepflicht auch ohne Papier, wenn der Gast einverstanden ist.',
+      en: 'After every payment the till now shows "Receipt": with "QR code" the guest scans the receipt with their phone and opens it as a page with a PDF to download, "E-mail" sends it with a PDF attached, and "Print receipt" prints it on the till’s receipt printer – even if the automatic receipt is off. "No receipt" closes the window. The digital receipt shows the same as the printed one, with VAT, deposit and TSE details, but without guest names. The e-mail address is only used for sending and is not stored. A receipt link stays valid for 90 days; from the till’s history you can hand out the receipt again at any time. This way you meet the obligation to issue receipts without paper, if the guest agrees.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
       de: 'Bedienungen mit PIN und Kellnerabrechnung',
       en: 'Servers with PIN and server settlement',
     },

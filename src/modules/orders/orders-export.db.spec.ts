@@ -288,6 +288,8 @@ describeWithDb('OrdersExportService against Postgres', () => {
       'Bedienung',
       'Artikel',
       'Zahlart',
+      'Zahlungsanbieter',
+      'Zahlungsreferenz',
       'Zwischensumme',
       'Rabatt',
       'Pfand',
@@ -295,6 +297,7 @@ describeWithDb('OrdersExportService against Postgres', () => {
       'Gesamt',
       'Bezahlt',
       'Erstattet',
+      'Erstattungsreferenz',
       'Enthaltene MwSt',
       'Testbestellung',
       'Gastname',
@@ -304,16 +307,17 @@ describeWithDb('OrdersExportService against Postgres', () => {
     // Aelteste zuerst: 12:00 Uhr Berlin (SumUp, teilweise erstattet).
     expect(first).toContain(';11.07.2026;12:00:00;"Sommerfest; Zelt";');
     expect(first).toContain(
-      ';Teilweise erstattet;Kasse;Abholung;A03;Kasse 1;;3;SumUp;',
+      ';Teilweise erstattet;Kasse;Abholung;A03;Kasse 1;;3;SumUp;SumUp;;',
     );
     expect(first).toContain(
-      ';22,50;0,00;2,00;0,00;24,50;24,50;5,00;3,59;Nein;;',
+      ';22,50;0,00;2,00;0,00;24,50;24,50;5,00;;3,59;Nein;;',
     );
 
     // 00:30 Uhr am 12.07. in Berlin, nicht 22:30 am 11.07.
     expect(second).toContain(';12.07.2026;00:30:15;');
     expect(second).toContain(';Abgeschlossen;');
-    expect(second).toContain(';Bar;');
+    // Bargeld: kein Anbieter, keine Referenz.
+    expect(second).toContain(';Bar;;;');
     // Gastname maskiert und gegen Formeln geschuetzt, Anmerkung mit Umbruch.
     expect(text).toContain(`;"'=Anna; ""Gast""";"Bitte\nschnell"\r\n`);
     // Telefonnummern nie.
@@ -411,6 +415,75 @@ describeWithDb('OrdersExportService against Postgres', () => {
     expect(lines((await csv(mine, { eventId: other.eventId })).text)).toEqual([
       expect.stringMatching(/^Bestellnummer;/),
     ]);
+  });
+
+  it('GoBD: payment provider, provider references and refund references (shop, QR, terminal)', async () => {
+    const w = await world();
+    const header = async () => cells(lines((await csv(w)).text)[0]);
+    // Shop (SumUp Online): Checkout-ID als Transaktions-ID, Erstattung mit
+    // Referenz des Anbieters.
+    const shop = await order(w, {
+      createdAt: new Date('2026-08-01T10:00:00Z'),
+      pay: null,
+    });
+    await q(
+      `UPDATE orders SET source = 'online', paid_amount = 24.5,
+               payment_status = 'paid', refunded_amount = 4 WHERE id = $1`,
+      [shop],
+    );
+    const [shopPay] = await q<{ id: string }>(
+      `INSERT INTO payments (order_id, amount, payment_method, payment_provider,
+         provider_transaction_id, status, metadata)
+       VALUES ($1, 24.5, 'sumup_online', 'SUMUP', 'chk-shop-1', 'captured', '{}')
+       RETURNING id`,
+      [shop],
+    );
+    await q(
+      `INSERT INTO refunds (organization_id, order_id, payment_id, refund_number, kind, amount,
+         payment_method, status, provider, provider_reference, reason_code)
+       VALUES ($1, $2, $3, 'S-1-E1', 'refund', -4, 'sumup_online', 'completed', 'SUMUP', 'rf-txn-9', 'other'),
+              ($1, $2, $3, 'S-1-E2', 'refund', -0.5, 'sumup_online', 'manual', 'SUMUP', NULL, 'other')`,
+      [w.orgId, shop, shopPay.id],
+    );
+    // QR mit PayPal: Referenz nur in den Metadaten; dazu eine Teilzahlung
+    // am SumUp-Terminal — mehrere mit „, “, aelteste zuerst.
+    const qr = await order(w, {
+      createdAt: new Date('2026-08-01T11:00:00Z'),
+      pay: null,
+    });
+    await q(
+      `UPDATE orders SET source = 'qr_order', paid_amount = 24.5,
+               payment_status = 'paid' WHERE id = $1`,
+      [qr],
+    );
+    await q(
+      `INSERT INTO payments (order_id, amount, payment_method, payment_provider,
+         provider_transaction_id, status, metadata, created_at)
+       VALUES ($1, 20, 'paypal', 'PAYPAL', NULL, 'captured', '{"paypalOrderId": "PP-ORDER-7"}', '2026-08-01T11:00:00Z'),
+              ($1, 4.5, 'sumup_terminal', 'SUMUP', 'client-txn-3', 'captured', '{}', '2026-08-01T11:05:00Z'),
+              ($1, 4.5, 'paypal', 'PAYPAL', 'PP-NEVER-CAPTURED', 'pending', '{}', '2026-08-01T11:06:00Z')`,
+      [qr],
+    );
+
+    const h = await header();
+    // Felder mit „;“ stehen in Anfuehrungszeichen (Veranstaltung).
+    const fields = (row: string) =>
+      (row.match(/("(?:[^"]|"")*"|[^;]*)(?:;|$)/g) ?? []).map((f) =>
+        f.replace(/;$/, '').replace(/^"|"$/g, '').replace(/""/g, '"'),
+      );
+    const col = (row: string, name: string) => fields(row)[h.indexOf(name)];
+    const [, shopRow, qrRow] = lines((await csv(w)).text);
+    expect(col(shopRow, 'Kanal')).toBe('Online-Shop');
+    expect(col(shopRow, 'Zahlart')).toBe('SumUp online');
+    expect(col(shopRow, 'Zahlungsanbieter')).toBe('SumUp');
+    expect(col(shopRow, 'Zahlungsreferenz')).toBe('chk-shop-1');
+    expect(col(shopRow, 'Erstattungsreferenz')).toBe('rf-txn-9');
+
+    expect(col(qrRow, 'Kanal')).toBe('QR-Bestellung');
+    expect(col(qrRow, 'Zahlungsanbieter')).toBe('PayPal, SumUp');
+    // Offene (nicht erfasste) Zahlungen zaehlen nicht.
+    expect(col(qrRow, 'Zahlungsreferenz')).toBe('PP-ORDER-7, client-txn-3');
+    expect(col(qrRow, 'Erstattungsreferenz')).toBe('');
   });
 
   it('orders_only (Nur Bons): quantities only, no amounts and no payment method', async () => {

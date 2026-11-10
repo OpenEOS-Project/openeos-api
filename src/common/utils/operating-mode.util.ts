@@ -249,25 +249,75 @@ export function assertPaymentsAllowed(
 }
 
 /**
+ * Positivliste der Zahlarten in der Betriebsart „Bargeldlos“ (Steuerberater
+ * 2026-11-10, Frage 12; AEAO zu § 146a Nr. 1.2): nur Karte (fremdes
+ * Kartengeraet, SumUp-Terminal) und Online-Zahlung ueber einen
+ * Zahlungsdienstleister (SumUp Online, PayPal, Google Pay, Apple Pay).
+ * Bargeld und alles, was „an Geldes statt“ angenommen wird (Wertmarken,
+ * Gutscheine, Guthabenkarten, Kundenkonten), ist dort ausgeschlossen —
+ * auch jede kuenftige Zahlart, solange sie hier nicht ausdruecklich steht.
+ */
+export const CASHLESS_PAYMENT_METHODS: readonly string[] = [
+  PaymentMethod.CARD,
+  PaymentMethod.SUMUP_TERMINAL,
+  PaymentMethod.SUMUP_ONLINE,
+  PaymentMethod.PAYPAL,
+  PaymentMethod.GOOGLE_PAY,
+  PaymentMethod.APPLE_PAY,
+];
+
+/** Steht die Zahlart auf der Positivliste fuer „Bargeldlos“? */
+export function isCashlessPaymentMethod(
+  method: PaymentMethod | string | null | undefined,
+): boolean {
+  return (
+    typeof method === 'string' && CASHLESS_PAYMENT_METHODS.includes(method)
+  );
+}
+
+export function paymentMethodNotAllowedCashlessError(
+  method: string,
+): ForbiddenException {
+  return new ForbiddenException({
+    code: ErrorCodes.CASH_PAYMENTS_DISABLED,
+    reason: ErrorReasons.PAYMENT_METHOD_NOT_ALLOWED_CASHLESS,
+    message:
+      'Deine Organisation arbeitet in der Betriebsart „Bargeldlos“. Dort gehen nur Karte und Online-Zahlung – Bargeld, Wertmarken, Gutscheine und Guthaben kannst du über OpenEOS nicht annehmen.',
+    params: { method },
+  });
+}
+
+/**
  * Weist Bargeld ab, wo es nicht erlaubt ist:
  * - `orders_only`: 403 ORDER_ONLY_MODE (gar keine Zahlung),
  * - `cashless`: 403 CASH_PAYMENTS_DISABLED,
  * - `full` in Deutschland ohne aktive TSE (ausser Bestand): 403
  *   TSE_REQUIRED_FOR_CASH.
  *
- * Mit Zahlart: nur `cash` wird abgewiesen, Karte, SumUp und Online laufen
- * weiter. Ohne Zahlart (`undefined`) ist der Vorgang selbst ein reiner
- * Bargeldvorgang (Pfand-Auszahlung, Kassenlade, Bar-Erstattung).
+ * Mit Zahlart: Karte, SumUp und Online (`CASHLESS_PAYMENT_METHODS`) laufen
+ * weiter. Jede andere Zahlart gilt wie Bargeld (AEAO zu § 146a Nr. 1.2:
+ * „an Geldes statt“ angenommene Gutscheine, Guthaben …); in `cashless`
+ * antwortet sie mit 403 CASH_PAYMENTS_DISABLED und Grund
+ * PAYMENT_METHOD_NOT_ALLOWED_CASHLESS. Ohne Zahlart (`undefined`) ist der
+ * Vorgang selbst ein reiner Bargeldvorgang (Pfand-Auszahlung, Kassenlade,
+ * Bar-Erstattung).
  */
 export function assertCashAllowed(
   org: OperatingModeOrg | null | undefined,
   paymentMethod?: string | null,
 ): void {
-  // `PaymentMethod.CASH` als Text: unbekannte Werte sind kein Bargeld.
-  if (paymentMethod !== undefined && paymentMethod !== 'cash') return;
+  if (paymentMethod !== undefined && isCashlessPaymentMethod(paymentMethod)) {
+    return;
+  }
   const mode = getOperatingMode(org);
   if (mode === 'orders_only') throw orderOnlyModeError();
-  if (mode === 'cashless') throw cashDisabledError();
+  if (mode === 'cashless') {
+    // `PaymentMethod.CASH` als Text; alles andere ausserhalb der Liste.
+    if (paymentMethod === undefined || paymentMethod === 'cash') {
+      throw cashDisabledError();
+    }
+    throw paymentMethodNotAllowedCashlessError(String(paymentMethod));
+  }
   if (!isCashAllowed(org)) throw tseRequiredError();
 }
 
@@ -321,7 +371,11 @@ export function isOnlinePrepaymentMethod(
   method: PaymentMethod | string | null | undefined,
 ): boolean {
   return (
-    method === PaymentMethod.PAYPAL || method === PaymentMethod.SUMUP_ONLINE
+    method === PaymentMethod.PAYPAL ||
+    method === PaymentMethod.SUMUP_ONLINE ||
+    // Google Pay / Apple Pay laufen ueber den SumUp-Online-Checkout.
+    method === PaymentMethod.GOOGLE_PAY ||
+    method === PaymentMethod.APPLE_PAY
   );
 }
 
