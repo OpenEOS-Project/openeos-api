@@ -19,7 +19,10 @@ import type { Composition } from '../refunds/refund-calc';
  *     Unbar, Waehrung nur wenn nicht EUR.
  *   Beispiel: `Beleg^75.33_7.99_0.00_0.00_0.00^10.00:Bar_73.32:Unbar`
  *   Pfand zaehlt zum Satz seiner Pfandart (Becher 2 € zu 19 % → Slot 1),
- *   eine Pfand-Auszahlung steht negativ im selben Slot.
+ *   eine Pfand-Auszahlung steht negativ im selben Slot. Trinkgeld an den
+ *   Verein steht anteilig in den Slots der Ware (Bier 10 € + 1 € Trinkgeld:
+ *   `Beleg^11.00_0.00_0.00_0.00_0.00^11.00:Bar`), Trinkgeld einer
+ *   angestellten Bedienung (TrinkgeldAN) im 0-%-Slot.
  *
  * Bestellung-V1: je Position `<Menge>;"<Bezeichnung>";<Stueckpreis brutto>`,
  * Zeilen mit CR (`\r`) getrennt; Storno mit negativer Menge.
@@ -68,13 +71,20 @@ export function vatSlot(rate: number, vatExempt: boolean): number {
 /**
  * Slots aus einer Zusammensetzung (refund-calc). Pfand steht im Slot des
  * Satzes seiner Pfandart (Teil des Entgelts, Abschn. 10.1 Abs. 8 UStAE;
- * Bestand von vor 2026-11 ohne Satz: 0-%-Slot wie damals). Trinkgeld ist
- * kein Entgelt und bleibt im 0-%-Slot (offene Frage S2).
+ * Bestand von vor 2026-11 ohne Satz: 0-%-Slot wie damals).
+ *
+ * Trinkgeld (Steuerberater 2026-11-10, Fragen 3–5): an den
+ * umsatzsteuerpflichtigen Verein (`TrinkgeldAG`) ist es Entgelt und steht
+ * mit `tipShares` (Anteile je Satz, siehe `tipByRate`) in den Slots der
+ * Hauptleistung. Ohne `tipShares` — Trinkgeld an eine angestellte Bedienung
+ * (`TrinkgeldAN`, kein Entgelt) oder steuerbefreite Organisation — im
+ * 0-%-Slot.
  */
 export function slotsFromComposition(
   composition: Composition,
   vatExempt: boolean,
   sign: 1 | -1 = 1,
+  tipShares: Map<number, number> | null = null,
 ): VatSlots {
   const slots = emptySlots();
   for (const [rate, cents] of composition.goods) {
@@ -83,7 +93,13 @@ export function slotsFromComposition(
   for (const [rate, cents] of composition.pfand) {
     slots[vatSlot(rate, vatExempt)] += sign * cents;
   }
-  slots[4] += sign * composition.tip;
+  if (tipShares && tipShares.size > 0 && !vatExempt) {
+    for (const [rate, cents] of tipShares) {
+      slots[vatSlot(rate, false)] += sign * Math.abs(cents);
+    }
+  } else {
+    slots[4] += sign * composition.tip;
+  }
   return slots;
 }
 
@@ -93,15 +109,28 @@ export function slotsFromComposition(
  * Beispiel 3 Becher à 2 € zu 19 %: `Beleg^-6.00_0.00_0.00_0.00_0.00^-6.00:Bar`.
  */
 export function depositReturnSlots(
-  lines: { unitAmount: number; quantity: number; vatRate?: number | null }[],
+  lines: {
+    unitAmount: number;
+    quantity: number;
+    vatRate?: number | null;
+    legacyCents?: number | null;
+  }[],
   vatExempt: boolean,
 ): VatSlots {
   const slots = emptySlots();
   for (const line of lines) {
-    const amount = -Math.abs(
+    const amount = Math.abs(
       Math.round(Number(line.unitAmount) * 100) * Number(line.quantity),
     );
-    slots[vatSlot(Number(line.vatRate ?? 0) || 0, vatExempt)] += amount;
+    // Pfand-Altsaldo (vor der Umstellung ohne USt verkauft): 0-%-Slot,
+    // keine Steuerminderung (Steuerberater 2026-11-10, Frage 2).
+    const legacy = Math.min(
+      Math.max(0, Math.round(Number(line.legacyCents) || 0)),
+      amount,
+    );
+    slots[4] -= legacy;
+    slots[vatSlot(Number(line.vatRate ?? 0) || 0, vatExempt)] -=
+      amount - legacy;
   }
   return slots;
 }

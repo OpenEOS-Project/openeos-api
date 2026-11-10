@@ -1,3 +1,4 @@
+import { pfandLegacyBalance } from './pfand-legacy-balance';
 import {
   Injectable,
   NotFoundException,
@@ -58,6 +59,37 @@ export class PfandTypesService {
       where: { organizationId },
       order: { sortOrder: 'ASC', name: 'ASC' },
     });
+  }
+
+  /**
+   * Pfand-Altsaldo der Organisation (siehe pfand-legacy-balance.ts) fuer
+   * den Hinweis in den Pfand-Einstellungen und im Bericht.
+   */
+  async legacyBalance(
+    organizationId: string,
+    user: User,
+  ): Promise<{
+    applies: boolean;
+    charged: number;
+    returned: number;
+    remaining: number;
+  }> {
+    await this.checkMembership(organizationId, user.id);
+    const rows: { settings: { vatExempt?: boolean } | null }[] =
+      await this.pfandTypeRepository.manager.query(
+        `SELECT settings FROM organizations WHERE id = $1`,
+        [organizationId],
+      );
+    const balance = await pfandLegacyBalance(
+      this.pfandTypeRepository.manager,
+      organizationId,
+    );
+    return {
+      applies: rows[0]?.settings?.vatExempt === false,
+      charged: balance.chargedCents / 100,
+      returned: Math.min(balance.returnedCents, balance.chargedCents) / 100,
+      remaining: balance.remainingCents / 100,
+    };
   }
 
   /** Active pfand types for the POS (device-authenticated, no user permission check). */

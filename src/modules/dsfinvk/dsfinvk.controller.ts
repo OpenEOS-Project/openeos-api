@@ -28,6 +28,7 @@ import { CashbookService } from './cashbook.service';
 import { CashPointClosingService } from './cash-point-closing.service';
 import {
   CashbookQueryDto,
+  ChangeVatStatusDto,
   CreateCashbookEntryDto,
   DsfinvkClosingsQueryDto,
   DsfinvkExportQueryDto,
@@ -108,6 +109,29 @@ export class DsfinvkController {
   ) {
     return {
       data: await this.closings.requestClosing(id, user, meta(request)),
+    };
+  }
+
+  @Post('vat-status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Change the VAT status after a cash point closing (admins)',
+    description:
+      'Kleinunternehmer (`vatExempt: true`) ↔ umsatzsteuerpflichtig (`vatExempt: false`), z. B. „ab sofort umsatzsteuerpflichtig“ beim Überschreiten der Grenzen des § 19 UStG. Schließt vorher alle offenen Vorgänge ab (Kassenabschluss, DSFinV-K Tz. 3), dann Stammdatenwechsel, Protokoll `vat_status_changed`, Verlauf `settings.vatStatusHistory`. Fehler: 409 DSFINVK_PENDING_TRANSACTIONS.',
+  })
+  async changeVatStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: ChangeVatStatusDto,
+    @CurrentUser() user: User,
+    @Req() request: Request,
+  ) {
+    return {
+      data: await this.closings.changeVatStatus(
+        id,
+        user,
+        body.vatExempt,
+        meta(request),
+      ),
     };
   }
 

@@ -4,6 +4,11 @@ import {
   type PfandReturnLine,
   type PfandReturnTaxLine,
 } from '../../database/entities/pfand-return.entity';
+import {
+  allocateLegacyBalance,
+  legacyCentsOf,
+  pfandLegacyBalance,
+} from './pfand-legacy-balance';
 import { Organization } from '../../database/entities/organization.entity';
 import { orderDay, resolveOrderTimeZone } from '../orders/order-numbering';
 
@@ -48,14 +53,19 @@ function lineCents(line: Pick<PfandReturnLine, 'unitAmount' | 'quantity'>) {
  * keine Zeile.
  */
 export function pfandReturnTaxLines(
-  lines: Pick<PfandReturnLine, 'unitAmount' | 'quantity' | 'vatRate'>[],
+  lines: Pick<
+    PfandReturnLine,
+    'unitAmount' | 'quantity' | 'vatRate' | 'legacyCents'
+  >[],
   vatExempt: boolean | undefined,
 ): PfandReturnTaxLine[] {
   if (vatExempt !== false) return [];
   const byRate = new Map<number, number>();
   for (const line of lines) {
+    // Anteil gegen den Altsaldo (ohne USt verkauft) mindert keine Steuer.
+    const legacy = legacyCentsOf(line);
     const rate = lineVatRate(line);
-    byRate.set(rate, (byRate.get(rate) ?? 0) + lineCents(line));
+    byRate.set(rate, (byRate.get(rate) ?? 0) + lineCents(line) - legacy);
   }
   return [...byRate.entries()]
     .filter(([rate, value]) => rate > 0 && value > 0)
@@ -81,12 +91,31 @@ export async function savePfandReturnWithNumber(
   manager: EntityManager,
   pfandReturn: PfandReturn,
   now: Date = new Date(),
+  options: {
+    /**
+     * Rueckgabe zuerst gegen den Pfand-Altsaldo buchen (steuerpflichtige
+     * Organisation, kein Test). Laeuft unter derselben Sperre je
+     * Organisation wie die Nummernvergabe — zwei Kassen verbrauchen den
+     * Altsaldo nie doppelt.
+     */
+    consumeLegacyBalance?: boolean;
+  } = {},
 ): Promise<PfandReturn> {
   return manager.transaction(async (tx) => {
     await tx.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [
       PFAND_RETURN_NUMBER_LOCK_NAMESPACE,
       pfandReturn.organizationId,
     ]);
+    if (options.consumeLegacyBalance) {
+      const balance = await pfandLegacyBalance(tx, pfandReturn.organizationId);
+      if (balance.remainingCents > 0) {
+        pfandReturn.lines = allocateLegacyBalance(
+          pfandReturn.lines ?? [],
+          balance.remainingCents,
+        );
+        pfandReturn.taxLines = pfandReturnTaxLines(pfandReturn.lines, false);
+      }
+    }
     const organization = await tx.findOne(Organization, {
       where: { id: pfandReturn.organizationId },
       select: { id: true, settings: true },

@@ -1,3 +1,4 @@
+import { pfandLegacyBalance } from './pfand-legacy-balance';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { Logger } from '@nestjs/common';
@@ -166,6 +167,107 @@ describeWithDb('PfandReturnsService against Postgres', () => {
     expect(stored[0].lines[0].vatRate).toBeUndefined();
     expect(stored[0].taxLines).toEqual([]);
     expect(stored[1].lines[0].vatRate).toBe(19);
+  });
+
+  /** Verkauf vor der Umstellung: Pfand ohne Satz (deposit_tax_rate NULL). */
+  async function legacySale(
+    orgId: string,
+    quantity: number,
+    options: { isTest?: boolean } = {},
+  ) {
+    const [event] = await ds.query<{ id: string }[]>(
+      `INSERT INTO events (organization_id, name, status) VALUES ($1, 'Fest 2025', 'inactive') RETURNING id`,
+      [orgId],
+    );
+    const [category] = await ds.query<{ id: string }[]>(
+      `INSERT INTO categories (event_id, name) VALUES ($1, 'Getränke') RETURNING id`,
+      [event.id],
+    );
+    const [product] = await ds.query<{ id: string }[]>(
+      `INSERT INTO products (event_id, category_id, name, price, tax_rate) VALUES ($1, $2, 'Bier', 3, 19) RETURNING id`,
+      [event.id, category.id],
+    );
+    const [order] = await ds.query<{ id: string }[]>(
+      `INSERT INTO orders (organization_id, event_id, order_number, daily_number, status, payment_status,
+         subtotal, total, paid_amount, pfand_total, is_test)
+       VALUES ($1, $2, $3, 1, 'completed', 'paid', $4, $5, $5, $6, $7) RETURNING id`,
+      [
+        orgId,
+        event.id,
+        `ALT-${randomUUID().slice(0, 8)}`,
+        3 * quantity,
+        5 * quantity,
+        2 * quantity,
+        options.isTest === true,
+      ],
+    );
+    await ds.query(
+      `INSERT INTO order_items (order_id, product_id, category_id, product_name, category_name, quantity, unit_price, tax_rate,
+         total_price, status, deposit_amount, sort_order)
+       VALUES ($1, $2, $3, 'Bier', 'Getränke', $4, 3, 19, $5, 'delivered', 2, 0)`,
+      [order.id, product.id, category.id, quantity, 3 * quantity],
+    );
+  }
+
+  it('Pfand transition (Frage 2): returns consume the Altsaldo first (no VAT reduction), then the pfand type rate', async () => {
+    const w = await world(false);
+    // Vor der Umstellung: 5 Becher à 2 € ohne Satz verkauft (bezahlt) …
+    await legacySale(w.orgId, 5);
+    // … ein Testverkauf zaehlt nicht, eine alte Auszahlung ohne Satz schon.
+    await legacySale(w.orgId, 1, { isTest: true });
+    await ds.query(
+      `INSERT INTO pfand_returns (organization_id, total_amount, lines) VALUES ($1, 2, $2)`,
+      [
+        w.orgId,
+        JSON.stringify([
+          {
+            pfandTypeId: w.becherId,
+            name: 'Becher',
+            unitAmount: 2,
+            quantity: 1,
+          },
+        ]),
+      ],
+    );
+    expect(await pfandLegacyBalance(ds, w.orgId)).toEqual({
+      chargedCents: 1000,
+      returnedCents: 200,
+      remainingCents: 800,
+    });
+
+    // 3 Becher (6 €): ganz gegen den Altsaldo — keine MwSt-Minderung.
+    const first = await service.create(w.orgId, {
+      lines: [{ pfandTypeId: w.becherId, quantity: 3 }],
+    });
+    expect(first.lines[0]).toMatchObject({ vatRate: 19, legacyCents: 600 });
+    expect(first.taxLines).toEqual([]);
+    // 3 weitere: 2 € Rest-Altsaldo, 4 € mit 19 %.
+    const second = await service.create(w.orgId, {
+      lines: [{ pfandTypeId: w.becherId, quantity: 3 }],
+    });
+    expect(second.lines[0]).toMatchObject({ vatRate: 19, legacyCents: 200 });
+    expect(second.taxLines).toEqual([
+      { rate: 19, gross: -4, tax: -0.64, net: -3.36 },
+    ]);
+    // Aufgebraucht: ab jetzt voller Satz.
+    const third = await service.create(w.orgId, {
+      lines: [{ pfandTypeId: w.becherId, quantity: 1 }],
+    });
+    expect(third.lines[0].legacyCents).toBeUndefined();
+    expect(third.taxLines).toEqual([
+      { rate: 19, gross: -2, tax: -0.32, net: -1.68 },
+    ]);
+    expect((await pfandLegacyBalance(ds, w.orgId)).remainingCents).toBe(0);
+  });
+
+  it('Pfand transition: no Altsaldo consumption for Kleinunternehmer (no tax effect)', async () => {
+    const w = await world(true);
+    await legacySale(w.orgId, 1);
+    const result = await service.create(w.orgId, {
+      lines: [{ pfandTypeId: w.becherId, quantity: 1 }],
+    });
+    expect(result.lines[0].legacyCents).toBeUndefined();
+    expect(result.taxLines).toEqual([]);
   });
 
   it('VAT-exempt organization: no VAT lines; prints when receipts are printed automatically', async () => {

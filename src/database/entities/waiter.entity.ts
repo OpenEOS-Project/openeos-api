@@ -55,6 +55,16 @@ export class Waiter extends BaseEntity {
   @Column({ type: 'boolean', nullable: true })
   wallet: boolean | null;
 
+  /**
+   * „Arbeitnehmer (Lohnkonto)“: angestellte Bedienung (Minijob, Lohnkonto).
+   * Nur dann ist ihr Trinkgeld `TrinkgeldAN` (kein Entgelt, § 3 Nr. 51
+   * EStG) und darf Kartentrinkgeld bar ausgezahlt werden. Standard aus:
+   * Ehrenamtliche liefern das Trinkgeld beim Verein ab → `TrinkgeldAG`
+   * mit dem Satz der Hauptleistung (Steuerberater 2026-11-10, Fragen 3–5).
+   */
+  @Column({ name: 'is_employee', type: 'boolean', default: false })
+  isEmployee: boolean;
+
   /** Dieselbe Person ist auch Mitglied (optional). */
   @Column({ name: 'user_id', type: 'uuid', nullable: true })
   userId: string | null;

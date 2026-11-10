@@ -91,6 +91,7 @@ import {
   rateMapFrom,
   rateRecord,
   refundTaxLines,
+  tipByRate,
   round2,
   scaleComposition,
   subtractComposition,
@@ -876,7 +877,17 @@ export class RefundsService {
           organization,
         });
       number += 1;
-      const taxLines = refundTaxLines(part, vatExempt);
+      // Trinkgeld an den Verein mindert das Entgelt zum Satz der Ware
+      // (spiegelbildlich zum Bon); TrinkgeldAN (Arbeitnehmer) nicht.
+      const tipShares =
+        part.tip > 0 &&
+        vatExempt === false &&
+        (await this.tseSigning?.tipRecipientFor(
+          payment.processedByWaiterId,
+        )) !== 'employee'
+          ? tipByRate(part.goods, part.tip, composition.goods)
+          : null;
+      const taxLines = refundTaxLines(part, vatExempt, tipShares);
       const refund = manager.create(Refund, {
         organizationId: actor.organizationId,
         orderId: order.id,

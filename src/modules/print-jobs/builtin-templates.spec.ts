@@ -156,4 +156,17 @@ describe('builtin print templates and the Cloud-TSE block', () => {
     );
     expect(map[RECEIPT_TEMPLATE]).toContain(TSE_PRINT_BLOCK);
   });
+
+  it('prints the tip and the § 19 notice (Steuerberater 2026-11-10, Fragen 3 und 9)', () => {
+    const receipt = BUILTIN_PRINT_TEMPLATES.receipt;
+    expect(receipt).toContain('row("Trinkgeld:", tip_amount|float|currency)');
+    for (const name of ['receipt', 'refund_receipt', 'pfand_return_receipt']) {
+      expect({
+        name,
+        notice: BUILTIN_PRINT_TEMPLATES[name].includes(
+          'vat_exempt_notice|replace("§", "Par.")|wordwrap(cols, true, "\\n")',
+        ),
+      }).toEqual({ name, notice: true });
+    }
+  });
 });

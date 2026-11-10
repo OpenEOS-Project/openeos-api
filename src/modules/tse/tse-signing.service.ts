@@ -30,6 +30,7 @@ import {
   rateMapFrom,
   rateRecord,
   scaleComposition,
+  tipByRate,
   unitGross,
   type Composition,
 } from '../refunds/refund-calc';
@@ -65,6 +66,9 @@ import {
   type TseReceiptView,
   type TseUnitInfo,
 } from './tse-view';
+
+/** Trinkgeld an den Verein (TrinkgeldAG) oder an angestellte Bedienung (TrinkgeldAN). */
+export type TipRecipient = 'employer' | 'employee';
 
 /** Wer einen Vorgang ausgeloest hat. */
 export interface TseActor {
@@ -414,8 +418,18 @@ export class TseSigningService {
 
       const amountCents = cents(payment.amount);
       const composition = paymentComposition(order, payment);
+      // Trinkgeld: an den Verein (TrinkgeldAG, Satz der Hauptleistung
+      // anteilig) — ausser die kassierende Bedienung ist Arbeitnehmer
+      // (TrinkgeldAN, kein Entgelt). Steuerbefreit: 0-%-Slot.
+      const tipRecipient = await this.tipRecipientFor(
+        payment.processedByWaiterId,
+      );
+      const tipShares =
+        composition.tip && tipRecipient === 'employer' && !vatExempt
+          ? tipByRate(composition.goods, composition.tip)
+          : null;
       const slots = fitSlots(
-        slotsFromComposition(composition, vatExempt),
+        slotsFromComposition(composition, vatExempt, 1, tipShares),
         amountCents,
       );
       const training = order.isTest === true;
@@ -435,7 +449,11 @@ export class TseSigningService {
         ),
         training,
         amountCents,
-        lines: receiptLines(order, payment, composition),
+        lines: {
+          ...receiptLines(order, payment, composition),
+          tipRecipient,
+          ...(tipShares ? { tipByRate: rateRecord(tipShares) } : {}),
+        },
         eventId: order.eventId,
         orderId: order.id,
         paymentId: payment.id,
@@ -520,10 +538,6 @@ export class TseSigningService {
       const vatExempt = await this.vatExempt(refund.organizationId);
       const amountCents = cents(refund.amount); // negativ
       const composition = refundComposition(refund);
-      const slots = fitSlots(
-        slotsFromComposition(composition, vatExempt, -1),
-        amountCents,
-      );
       const training = refund.isTest === true || refund.status === 'test';
       const original = refund.paymentId
         ? await this.txRepository.findOne({
@@ -531,6 +545,30 @@ export class TseSigningService {
             order: { createdAt: 'DESC' },
           })
         : null;
+      // Trinkgeld spiegelbildlich zum Ursprungsbeleg: gleicher Empfaenger,
+      // AG-Anteile je Satz wie die erstattete Ware (sonst wie im Original).
+      // Ursprung ohne Kennzeichen (Bestand) → wie damals im 0-%-Slot.
+      const originalLines = original?.lines ?? {};
+      const tipRecipient =
+        originalLines.tipRecipient === 'employee' ||
+        originalLines.tipRecipient === 'employer'
+          ? (originalLines.tipRecipient as TipRecipient)
+          : null;
+      const tipShares =
+        composition.tip && tipRecipient === 'employer' && !vatExempt
+          ? tipByRate(
+              composition.goods,
+              composition.tip,
+              rateMapFrom(
+                originalLines.tipByRate as Record<string, unknown>,
+                true,
+              ),
+            )
+          : null;
+      const slots = fitSlots(
+        slotsFromComposition(composition, vatExempt, -1, tipShares),
+        amountCents,
+      );
       return this.sign({
         organizationId: refund.organizationId,
         kind: 'refund',
@@ -561,6 +599,8 @@ export class TseSigningService {
           pfand: Number(refund.pfandAmount),
           pfandByRate: rateRecord(composition.pfand),
           tip: Number(refund.tipAmount),
+          ...(tipRecipient ? { tipRecipient } : {}),
+          ...(tipShares ? { tipByRate: rateRecord(tipShares) } : {}),
           paymentMethod: refund.paymentMethod,
         },
         eventId: refund.eventId,
@@ -862,6 +902,29 @@ export class TseSigningService {
       order: { createdAt: 'ASC' },
     });
     return this.viewsFor(txs.filter((t) => t.kind !== 'abort'));
+  }
+
+  /**
+   * Empfaenger des Trinkgelds einer Zahlung: `employee` nur fuer eine
+   * Bedienung mit „Arbeitnehmer (Lohnkonto)“ (`waiters.is_employee`), sonst
+   * der Verein (Ehrenamtliche liefern ab; Mitglieder/Geraete ohne
+   * Bedienung ebenso).
+   */
+  async tipRecipientFor(
+    waiterId: string | null | undefined,
+  ): Promise<TipRecipient> {
+    if (!waiterId) return 'employer';
+    try {
+      const rows = rowsOf<{ is_employee: boolean }>(
+        await this.txRepository.query(
+          `SELECT is_employee FROM waiters WHERE id = $1`,
+          [waiterId],
+        ),
+      );
+      return rows[0]?.is_employee === true ? 'employee' : 'employer';
+    } catch {
+      return 'employer';
+    }
   }
 
   private async vatExempt(organizationId: string): Promise<boolean> {

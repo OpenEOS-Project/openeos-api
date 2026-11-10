@@ -321,6 +321,35 @@ export class OrganizationsService {
     return this.limits.memberUsage(organization);
   }
 
+  /**
+   * Steuerstatus (Kleinunternehmer ↔ umsatzsteuerpflichtig) mit Cloud-TSE
+   * nur ueber `POST /organizations/:id/vat-status`: dort wird vorher ein
+   * Kassenabschluss erstellt, damit alle bisherigen Vorgaenge mit dem alten
+   * Status abgeschlossen sind (DSFinV-K Tz. 3). Ohne TSE-Vorgaenge (keine
+   * DSFinV-K) bleibt der einfache Schalter.
+   */
+  private async assertVatStatusChangeAllowed(
+    organization: Organization,
+    incoming: object | null | undefined,
+  ): Promise<void> {
+    if (!incoming || !('vatExempt' in incoming)) return;
+    const next = (incoming as { vatExempt?: unknown }).vatExempt !== false;
+    const current = organization.settings?.vatExempt !== false;
+    if (next === current) return;
+    const rows: unknown[] = await this.organizationRepository.query(
+      `SELECT 1 FROM tse_transactions WHERE organization_id = $1 LIMIT 1`,
+      [organization.id],
+    );
+    if (Array.isArray(rows) && rows.length > 0) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.VAT_STATUS_CHANGE_REQUIRES_CLOSING,
+        message:
+          'Mit Cloud-TSE wechselst du den Steuerstatus über „Steuerstatus ändern“: OpenEOS erstellt vorher einen Kassenabschluss.',
+      });
+    }
+  }
+
   async update(
     id: string,
     updateDto: UpdateOrganizationDto,
@@ -351,6 +380,7 @@ export class OrganizationsService {
        ueberschreiben. Zusammengefuehrt wird eine Ebene tief; wer `pos`
        schickt, ersetzt `pos` als Ganzes, und das ist auch gemeint. */
     const { settings: incomingSettings, ...rest } = updateDto;
+    await this.assertVatStatusChangeAllowed(organization, incomingSettings);
     /* Nur Felder uebernehmen, die wirklich mitgeschickt wurden. Das DTO
        kommt als Klasseninstanz an (ES2023-Klassenfelder): nicht gesendete
        Felder stehen darin als eigene Schluessel mit `undefined`. Ein

@@ -1,3 +1,21 @@
+import { tipByRate } from '../refunds/refund-calc';
+
+/** § 19 Abs. 1 UStG (ab 2025): Grenzen fuer Kleinunternehmer in Euro. */
+export const SMALL_BUSINESS_LIMIT_CURRENT = 100_000;
+export const SMALL_BUSINESS_LIMIT_PREVIOUS = 25_000;
+
+export interface SmallBusinessStatus {
+  vatExempt: boolean;
+  year: number;
+  currentYearRevenue: number;
+  previousYearRevenue: number;
+  limitCurrentYear: number;
+  limitPreviousYear: number;
+  /** Anteil an 100.000 € (0..n). */
+  ratio: number;
+  /** Nur fuer Kleinunternehmer: ab 80 % `approaching`, darueber `exceeded`. */
+  warning: 'approaching' | 'exceeded' | null;
+}
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -659,8 +677,60 @@ export class ReportsService {
       lines: PfandReturnLine[] | null;
     }>();
 
+    // Trinkgeld je Bestellung: an den Verein (abzgl. Kulanz-Erstattungen und
+    // Trinkgeld angestellter Bedienungen) anteilig auf die Warensaetze.
+    const tipRows = await this.soldItemsQuery(organizationId, queryDto)
+      .select('order.id', 'orderId')
+      .addSelect('item.taxRate', 'rate')
+      .addSelect(`SUM(item.totalPrice * ${NET_FACTOR})`, 'gross')
+      .addSelect(`MAX(order.tipAmount + ${GOODWILL_TIP})`, 'tip')
+      .addSelect(
+        `MAX(COALESCE((SELECT SUM(p.tip_amount) FROM payments p JOIN waiters w ON w.id = p.processed_by_waiter_id
+            WHERE p.order_id = order.id AND w.is_employee AND p.status IN ('captured', 'refunded')), 0))`,
+        'employeeTip',
+      )
+      .andWhere('order.tipAmount <> 0')
+      .groupBy('order.id')
+      .addGroupBy('item.taxRate')
+      .getRawMany<{
+        orderId: string;
+        rate: string;
+        gross: string | null;
+        tip: string | null;
+        employeeTip: string | null;
+      }>();
+    const tipOrders = new Map<
+      string,
+      { goods: Map<number, number>; tip: number; employee: number }
+    >();
+    for (const row of tipRows) {
+      const entry = tipOrders.get(row.orderId) ?? {
+        goods: new Map<number, number>(),
+        tip: Math.round(Number(row.tip || 0) * 100),
+        employee: Math.round(Number(row.employeeTip || 0) * 100),
+      };
+      entry.goods.set(
+        Number(row.rate) || 0,
+        Math.round(Number(row.gross || 0) * 100),
+      );
+      tipOrders.set(row.orderId, entry);
+    }
+    const clubByRate = new Map<number, number>();
+    let employeeCents = 0;
+    for (const entry of tipOrders.values()) {
+      const employee = Math.min(Math.max(entry.employee, 0), entry.tip);
+      employeeCents += employee;
+      for (const [rate, value] of tipByRate(
+        entry.goods,
+        entry.tip - employee,
+      )) {
+        clubByRate.set(rate, (clubByRate.get(rate) ?? 0) + value);
+      }
+    }
+
     return buildVatReport({
       vatExempt,
+      tips: { clubByRate, employeeCents },
       sales: {
         goodsByRate: toMap(goodsRows),
         depositsByRate: toMap(depositRows),
@@ -672,6 +742,78 @@ export class ReportsService {
       ),
       pfandReturnLines: returnRows.flatMap((r) => r.lines ?? []),
     });
+  }
+
+  /**
+   * Kleinunternehmer-Grenzen (§ 19 Abs. 1 UStG seit 2025: 25.000 € im
+   * Vorjahr, 100.000 € im laufenden Jahr; schon der Umsatz, mit dem die
+   * 100.000 € ueberschritten werden, ist steuerpflichtig). Umsatz in
+   * OpenEOS = Zahlungen (ohne Test) − Erstattungen − Pfand-Auszahlungen je
+   * Kalenderjahr (Berlin); Pfand und Trinkgeld an den Verein zaehlen zum
+   * Gesamtumsatz. Fuer die Warnung im Dashboard (Steuerberater 2026-11-10,
+   * Frage 9).
+   */
+  async getSmallBusinessStatus(
+    organizationId: string,
+    user: User,
+    now: Date = new Date(),
+  ): Promise<SmallBusinessStatus> {
+    await this.checkPermission(organizationId, user.id);
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+      select: { id: true, settings: true },
+    });
+    const year = Number(
+      new Intl.DateTimeFormat('en', {
+        timeZone: 'Europe/Berlin',
+        year: 'numeric',
+      }).format(now),
+    );
+    const [row] = await this.orderRepository.manager.query<
+      { current: string | null; previous: string | null }[]
+    >(
+      `WITH moves AS (
+         SELECT p.created_at AS at, p.amount AS amount
+           FROM payments p JOIN orders o ON o.id = p.order_id
+          WHERE o.organization_id = $1 AND o.is_test = false
+            AND p.status IN ('captured', 'refunded')
+         UNION ALL
+         SELECT r.created_at, r.amount FROM refunds r
+          WHERE r.organization_id = $1 AND COALESCE(r.is_test, false) = false
+            AND r.status <> 'test'
+         UNION ALL
+         SELECT pr.created_at, -pr.total_amount FROM pfand_returns pr
+          WHERE pr.organization_id = $1 AND pr.is_test = false
+       )
+       SELECT
+         COALESCE(SUM(amount) FILTER (WHERE date_part('year', at AT TIME ZONE 'Europe/Berlin') = $2), 0) AS current,
+         COALESCE(SUM(amount) FILTER (WHERE date_part('year', at AT TIME ZONE 'Europe/Berlin') = $2 - 1), 0) AS previous
+         FROM moves`,
+      [organizationId, year],
+    );
+    const current = Math.round(Number(row?.current ?? 0) * 100) / 100;
+    const previous = Math.round(Number(row?.previous ?? 0) * 100) / 100;
+    const vatExempt = organization?.settings?.vatExempt !== false;
+    let warning: SmallBusinessStatus['warning'] = null;
+    if (vatExempt) {
+      if (
+        current > SMALL_BUSINESS_LIMIT_CURRENT ||
+        previous > SMALL_BUSINESS_LIMIT_PREVIOUS
+      )
+        warning = 'exceeded';
+      else if (current >= SMALL_BUSINESS_LIMIT_CURRENT * 0.8)
+        warning = 'approaching';
+    }
+    return {
+      vatExempt,
+      year,
+      currentYearRevenue: current,
+      previousYearRevenue: previous,
+      limitCurrentYear: SMALL_BUSINESS_LIMIT_CURRENT,
+      limitPreviousYear: SMALL_BUSINESS_LIMIT_PREVIOUS,
+      ratio: Math.round((current / SMALL_BUSINESS_LIMIT_CURRENT) * 1000) / 1000,
+      warning,
+    };
   }
 
   /** Veranstaltung und Zeitraum fuer Pfand-Auszahlungen (Auszahlungsdatum). */
