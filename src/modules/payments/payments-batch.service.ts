@@ -142,6 +142,8 @@ export interface SettledBatch extends BatchPaymentResult {
   settledWithoutPayment: string[];
   /** Belege ueber 0,00 fuer `settledWithoutPayment` (nach `afterCommit`). */
   zeroReceipts?: TseReceiptView[];
+  /** Kassenbelege schon signiert (`signSettled`), `afterCommit` signiert nicht erneut. */
+  tseSigned?: boolean;
 }
 
 @Injectable()
@@ -457,13 +459,13 @@ export class PaymentsBatchService {
   }
 
   /**
-   * Nach dem Commit: zuerst die Kassenbelege ueber die Cloud-TSE
-   * signieren (falls aktiv; parallel, mit Zeitbudget, nie blockierend),
-   * dann Echtzeit-Events und Bondruck mit den TSE-Daten. Die Zahlungen im
-   * Ergebnis bekommen `tse` (Vertrag: tse-swissbit-plan.md §8).
+   * Kassenbelege der Zahlungen (und Belege ueber 0,00) ueber die Cloud-TSE
+   * signieren — parallel, mit Zeitbudget, nie blockierend. Laeuft vor jedem
+   * Kuechenbon, damit es keine Kuechenbons ohne TSE-Spur gibt (Steuerberater
+   * 2026-11-10, Frage 19) und vor dem Kassenbon (Frage 16). Setzt
+   * `payment.tse`, `zeroReceipts` und `tseSigned`.
    */
-  async afterCommit(
-    organizationId: string,
+  async signSettled(
     outcome: SettledBatch,
     actor: {
       deviceId?: string | null;
@@ -471,8 +473,6 @@ export class PaymentsBatchService {
       userId?: string | null;
     } = {},
   ): Promise<void> {
-    const orderById = new Map(outcome.orders.map((o) => [o.id, o]));
-
     const tseSigning = this.tseSigning;
     const [signed, zeroReceipts] = tseSigning
       ? await Promise.all([
@@ -494,6 +494,31 @@ export class PaymentsBatchService {
     outcome.zeroReceipts = zeroReceipts.filter(
       (view): view is TseReceiptView => view !== null,
     );
+    outcome.tseSigned = true;
+  }
+
+  /**
+   * Nach dem Commit: zuerst die Kassenbelege ueber die Cloud-TSE
+   * signieren (falls aktiv; parallel, mit Zeitbudget, nie blockierend),
+   * dann Echtzeit-Events und Bondruck mit den TSE-Daten. Die Zahlungen im
+   * Ergebnis bekommen `tse` (Vertrag: tse-swissbit-plan.md §8).
+   */
+  async afterCommit(
+    organizationId: string,
+    outcome: SettledBatch,
+    actor: {
+      deviceId?: string | null;
+      waiterId?: string | null;
+      userId?: string | null;
+    } = {},
+  ): Promise<void> {
+    const orderById = new Map(outcome.orders.map((o) => [o.id, o]));
+    if (!outcome.tseSigned) await this.signSettled(outcome, actor);
+    const signed = new Map<string, TseReceiptView>();
+    for (const payment of outcome.payments) {
+      const tse = (payment as { tse?: TseReceiptView | null }).tse;
+      if (tse) signed.set(payment.id, tse);
+    }
 
     for (const [orderId, changes] of outcome.adjusted) {
       const order = orderById.get(orderId);

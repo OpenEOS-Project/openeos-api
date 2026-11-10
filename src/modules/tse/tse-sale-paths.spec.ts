@@ -559,6 +559,41 @@ describe('Schutz gegen neue unsignierte Zahlungswege', () => {
     }
   });
 
+  it('no kitchen ticket without a TSE trace: signing is awaited before the kitchen print', () => {
+    // Steuerberater 2026-11-10, Frage 19. Reihenfolge im Quelltext der
+    // Anlage: zuerst (await) signieren, dann handleOrderCreated.
+    const device = fs.readFileSync(
+      path.join(SRC, 'modules/devices/device-api.controller.ts'),
+      'utf8',
+    );
+    const create = device.slice(
+      device.indexOf('async createOrder('),
+      device.indexOf('private async settleExisting('),
+    );
+    const kitchen = create.indexOf('.handleOrderCreated(organizationId');
+    expect(kitchen).toBeGreaterThan(0);
+    for (const call of [
+      'await this.paymentsBatchService.signSettled(',
+      'await this.tseSigning?.signOrderCreated(',
+      'await this.tseSigning?.signZeroReceipt(',
+    ]) {
+      const at = create.indexOf(call);
+      expect({ call, before: at > 0 && at < kitchen }).toEqual({
+        call,
+        before: true,
+      });
+    }
+    const orders = fs.readFileSync(
+      path.join(SRC, 'modules/orders/orders.service.ts'),
+      'utf8',
+    );
+    const signAt = orders.indexOf('await this.tseSigning?.signOrderCreated(');
+    expect(signAt).toBeGreaterThan(0);
+    expect(signAt).toBeLessThan(
+      orders.indexOf('.handleOrderCreated(organizationId', signAt - 2000),
+    );
+  });
+
   it('refunds, Pfand payouts and admin order changes sign too', () => {
     const expectations: Array<[string, RegExp]> = [
       ['modules/refunds/refunds.service.ts', /tseSigning\??\.signRefund/],

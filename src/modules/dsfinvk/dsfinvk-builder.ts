@@ -103,6 +103,9 @@ export const PAYMENT_TYPES = [
 
 export const BRAND = 'OpenEOS';
 
+/** `TSE_TA_FEHLER`/`BON_NOTIZ` fuer Signaturen, die erst nach dem Beleg kamen. */
+export const LATE_SIGNATURE_NOTE = 'Signatur nach Belegausgabe';
+
 export function rateKey(
   rate: number,
   vatExempt: boolean,
@@ -819,7 +822,9 @@ function draftBon(
 
   const notes: string[] = [];
   if (tx.status === 'failed') notes.push('TSE ausgefallen');
-  if (tx.recovered) notes.push('Signatur nachträglich vom Abgleich übernommen');
+  // Bestand: vor 2026-11 wurden spaet gefundene Signaturen als signiert
+  // gefuehrt; seitdem bleibt der Vorgang `failed` (Ausfallbeleg).
+  if (tx.recovered) notes.push(LATE_SIGNATURE_NOTE);
   if (tx.kind === 'cashbook' && s.note) notes.push(str(s.note));
   if (tx.kind === 'refund' && s.refundNumber)
     notes.push(`Erstattung ${str(s.refundNumber)}`);
@@ -1067,10 +1072,19 @@ export function buildClosing(input: DsfinvkClosingInput): BuiltClosing {
     }
 
     if (tx.tseUnitId) {
-      const signed = tx.status === 'signed' || tx.status === 'training';
+      // Signatur nach Belegausgabe (Abgleich): Daten der TSE vollstaendig,
+      // dazu TSE_TA_FEHLER — der Bon war ein Ausfallbeleg (Steuerberater
+      // 2026-11-10, Frage 16; kein Nachsignieren, keine Umdeutung).
+      const late =
+        tx.status === 'failed' && tx.recovered && !!tx.signatureValue;
+      const signed = tx.status === 'signed' || tx.status === 'training' || late;
       const start = tx.startTime ?? tx.finishTime;
-      const error =
-        tx.status === 'failed'
+      const error = late
+        ? cleanText(
+            `${LATE_SIGNATURE_NOTE} (TSE nicht erreichbar: ${[tx.errorCode, tx.errorMessage].filter(Boolean).join(' – ')})`,
+            200,
+          )
+        : tx.status === 'failed'
           ? cleanText(
               `TSE ausgefallen: ${[tx.errorCode, tx.errorMessage].filter(Boolean).join(' – ')}`,
               200,

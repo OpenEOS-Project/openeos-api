@@ -50,7 +50,16 @@ describe('builtin print templates and the Cloud-TSE block', () => {
     ]) {
       expect(TSE_PRINT_BLOCK).toContain(field);
     }
-    expect(TSE_PRINT_BLOCK).toContain('TSE ausgefallen');
+    expect(TSE_PRINT_BLOCK).toContain('TSE nicht erreichbar');
+    expect(TSE_PRINT_BLOCK).toContain('Beleg ohne Signatur');
+    // Signatur nach Belegausgabe nur gekennzeichnet, ohne QR-Code.
+    expect(TSE_PRINT_BLOCK).toContain('Signatur nach Belegausgabe:');
+    expect(TSE_PRINT_BLOCK).toContain('tse.late_signature.signature_counter');
+    expect(TSE_PRINT_BLOCK).not.toContain('late_signature.qr');
+    // Beginn der ersten Bestellung (DSFinV-K Tz. 2.7.3), signiert und bei Ausfall.
+    expect(
+      TSE_PRINT_BLOCK.match(/\("Bestellbeginn: " ~ tse\.order_start_time\)/g),
+    ).toHaveLength(2);
     expect(TSE_PRINT_BLOCK).toContain('TRAININGSBUCHUNG - KEIN VERKAUF');
     expect(TSE_PRINT_BLOCK).toContain('<<QRCODE:{{ tse.qr_code }}>>');
     // Jinja bekommt "\n" als Escape, keinen echten Zeilenumbruch.

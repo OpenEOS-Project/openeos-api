@@ -25,6 +25,7 @@ import {
   cashbook,
   closingInput,
   failed,
+  lateSigned,
   master,
   pfandReturn,
   refund,
@@ -632,6 +633,35 @@ describe('DSFinV-K export (own validator)', () => {
     expect(
       rowsOf(zip, 'datapayment.csv').find((p) => p.BON_ID === heads[3].BON_ID),
     ).toMatchObject({ ZAHLART_TYP: 'Keine' });
+  });
+
+  it('late signature (Frage 16): stays an outage receipt, signature stored with TSE_TA_FEHLER „Signatur nach Belegausgabe“', () => {
+    const seq = new Sequence();
+    const late = lateSigned(
+      sale(seq, VAT_LIABLE, {
+        items: [{ name: 'Bier', quantity: 2, price: 4, rate: 19 }],
+      }),
+    );
+    const { zip, result } = exportOf([closingInput(1, Z1, [late])]);
+    expectValid(result);
+    expect(result.stats.tseFailures).toBe(1);
+    const [tse] = rowsOf(zip, 'transactions_tse.csv');
+    expect(tse.TSE_TA_FEHLER).toMatch(
+      /^Signatur nach Belegausgabe \(TSE nicht erreichbar: E_TIMEOUT/,
+    );
+    // Signaturdaten der TSE vollstaendig (spaet, aber echt) — kein Nachsignieren.
+    expect(tse).toMatchObject({
+      TSE_TANR: String(late.transactionNumber),
+      TSE_TA_SIGZ: String(late.signatureCounter),
+      TSE_TA_SIG: late.signatureValue,
+      TSE_TA_VORGANGSART: 'Kassenbeleg-V1',
+      TSE_VORGANGSDATEN: late.processData,
+    });
+    expect(tse.TSE_TA_ENDE).not.toBe('');
+    const [head] = rowsOf(zip, 'transactions.csv');
+    expect(head.BON_TYP).toBe('Beleg');
+    expect(head.BON_NOTIZ).toBe('TSE ausgefallen; Signatur nach Belegausgabe');
+    expect(head.UMS_BRUTTO).toBe('8,00');
   });
 
   it('table service: AVBestellung + cancellation, payment references the orders, Abrechnungskreis = table/order', () => {
