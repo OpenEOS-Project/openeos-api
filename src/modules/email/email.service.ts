@@ -408,6 +408,40 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  /**
+   * Neue Adresse fuer ein bestehendes Konto bestaetigen. Geht an die neue
+   * Adresse; erst der Klick stellt um, bis dahin gilt die alte.
+   */
+  async sendEmailChangeVerificationEmail(options: {
+    to: string;
+    firstName: string;
+    verifyUrl: string;
+    hoursValid: number;
+  }): Promise<boolean> {
+    const subject = 'Bestätige deine neue E-Mail-Adresse';
+    const html = rahmen({
+      kontext: 'Konto',
+      titel: 'OpenEOS — Neue E-Mail-Adresse bestätigen',
+      preheader: `Ein Klick, dann meldest du dich mit dieser Adresse an. Der Link gilt ${options.hoursValid} Stunden.`,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Neue Adresse bestätigen.') +
+          absatz(
+            `Hallo ${options.firstName}, du möchtest dein OpenEOS-Konto auf diese Adresse umstellen. Bestätige sie mit dem Knopf, danach meldest du dich mit ihr an.`,
+          ),
+        knopf(options.verifyUrl, 'Neue Adresse bestätigen'),
+        ersatzlink(options.verifyUrl),
+        hinweis(
+          'Nicht angefordert?',
+          `Dann ignoriere diese Mail — ohne Klick ändert sich nichts. Der Link gilt ${options.hoursValid} Stunden.`,
+        ),
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   async sendPasswordResetEmail(options: {
     to: string;
     firstName: string;

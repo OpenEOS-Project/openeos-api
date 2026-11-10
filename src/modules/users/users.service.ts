@@ -8,10 +8,11 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { User, RefreshToken, UserPreferences } from '../../database/entities';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { EmailService } from '../email/email.service';
+import { assertCurrentPassword } from '../auth/current-password';
 import {
   UpdateProfileDto,
   UpdatePreferencesDto,
@@ -49,6 +50,7 @@ export class UsersService {
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepository: Repository<RefreshToken>,
     private readonly configService: ConfigService,
+    private readonly emailService: EmailService,
   ) {}
 
   /**
@@ -117,19 +119,7 @@ export class UsersService {
        Schritt. Konten ohne Passwort koennen es nicht liefern; fuer sie
        traegt die angemeldete Sitzung allein. Sie zu sperren waere die
        Alternative — eine Adresse, die sich nie mehr aendern laesst. */
-    if (user.passwordHash) {
-      const isPasswordValid = await bcrypt.compare(
-        dto.password,
-        user.passwordHash,
-      );
-      if (!isPasswordValid) {
-        throw new BadRequestException({
-          code: ErrorCodes.INVALID_CREDENTIALS,
-          reason: ErrorReasons.PASSWORD_INCORRECT,
-          message: 'Passwort ist falsch',
-        });
-      }
-    }
+    await assertCurrentPassword(user.passwordHash, dto.password);
 
     // Check if new email is already in use
     const existingUser = await this.userRepository.findOne({
@@ -156,11 +146,19 @@ export class UsersService {
     );
     await this.userRepository.save(user);
 
-    // TODO: Send verification email
-    this.logger.log(
-      `Email change requested for user: ${user.email} -> ${dto.newEmail}`,
-    );
-    this.logger.log(`Verification token: ${token}`);
+    /* Der Link geht an die neue Adresse: erst wer dort Mails empfaengt,
+       uebernimmt sie. Bis dahin bleibt die alte Adresse die Anmeldung. Den
+       Token selbst nie ins Log — er reicht fuer die Umstellung. */
+    const appUrl =
+      this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+    await this.emailService.sendEmailChangeVerificationEmail({
+      to: user.pendingEmail,
+      firstName: user.firstName,
+      verifyUrl: `${appUrl}/verify-email-change?token=${token}`,
+      hoursValid: EMAIL_CHANGE_EXPIRY_HOURS,
+    });
+
+    this.logger.log(`Email change requested for user: ${user.id}`);
   }
 
   /**
@@ -176,7 +174,8 @@ export class UsersService {
     if (!user) {
       throw new BadRequestException({
         code: ErrorCodes.INVALID_TOKEN,
-        message: 'Ungültiger oder abgelaufener Verifizierungslink',
+        reason: ErrorReasons.EMAIL_CHANGE_LINK_INVALID,
+        message: 'Ungültiger oder abgelaufener Bestätigungslink',
       });
     }
 
@@ -186,7 +185,8 @@ export class UsersService {
     ) {
       throw new BadRequestException({
         code: ErrorCodes.TOKEN_EXPIRED,
-        message: 'Verifizierungslink ist abgelaufen',
+        reason: ErrorReasons.EMAIL_CHANGE_LINK_INVALID,
+        message: 'Der Bestätigungslink ist abgelaufen',
       });
     }
 
@@ -198,15 +198,28 @@ export class UsersService {
       });
     }
 
+    /* Zwischen Anfrage und Klick kann sich jemand mit der Adresse
+       registriert haben; ohne diese Pruefung scheiterte das Speichern am
+       Unique-Index mit 500. */
+    const taken = await this.userRepository.findOne({
+      where: { email: user.pendingEmail, id: Not(user.id) },
+    });
+    if (taken) {
+      throw new ConflictException({
+        code: ErrorCodes.USER_EXISTS,
+        reason: ErrorReasons.EMAIL_IN_USE,
+        message: 'Diese E-Mail-Adresse wird bereits verwendet',
+      });
+    }
+
     // Update email
-    const oldEmail = user.email;
     user.email = user.pendingEmail;
     user.pendingEmail = null;
     user.pendingEmailToken = null;
     user.pendingEmailExpiresAt = null;
     await this.userRepository.save(user);
 
-    this.logger.log(`Email changed for user: ${oldEmail} -> ${user.email}`);
+    this.logger.log(`Email changed for user: ${user.id}`);
 
     return user;
   }

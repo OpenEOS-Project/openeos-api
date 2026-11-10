@@ -19,6 +19,13 @@ export class UserResponseDto {
   @ApiProperty({ example: false })
   isSuperAdmin: boolean;
 
+  @ApiProperty({
+    example: true,
+    description:
+      'Konto hat ein Passwort. false: Anmeldung nur per Anmeldelink; Passwort ändern (POST /auth/change-password) und E-Mail ändern (POST /users/me/email/change) gehen dann ohne aktuelles Passwort.',
+  })
+  hasPassword: boolean;
+
   @ApiProperty({ example: '2024-01-15T10:30:00.000Z', nullable: true })
   lastLoginAt: Date | null;
 

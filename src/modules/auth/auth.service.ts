@@ -45,6 +45,7 @@ import {
   AcceptanceClient,
   LegalService,
 } from '../legal/legal.service';
+import { assertCurrentPassword } from './current-password';
 
 /** Woher eine Anmeldung kam — fuer die Sitzungsliste. */
 export interface SessionClient {
@@ -780,20 +781,7 @@ export class AuthService {
     /* Wer noch keines hat, setzt hier sein erstes — es gibt kein altes zu
        pruefen. Die angemeldete Sitzung ist der Nachweis, und in die kommt
        nur, wer einen Anmeldelink aus dem eigenen Postfach geholt hat. */
-    if (user.passwordHash) {
-      const isPasswordValid = await bcrypt.compare(
-        currentPassword,
-        user.passwordHash,
-      );
-
-      if (!isPasswordValid) {
-        throw new BadRequestException({
-          code: ErrorCodes.INVALID_CREDENTIALS,
-          reason: ErrorReasons.PASSWORD_INCORRECT,
-          message: 'Aktuelles Passwort ist falsch',
-        });
-      }
-    }
+    await assertCurrentPassword(user.passwordHash, currentPassword);
 
     // Update password
     user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);

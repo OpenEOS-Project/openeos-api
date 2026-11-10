@@ -1,5 +1,5 @@
-import { IsString, IsEmail, MaxLength, MinLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsEmail, IsOptional, MaxLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RequestEmailChangeDto {
   @ApiProperty({
@@ -11,13 +11,14 @@ export class RequestEmailChangeDto {
   @MaxLength(255)
   newEmail: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'MeinPasswort123!',
-    description: 'Aktuelles Passwort zur Bestätigung',
+    description:
+      'Aktuelles Passwort zur Bestätigung. Pflicht, wenn das Konto eins hat (`hasPassword` in GET /auth/me); Konten ohne Passwort lassen es weg.',
   })
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  password: string;
+  password?: string;
 }
 
 export class VerifyEmailChangeDto {
