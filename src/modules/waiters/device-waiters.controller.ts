@@ -1,3 +1,4 @@
+import { WaiterCashAuditService } from './waiter-cash-audit.service';
 import {
   Body,
   Controller,
@@ -25,6 +26,7 @@ import { requireOrganization } from '../devices/device-api.controller';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
   DeviceSettleWaiterDto,
+  DeviceTipPayoutDto,
   PrintWaiterSummaryDto,
   TransferOrderDto,
   WaiterSessionEndDto,
@@ -100,6 +102,7 @@ export class DeviceWaitersController {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly settlements: WaiterSettlementsService,
     private readonly transfers: WaiterTransferService,
+    private readonly cashAudit: WaiterCashAuditService,
   ) {}
 
   @Post('waiter-session')
@@ -274,7 +277,95 @@ export class DeviceWaitersController {
         print: dto.print !== false,
       },
     );
-    return { data: result.settlement, meta: { printed: result.printed } };
+    const tipPayout =
+      dto.payOutCardTips && subject.kind === 'waiter'
+        ? await this.cashAudit.payOut(
+            organizationId,
+            subject.waiterId,
+            {
+              userId: operator.waiterId ? null : operator.userId,
+              waiterId: operator.waiterId,
+              deviceId: device.id,
+              deviceName: device.name,
+            },
+            {
+              eventId: result.settlement.eventId,
+              settlementId: result.settlement.id,
+              print: dto.print !== false,
+            },
+          )
+        : null;
+    return {
+      data: result.settlement,
+      meta: { printed: result.printed, tipPayout: tipPayout?.payout ?? null },
+    };
+  }
+
+  @Get('waiter/live-cash-audit')
+  @WithOperator()
+  @ApiOperation({
+    summary: 'Live-Kassensturz (Schichtleitung)',
+    description:
+      'Soll bar jeder Bedienung seit ihrer letzten Abrechnung in der laufenden Veranstaltung, für eine Kassen-Nachschau. Nur Schichtleitung bzw. Admin-Mitglied (sonst 403 WAITER_NOT_PERMITTED).',
+  })
+  async liveCashAudit(
+    @CurrentDevice() device: Device,
+    @CurrentOperator() operator: Operator | null,
+  ) {
+    const organizationId = requireOrganization(device);
+    if (!operator) throw sessionRequiredError();
+    if (!isLeadOperator(operator)) {
+      throw notPermitted(
+        'settle',
+        'Den Live-Kassensturz sieht eine Schichtleitung oder ein Admin.',
+      );
+    }
+    return { data: await this.cashAudit.live(organizationId) };
+  }
+
+  @Post('waiter/tip-payouts')
+  @WithOperator()
+  @ApiOperation({
+    summary: 'Kartentrinkgeld bar auszahlen (Schichtleitung)',
+    description:
+      'Wie die Verwaltung: nur für Bedienungen mit „Arbeitnehmer (Lohnkonto)“, eigener TSE-Beleg TrinkgeldAN −x / Bar −x, Quittung auf dem Bondrucker des Geräts. Nur Schichtleitung bzw. Admin-Mitglied.',
+  })
+  async payOutTips(
+    @CurrentDevice() device: Device,
+    @CurrentOperator() operator: Operator | null,
+    @Body() dto: DeviceTipPayoutDto,
+  ) {
+    const organizationId = requireOrganization(device);
+    if (!operator) throw sessionRequiredError();
+    if (!isLeadOperator(operator)) {
+      throw notPermitted(
+        'settle',
+        'Trinkgeld auszahlen darf eine Schichtleitung oder ein Admin.',
+      );
+    }
+    const waiterId = dto.waiterId ?? operator.waiterId;
+    if (!waiterId) {
+      throw notPermitted(
+        'settle',
+        'Wähle die Bedienung, die das Trinkgeld bekommt.',
+      );
+    }
+    const result = await this.cashAudit.payOut(
+      organizationId,
+      waiterId,
+      {
+        userId: operator.waiterId ? null : operator.userId,
+        waiterId: operator.waiterId,
+        deviceId: device.id,
+        deviceName: device.name,
+      },
+      {
+        amount: dto.amount ?? null,
+        eventId: dto.eventId ?? null,
+        note: dto.note ?? null,
+      },
+    );
+    return { data: result.payout, meta: { printed: result.printed } };
   }
 
   @Post('orders/:orderId/transfer')

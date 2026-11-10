@@ -212,6 +212,8 @@ interface BonDraft {
   lines: LineDraft[];
   note: string;
   abrKreis: string | null;
+  /** Empfaenger (KUNDE_NAME/KUNDE_ID), z. B. Trinkgeld-Auszahlung. */
+  customer?: { name: string; id: string; type: string } | null;
 }
 
 interface Ctx {
@@ -832,19 +834,29 @@ const BON_NAMES: Record<string, string> = {
   order_cancellation: 'Bestellstorno',
   abort: 'Belegabbruch',
   cashbook: 'Kassenbuch',
+  settlement: 'Kellnerabrechnung',
+  tip_payout: 'Trinkgeld-Auszahlung',
 };
 
 function draftBon(
   tx: DsfinvkTransaction,
   settings: DsfinvkClosingInput['settings'],
 ): BonDraft {
-  const zeroKey = tx.kind === 'cashbook' ? 5 : settings.vatExempt ? 6 : 5;
+  // Kassenbuch und TrinkgeldAN sind nie Umsatz → immer Schluessel 5.
+  const zeroKey =
+    tx.kind === 'cashbook' || tx.kind === 'tip_payout'
+      ? 5
+      : settings.vatExempt
+        ? 6
+        : 5;
   const ctx: Ctx = { settings, zeroKey };
   const isOrder = tx.processType === 'Bestellung-V1';
   const parsed = isOrder ? null : parseKassenbeleg(tx.processData);
   let bonTyp: BonDraft['bonTyp'];
   if (tx.kind === 'abort') bonTyp = 'AVBelegabbruch';
   else if (tx.training) bonTyp = 'AVTraining';
+  // Kellnerabrechnung: anderer Vorgang ohne Geldbewegung (SonstigerVorgang).
+  else if (tx.kind === 'settlement') bonTyp = 'AVSonstige';
   else if (isOrder) bonTyp = 'AVBestellung';
   else if (parsed && (BON_TYPES as readonly string[]).includes(parsed.type)) {
     bonTyp = parsed.type as BonDraft['bonTyp'];
@@ -921,6 +933,36 @@ function draftBon(
       for (const line of bon.lines)
         vat.set(line.key, (vat.get(line.key) ?? 0) + line.grossCents);
       break;
+    case 'settlement':
+      // Nur die abgesicherten Zahlen (BON_NOTIZ), keine Positionen.
+      bon.lines = [];
+      break;
+    case 'tip_payout': {
+      const amount = -Math.abs(
+        Math.round(num(s.amountCents)) ||
+          [...vat.values()].reduce((a, b) => a + b, 0),
+      );
+      bon.lines = [
+        {
+          text: 'Auszahlung Kartentrinkgeld',
+          gvTyp: 'TrinkgeldAN',
+          key: 5,
+          grossCents: amount,
+          quantity: -1,
+          unitCents: -amount,
+        },
+      ];
+      reconcile(bon, false, {
+        text: 'Auszahlung Kartentrinkgeld',
+        gvTyp: 'TrinkgeldAN',
+      });
+      bon.customer = {
+        name: str(s.recipientName).slice(0, 50),
+        id: str(s.recipientWaiterId).slice(0, 50),
+        type: 'Mitarbeiter',
+      };
+      break;
+    }
     case 'abort':
     default:
       break;
@@ -940,6 +982,20 @@ function draftBon(
   // gefuehrt; seitdem bleibt der Vorgang `failed` (Ausfallbeleg).
   if (tx.recovered) notes.push(LATE_SIGNATURE_NOTE);
   if (tx.kind === 'cashbook' && s.note) notes.push(str(s.note));
+  if (tx.kind === 'settlement') {
+    const euro = (v: unknown) =>
+      v === null || v === undefined || v === ''
+        ? '–'
+        : `${(Math.round(num(v) * 100) / 100).toFixed(2).replace('.', ',')} €`;
+    notes.push(
+      `Kellnerabrechnung${s.settlementNumber ? ` Nr. ${num(s.settlementNumber)}` : ''} ${str(s.subjectName)}: Soll ${euro(s.expected)}, Ist ${euro(s.counted)}, Differenz ${euro(s.difference)}`.replace(
+        /\s+/g,
+        ' ',
+      ),
+    );
+  }
+  if (tx.kind === 'tip_payout')
+    notes.push(`Quittiert von ${str(s.recipientName)}`);
   if (tx.kind === 'refund' && s.refundNumber)
     notes.push(`Erstattung ${str(s.refundNumber)}`);
   bon.note = notes.join('; ');
@@ -1037,6 +1093,9 @@ export function buildClosing(input: DsfinvkClosingInput): BuiltClosing {
       BEDIENER_ID: tx.userId ?? '',
       BEDIENER_NAME: tx.userName ?? '',
       UMS_BRUTTO: formatAmount(total),
+      KUNDE_NAME: bon.customer?.name ?? '',
+      KUNDE_ID: bon.customer?.id ?? '',
+      KUNDE_TYP: bon.customer?.type ?? '',
       BON_NOTIZ: bon.note,
     });
 

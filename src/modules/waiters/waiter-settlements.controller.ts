@@ -1,3 +1,4 @@
+import { WaiterCashAuditService } from './waiter-cash-audit.service';
 import {
   Body,
   Controller,
@@ -32,7 +33,24 @@ export class WaiterSettlementsController {
   constructor(
     private readonly waiters: WaitersService,
     private readonly settlements: WaiterSettlementsService,
+    private readonly cashAudit: WaiterCashAuditService,
   ) {}
+
+  @Get('live')
+  @ApiOperation({
+    summary: 'Live-Kassensturz je Bedienung',
+    description:
+      'Für eine Kassen-Nachschau (§ 146b AO): je Bedienung bzw. Mitglied mit Buchungen seit der letzten Abrechnung in der Veranstaltung (ohne Angabe: die laufende) das Soll bar, wo das Bargeld liegt (Schublade je Gerät), kassiert je Zahlart, Trinkgeld, Erstattungen, Pfand-Auszahlungen, offene Tische und bei Arbeitnehmern das offene Kartentrinkgeld. Zeitpunkt `generatedAt`.',
+  })
+  @ApiQuery({ name: 'eventId', required: false })
+  async live(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: User,
+    @Query('eventId', new ParseUUIDPipe({ optional: true })) eventId?: string,
+  ) {
+    await this.waiters.assertCanManage(id, user);
+    return { data: await this.cashAudit.live(id, eventId ?? null) };
+  }
 
   @Get()
   @ApiOperation({

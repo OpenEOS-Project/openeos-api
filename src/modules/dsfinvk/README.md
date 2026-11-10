@@ -45,6 +45,8 @@ Eigene Umsetzung der **Digitalen Schnittstelle der Finanzverwaltung für Kassens
 | `deposit_return` (Pfand-Auszahlung) | `Beleg` | `PfandRueckzahlung` je Pfandart, negativ, USt-Schlüssel des Satzes der Pfandart | `Bar` negativ |
 | `order` / `order_cancellation` (Bestellung ohne sofortige Zahlung: Tisch, Theke „Senden“, Verwaltung; Bestellung-V1) | `AVBestellung` | `Umsatz` (Storno mit negativer Menge, Tz. 4.2.3) | `Keine` |
 | `abort` (Abgleich, AVBelegabbruch) | `AVBelegabbruch`, Verweis auf den abgebrochenen Vorgang | – | `Keine` |
+| `settlement` (Kellnerabrechnung, mit Cloud-TSE) | `AVSonstige`, `BON_NAME` „Kellnerabrechnung“, TSE `SonstigerVorgang` mit `Kellnerabrechnung^<Nr>^Soll:<x>^Ist:<y>^Differenz:<z>` | keine Positionen; Zahlen in `BON_NOTIZ`. Ohne Kellnerbrieftasche keine Geldbewegung: die Differenz der Schublade bucht der Kassensturz (`DifferenzSollIst`) | `Keine` |
+| `tip_payout` (Kartentrinkgeld an Arbeitnehmer) | `Beleg`, `BON_NAME` „Trinkgeld-Auszahlung“, Empfänger in `KUNDE_NAME`/`KUNDE_ID` (`KUNDE_TYP` „Mitarbeiter“) | `TrinkgeldAN` negativ, Schlüssel 5 | `Bar` negativ |
 | `cashbook` (Kassenbuch) | `Beleg` | `Anfangsbestand` (GV_NAME „Restbestand Vorabschluss“), `Geldtransit` („Wechselgeld aus Vereinskasse“ / „Abschöpfung an Vereinskasse“), `DifferenzSollIst` („Kassensturz“), USt-Schlüssel 5 | `Bar` |
 
 - **Abrechnungskreis** (`Bonkopf_AbrKreis`): `Tisch <nr> / Bestellung <nr> (<8 Zeichen Bestell-ID>)` für alle Vorgänge einer Bestellung (Tz. 2.7, 3.1.2.2); die Zahlung verweist zusätzlich auf die Bestellvorgänge (`Bon_Referenzen`).
@@ -70,6 +72,10 @@ Eigene Umsetzung der **Digitalen Schnittstelle der Finanzverwaltung für Kassens
 - **Trinkgeld**: `settings.dsfinvk.tipRecipient` = `employer` (Standard, `TrinkgeldAG`, Trinkgeld an den Verein) oder `employee` (`TrinkgeldAN`).
 >>>>>>> origin/dev
 - **Stammdaten**: Name (`settings.legalName` oder Organisationsname), Anschrift (`settings.contact`), `settings.taxNumber`/`settings.vatId` (eins davon Pflicht, § 14 Abs. 4 Nr. 2 UStG; für die Cloud-TSE vorausgesetzt: 409 `TSE_MASTER_DATA_REQUIRED`), Land Alpha-3. Betriebsstätte (`Stamm_Orte`) = Sitz der Organisation.
+
+## Kellnerabrechnung, Live-Kassensturz, Trinkgeld-Auszahlung
+
+Steuerberater 2026-11-10, Fragen 5, 7, 8: Die Abrechnung ist mit Cloud-TSE ein abgesicherter Vorgang (`SonstigerVorgang`, Soll/Ist/Differenz); Nachdruck „Kopie“, sie wird nur elektronisch erzeugt und 10 Jahre aufbewahrt (unveränderlich). Live-Kassensturz: `GET /organizations/:id/waiter-settlements/live` bzw. `GET /device-api/waiter/live-cash-audit` (Schichtleitung). Kartentrinkgeld auszahlen (`POST /organizations/:id/waiters/:waiterId/tip-payouts`, `POST /device-api/waiter/tip-payouts`, oder `payOutCardTips` bei der Abrechnung): nur Bedienungen mit „Arbeitnehmer (Lohnkonto)“ (409 `TIP_PAYOUT_NOT_EMPLOYEE`), höchstens das offene Kartentrinkgeld, Tabelle `tip_payouts` (unveränderlich), mindert den Soll-Bestand der Schublade.
 
 ## Kassenbuch
 

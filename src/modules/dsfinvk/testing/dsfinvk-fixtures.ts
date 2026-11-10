@@ -7,7 +7,10 @@ import type { Payment } from '../../../database/entities/payment.entity';
 import { cents, rateRecord, tipByRate } from '../../refunds/refund-calc';
 import {
   PROCESS_TYPE_ORDER,
+  PROCESS_TYPE_OTHER,
   PROCESS_TYPE_RECEIPT,
+  settlementProcessData,
+  tipPayoutProcessData,
   abortProcessData,
   bestellungProcessData,
   cashbookProcessData,
@@ -551,6 +554,62 @@ export function cashbook(
     amountCents,
     lines: { cashbookType: type, amountCents, note },
     terminal,
+  });
+}
+
+/** Kellnerabrechnung (SonstigerVorgang, TseSigningService.signSettlement). */
+export function settlement(
+  seq: Sequence,
+  spec: {
+    number: number;
+    name: string;
+    expected: number;
+    counted: number | null;
+  },
+): DsfinvkTransaction {
+  const difference =
+    spec.counted === null
+      ? null
+      : Math.round((spec.counted - spec.expected) * 100) / 100;
+  const c = (v: number | null) => (v === null ? null : cents(v));
+  return signed(seq, TSE_A, {
+    kind: 'settlement',
+    processType: PROCESS_TYPE_OTHER,
+    processData: settlementProcessData({
+      number: spec.number,
+      expectedCents: c(spec.expected),
+      countedCents: c(spec.counted),
+      differenceCents: c(difference),
+    }),
+    amountCents: 0,
+    lines: {
+      settlementId: `s-${spec.number}`,
+      settlementNumber: spec.number,
+      subjectName: spec.name,
+      expected: spec.expected,
+      counted: spec.counted,
+      difference,
+    },
+  });
+}
+
+/** Barauszahlung von Kartentrinkgeld (TseSigningService.signTipPayout). */
+export function tipPayout(
+  seq: Sequence,
+  spec: { amount: number; name: string; waiterId: string },
+): DsfinvkTransaction {
+  const amountCents = -cents(spec.amount);
+  return signed(seq, TSE_A, {
+    kind: 'tip_payout',
+    processType: PROCESS_TYPE_RECEIPT,
+    processData: tipPayoutProcessData(amountCents),
+    amountCents,
+    lines: {
+      tipPayoutId: 'tp-1',
+      amountCents,
+      recipientWaiterId: spec.waiterId,
+      recipientName: spec.name,
+    },
   });
 }
 

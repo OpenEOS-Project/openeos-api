@@ -30,6 +30,8 @@ import type { Composition } from '../refunds/refund-calc';
 
 export const PROCESS_TYPE_RECEIPT = 'Kassenbeleg-V1';
 export const PROCESS_TYPE_ORDER = 'Bestellung-V1';
+/** Andere abzusichernde Vorgaenge (DSFinV-K Anhang I), z. B. Kellnerabrechnung. */
+export const PROCESS_TYPE_OTHER = 'SonstigerVorgang';
 
 export type ReceiptBusinessType = 'Beleg' | 'AVTraining' | 'AVBelegabbruch';
 export type TsePaymentType = 'Bar' | 'Unbar';
@@ -292,4 +294,45 @@ export function qrCodePayload(input: QrCodeInput): string {
 export function clientIdForOrganization(organizationId: string): string {
   const hex = organizationId.replace(/[^0-9a-fA-F]/g, '').slice(0, 12);
   return `OEOS-${hex.toUpperCase()}`;
+}
+
+/**
+ * Kellnerabrechnung als `SonstigerVorgang` (Steuerberater 2026-11-10,
+ * Frage 7: „Kellnerabrechnung als TSE-gesicherter Vorgang mit Soll,
+ * gezaehltem Ist und Differenz“). Ohne Kellnerbrieftasche bewegt sie kein
+ * Geld (das Bargeld liegt in der Schublade; die Differenz der Schublade
+ * bucht der Kassensturz als DifferenzSollIst) — abgesichert werden die
+ * Zahlen: `Kellnerabrechnung^<Nr>^Soll:<x>^Ist:<y>^Differenz:<z>`
+ * (fehlendes Ist/Differenz leer).
+ */
+export function settlementProcessData(input: {
+  number: number | null;
+  expectedCents: number | null;
+  countedCents: number | null;
+  differenceCents: number | null;
+}): string {
+  const v = (cents: number | null) =>
+    cents === null ? '' : formatCents(cents);
+  return [
+    'Kellnerabrechnung',
+    input.number === null ? '' : String(input.number),
+    `Soll:${v(input.expectedCents)}`,
+    `Ist:${v(input.countedCents)}`,
+    `Differenz:${v(input.differenceCents)}`,
+  ].join('^');
+}
+
+/**
+ * Auszahlung von Kartentrinkgeld an eine angestellte Bedienung
+ * (Steuerberater 2026-11-10, Frage 5): TrinkgeldAN negativ, Bar negativ,
+ * z. B. `Beleg^0.00_0.00_0.00_0.00_-5.20^-5.20:Bar`.
+ */
+export function tipPayoutProcessData(amountCents: number): string {
+  const amount = -Math.abs(Math.round(amountCents));
+  const slots = emptySlots();
+  slots[4] = amount;
+  return kassenbelegProcessData('Beleg', {
+    slots,
+    payments: [{ type: 'Bar', cents: amount }],
+  });
 }

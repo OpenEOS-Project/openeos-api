@@ -18,6 +18,22 @@ export const CHANGELOG: ChangelogEintrag[] = [
   {
     // Naechste Veroeffentlichung (1.8): Datum beim Release anpassen.
     datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Live-Kassensturz und Trinkgeld-Auszahlung',
+      en: 'Live cash check and tip payout',
+    },
+    kurz: {
+      de: 'Der Live-Kassensturz zeigt jederzeit, wie viel Bargeld jede Bedienung haben muss; Kellnerabrechnungen sind mit Cloud-TSE abgesichert, und angestellten Bedienungen zahlst du Kartentrinkgeld mit Beleg aus.',
+      en: 'The live cash check shows at any time how much cash every server should have; server settlements are secured with the Cloud-TSE, and you pay out card tips to employed servers with a receipt.',
+    },
+    text: {
+      de: 'Unter „Kellnerabrechnungen“ findest du den Live-Kassensturz: für jede Bedienung das Soll bar seit ihrer letzten Abrechnung, wo das Geld liegt, Kartenzahlungen, Trinkgeld und offene Tische – praktisch, wenn das Finanzamt zur Kassen-Nachschau kommt. Die Schichtleitung sieht ihn auch an der Kasse. Mit Cloud-TSE wird jede Kellnerabrechnung mit Soll, gezähltem Betrag und Differenz von der TSE abgesichert; ein Nachdruck trägt den Vermerk „Kopie“. Kellnerabrechnungen werden ausschließlich elektronisch erzeugt und aufbewahrt. Für Bedienungen mit „Arbeitnehmer (Lohnkonto)“ kannst du offenes Kartentrinkgeld bar auszahlen – mit eigenem Beleg und Quittung, auch direkt bei der Abrechnung. Bei Ehrenamtlichen gehört das Trinkgeld dem Verein, deshalb ist die Auszahlung dort gesperrt.',
+      en: 'Under "Server settlements" you find the live cash check: for every server the expected cash since their last settlement, where the money is, card payments, tips and open tables – handy when the tax office comes for a cash inspection. Shift leads see it at the till too. With the Cloud-TSE every server settlement is secured with the expected amount, the counted amount and the difference; a reprint is marked "Copy". Server settlements are created and kept electronically only. For servers marked "Employee (payroll)" you can pay out open card tips in cash – with its own receipt and acknowledgement, also right at the settlement. For volunteers the tips belong to the club, so the payout is blocked there.',
+    },
+  },
+  {
+    datum: '2026-11-09',
     art: 'verbessert',
     titel: {
       de: 'Trinkgeld mit dem richtigen Steuersatz',

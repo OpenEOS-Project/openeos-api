@@ -27,7 +27,11 @@ describe('builtin print templates and the Cloud-TSE block', () => {
   it('serves the waiter settlement without TSE block, with signature lines', () => {
     const source = BUILTIN_PRINT_TEMPLATES[WAITER_SETTLEMENT_TEMPLATE];
     expect(TSE_RECEIPT_TEMPLATES).not.toContain(WAITER_SETTLEMENT_TEMPLATE);
-    expect(source).not.toContain('tse.');
+    // Kein voller TSE-Block (kein Kassenbeleg), nur der Hinweis auf den
+    // abgesicherten Vorgang; Nachdruck als „Kopie“ (Steuerberater Frage 8).
+    expect(source).not.toContain('tse.client_id');
+    expect(source).toContain('tse.transaction_number');
+    expect(source).toContain('-- KOPIE --');
     expect(source).toContain('Kasse / Schichtleitung');
     expect(source).toContain('{% if signatures|default(true) %}');
     expect(source.trimEnd().endsWith('<<CUT>>')).toBe(true);

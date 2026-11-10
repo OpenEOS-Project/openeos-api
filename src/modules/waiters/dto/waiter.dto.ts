@@ -275,6 +275,56 @@ export class SettleWaiterDto {
   @IsOptional()
   @IsUUIDLoose()
   printerId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Offenes Kartentrinkgeld gleich bar auszahlen (nur Bedienungen mit „Arbeitnehmer (Lohnkonto)“; eigener TSE-Beleg TrinkgeldAN, Quittung).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  payOutCardTips?: boolean;
+}
+
+/** Kartentrinkgeld bar auszahlen (nur Arbeitnehmer). */
+export class TipPayoutDto {
+  @ApiPropertyOptional({
+    example: 5.2,
+    description: 'Betrag in Euro; ohne: das ganze offene Kartentrinkgeld.',
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(100_000)
+  amount?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUIDLoose()
+  eventId?: string;
+
+  @ApiPropertyOptional({ maxLength: 500 })
+  @Transform(trimOrNull)
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Drucker für die Quittung (Verwaltung).',
+  })
+  @IsOptional()
+  @IsUUIDLoose()
+  printerId?: string;
+}
+
+/** Kartentrinkgeld an der Kasse auszahlen (Schichtleitung). */
+export class DeviceTipPayoutDto extends TipPayoutDto {
+  @ApiPropertyOptional({
+    description: 'Bedienung; ohne: sich selbst (nur Schichtleitung).',
+  })
+  @IsOptional()
+  @IsUUIDLoose()
+  waiterId?: string;
 }
 
 /** Abrechnen an der Kasse: optional eine andere Bedienung (Schichtleitung). */

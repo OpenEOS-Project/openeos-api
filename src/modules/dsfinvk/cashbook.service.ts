@@ -62,6 +62,8 @@ export interface CashSummary {
   cashSales: number;
   cashRefunds: number;
   pfandPayouts: number;
+  /** Barauszahlung von Kartentrinkgeld an Arbeitnehmer (negativ). */
+  tipPayouts: number;
   differences: number;
   /** Soll-Bestand = Summe aller Bargeldbewegungen des Geschaeftstags. */
   expected: number;
@@ -358,6 +360,7 @@ export class CashbookService {
           WHERE o.organization_id = $1 AND p.payment_method = 'cash' AND p.created_at >= $2 AND p.created_at < $3
          UNION SELECT device_id FROM refunds WHERE organization_id = $1 AND payment_method = 'cash' AND created_at >= $2 AND created_at < $3
          UNION SELECT device_id FROM pfand_returns WHERE organization_id = $1 AND created_at >= $2 AND created_at < $3
+         UNION SELECT device_id FROM tip_payouts WHERE organization_id = $1 AND created_at >= $2 AND created_at < $3
          UNION SELECT device_id FROM cashbook_entries WHERE organization_id = $1 AND business_date = $4
        ) d`,
         [organizationId, from, to, businessDate],
@@ -406,6 +409,14 @@ export class CashbookService {
         params,
       ),
     );
+    // Barauszahlung von Kartentrinkgeld an angestellte Bedienungen.
+    const [tipPayoutRow] = rowsOf<{ v: string }>(
+      await this.dataSource.query(
+        `SELECT COALESCE(SUM(amount), 0) AS v FROM tip_payouts
+        WHERE organization_id = $1 AND is_test = false AND created_at >= $2 AND created_at < $3${device('device_id')}`,
+        params,
+      ),
+    );
     const entryParams: unknown[] = [organizationId, businessDate];
     if (byDevice) entryParams.push(deviceId);
     const entries = rowsOf<{
@@ -442,6 +453,7 @@ export class CashbookService {
     const cashSales = toCents(sales?.v);
     const cashRefunds = toCents(refunds?.v); // negativ
     const pfandPayouts = -Math.abs(toCents(pfand?.v));
+    const tipPayouts = -Math.abs(toCents(tipPayoutRow?.v));
     const expected =
       opening +
       deposits +
@@ -449,7 +461,8 @@ export class CashbookService {
       differences +
       cashSales +
       cashRefunds +
-      pfandPayouts;
+      pfandPayouts +
+      tipPayouts;
     const lastCount = [...entries]
       .reverse()
       .find((e) => e.type === 'cash_count');
@@ -462,6 +475,7 @@ export class CashbookService {
         cashSales: euros(cashSales),
         cashRefunds: euros(cashRefunds),
         pfandPayouts: euros(pfandPayouts),
+        tipPayouts: euros(tipPayouts),
         differences: euros(differences),
         expected: euros(expected),
         lastCount: lastCount
