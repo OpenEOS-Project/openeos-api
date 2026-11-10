@@ -138,7 +138,6 @@ src/
     ├── workflows/              # Workflow Engine
     ├── qr-codes/               # QR-Code Verwaltung
     ├── online-orders/          # Online-Bestellungen
-    ├── credits/                # Guthaben-System
     ├── invoices/               # Rechnungen
     ├── admin/                  # Super-Admin
     ├── reports/                # Berichte
@@ -187,7 +186,7 @@ src/
 | GET | `/:id` | Event abrufen |
 | PATCH | `/:id` | Event aktualisieren |
 | DELETE | `/:id` | Event löschen |
-| POST | `/:id/activate` | Event aktivieren (Credit-Check) |
+| POST | `/:id/activate` | Event aktivieren (Testmodus bzw. freigeschaltete Veranstaltungstage) |
 | POST | `/:id/complete` | Event abschließen |
 | POST | `/:id/cancel` | Event abbrechen |
 
@@ -338,75 +337,18 @@ antwortet mit **410** `PRINTER_SYNC_REMOVED`. Socket: `agentHeartbeat`
 | POST | `/submit` | Bestellung abschicken |
 | GET | `/status` | Bestellstatus |
 
-### Credits (`/api/organizations/:orgId/credits`)
-| Methode | Endpunkt | Beschreibung |
-|---------|----------|--------------|
-| GET | `/` | Guthaben abrufen |
-| GET | `/packages` | Verfügbare Pakete |
-| GET | `/packages/:slug` | Paket abrufen |
-| POST | `/purchase` | Guthaben kaufen |
-| GET | `/history` | Kaufhistorie |
-| GET | `/licenses` | Lizenz-Nutzung |
-
-### Invoices (`/api/organizations/:orgId/invoices`)
-| Methode | Endpunkt | Beschreibung |
-|---------|----------|--------------|
-| GET | `/` | Alle Rechnungen |
-| GET | `/:id` | Rechnung abrufen |
-| GET | `/:id/pdf` | Rechnung als PDF |
-
-### Reports (`/api/organizations/:orgId/reports`)
-| Methode | Endpunkt | Beschreibung |
-|---------|----------|--------------|
-| GET | `/sales` | Verkaufsbericht |
-| GET | `/products` | Produktbericht |
-| GET | `/payments` | Zahlungsbericht |
-| GET | `/hourly` | Stundenbericht |
-| GET | `/inventory` | Bestandsbericht |
-| GET | `/stock-movements` | Lagerbewegungen |
-| GET | `/export` | Export (CSV/JSON) |
-
-### Uploads (`/api/organizations/:orgId/uploads`)
-| Methode | Endpunkt | Beschreibung |
-|---------|----------|--------------|
-| POST | `/image` | Bild hochladen |
-| DELETE | `/:filename` | Bild löschen |
-| GET | `/:category/:filename` | Bild abrufen |
-
-Alle Dateien (auch die des Speisekarten-Imports) liegen unter `UPLOAD_DIR` (im Container `/app/uploads`). Das Image legt das Verzeichnis für den Nutzer `nestjs` (uid 1001) an; ein **Bind-Mount vom Host überstimmt das**: gehört das Host-Verzeichnis root, antworten Uploads mit `503 UPLOAD_DIR_NOT_WRITABLE` („Der Upload-Ordner auf dem Server ist nicht beschreibbar – bitte den Betreiber informieren.“) und der Start warnt im Log. Abhilfe auf dem Host: `chown -R 1001 <verzeichnis>`. Ein benanntes Volume (wie in `docker-compose.prod.yml`) übernimmt die Rechte aus dem Image und braucht nichts weiter.
-
-### Inventory (`/api/organizations/:orgId/inventory`)
-| Methode | Endpunkt | Beschreibung |
-|---------|----------|--------------|
-| GET | `/counts` | Alle Inventuren |
-| POST | `/counts` | Inventur erstellen |
-| GET | `/counts/:id` | Inventur abrufen |
-| PATCH | `/counts/:id` | Inventur aktualisieren |
-| DELETE | `/counts/:id` | Inventur löschen |
-| POST | `/counts/:id/start` | Inventur starten |
-| POST | `/counts/:id/complete` | Inventur abschließen |
-| POST | `/counts/:id/cancel` | Inventur abbrechen |
-| POST | `/counts/:id/items` | Artikel hinzufügen |
-| POST | `/counts/:id/items/bulk-add` | Mehrere Artikel hinzufügen |
-| PATCH | `/counts/:countId/items/:itemId` | Zählung eintragen |
-| GET | `/stock-movements` | Lagerbewegungen |
-| GET | `/stock-movements/:id` | Lagerbewegung abrufen |
-
 ### Admin (`/api/admin`) - Super Admin
 | Methode | Endpunkt | Beschreibung |
 |---------|----------|--------------|
 | GET | `/organizations` | Alle Organisationen |
 | GET | `/organizations/:id` | Organisation abrufen |
 | PATCH | `/organizations/:id` | Organisation aktualisieren |
-| PATCH | `/organizations/:id/credits` | Credits anpassen |
 | PATCH | `/organizations/:id/discount` | Rabatt setzen |
 | DELETE | `/organizations/:id/discount` | Rabatt entfernen |
 | POST | `/organizations/:id/access` | Support-PIN Zugang |
 | GET | `/organizations/:id/impersonate` | Als Organisation agieren |
 | GET | `/users` | Alle Benutzer |
 | POST | `/users/:id/unlock` | Benutzer entsperren |
-| GET | `/purchases` | Alle Credit-Käufe |
-| POST | `/purchases/:id/complete` | Kauf abschließen |
 | GET | `/invoices` | Alle Rechnungen |
 | POST | `/invoices/:id/mark-paid` | Als bezahlt markieren |
 | GET | `/printers` | Übersicht: Drucker-Agents und Drucker je Organisation (nur lesend) |
@@ -449,15 +391,21 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 
 ## Environment Variables
 
+Die vollständige, kommentierte Liste steht in `.env.example` (Entwicklung) und `.env.prod.example` / `docker-compose.prod.yml` (Produktion).
+
 | Variable | Beschreibung | Default |
 |----------|--------------|---------|
 | `NODE_ENV` | Environment | development |
 | `PORT` | Server Port | 3000 |
 | `API_PREFIX` | API Prefix | api |
+| `APP_URL` | Basis-URL des Dashboards, für Links in E-Mails | http://localhost:3000 (Compose: https://app.openeos.de) |
+| `SHOP_RETURN_URL_BASE` | Shop-Adresse, auf die SumUp nach der Online-Zahlung zurückleitet (`<basis>/<eventId>/checkout/return`). Eigene Installation: eigene Domain setzen | https://shop.openeos.de |
+| `API_PUBLIC_URL` | Öffentliche Adresse dieser API ohne `/api`; SumUp ruft darüber den Shop-Webhook auf (`/api/public/shop/checkout/:id/webhook`) | https://api.openeos.de |
+| `ONLINE_ORDER_BASE_URL` | Ziel der Tisch-QR-Codes (`<basis>/scan/<code>`) | https://order.openeos.de |
 | `DATABASE_HOST` | PostgreSQL Host | localhost |
 | `DATABASE_PORT` | PostgreSQL Port | 5432 |
 | `DATABASE_NAME` | Datenbankname | openeos |
-| `DATABASE_USERNAME` | DB Benutzer | postgres |
+| `DATABASE_USER` | DB Benutzer | openeos |
 | `DATABASE_PASSWORD` | DB Passwort | - |
 | `DATABASE_POOL_MAX` | Max. connections in the pool | 10 |
 | `DATABASE_POOL_IDLE_TIMEOUT_MS` | Close an idle connection after (ms) | 600000 |
@@ -465,13 +413,27 @@ Das WebSocket Gateway verwendet Socket.io und unterstützt folgende Namespaces:
 | `REDIS_HOST` | Redis Host | localhost |
 | `REDIS_PORT` | Redis Port | 6379 |
 | `JWT_SECRET` | JWT Secret Key | - |
-| `JWT_EXPIRES_IN` | JWT Ablaufzeit | 30m |
-| `REFRESH_TOKEN_EXPIRES_IN` | Refresh Token Ablauf | 7d |
+| `JWT_ACCESS_TOKEN_EXPIRATION` | Gültigkeit des Access Tokens | 30m |
+| `JWT_REFRESH_TOKEN_EXPIRATION` | Gültigkeit des Refresh Tokens | 7d |
 | `TWO_FACTOR_ENCRYPTION_KEY` | Schlüssel für 2FA-Geheimnisse, in Produktion Pflicht — sichern! | – |
 | `INTEGRATION_ENCRYPTION_KEY` | Schlüssel für die Zugangsdaten der Zahlungsanbieter (leer: `TWO_FACTOR_ENCRYPTION_KEY`), siehe „Zugangsdaten der Zahlungsanbieter“ — sichern! | – |
 | `CORS_ORIGINS` | Erlaubte Origins | http://localhost:3001 |
 | `TRUST_PROXY` | Vertrauenswürdige Reverse-Proxys für X-Forwarded-For (Hop-Anzahl, IPs/CIDRs oder `false`) | loopback, linklocal, uniquelocal |
 | `UPLOAD_DIR` | Upload-Verzeichnis — muss dem Container-Nutzer (uid 1001) gehören, siehe „Uploads“ | ./uploads |
+| `REDIS_PASSWORD` | Redis-Passwort (optional) | – |
+| `PIN_PEPPER` | Pepper der Kassen-PINs (Mitglieder und Bedienungen); leer: abgeleitet aus `TWO_FACTOR_ENCRYPTION_KEY`. Vor der ersten PIN setzen, ein Wechsel macht alle PINs ungültig | – |
+| `WAITERS_PER_ORGANIZATION_LIMIT` | Höchstzahl Bedienungen je Organisation; 0 = unbegrenzt | 200 |
+| `EMAIL_ENABLED` / `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USER` / `EMAIL_PASSWORD` | SMTP-Versand; `false`: Mails werden nur protokolliert | false / – / 587 / – / – |
+| `EMAIL_FROM` / `EMAIL_FROM_NAME` | Absender | noreply@openeos.de / OpenEOS |
+| `ADMIN_NOTIFY_EMAIL` / `ADMIN_EMAIL` | Empfänger der Plattform-Benachrichtigungen (Fallback, im Super-Admin-Bereich einstellbar) | – |
+| `SUPPORT_NOTIFY_EMAIL` | Empfänger neuer Support-Nachrichten und Kontaktanfragen (leer: Admin-Adresse) | – |
+| `THROTTLE_TTL` / `THROTTLE_LIMIT` | Rate Limiting: Fenster (ms) und Anfragen je Fenster | 60000 / 300 |
+| `FIRST_EVENT_DISCOUNT_PERCENT` | Nachlass auf die erste abgerechnete Veranstaltung (gehostet) | 20 |
+| `TEST_EVENT_MAX_ORDERS` | Bestellungen im Testmodus vor der Freischaltung (gehostet) | 25 |
+| `REPORT_TIMEZONE` | Zeitzone stundenbasierter Auswertungen | Europe/Berlin |
+| `PLATFORM_IMPRINT_URL` / `PLATFORM_PRIVACY_URL` | Plattform-Links unter Shop und Helferseiten (siehe `.env.example`) | saas: openeos.de, selfhosted: keine |
+| `FRONTEND_URL` | Rückfall für die Rückleitung nach einer Online-Zahlung, wenn der Client keine `returnUrl` schickt | – |
+| `SENTRY_DSN` | Fehlerberichte an Sentry (leer: aus) | – |
 | `EVENT_PRICE_EUR` | Preis pro abgerechnetem Veranstaltungstag | 25 |
 | `BUSINESS_DAY_START_HOUR` | Tageswechsel der Abrechnung (Stunde 1–23, Ortszeit der Organisation). Ein Veranstaltungstag läuft von 6 bis 6 Uhr; ein Ende bis einschließlich 6:00 zählt zum Vortag (Sa 20 Uhr – So 2 Uhr = 1 Tag). Bereits bezahlte Veranstaltungen behalten ihre Tage. | 6 |
 | `EVENT_DATE_PHASES` | Phasen freigeschalteter Veranstaltungen (Geplant – Aktiv – Beendet). `false`: nur der Status zählt, wie vor 2026-11 | true |

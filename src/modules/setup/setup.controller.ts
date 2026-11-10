@@ -42,7 +42,7 @@ export class SetupController {
   @ApiOperation({
     summary: 'Führt die erstmalige Einrichtung durch',
     description:
-      'Zwei Modi verfügbar: "single" für Einzelbetrieb (Admin + Organisation mit unbegrenzten Credits), "multi" für Multi-Mandanten/SaaS (Super-Admin ohne Organisation)',
+      'Zwei Modi verfügbar: "single" für Einzelbetrieb (Admin + Organisation; mit DEPLOYMENT_MODE=selfhosted ohne Abrechnung), "multi" für Multi-Mandanten/SaaS (Super-Admin ohne Organisation, Freischaltung je Veranstaltungstag)',
   })
   @ApiResponse({
     status: 201,

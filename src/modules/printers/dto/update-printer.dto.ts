@@ -78,7 +78,7 @@ export class UpdatePrinterDto {
 
   @ApiPropertyOptional({
     example: false,
-    description: 'Ob eine Kassenschublade angeschlossen ist',
+    description: 'Ob eine Kassenlade angeschlossen ist',
   })
   @IsOptional()
   @IsBoolean()
