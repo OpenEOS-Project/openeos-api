@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Delete,
-  Body,
-  Param,
-  Headers,
-} from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ShiftsService } from './shifts.service';
 import { PublicRegisterDto } from './dto';
@@ -100,23 +92,9 @@ export class ShiftsPublicController {
 
   @Post(':slug/register')
   @ApiOperation({ summary: 'Register for shift(s)' })
-  async register(
-    @Param('slug') slug: string,
-    @Body() dto: PublicRegisterDto,
-    @Headers('origin') origin?: string,
-    @Headers('referer') referer?: string,
-  ) {
-    // Determine base URL for verification link
-    let baseUrl = origin;
-    if (!baseUrl && referer) {
-      try {
-        const url = new URL(referer);
-        baseUrl = `${url.protocol}//${url.host}`;
-      } catch {
-        // Ignore invalid referer
-      }
-    }
-
+  async register(@Param('slug') slug: string, @Body() dto: PublicRegisterDto) {
+    // Links in the confirmation mail always point to the configured app
+    // URL (APP_URL), see ShiftsService.helperLink().
     const result = await this.shiftsService.publicRegister(
       slug,
       dto.name,
@@ -124,7 +102,6 @@ export class ShiftsPublicController {
       dto.shiftIds,
       dto.phone,
       dto.notes,
-      baseUrl,
     );
 
     return {
@@ -175,22 +152,8 @@ export class ShiftsPublicController {
   async requestMagicLink(
     @Param('slug') slug: string,
     @Body() body: { email: string },
-    @Headers('origin') origin?: string,
-    @Headers('referer') referer?: string,
   ) {
-    let baseUrl = origin;
-    if (!baseUrl && referer) {
-      try {
-        baseUrl = new URL(referer).origin;
-      } catch {
-        /* noop */
-      }
-    }
-    await this.shiftsService.requestHelperMagicLink(
-      slug,
-      body?.email ?? '',
-      baseUrl,
-    );
+    await this.shiftsService.requestHelperMagicLink(slug, body?.email ?? '');
     // Always return success so an attacker can't probe which emails exist.
     return {
       data: {

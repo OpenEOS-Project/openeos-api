@@ -11,7 +11,6 @@ import {
   HttpStatus,
   Res,
   StreamableFile,
-  Headers,
   UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
@@ -653,23 +652,12 @@ export class ShiftsController {
       >;
       message?: string;
     },
-    @Headers('origin') origin?: string,
-    @Headers('referer') referer?: string,
   ) {
-    let baseUrl = origin;
-    if (!baseUrl && referer) {
-      try {
-        baseUrl = new URL(referer).origin;
-      } catch {
-        /* noop */
-      }
-    }
     const proposal = await this.shiftsService.proposeRegistrationChanges(
       organizationId,
       registrationGroupId,
       body.ops,
       body.message,
-      baseUrl,
     );
     return { data: proposal };
   }
