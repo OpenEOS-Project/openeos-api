@@ -1252,6 +1252,16 @@ export class DeviceApiController {
   ) {
     const organizationId = requireOrganization(device);
     await this.assertPaymentsAllowedFor(organizationId);
+    // Wertmarken gehen nur ueber das Kassieren (Sammelzahlung bzw.
+    // Bestellung mit Zahlung), nicht ueber die Aufteilung nach Positionen.
+    if (String(createDto.paymentMethod) === String(PaymentMethod.TOKENS)) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TOKEN_LINES_INVALID,
+        message:
+          'Wertmarken nimmst du beim Kassieren an, nicht beim Aufteilen nach Positionen.',
+      });
+    }
 
     const order = await this.orderRepository.findOne({
       where: { id: createDto.orderId, organizationId },

@@ -21,9 +21,13 @@ import {
   buildReceiptTax,
   cashChange,
   vatExemptNotice,
+  receiptTokenBlock,
+  withoutSinglePurposeTax,
+  type ReceiptTokenLine,
 } from './receipt-tax.util';
 import type { Refund } from '../../database/entities/refund.entity';
 import type { PfandReturn } from '../../database/entities/pfand-return.entity';
+import type { TokenTransaction } from '../../database/entities/token-transaction.entity';
 import { tsePrintBlock, type TseReceiptView } from '../tse/tse-view';
 import { organizationPrintBlock, paymentMethodLabel } from './receipt-labels';
 import {
@@ -38,6 +42,7 @@ import {
   WAITER_SETTLEMENT_TEMPLATE,
   REFUND_RECEIPT_TEMPLATE,
   HOSPITALITY_RECEIPT_TEMPLATE,
+  TOKEN_RECEIPT_TEMPLATE,
 } from './builtin-templates';
 
 const REASON_LABELS: Record<string, string> = {
@@ -619,6 +624,23 @@ export class OrderPrintService {
     }
   }
 
+  /** Wertmarken einer Zahlung (`payments.token_lines`), leer ohne. */
+  private async tokensOfPayment(
+    paymentId: string,
+  ): Promise<ReceiptTokenLine[]> {
+    try {
+      const rows: { token_lines: ReceiptTokenLine[] | null }[] =
+        await this.organizationRepository.manager.query(
+          `SELECT token_lines FROM payments WHERE id = $1`,
+          [paymentId],
+        );
+      const lines = rows?.[0]?.token_lines;
+      return Array.isArray(lines) ? lines : [];
+    } catch {
+      return [];
+    }
+  }
+
   /** `settings.vatExempt` der Organisation (fuer den § 19-Hinweis). */
   private async orgVatExempt(
     organizationId: string,
@@ -678,6 +700,26 @@ export class OrderPrintService {
     // Teilzahlungen nicht auf jedem Teilbeleg).
     const tip = await this.tipOfPayment(data.paymentId, data.order);
     const serviceFee = serviceFeeOf(data.order);
+    // Wertmarken dieser Zahlung: „bezahlt mit Wertmarken: n x 2,00 EUR“;
+    // Einzweck-Marken ohne erneute MwSt (die stand auf dem Verkaufsbeleg).
+    const tokens = await this.tokensOfPayment(data.paymentId);
+    const tax = withoutSinglePurposeTax(
+      buildReceiptTax(
+        receiptItems,
+        data.order?.discountAmount,
+        org?.settings?.vatExempt,
+        {
+          amount: tip,
+          toClub: !(await this.tipToEmployee(data.paymentId)),
+        },
+        serviceFee,
+      ),
+      tokens,
+    );
+    const tokenMethod =
+      tokens.length > 0 && data.paymentMethod !== 'tokens'
+        ? `${paymentMethodLabel(data.paymentMethod) ?? data.paymentMethod} + Wertmarken`
+        : undefined;
     return {
       ...this.buildOrderPayload(data.order, staff),
       organization: orgPayload,
@@ -694,17 +736,9 @@ export class OrderPrintService {
       subtotal: data.order?.subtotal,
       // MwSt je Satz aus den Positionen; fehlt bei steuerbefreiten
       // Organisationen ganz, damit der Bon keine MwSt-Zeile druckt.
-      ...buildReceiptTax(
-        receiptItems,
-        data.order?.discountAmount,
-        org?.settings?.vatExempt,
-        {
-          amount: tip,
-          toClub: !(await this.tipToEmployee(data.paymentId)),
-        },
-        serviceFee,
-      ),
+      ...tax,
       ...vatExemptNotice(org?.settings?.vatExempt),
+      ...receiptTokenBlock(tokens, org?.settings?.vatExempt),
       // Trinkgeld steckt in GESAMT; eigene Zeile auf dem Bon — nur auf dem
       // Beleg der Zahlung, die es getragen hat.
       tip_amount: tip,
@@ -718,7 +752,7 @@ export class OrderPrintService {
       change: cashChange(data.paymentMethod, data.amount, data.amountReceived),
       payment_method: data.paymentMethod,
       // Anzeigename („Bar“, „Karte (SumUp)“ …) statt des Rohwerts.
-      payment_label: paymentMethodLabel(data.paymentMethod),
+      payment_label: tokenMethod ?? paymentMethodLabel(data.paymentMethod),
       paymentId: data.paymentId,
       amount: data.amount,
       isFullyPaid: data.isFullyPaid,
@@ -935,6 +969,66 @@ export class OrderPrintService {
     } catch (error) {
       this.logger.error(
         `Failed to print pfand return receipt for org ${organizationId}: ${(error as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Beleg eines Verkaufs bzw. Ruecktauschs von Wertmarken (Vorlage
+   * `token_receipt`) auf den Kassenbon-Drucker des Geraets, sonst der
+   * Organisation. Liefert, ob ein Druckauftrag entstanden ist.
+   */
+  async printTokenReceipt(
+    organizationId: string,
+    data: {
+      tokenTransaction: TokenTransaction;
+      deviceName?: string | null;
+      actorName?: string | null;
+      reprint?: boolean;
+      tse?: TseReceiptView | null;
+    },
+  ): Promise<boolean> {
+    try {
+      const tx = data.tokenTransaction;
+      const { printerId } = await this.printRoutingService.resolveOrderPrinter({
+        organizationId,
+        orderDeviceId: tx.deviceId ?? null,
+        workflow: 'receipt',
+      });
+      if (!printerId) return false;
+      const event = tx.eventId
+        ? await this.eventRepository.findOne({
+            where: { id: tx.eventId },
+            select: ['id', 'name'],
+          })
+        : null;
+      await this.printJobsService.createFromWorkflow(
+        organizationId,
+        printerId,
+        null,
+        null,
+        1,
+        {
+          organization: await this.buildOrgPayload(organizationId),
+          ...tokenTransactionPrintData(
+            tx,
+            await this.orgVatExempt(organizationId),
+          ),
+          event_name: event?.name ?? null,
+          device_name: data.deviceName ?? null,
+          actor_name: data.actorName ?? null,
+          reprint: data.reprint === true,
+          is_test: tx.isTest === true,
+          tse: tsePrintBlock(data.tse, { reprint: data.reprint === true }),
+        },
+        null,
+        TOKEN_RECEIPT_TEMPLATE,
+      );
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to print token receipt for org ${organizationId}: ${(error as Error).message}`,
       );
       return false;
     }
@@ -1188,4 +1282,71 @@ export function kitchenTseMarks(tse: TseReceiptView | null | undefined): {
   return tse.status === 'failed' || tse.status === 'pending'
     ? { tse_outage: true }
     : {};
+}
+
+/**
+ * Betraege und Positionen eines Verkaufs/Ruecktauschs von Wertmarken fuer
+ * die Vorlage `token_receipt` (Ruecktausch negativ).
+ */
+export function tokenTransactionPrintData(
+  tx: Pick<
+    TokenTransaction,
+    | 'id'
+    | 'kind'
+    | 'transactionNumber'
+    | 'createdAt'
+    | 'lines'
+    | 'totalAmount'
+    | 'taxLines'
+    | 'paymentMethod'
+    | 'amountReceived'
+    | 'reason'
+  >,
+  vatExempt: boolean | undefined,
+): Record<string, unknown> {
+  const taxLines = tx.taxLines ?? [];
+  const buyback = tx.kind === 'buyback';
+  const total = (buyback ? -1 : 1) * Math.abs(Number(tx.totalAmount));
+  const received =
+    tx.amountReceived === null ? null : Number(tx.amountReceived);
+  const multi = (tx.lines ?? []).some((l) => l.kind !== 'single_purpose');
+  return {
+    token_transaction_id: tx.id,
+    token_kind: tx.kind,
+    transaction_number: tx.transactionNumber,
+    created_at: tx.createdAt,
+    items: (tx.lines ?? []).map((line) => ({
+      count: Math.abs(Number(line.count)),
+      name: line.name,
+      unit_value: Number(line.unitValue),
+      total: (buyback ? -1 : 1) * Math.abs(Number(line.amount)),
+      kind: line.kind,
+      vat_rate: line.vatRate ?? null,
+      kind_label:
+        vatExempt !== false || line.kind !== 'single_purpose'
+          ? 'Wertmarken (Mehrzweck-Gutschein, nicht steuerbar)'
+          : `Wertmarken (Einzweck-Gutschein, ${Number(line.vatRate)} % USt)`,
+    })),
+    tax_lines: taxLines,
+    tax_amount:
+      Math.round(taxLines.reduce((sum, l) => sum + l.tax, 0) * 100) / 100,
+    ...(multi && vatExempt === false
+      ? {
+          token_note: buyback
+            ? 'Ruecktausch Mehrzweck-Gutschein: kein Umsatz.'
+            : 'Mehrzweck-Gutschein (§ 3 Abs. 15 UStG): Die USt entsteht bei der Einloesung mit dem Satz der Ware.',
+        }
+      : {}),
+    ...vatExemptNotice(vatExempt),
+    total,
+    payment_method: tx.paymentMethod,
+    payment_label: paymentMethodLabel(tx.paymentMethod),
+    ...(received !== null && !buyback
+      ? {
+          amount_received: received,
+          change: Math.max(0, Math.round((received - total) * 100) / 100),
+        }
+      : {}),
+    reason: tx.reason ?? null,
+  };
 }

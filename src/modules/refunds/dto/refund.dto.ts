@@ -196,6 +196,7 @@ export const HISTORY_PAYMENT_FILTERS = [
   'cash',
   'card',
   'sumup',
+  'tokens',
   'discount',
 ] as const;
 export type HistoryPaymentFilter = (typeof HISTORY_PAYMENT_FILTERS)[number];

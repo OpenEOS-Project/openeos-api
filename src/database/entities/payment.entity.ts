@@ -20,6 +20,11 @@ export enum PaymentMethod {
   PAYPAL = 'paypal',
   GOOGLE_PAY = 'google_pay',
   APPLE_PAY = 'apple_pay',
+  /**
+   * Nur mit Wertmarken bezahlt (`amount` 0, Wert in `tokenAmount`). Bei
+   * Marken plus Geld traegt die Zahlung die Zahlart des Geldes.
+   */
+  TOKENS = 'tokens',
 }
 
 export enum PaymentProvider {
@@ -27,6 +32,7 @@ export enum PaymentProvider {
   CARD = 'CARD',
   SUMUP = 'SUMUP',
   PAYPAL = 'PAYPAL',
+  TOKENS = 'TOKENS',
 }
 
 export enum PaymentTransactionStatus {
@@ -35,6 +41,23 @@ export enum PaymentTransactionStatus {
   CAPTURED = 'captured',
   FAILED = 'failed',
   REFUNDED = 'refunded',
+}
+
+/**
+ * Mit Wertmarken beglichener Anteil einer Zahlung je Markentyp
+ * (Schnappschuss). `count` ist der Anteil der Marken, der auf diese
+ * Bestellung entfaellt (bei mehreren Bestellungen einer Kassierung ggf.
+ * Bruchteile), `amount` der Wert in Euro.
+ */
+export interface PaymentTokenLine {
+  tokenTypeId: string;
+  name: string;
+  kind: 'multi_purpose' | 'single_purpose';
+  unitValue: number;
+  count: number;
+  amount: number;
+  /** Satz bei Einzweckgutschein, sonst null. */
+  vatRate: number | null;
 }
 
 export interface PaymentMetadata {
@@ -106,6 +129,23 @@ export class Payment extends BaseEntity {
     default: 0,
   })
   tipAmount: number;
+
+  /**
+   * Mit Wertmarken beglichen (Euro). Nicht in `amount`: `amount` ist das
+   * erhaltene Geld in `paymentMethod`. Beglichen insgesamt = amount +
+   * tokenAmount.
+   */
+  @Column({
+    name: 'token_amount',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  tokenAmount: number;
+
+  @Column({ name: 'token_lines', type: 'jsonb', default: [] })
+  tokenLines: PaymentTokenLine[];
 
   // Relations
   @ManyToOne(() => Order, (order) => order.payments, { onDelete: 'CASCADE' })

@@ -293,7 +293,10 @@ describe('„Bargeldlos“: positive list of payment methods (AEAO zu § 146a Nr
     // neue dazu (Wertmarke, Guthaben …), ist sie in „Bargeldlos“ gesperrt,
     // bis sie hier ausdruecklich aufgenommen wird.
     for (const m of Object.values(PaymentMethod)) {
-      expect(isCashlessPaymentMethod(m)).toBe(m !== PaymentMethod.CASH);
+      // Bargeld und Wertmarken („an Geldes statt“) stehen nie darauf.
+      expect(isCashlessPaymentMethod(m)).toBe(
+        m !== PaymentMethod.CASH && m !== PaymentMethod.TOKENS,
+      );
     }
     expect(isCashlessPaymentMethod(null)).toBe(false);
     expect(isCashlessPaymentMethod(undefined)).toBe(false);

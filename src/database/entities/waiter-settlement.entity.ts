@@ -31,6 +31,24 @@ export interface SettlementTotals {
   };
   /** Pfand-Auszahlungen (bar). */
   pfandReturns?: SettlementCount;
+  /**
+   * Wertmarken: angenommen (eingeloest, die Person gibt sie ab wie Bargeld)
+   * je Typ, verkauft (bar/Karte) und zurueckgetauscht (bar). Angenommene
+   * Marken sind kein Bargeld — sie stehen nicht in „Soll bar“.
+   */
+  tokens?: {
+    received: SettlementCount;
+    receivedByType: {
+      tokenTypeId: string;
+      name: string;
+      unitValue: number;
+      count: number;
+      amount: number;
+    }[];
+    sold: SettlementCount;
+    soldCash: number;
+    boughtBack: SettlementCount;
+  };
   /** Aufgenommen (informativ): Bestellungen, Positionen, Umsatz, Rabatte. */
   taken: {
     orders: number;
@@ -39,7 +57,8 @@ export interface SettlementTotals {
     discounts?: number;
   };
   /**
-   * Soll bar = Barzahlungen − Bar-Erstattungen − Pfand-Auszahlungen (ohne
+   * Soll bar = Barzahlungen − Bar-Erstattungen − Pfand-Auszahlungen
+   * + Wertmarken bar verkauft − Wertmarken-Ruecktausch (ohne
    * Kellnerbrieftasche nur informativ: das Geld liegt in der Schublade).
    */
   cashExpected?: number;

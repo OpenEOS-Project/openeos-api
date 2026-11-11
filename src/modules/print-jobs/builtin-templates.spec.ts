@@ -1,6 +1,7 @@
 import {
   BUILTIN_PRINT_TEMPLATES,
   PFAND_RETURN_RECEIPT_TEMPLATE,
+  TOKEN_RECEIPT_TEMPLATE,
   RECEIPT_TEMPLATE,
   REFUND_RECEIPT_TEMPLATE,
   TSE_PRINT_BLOCK,
@@ -17,6 +18,7 @@ describe('builtin print templates and the Cloud-TSE block', () => {
       RECEIPT_TEMPLATE,
       REFUND_RECEIPT_TEMPLATE,
       PFAND_RETURN_RECEIPT_TEMPLATE,
+      TOKEN_RECEIPT_TEMPLATE,
     ]);
     for (const name of TSE_RECEIPT_TEMPLATES) {
       const source = BUILTIN_PRINT_TEMPLATES[name];

@@ -10669,7 +10669,8 @@
                 "sumup_online",
                 "paypal",
                 "google_pay",
-                "apple_pay"
+                "apple_pay",
+                "tokens"
               ]
             }
           },
@@ -17249,6 +17250,510 @@
         ]
       }
     },
+    "/api/organizations/{organizationId}/token-types": {
+      "get": {
+        "description": "Alle Markentypen der Organisation; mit `eventId` die der Veranstaltung und die organisationsweiten. `inUse` = schon verkauft oder angenommen (Nennwert/Art fest). Scope `read`.",
+        "operationId": "listTokenTypes",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "required": false,
+            "in": "query",
+            "description": "Nur Typen dieser Veranstaltung und die organisationsweiten",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Markentypen (Wertmarken) auflisten",
+        "tags": [
+          "Wertmarken"
+        ],
+        "x-api-token-scope": "read"
+      },
+      "post": {
+        "description": "Mehrzweckgutschein (Standard) oder Einzweckgutschein (nur mit genau einem Steuersatz: 400 TOKEN_SINGLE_PURPOSE_MIXED_RATES, als Kleinunternehmer 400 TOKEN_SINGLE_PURPOSE_SMALL_BUSINESS). Kategorien/Artikel nur mit Veranstaltung (400 TOKEN_RESTRICTION_REQUIRES_EVENT). Recht „Produkte“, Scope `catalog:write`.",
+        "operationId": "createTokenType",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTokenTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Markentyp anlegen",
+        "tags": [
+          "Wertmarken"
+        ],
+        "x-api-token-scope": "catalog:write"
+      }
+    },
+    "/api/organizations/{organizationId}/token-types/{tokenTypeId}": {
+      "patch": {
+        "description": "Sind schon Marken im Umlauf, bleiben Nennwert, Art, Satz und Artikelauswahl eines Einzweckgutscheins fest (409 TOKEN_TYPE_LOCKED). Name, Farbe, Aktiv, Rücktausch und Reihenfolge gehen immer.",
+        "operationId": "updateTokenType",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "tokenTypeId",
+            "required": true,
+            "in": "path",
+            "description": "ID des Markentyps",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTokenTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Markentyp ändern",
+        "tags": [
+          "Wertmarken"
+        ],
+        "x-api-token-scope": "catalog:write"
+      },
+      "delete": {
+        "description": "Nur solange keine Marke verkauft oder angenommen wurde, sonst 409 TOKEN_TYPE_IN_USE (deaktivieren statt löschen).",
+        "operationId": "deleteTokenType",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "tokenTypeId",
+            "required": true,
+            "in": "path",
+            "description": "ID des Markentyps",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Markentyp löschen",
+        "tags": [
+          "Wertmarken"
+        ]
+      }
+    },
+    "/api/organizations/{organizationId}/reports/tokens": {
+      "get": {
+        "description": "Je Markentyp und je Veranstaltung, ohne Testbuchungen. Verkaufte Marken sind kein Umsatz (Mehrzweckgutschein: Umsatz entsteht bei der Einlösung). Recht „Berichte“ oder „Produkte“.",
+        "operationId": "getTokenReport",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "required": false,
+            "in": "query",
+            "description": "Nur diese Veranstaltung",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "required": false,
+            "in": "query",
+            "description": "Ab diesem Tag (Datum der Buchung)",
+            "schema": {
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "required": false,
+            "in": "query",
+            "description": "Bis einschließlich diesem Tag",
+            "schema": {
+              "example": "2026-11-30",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Wertmarken: verkauft, eingelöst, zurückgegeben, Rücktausch, im Umlauf",
+        "tags": [
+          "Wertmarken"
+        ],
+        "x-api-token-scope": "read"
+      }
+    },
+    "/api/organizations/{organizationId}/token-transactions": {
+      "get": {
+        "description": "Neueste zuerst (höchstens `limit`, Standard 50).",
+        "operationId": "listTokenTransactions",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "description": "ID der Organisation",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "required": false,
+            "in": "query",
+            "description": "Nur diese Veranstaltung",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "required": false,
+            "in": "query",
+            "description": "Ab diesem Tag (Datum der Buchung)",
+            "schema": {
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "required": false,
+            "in": "query",
+            "description": "Bis einschließlich diesem Tag",
+            "schema": {
+              "example": "2026-11-30",
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Nur Verkauf (`sale`) oder Rücktausch (`buyback`)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sale",
+                "buyback"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Höchstens so viele (1–200)",
+            "schema": {
+              "default": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          },
+          {
+            "API-token": []
+          }
+        ],
+        "summary": "Verkäufe und Rücktausch von Wertmarken",
+        "tags": [
+          "Wertmarken"
+        ],
+        "x-api-token-scope": "read"
+      }
+    },
+    "/api/device-api/token-types": {
+      "get": {
+        "description": "Aktive Markentypen der Veranstaltung und organisationsweite. Leer, wo Wertmarken nicht erlaubt sind („Bargeldlos“, „Nur Bons“, Deutschland ohne aktive Cloud-TSE).",
+        "operationId": "deviceTokens_list",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Markentypen (Wertmarken) für die Kasse",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/tokens/sales": {
+      "post": {
+        "description": "Bar, Karte oder SumUp. Kein Umsatz: Mehrzweckgutschein nicht steuerbar (TSE `MehrzweckgutscheinKauf`), Einzweckgutschein mit seinem Satz. Bar zählt ins Kassenbuch. 403 wie Bargeld außerhalb von „Alle Funktionen“ bzw. TSE_REQUIRED_FOR_TOKENS in Deutschland ohne aktive Cloud-TSE.",
+        "operationId": "deviceTokens_sell",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTokenSaleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Wertmarken verkaufen",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/tokens/buybacks": {
+      "post": {
+        "description": "Nur Typen mit „Rücktausch erlaubt“ (400 TOKEN_BUYBACK_NOT_ALLOWED), höchstens der Bestand im Umlauf (409 TOKEN_BUYBACK_EXCEEDS_OUTSTANDING), Bedienungen brauchen das Recht „Storno/Erstattung“. Beleg mit Unterschriftszeile wird immer gedruckt.",
+        "operationId": "deviceTokens_buyback",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Waiter-Session",
+            "in": "header",
+            "description": "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTokenBuybackDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Wertmarken zurücktauschen (Bargeld auszahlen)",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
+    "/api/device-api/tokens/transactions/{tokenTransactionId}/print": {
+      "post": {
+        "description": "`reprint: true` druckt den Vermerk „NACHDRUCK“.",
+        "operationId": "deviceTokens_print",
+        "parameters": [
+          {
+            "name": "X-Device-Token",
+            "in": "header",
+            "description": "Device authentication token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tokenTransactionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrintTokenTransactionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Beleg eines Markenverkaufs/Rücktauschs drucken",
+        "tags": [
+          "Device API"
+        ]
+      }
+    },
     "/api/organizations/{organizationId}/support": {
       "get": {
         "operationId": "support_getThread",
@@ -22654,15 +23159,46 @@
           "quantity"
         ]
       },
+      "TokenTenderDto": {
+        "type": "object",
+        "properties": {
+          "tokenTypeId": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "count": {
+            "type": "number",
+            "example": 3,
+            "description": "Anzahl Marken dieses Typs"
+          }
+        },
+        "required": [
+          "tokenTypeId",
+          "count"
+        ]
+      },
       "DeviceOrderPaymentDto": {
         "type": "object",
         "properties": {
+          "tokens": {
+            "description": "Vom Gast erhaltene Wertmarken (nur „Alle Funktionen“, in Deutschland nur mit aktiver Cloud-TSE). Ihr Wert deckt zuerst, was die Marken decken dürfen; den Rest kassiert `paymentMethod`. Wechselgeld in Marken gibt es nicht.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TokenTenderDto"
+            }
+          },
+          "tokenExcessAsTip": {
+            "type": "boolean",
+            "example": false,
+            "description": "Sind die Marken mehr wert als offen ist, wird der Rest als Trinkgeld gebucht (der Gast verzichtet auf Wechselgeld). Ohne diese Bestätigung: 400 TOKEN_OVERPAYMENT."
+          },
           "paymentMethod": {
             "type": "string",
             "enum": [
               "cash",
               "card",
-              "sumup_terminal"
+              "sumup_terminal",
+              "tokens"
             ],
             "example": "cash"
           },
@@ -22823,7 +23359,7 @@
           "paymentMethod": {
             "type": "string",
             "example": "cash",
-            "description": "Zahlungsmethode",
+            "description": "Zahlungsmethode (Wertmarken nur über die Kasse: `POST /device-api/payments/batch` bzw. Bestellung mit Zahlung)",
             "enum": [
               "cash",
               "card",
@@ -23098,6 +23634,18 @@
       "BatchPaymentDto": {
         "type": "object",
         "properties": {
+          "tokens": {
+            "description": "Vom Gast erhaltene Wertmarken (nur „Alle Funktionen“, in Deutschland nur mit aktiver Cloud-TSE). Ihr Wert deckt zuerst, was die Marken decken dürfen; den Rest kassiert `paymentMethod`. Wechselgeld in Marken gibt es nicht.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TokenTenderDto"
+            }
+          },
+          "tokenExcessAsTip": {
+            "type": "boolean",
+            "example": false,
+            "description": "Sind die Marken mehr wert als offen ist, wird der Rest als Trinkgeld gebucht (der Gast verzichtet auf Wechselgeld). Ohne diese Bestätigung: 400 TOKEN_OVERPAYMENT."
+          },
           "orderIds": {
             "description": "Zu kassierende Bestellungen (1–50). Reihenfolge zählt: Trinkgeld und das erhaltene Bargeld landen auf der letzten, Rabatt wird von hinten verteilt.",
             "type": "array",
@@ -23110,7 +23658,8 @@
             "enum": [
               "cash",
               "card",
-              "sumup_terminal"
+              "sumup_terminal",
+              "tokens"
             ],
             "example": "cash"
           },
@@ -25033,7 +25582,7 @@
           "paymentMethod": {
             "type": "string",
             "example": "card",
-            "description": "Zahlungsmethode",
+            "description": "Zahlungsmethode (Wertmarken nur über die Kasse: `POST /device-api/payments/batch` bzw. Bestellung mit Zahlung)",
             "enum": [
               "cash",
               "card",
@@ -26276,6 +26825,228 @@
             "type": "object",
             "example": "550e8400-e29b-41d4-a716-446655440000",
             "description": "ID des Übergabe-Standorts (nächste Station in der Kette)"
+          }
+        }
+      },
+      "CreateTokenTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "2-€-Marke"
+          },
+          "value": {
+            "type": "number",
+            "example": 2,
+            "description": "Nennwert in Euro (Verkaufspreis = Einlösewert)"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "multi_purpose",
+              "single_purpose"
+            ],
+            "default": "multi_purpose",
+            "description": "`multi_purpose` = Mehrzweckgutschein (Standard, § 3 Abs. 15 UStG: Steuer bei Einlösung); `single_purpose` = Einzweckgutschein (§ 3 Abs. 14 UStG: nur für Artikel mit genau einem Steuersatz, Steuer beim Verkauf)."
+          },
+          "vatRate": {
+            "type": "object",
+            "example": 19,
+            "description": "Nur Einzweckgutschein: der eine Steuersatz, für den die Marke gilt."
+          },
+          "eventId": {
+            "type": "object",
+            "description": "Nur für diese Veranstaltung (leer = alle). Pflicht, wenn Kategorien oder Artikel ausgewählt sind (die gehören zu einer Veranstaltung)."
+          },
+          "allowedCategoryIds": {
+            "description": "Nur für Artikel dieser Kategorien",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedProductIds": {
+            "description": "Nur für diese Artikel",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "color": {
+            "type": "object",
+            "example": "#f59e0b"
+          },
+          "buybackAllowed": {
+            "type": "boolean",
+            "default": false,
+            "description": "Rücktausch gegen Bargeld an der Kasse erlauben (bewusste Aktion mit Beleg). Ein Rücktausch jederzeit ohne Bedingungen macht die Marke zur Guthabenkarte – beschreibe die Bedingungen in deiner Verfahrensdokumentation."
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true
+          },
+          "sortOrder": {
+            "type": "number",
+            "default": 0
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ]
+      },
+      "UpdateTokenTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "2-€-Marke"
+          },
+          "value": {
+            "type": "number",
+            "example": 2,
+            "description": "Nennwert in Euro (Verkaufspreis = Einlösewert)"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "multi_purpose",
+              "single_purpose"
+            ],
+            "default": "multi_purpose",
+            "description": "`multi_purpose` = Mehrzweckgutschein (Standard, § 3 Abs. 15 UStG: Steuer bei Einlösung); `single_purpose` = Einzweckgutschein (§ 3 Abs. 14 UStG: nur für Artikel mit genau einem Steuersatz, Steuer beim Verkauf)."
+          },
+          "vatRate": {
+            "type": "object",
+            "example": 19,
+            "description": "Nur Einzweckgutschein: der eine Steuersatz, für den die Marke gilt."
+          },
+          "eventId": {
+            "type": "object",
+            "description": "Nur für diese Veranstaltung (leer = alle). Pflicht, wenn Kategorien oder Artikel ausgewählt sind (die gehören zu einer Veranstaltung)."
+          },
+          "allowedCategoryIds": {
+            "description": "Nur für Artikel dieser Kategorien",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedProductIds": {
+            "description": "Nur für diese Artikel",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "color": {
+            "type": "object",
+            "example": "#f59e0b"
+          },
+          "buybackAllowed": {
+            "type": "boolean",
+            "default": false,
+            "description": "Rücktausch gegen Bargeld an der Kasse erlauben (bewusste Aktion mit Beleg). Ein Rücktausch jederzeit ohne Bedingungen macht die Marke zur Guthabenkarte – beschreibe die Bedingungen in deiner Verfahrensdokumentation."
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true
+          },
+          "sortOrder": {
+            "type": "number",
+            "default": 0
+          }
+        }
+      },
+      "TokenLineDto": {
+        "type": "object",
+        "properties": {
+          "tokenTypeId": {
+            "type": "string"
+          },
+          "count": {
+            "type": "number",
+            "example": 10
+          }
+        },
+        "required": [
+          "tokenTypeId",
+          "count"
+        ]
+      },
+      "CreateTokenSaleDto": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "description": "Veranstaltung (Testmodus, Auswertung)"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TokenLineDto"
+            }
+          },
+          "clientRequestId": {
+            "type": "string",
+            "description": "Gleiche ID = gleicher Vorgang (Wiederholung nach Netzfehler bucht nicht doppelt)"
+          },
+          "paymentMethod": {
+            "type": "string",
+            "enum": [
+              "cash",
+              "card",
+              "sumup_terminal"
+            ],
+            "example": "cash"
+          },
+          "amountReceived": {
+            "type": "number",
+            "example": 50,
+            "description": "Bar: vom Gast erhalten (Rückgeld auf dem Beleg)"
+          },
+          "providerTransactionId": {
+            "type": "string",
+            "description": "SumUp-Transaktion (Karte am Lesegerät)"
+          }
+        },
+        "required": [
+          "lines",
+          "paymentMethod"
+        ]
+      },
+      "CreateTokenBuybackDto": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "description": "Veranstaltung (Testmodus, Auswertung)"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TokenLineDto"
+            }
+          },
+          "clientRequestId": {
+            "type": "string",
+            "description": "Gleiche ID = gleicher Vorgang (Wiederholung nach Netzfehler bucht nicht doppelt)"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Rücktausch am Ende des Festes"
+          }
+        },
+        "required": [
+          "lines"
+        ]
+      },
+      "PrintTokenTransactionDto": {
+        "type": "object",
+        "properties": {
+          "reprint": {
+            "type": "boolean",
+            "default": false
           }
         }
       },

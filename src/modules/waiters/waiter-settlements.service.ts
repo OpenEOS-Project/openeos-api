@@ -37,6 +37,8 @@ import {
   type ItemGroupRow,
   type PaymentGroupRow,
   type PfandGroupRow,
+  type TokenRedemptionGroupRow,
+  type TokenTransactionGroupRow,
   type RefundGroupRow,
   type TakenGroupRow,
 } from './waiter-settlement-math';
@@ -164,6 +166,7 @@ function subjectColumns(subject: SettlementSubject) {
         payment: 'p.processed_by_waiter_id',
         refund: 'r.waiter_id',
         pfand: 'pr.waiter_id',
+        token: 't.waiter_id',
         orderCreator: 'o.created_by_waiter_id',
         itemSender: 'oi.added_by_waiter_id',
         owner: 'o.waiter_id',
@@ -174,6 +177,7 @@ function subjectColumns(subject: SettlementSubject) {
         payment: 'p.processed_by_user_id',
         refund: 'r.user_id',
         pfand: 'pr.created_by_user_id',
+        token: 't.user_id',
         orderCreator: 'o.created_by_user_id',
         itemSender: 'oi.added_by_user_id',
         // Mitglieder besitzen keine Tische (Bestellungen ohne Bedienung).
@@ -292,6 +296,37 @@ export class WaiterSettlementsService {
         params,
       ),
     );
+    // Wertmarken: angenommen (eingeloest) je Typ und selbst verkauft bzw.
+    // zurueckgetauscht — die Person gibt angenommene Marken ab wie Bargeld.
+    const tokenRedemptions = rowsOf<TokenRedemptionGroupRow>(
+      await manager.query(
+        `SELECT o.is_test AS "isTest", l->>'tokenTypeId' AS "tokenTypeId",
+                MAX(l->>'name') AS name, MAX((l->>'unitValue')::numeric) AS "unitValue",
+                COALESCE(sum((l->>'count')::numeric), 0) AS count,
+                COALESCE(sum((l->>'amount')::numeric), 0) AS amount
+           FROM payments p
+           JOIN orders o ON o.id = p.order_id
+           CROSS JOIN LATERAL jsonb_array_elements(p.token_lines) l
+          WHERE o.organization_id = $1 AND o.event_id = $2 AND ${cols.payment} = $3
+            AND p.status IN ('captured', 'refunded') AND ${window('p.created_at')}
+          GROUP BY 1, 2`,
+        params,
+      ),
+    );
+    const tokenTransactions = rowsOf<TokenTransactionGroupRow>(
+      await manager.query(
+        `SELECT t.kind AS kind, t.payment_method AS method, t.is_test AS "isTest",
+                t.device_id AS "deviceId", d.name AS "deviceName",
+                COALESCE(sum((SELECT sum(abs((l->>'count')::numeric)) FROM jsonb_array_elements(t.lines) l)), 0) AS count,
+                COALESCE(sum(t.total_amount), 0) AS amount
+           FROM token_transactions t
+           LEFT JOIN devices d ON d.id = t.device_id
+          WHERE t.organization_id = $1 AND t.event_id = $2 AND ${cols.token} = $3
+            AND ${window('t.created_at')}
+          GROUP BY 1, 2, 3, 4, 5`,
+        params,
+      ),
+    );
     const taken = rowsOf<TakenGroupRow>(
       await manager.query(
         `SELECT o.is_test AS "isTest", count(*)::int AS orders,
@@ -325,6 +360,8 @@ export class WaiterSettlementsService {
       pfandReturns,
       taken,
       items,
+      tokenRedemptions,
+      tokenTransactions,
     });
     const openTables =
       mode === 'orders_only'
@@ -1008,6 +1045,13 @@ interface PrintRow {
   text?: string;
 }
 
+function formatCount(count: number): string {
+  const rounded = Math.round(count * 1000) / 1000;
+  return Number.isInteger(rounded)
+    ? String(rounded)
+    : String(rounded).replace('.', ',');
+}
+
 function countLabel(label: string, count: number): string {
   return `${label} (${count})`;
 }
@@ -1068,6 +1112,32 @@ export function settlementBlocks(totals: SettlementTotals) {
     taken.push({ label: 'Rabatte', amount: -totals.taken.discounts });
   }
   blocks.push({ title: 'AUFGENOMMEN', rows: taken });
+  const tokens = totals.tokens;
+  if (tokens) {
+    const rows: PrintRow[] = tokens.receivedByType.map((t) => ({
+      label: `${formatCount(t.count)} x ${t.name}`,
+      amount: t.amount,
+    }));
+    rows.push({
+      label: 'Marken angenommen',
+      amount: tokens.received.amount,
+    });
+    if (tokens.sold.count) {
+      rows.push({
+        label: countLabel('Marken verkauft', tokens.sold.count),
+        amount: tokens.sold.amount,
+      });
+    }
+    if (tokens.boughtBack.count) {
+      rows.push({
+        label: countLabel('Rücktausch bar', tokens.boughtBack.count),
+        amount: -tokens.boughtBack.amount,
+      });
+    }
+    // Angenommene Marken gibt die Person ab wie Bargeld (gezaehlt, nicht
+    // im Soll bar).
+    blocks.push({ title: 'WERTMARKEN (abgeben)', rows });
+  }
   return blocks;
 }
 

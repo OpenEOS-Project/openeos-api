@@ -39,6 +39,7 @@ import {
   PaymentMethod,
   PaymentProvider,
   PaymentTransactionStatus,
+  type PaymentTokenLine,
 } from '../../database/entities/payment.entity';
 import type {
   RefundKind,
@@ -99,6 +100,7 @@ import {
   subtractComposition,
   unitGross,
   type Composition,
+  type RefundablePayment,
 } from './refund-calc';
 
 type RefundPermission = 'allowed' | 'pin' | 'disabled';
@@ -638,13 +640,17 @@ export class RefundsService {
     const priorRefunds = await manager.find(Refund, {
       where: { orderId: order.id },
     });
+    // Erstattet je Zahlung, getrennt nach Geld und zurueckgegebenen
+    // Wertmarken (Erstattungen mit Zahlart `tokens`).
     const refundedByPayment = new Map<string, number>();
+    const refundedTokensByPayment = new Map<string, number>();
     for (const r of priorRefunds) {
       if (!r.paymentId) continue;
-      refundedByPayment.set(
-        r.paymentId,
-        (refundedByPayment.get(r.paymentId) ?? 0) - cents(r.amount),
-      );
+      const target =
+        r.paymentMethod === PaymentMethod.TOKENS
+          ? refundedTokensByPayment
+          : refundedByPayment;
+      target.set(r.paymentId, (target.get(r.paymentId) ?? 0) - cents(r.amount));
     }
     const held = cents(order.paidAmount) - cents(order.refundedAmount || 0);
     if (held <= 0) {
@@ -808,28 +814,58 @@ export class RefundsService {
     );
     const refundable = settledPayments
       .filter((p) => !orderOnly || isOnlinePrepaymentMethod(p.paymentMethod))
-      .map((p) => ({
-        id: p.id,
-        refundable: Math.max(
-          0,
-          cents(p.amount) - (refundedByPayment.get(p.id) ?? 0),
-        ),
-        isProvider: isSumUpTerminal(p),
-        createdAt: new Date(p.createdAt),
-        // Bargeld und alles ausserhalb der Positivliste fuer „Bargeldlos“
-        // (Wertmarken o. Ae. waeren wie Bargeld): nie dorthin erstatten,
-        // wo Bargeld gesperrt ist. Erstattet wird immer auf die
-        // urspruengliche Zahlart, eine Auszahlung in bar gibt es nicht.
-        isCash: !isCashlessPaymentMethod(p.paymentMethod),
-      }));
+      .flatMap((p) => {
+        const buckets: RefundablePayment[] = [];
+        if (p.paymentMethod !== PaymentMethod.TOKENS) {
+          buckets.push({
+            id: p.id,
+            refundable: Math.max(
+              0,
+              cents(p.amount) - (refundedByPayment.get(p.id) ?? 0),
+            ),
+            isProvider: isSumUpTerminal(p),
+            createdAt: new Date(p.createdAt),
+            // Bargeld und alles ausserhalb der Positivliste fuer
+            // „Bargeldlos“: nie dorthin erstatten, wo Bargeld gesperrt ist.
+            // Erstattet wird immer auf die urspruengliche Zahlart, eine
+            // Auszahlung in bar gibt es nicht.
+            isCash: !isCashlessPaymentMethod(p.paymentMethod),
+          });
+        }
+        // Mit Wertmarken bezahlter Teil: geht als Marken zurueck (nie als
+        // Geld — sonst waere die Marke eine Guthabenkarte). Nach dem Geld
+        // derselben Zahlung (eine Millisekunde aelter), wie Bargeld
+        // gesperrt, wo Marken nicht erlaubt sind.
+        if (cents(p.tokenAmount ?? 0) > 0) {
+          buckets.push({
+            id: `${TOKEN_BUCKET}${p.id}`,
+            refundable: Math.max(
+              0,
+              cents(p.tokenAmount) - (refundedTokensByPayment.get(p.id) ?? 0),
+            ),
+            isProvider: false,
+            createdAt: new Date(new Date(p.createdAt).getTime() - 1),
+            isCash: true,
+          });
+        }
+        return buckets;
+      });
+    // Gewaehlte Zahlung: ihr Geld und ihre Marken.
+    const candidates = dto.paymentId
+      ? refundable.filter(
+          (b) =>
+            b.id === dto.paymentId ||
+            b.id === `${TOKEN_BUCKET}${dto.paymentId}`,
+        )
+      : refundable;
     // Bargeld gesperrt (Betriebsart ohne Bargeld oder DE ohne TSE):
     // nichts bar auszahlen. Erstattet wird nur auf
     // unbare Zahlungen (Karte, SumUp, online) — reichen die nicht, wird
     // abgewiesen statt den Rest aus der Kasse zu geben.
     const { allocation, cashBlocked } = allocateRefundFor(
-      refundable,
+      candidates,
       refundCents,
-      dto.paymentId,
+      null,
       !isCashAllowed(organization),
     );
     if (cashBlocked) {
@@ -844,8 +880,7 @@ export class RefundsService {
     }
     if (!allocation) {
       if (dto.paymentId) {
-        const max =
-          refundable.find((p) => p.id === dto.paymentId)?.refundable ?? 0;
+        const max = candidates.reduce((sum, b) => sum + b.refundable, 0);
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
           reason: ErrorReasons.REFUND_EXCEEDS_PAYMENT,
@@ -856,9 +891,16 @@ export class RefundsService {
       throw this.exceeds(held);
     }
     const byId = new Map(payments.map((p) => [p.id, p]));
+    const paymentOf = (bucketId: string) =>
+      byId.get(bucketId.replace(TOKEN_BUCKET, ''))!;
+    const isTokenBucket = (bucketId: string) =>
+      bucketId.startsWith(TOKEN_BUCKET);
     if (
-      allocation.filter((a) => isSumUpTerminal(byId.get(a.paymentId)!)).length >
-      1
+      allocation.filter(
+        (a) =>
+          !isTokenBucket(a.paymentId) &&
+          isSumUpTerminal(paymentOf(a.paymentId)),
+      ).length > 1
     ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
@@ -883,15 +925,28 @@ export class RefundsService {
     const refunds: Refund[] = [];
     let number = priorRefunds.length;
     for (const [index, a] of allocation.entries()) {
-      const payment = byId.get(a.paymentId)!;
+      const payment = paymentOf(a.paymentId);
+      const tokenBucket = isTokenBucket(a.paymentId);
       const part = parts[index];
       const amount = a.amount / 100;
-      const { status, providerReference, metadata } =
-        await this.executeProviderRefund(payment, amount, {
-          isTestMode,
-          manual: dto.manual === true,
-          organization,
-        });
+      // Marken: nichts beim Anbieter, der Gast bekommt die Marken zurueck.
+      const { status, providerReference, metadata } = tokenBucket
+        ? {
+            status: (isTestMode ? 'test' : 'completed') as RefundStatus,
+            providerReference: null,
+            metadata: {
+              tokenLines: returnedTokenLines(
+                payment.tokenLines ?? [],
+                a.amount,
+                cents(payment.tokenAmount),
+              ),
+            } as Record<string, unknown>,
+          }
+        : await this.executeProviderRefund(payment, amount, {
+            isTestMode,
+            manual: dto.manual === true,
+            organization,
+          });
       number += 1;
       // Trinkgeld an den Verein mindert das Entgelt zum Satz der Ware
       // (spiegelbildlich zum Bon); TrinkgeldAN (Arbeitnehmer) nicht.
@@ -903,7 +958,18 @@ export class RefundsService {
         )) !== 'employee'
           ? tipByRate(part.goods, part.tip, composition.goods)
           : null;
-      const taxLines = refundTaxLines(part, vatExempt, tipShares);
+      // Einzweckgutschein: die Steuer entstand beim Verkauf der Marke — die
+      // Rueckgabe der damit bezahlten Ware mindert sie nicht.
+      const taxLines = refundTaxLines(
+        tokenBucket
+          ? withoutSinglePurpose(
+              part,
+              metadata.tokenLines as PaymentTokenLine[],
+            )
+          : part,
+        vatExempt,
+        tipShares,
+      );
       const refund = manager.create(Refund, {
         organizationId: actor.organizationId,
         orderId: order.id,
@@ -916,9 +982,13 @@ export class RefundsService {
         pfandAmount: -(pfandSum(part) / 100),
         tipAmount: -(part.tip / 100),
         taxLines,
-        paymentMethod: payment.paymentMethod,
+        paymentMethod: tokenBucket
+          ? PaymentMethod.TOKENS
+          : payment.paymentMethod,
         status,
-        provider: payment.paymentProvider,
+        provider: tokenBucket
+          ? PaymentProvider.TOKENS
+          : payment.paymentProvider,
         providerReference,
         reasonCode: dto.reasonCode,
         reasonText: dto.reasonText?.trim() || null,
@@ -944,10 +1014,18 @@ export class RefundsService {
       });
       refunds.push(await manager.save(refund));
 
+      const refundedSoFar = tokenBucket
+        ? refundedTokensByPayment
+        : refundedByPayment;
+      refundedSoFar.set(
+        payment.id,
+        (refundedSoFar.get(payment.id) ?? 0) + a.amount,
+      );
       const remainingOnPayment =
-        cents(payment.amount) -
+        cents(payment.amount) +
+        cents(payment.tokenAmount ?? 0) -
         (refundedByPayment.get(payment.id) ?? 0) -
-        a.amount;
+        (refundedTokensByPayment.get(payment.id) ?? 0);
       if (remainingOnPayment <= 0) {
         payment.status = PaymentTransactionStatus.REFUNDED;
         await manager.save(payment);
@@ -1722,4 +1800,53 @@ function distribute(weights: number[], total: number): number[] {
     assigned += share;
     return share;
   });
+}
+
+/** Kennung des Wertmarken-Anteils einer Zahlung bei der Verteilung. */
+const TOKEN_BUCKET = 'tokens:';
+
+/**
+ * Welche Marken gehen bei einer Erstattung von `refundCents` aus dem
+ * Markenanteil einer Zahlung zurueck? Anteilig nach den Markentypen der
+ * Zahlung (Wert exakt, Stueckzahl anteilig).
+ */
+export function returnedTokenLines(
+  lines: PaymentTokenLine[],
+  refundCents: number,
+  tokenCents: number,
+): PaymentTokenLine[] {
+  const usable = lines.filter((l) => cents(l.amount) > 0);
+  if (usable.length === 0 || refundCents <= 0) return [];
+  const total = tokenCents || usable.reduce((s, l) => s + cents(l.amount), 0);
+  let assigned = 0;
+  return usable.map((line, index) => {
+    const value =
+      index === usable.length - 1
+        ? refundCents - assigned
+        : Math.round((refundCents * cents(line.amount)) / total);
+    assigned += value;
+    const unit = cents(line.unitValue);
+    return {
+      ...line,
+      amount: value / 100,
+      count: unit > 0 ? Math.round((value / unit) * 1000) / 1000 : 0,
+    };
+  });
+}
+
+/**
+ * Zusammensetzung ohne den Teil, den Einzweckgutscheine bezahlt haben (je
+ * Satz): darauf wurde die Steuer schon beim Verkauf der Marke erhoben.
+ */
+function withoutSinglePurpose(
+  part: Composition,
+  lines: PaymentTokenLine[] | undefined,
+): Composition {
+  const goods = new Map(part.goods);
+  for (const line of lines ?? []) {
+    if (line.kind !== 'single_purpose' || line.vatRate === null) continue;
+    const rate = Number(line.vatRate);
+    goods.set(rate, Math.max(0, (goods.get(rate) ?? 0) - cents(line.amount)));
+  }
+  return { ...part, goods };
 }

@@ -3,24 +3,76 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsIn,
+  IsInt,
   IsNumber,
   IsObject,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentMethod } from '../../../database/entities/payment.entity';
 import { IsUUIDLoose } from '../../../common/validators/is-uuid-loose.validator';
 
-/** Zahlarten der Kasse fuer eine Sammelzahlung. */
+/**
+ * Zahlarten der Kasse fuer eine Sammelzahlung. `tokens`: nur mit
+ * Wertmarken (`tokens` Pflicht, kein Geld offen).
+ */
 export const BATCH_PAYMENT_METHODS = [
   PaymentMethod.CASH,
   PaymentMethod.CARD,
   PaymentMethod.SUMUP_TERMINAL,
+  PaymentMethod.TOKENS,
 ] as const;
+
+/** Hoechstzahl Marken je Typ und Kassierung. */
+export const TOKEN_TENDER_MAX_COUNT = 1000;
+
+/** Vom Gast erhaltene Wertmarken eines Typs (Stueck). */
+export class TokenTenderDto {
+  @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000' })
+  @IsUUIDLoose()
+  tokenTypeId: string;
+
+  @ApiProperty({ example: 3, description: 'Anzahl Marken dieses Typs' })
+  @IsInt()
+  @Min(1)
+  @Max(TOKEN_TENDER_MAX_COUNT)
+  count: number;
+}
+
+/**
+ * Wertmarken als (Teil-)Zahlung, gemeinsam fuer Sammelzahlung und
+ * Bestellung mit Zahlung.
+ */
+export class TokenTenderFields {
+  @ApiPropertyOptional({
+    type: [TokenTenderDto],
+    description:
+      'Vom Gast erhaltene Wertmarken (nur „Alle Funktionen“, in Deutschland nur mit aktiver Cloud-TSE). Ihr Wert deckt zuerst, was die Marken decken dürfen; den Rest kassiert `paymentMethod`. Wechselgeld in Marken gibt es nicht.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => TokenTenderDto)
+  tokens?: TokenTenderDto[];
+
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'Sind die Marken mehr wert als offen ist, wird der Rest als Trinkgeld gebucht (der Gast verzichtet auf Wechselgeld). Ohne diese Bestätigung: 400 TOKEN_OVERPAYMENT.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  tokenExcessAsTip?: boolean;
+}
 
 export type BatchPaymentMethod = (typeof BATCH_PAYMENT_METHODS)[number];
 
@@ -30,7 +82,7 @@ export const BATCH_MAX_ORDERS = 50;
  * Mehrere offene Bestellungen (z. B. alle eines Tisches) in einer
  * Transaktion kassieren (Spezifikation §3.4, §5.2.3).
  */
-export class BatchPaymentDto {
+export class BatchPaymentDto extends TokenTenderFields {
   @ApiProperty({
     type: [String],
     description:

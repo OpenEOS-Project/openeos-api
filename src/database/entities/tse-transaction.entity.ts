@@ -14,6 +14,8 @@ import { TseUnit } from './tse-unit.entity';
  * - `settlement`: Kellnerabrechnung (SonstigerVorgang mit Soll/Ist/Differenz)
  * - `tip_payout`: Auszahlung von Kartentrinkgeld an angestellte Bedienung
  *   (TrinkgeldAN negativ, bar)
+ * - `token_sale`: Verkauf von Wertmarken (Mehrzweck-/EinzweckgutscheinKauf)
+ * - `token_buyback`: Ruecktausch von Wertmarken gegen Bargeld (negativ)
  */
 export type TseTransactionKind =
   | 'receipt'
@@ -24,7 +26,9 @@ export type TseTransactionKind =
   | 'abort'
   | 'cashbook'
   | 'settlement'
-  | 'tip_payout';
+  | 'tip_payout'
+  | 'token_sale'
+  | 'token_buyback';
 
 /**
  * - `pending`: Anfrage an die TSE laeuft (oder Prozess brach ab)
@@ -186,6 +190,9 @@ export class TseTransaction extends BaseEntity {
 
   @Column({ name: 'pfand_return_id', type: 'uuid', nullable: true })
   pfandReturnId: string | null;
+
+  @Column({ name: 'token_transaction_id', type: 'uuid', nullable: true })
+  tokenTransactionId: string | null;
 
   @Column({
     name: 'references_tse_transaction_id',

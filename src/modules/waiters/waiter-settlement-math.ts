@@ -52,6 +52,29 @@ export interface ItemGroupRow {
   revenue: number | string;
 }
 
+/** Angenommene Wertmarken je Typ (aus `payments.token_lines`). */
+export interface TokenRedemptionGroupRow {
+  isTest: boolean;
+  tokenTypeId: string;
+  name: string;
+  unitValue: number | string;
+  count: number | string;
+  amount: number | string;
+}
+
+/** Verkauf/Ruecktausch von Wertmarken je Art, Zahlart und Geraet. */
+export interface TokenTransactionGroupRow {
+  kind: 'sale' | 'buyback';
+  method: string;
+  isTest: boolean;
+  deviceId?: string | null;
+  deviceName?: string | null;
+  /** Stueck (Summe der Positionen). */
+  count: number | string;
+  /** Euro (Ruecktausch negativ). */
+  amount: number | string;
+}
+
 export interface SettlementInput {
   operatingMode: OperatingMode;
   payments: PaymentGroupRow[];
@@ -59,6 +82,8 @@ export interface SettlementInput {
   pfandReturns: PfandGroupRow[];
   taken: TakenGroupRow[];
   items: ItemGroupRow[];
+  tokenRedemptions?: TokenRedemptionGroupRow[];
+  tokenTransactions?: TokenTransactionGroupRow[];
 }
 
 export const CASH_METHODS = new Set(['cash']);
@@ -95,7 +120,8 @@ export function settlementIsEmpty(totals: SettlementTotals): boolean {
     totals.taken.items +
     (totals.payments?.total.count ?? 0) +
     (totals.refunds?.total.count ?? 0) +
-    (totals.pfandReturns?.count ?? 0);
+    (totals.pfandReturns?.count ?? 0) +
+    (totals.tokens ? 1 : 0);
   const training = totals.training.orders + totals.training.payments;
   return real === 0 && training === 0;
 }
@@ -107,13 +133,15 @@ export function settlementIsTrainingOnly(totals: SettlementTotals): boolean {
     totals.taken.items +
     (totals.payments?.total.count ?? 0) +
     (totals.refunds?.total.count ?? 0) +
-    (totals.pfandReturns?.count ?? 0);
+    (totals.pfandReturns?.count ?? 0) +
+    (totals.tokens ? 1 : 0);
   return real === 0 && !settlementIsEmpty(totals);
 }
 
 /**
  * Schnappschuss der Zahlen. „Soll bar“ = Barzahlungen − Bar-Erstattungen −
- * Pfand-Auszahlungen (ohne Kellnerbrieftasche kein Wechselgeld: das
+ * Pfand-Auszahlungen + Wertmarken bar verkauft − Wertmarken-Ruecktausch
+ * (angenommene Marken sind kein Bargeld; ohne Kellnerbrieftasche kein Wechselgeld: das
  * Bargeld liegt in der Schublade des Geraets, an dem kassiert bzw.
  * ausgezahlt wurde — `cashByDevice`). In „Nur Bons“ nur Mengen.
  */
@@ -152,6 +180,12 @@ export function buildSettlementTotals(
       training.amount = round2(training.amount + amount);
       continue;
     }
+    // Nur mit Wertmarken bezahlt: kein Geld (Marken stehen unter `tokens`),
+    // Trinkgeld aus der Ueberzahlung zaehlt trotzdem.
+    if (row.method === 'tokens') {
+      tips = round2(tips + num(row.tip));
+      continue;
+    }
     const group = methodGroup(row.method);
     add(payments[group], count, amount);
     add(payments.total, count, amount);
@@ -183,6 +217,64 @@ export function buildSettlementTotals(
     entry.amount = round2(entry.amount - amount);
   }
 
+  // Wertmarken: angenommen je Typ, verkauft, zurueckgetauscht. Bar
+  // verkauft/zurueckgetauscht bewegt die Schublade des Geraets.
+  const tokens = {
+    received: zero(),
+    receivedByType: [] as NonNullable<
+      SettlementTotals['tokens']
+    >['receivedByType'],
+    sold: zero(),
+    soldCash: 0,
+    boughtBack: zero(),
+  };
+  for (const row of input.tokenRedemptions ?? []) {
+    if (row.isTest) continue;
+    const count = Math.round(num(row.count) * 1000) / 1000;
+    const amount = round2(num(row.amount));
+    tokens.received.count =
+      Math.round((tokens.received.count + count) * 1000) / 1000;
+    tokens.received.amount = round2(tokens.received.amount + amount);
+    const existing = tokens.receivedByType.find(
+      (t) => t.tokenTypeId === row.tokenTypeId,
+    );
+    if (existing) {
+      existing.count = Math.round((existing.count + count) * 1000) / 1000;
+      existing.amount = round2(existing.amount + amount);
+    } else {
+      tokens.receivedByType.push({
+        tokenTypeId: row.tokenTypeId,
+        name: row.name,
+        unitValue: num(row.unitValue),
+        count,
+        amount,
+      });
+    }
+  }
+  let tokenCash = 0;
+  for (const row of input.tokenTransactions ?? []) {
+    if (row.isTest) continue;
+    const count = Math.abs(num(row.count));
+    const amount = Math.abs(num(row.amount));
+    const cash = row.method === 'cash';
+    if (row.kind === 'sale') {
+      add(tokens.sold, count, amount);
+      if (cash) tokens.soldCash = round2(tokens.soldCash + amount);
+    } else {
+      add(tokens.boughtBack, count, amount);
+    }
+    if (cash) {
+      const signed = row.kind === 'sale' ? amount : -amount;
+      tokenCash = round2(tokenCash + signed);
+      const entry = drawer(row.deviceId ?? null, row.deviceName ?? null);
+      entry.amount = round2(entry.amount + signed);
+    }
+  }
+  const hasTokens =
+    tokens.received.amount !== 0 ||
+    tokens.sold.count !== 0 ||
+    tokens.boughtBack.count !== 0;
+
   const taken = { orders: 0, items: 0, revenue: 0, discounts: 0 };
   for (const row of input.taken) {
     if (row.isTest) {
@@ -207,7 +299,10 @@ export function buildSettlementTotals(
   }
 
   const cashExpected = round2(
-    payments.cash.amount - refunds.cash.amount - pfandReturns.amount,
+    payments.cash.amount -
+      refunds.cash.amount -
+      pfandReturns.amount +
+      tokenCash,
   );
   return {
     operatingMode: input.operatingMode,
@@ -215,6 +310,7 @@ export function buildSettlementTotals(
     tips,
     refunds,
     pfandReturns,
+    ...(hasTokens ? { tokens } : {}),
     taken,
     cashExpected,
     cashByDevice: [...cashByDevice.values()]
