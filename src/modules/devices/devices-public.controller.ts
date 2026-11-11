@@ -14,6 +14,7 @@ import { DevicesService } from './devices.service';
 import { RegisterDeviceDto, InitDeviceDto } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { RevealSecrets } from '../../common/decorators/reveal-secrets.decorator';
 
 @ApiTags('Devices')
 @Controller('devices')
@@ -48,6 +49,8 @@ export class DevicesPublicController {
       'Until then the device has no access to anything.',
     ].join(' '),
   })
+  // Das Geraet bekommt sein Zugangstoken und den Kopplungscode genau hier.
+  @RevealSecrets('deviceToken', 'verificationCode')
   async initDevice(@Body() initDto: InitDeviceDto) {
     const result = await this.devicesService.initDevice(initDto);
     return {
@@ -95,6 +98,7 @@ export class DevicesPublicController {
   @ApiOperation({
     summary: 'Register a new device (legacy - requires organization slug)',
   })
+  @RevealSecrets('deviceToken', 'verificationCode')
   async register(@Body() registerDto: RegisterDeviceDto) {
     const result = await this.devicesService.registerDevice(registerDto);
     return {
