@@ -79,10 +79,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Alle Kerne des Runners: Jest nimmt in CI sonst einen weniger, und
-      # die Abdeckung macht den Lauf ohnehin langsamer.
       - name: Test
-        run: pnpm test:cov --maxWorkers=100%
+        run: pnpm test:cov
 
       # Darf CI nie rot machen: Faellt Codecov aus oder ist die App noch
       # nicht eingerichtet, laeuft der Job trotzdem weiter. Bei PRs aus
