@@ -8,14 +8,20 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Inject, Logger, Optional } from '@nestjs/common';
+import { CACHE_MANAGER, type Cache } from '@nestjs/cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Server, Socket, type DefaultEventsMap } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { UserOrganization } from '../../database/entities';
-import { DeviceType } from '../../database/entities/device.entity';
+import { Device, User, UserOrganization } from '../../database/entities';
+import {
+  DeviceStatus,
+  DeviceType,
+} from '../../database/entities/device.entity';
+import { isFullSessionToken } from '../auth/access-token-claims';
+import { gesperrterTokenSchluessel } from '../auth/token-blocklist';
 import { GatewayEvents } from './dto';
 import type {
   JoinRoomPayload,
@@ -66,7 +72,23 @@ interface AuthenticatedSocket extends Socket<
     organizationId: string;
     type: string;
   };
+  /** Blocklist key of the JWT the user socket connected with. */
+  sessionTokenKey?: string;
+  /** Periodic re-check of the socket's identity, cleared on disconnect. */
+  revalidationTimer?: ReturnType<typeof setInterval>;
 }
+
+/**
+ * How often a connected socket's identity is checked again: a signed-out
+ * session, a deactivated account, a removed membership or a blocked device
+ * must not keep receiving live data until the client reconnects.
+ */
+export const SOCKET_REVALIDATION_INTERVAL_MS = 30_000;
+
+/** Device types allowed to send each device-originated event. */
+const PRINTER_EVENT_SENDERS: string[] = [DeviceType.PRINTER_AGENT];
+const CART_SENDERS: string[] = [DeviceType.POS, DeviceType.ADMIN];
+const CART_WATCHERS: string[] = [DeviceType.DISPLAY];
 
 /* Die Erlaubnisliste fuer Socket-Verbindungen.
  *
@@ -111,6 +133,13 @@ export class AppGateway
     private readonly printJobsService: PrintJobsService,
     @InjectRepository(UserOrganization)
     private readonly userOrganizationRepository: Repository<UserOrganization>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @InjectRepository(Device)
+    private readonly deviceRepository: Repository<Device>,
+    @Optional()
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager?: Cache,
   ) {}
 
   afterInit(_server: Server) {
@@ -123,12 +152,14 @@ export class AppGateway
       const token = this.extractToken(client);
 
       if (token) {
-        const payload = await this.verifyToken(token);
-        if (payload) {
+        const user = await this.authenticateUser(token);
+        if (user) {
           client.user = {
-            id: payload.sub,
-            email: payload.email,
+            id: user.id,
+            email: user.email,
           };
+          client.sessionTokenKey = gesperrterTokenSchluessel(token);
+          this.startRevalidation(client);
           this.logger.log(
             `User connected: ${client.user.email} (${client.id})`,
           );
@@ -143,12 +174,11 @@ export class AppGateway
         (client.handshake.auth?.deviceToken as string | undefined) ||
         client.handshake.query?.deviceToken;
 
-      if (deviceToken) {
-        const device = await this.devicesService.findByToken(
-          deviceToken as string,
-        );
-        if (device) {
-          // Printer agents can connect without an organization (waiting for assignment)
+      if (deviceToken && typeof deviceToken === 'string') {
+        const device = await this.devicesService.findByToken(deviceToken);
+        if (device && this.isConnectableDevice(device)) {
+          // A verified device without organization (e.g. a printer agent
+          // waiting for its assignment) only gets its own device room.
           const hasOrg = !!device.organizationId;
 
           client.device = {
@@ -179,8 +209,10 @@ export class AppGateway
             );
           }
 
+          this.startRevalidation(client);
+
           // Update last seen
-          await this.devicesService.updateLastSeen(deviceToken as string);
+          await this.devicesService.updateLastSeen(deviceToken);
 
           this.logger.log(`Device connected: ${device.name} (${client.id})`);
           client.emit(GatewayEvents.CONNECTED, {
@@ -213,7 +245,163 @@ export class AppGateway
     }
   }
 
+  /**
+   * Only devices an organization has approved may use the socket: the
+   * device must be active and verified, and its organization (if any)
+   * must still exist. Devices waiting for approval follow their pairing
+   * state over HTTP (`GET /devices/status`).
+   */
+  private isConnectableDevice(
+    device: Pick<Device, 'isActive' | 'status' | 'organizationId'> & {
+      organization?: { deletedAt?: Date | null } | null;
+    },
+  ): boolean {
+    if (!device.isActive) return false;
+    if (device.status !== DeviceStatus.VERIFIED) return false;
+    if (device.organizationId) {
+      if (!device.organization || device.organization.deletedAt) return false;
+    }
+    return true;
+  }
+
+  /**
+   * The user behind a JWT, if the token stands for a completed sign-in
+   * that is still valid: signature and expiry, no intermediate sign-in
+   * token, not signed out, account active and not locked.
+   */
+  private async authenticateUser(
+    token: string,
+  ): Promise<Pick<User, 'id' | 'email'> | null> {
+    const payload = await this.verifyToken(token);
+    if (!payload || !isFullSessionToken(payload)) return null;
+    if (await this.isSessionRevoked(gesperrterTokenSchluessel(token))) {
+      return null;
+    }
+    return this.findActiveUser(payload.sub);
+  }
+
+  private async isSessionRevoked(tokenKey: string): Promise<boolean> {
+    if (!this.cacheManager) return false;
+    return !!(await this.cacheManager.get(tokenKey));
+  }
+
+  private async findActiveUser(
+    userId: string,
+  ): Promise<Pick<User, 'id' | 'email'> | null> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: { id: true, email: true, isActive: true, lockedUntil: true },
+    });
+    if (!user || !user.isActive) return null;
+    if (user.lockedUntil && user.lockedUntil > new Date()) return null;
+    return user;
+  }
+
+  private startRevalidation(client: AuthenticatedSocket): void {
+    this.stopRevalidation(client);
+    const timer = setInterval(() => {
+      void this.revalidate(client);
+    }, SOCKET_REVALIDATION_INTERVAL_MS);
+    timer.unref?.();
+    client.revalidationTimer = timer;
+  }
+
+  private stopRevalidation(client: AuthenticatedSocket): void {
+    if (client.revalidationTimer) {
+      clearInterval(client.revalidationTimer);
+      client.revalidationTimer = undefined;
+    }
+  }
+
+  /**
+   * Checks a connected socket's identity again. Returns false (and
+   * disconnects the socket) when it may no longer stay connected.
+   */
+  async revalidate(client: AuthenticatedSocket): Promise<boolean> {
+    try {
+      const ok = client.user
+        ? await this.revalidateUser(client)
+        : client.device
+          ? await this.revalidateDevice(client)
+          : false;
+      if (!ok) {
+        this.stopRevalidation(client);
+        client.emit(GatewayEvents.ERROR, { message: 'Session ended' });
+        client.disconnect(true);
+      }
+      return ok;
+    } catch (error) {
+      // A failing lookup (database briefly away) keeps the socket; the
+      // next round checks again.
+      this.logger.warn(
+        `Socket revalidation failed for ${client.id}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      return true;
+    }
+  }
+
+  private async revalidateUser(client: AuthenticatedSocket): Promise<boolean> {
+    const user = client.user!;
+    if (
+      client.sessionTokenKey &&
+      (await this.isSessionRevoked(client.sessionTokenKey))
+    ) {
+      return false;
+    }
+    if (!(await this.findActiveUser(user.id))) return false;
+
+    // Leave rooms of organizations the user no longer belongs to.
+    const orgRooms = [...(client.rooms ?? [])].filter((room) =>
+      room.startsWith('org:'),
+    );
+    if (orgRooms.length > 0) {
+      const memberships = await this.userOrganizationRepository.find({
+        where: { userId: user.id },
+        select: { organizationId: true },
+      });
+      const allowed = new Set(memberships.map((m) => m.organizationId));
+      for (const room of orgRooms) {
+        const organizationId = room.split(':')[1];
+        if (!allowed.has(organizationId)) void client.leave(room);
+      }
+    }
+    return true;
+  }
+
+  private async revalidateDevice(
+    client: AuthenticatedSocket,
+  ): Promise<boolean> {
+    const current = client.device!;
+    const device = await this.deviceRepository.findOne({
+      where: { id: current.id },
+      relations: ['organization'],
+    });
+    if (!device || !this.isConnectableDevice(device)) return false;
+    // A changed assignment re-resolves rooms on the next connection.
+    if ((device.organizationId || '') !== current.organizationId) return false;
+    if ((device.type as string) !== current.type) {
+      current.type = device.type;
+      client.data.deviceType = device.type;
+    }
+    return true;
+  }
+
+  /** Is this socket a device of one of the given types with an organization? */
+  private isDeviceOfType(
+    client: AuthenticatedSocket,
+    types: string[],
+  ): boolean {
+    return (
+      !!client.device &&
+      !!client.device.organizationId &&
+      types.includes(client.device.type)
+    );
+  }
+
   async handleDisconnect(client: AuthenticatedSocket) {
+    this.stopRevalidation(client);
     if (client.user) {
       this.logger.log(`User disconnected: ${client.user.email} (${client.id})`);
     } else if (client.device) {
@@ -268,9 +456,9 @@ export class AppGateway
    */
   private async canAccessOrganization(
     client: AuthenticatedSocket,
-    organizationId: string,
+    organizationId: string | undefined,
   ): Promise<boolean> {
-    if (!organizationId) return false;
+    if (!organizationId || typeof organizationId !== 'string') return false;
     if (client.device) {
       return client.device.organizationId === organizationId;
     }
@@ -292,7 +480,12 @@ export class AppGateway
       return { error: 'Not authenticated' };
     }
 
-    if (!(await this.canAccessOrganization(client, payload.organizationId))) {
+    // Cheap re-check before handing out a new room.
+    if (client.user && !(await this.revalidate(client))) {
+      return { error: 'Not authenticated' };
+    }
+
+    if (!(await this.canAccessOrganization(client, payload?.organizationId))) {
       this.logger.warn(
         `Client ${client.id} denied joinRoom for org ${payload.organizationId}`,
       );
@@ -344,6 +537,9 @@ export class AppGateway
     if (!client.device || !client.device.organizationId) {
       return { error: 'Not a device connection' };
     }
+    if (!this.isDeviceOfType(client, CART_SENDERS)) {
+      return { error: 'Not a POS device' };
+    }
 
     const event: PosCartUpdatedEvent = {
       ...payload,
@@ -363,6 +559,9 @@ export class AppGateway
   ) {
     if (!client.device || !client.device.organizationId) {
       return { error: 'Not a device connection' };
+    }
+    if (!this.isDeviceOfType(client, CART_WATCHERS)) {
+      return { error: 'Not a display device' };
     }
     if (!payload?.posDeviceId) {
       return { error: 'posDeviceId required' };
@@ -395,6 +594,9 @@ export class AppGateway
     if (!client.device || !client.device.organizationId) {
       return { error: 'Not a device connection' };
     }
+    if (!this.isDeviceOfType(client, CART_WATCHERS)) {
+      return { error: 'Not a display device' };
+    }
     if (!payload?.posDeviceId) {
       return { error: 'posDeviceId required' };
     }
@@ -423,6 +625,9 @@ export class AppGateway
   ) {
     if (!client.device || !client.device.organizationId) {
       return { error: 'Not a device connection' };
+    }
+    if (!this.isDeviceOfType(client, PRINTER_EVENT_SENDERS)) {
+      return { error: 'Not a printer agent' };
     }
     // Scoped to the caller's organization — a device cannot flip the
     // online status of printers belonging to another tenant.
@@ -464,6 +669,9 @@ export class AppGateway
   ) {
     if (!client.device || !client.device.organizationId) {
       return { error: 'Not a device connection' };
+    }
+    if (!this.isDeviceOfType(client, PRINTER_EVENT_SENDERS)) {
+      return { error: 'Not a printer agent' };
     }
     try {
       // Scoped to the agent's organization — returns null for foreign jobs.
@@ -510,6 +718,9 @@ export class AppGateway
   ) {
     if (!client.device || !client.device.organizationId) {
       return { error: 'Not a device connection' };
+    }
+    if (!this.isDeviceOfType(client, PRINTER_EVENT_SENDERS)) {
+      return { error: 'Not a printer agent' };
     }
     try {
       // Scoped to the agent's organization — returns null for foreign jobs.
@@ -638,6 +849,15 @@ export class AppGateway
     this.logger.log(
       `Device ${deviceId} reassigned to org ${newOrganizationId || '(none)'} — forcing reconnect`,
     );
+  }
+
+  /**
+   * End all live connections of a device (on any replica), e.g. after it
+   * was blocked, deleted or got a new token. Its next connection attempt
+   * is checked from scratch.
+   */
+  disconnectDevice(deviceId: string): void {
+    this.server.in(`device:${deviceId}`).disconnectSockets(true);
   }
 
   async isDeviceOnline(deviceId: string): Promise<boolean> {

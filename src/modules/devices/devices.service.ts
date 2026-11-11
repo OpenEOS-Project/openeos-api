@@ -279,9 +279,11 @@ export class DevicesService {
       await this.printerAgentsService.removeAgentDevice(device);
       return;
     }
+    const removedId = device.id;
     await this.deviceRepository.remove(device);
+    this.gatewayService.disconnectDevice(removedId);
 
-    this.logger.log(`Device deleted: ${device.name} (${device.id})`);
+    this.logger.log(`Device deleted: ${device.name} (${removedId})`);
   }
 
   async regenerateToken(
@@ -294,6 +296,8 @@ export class DevicesService {
     const device = await this.findOne(organizationId, deviceId, user);
     device.deviceToken = this.generateDeviceToken();
     await this.deviceRepository.save(device);
+    // Connections opened with the previous token end here.
+    this.gatewayService.disconnectDevice(device.id);
 
     this.logger.log(`Device token regenerated: ${device.name} (${device.id})`);
 
@@ -635,6 +639,7 @@ export class DevicesService {
     // Deactivate the device
     device.isActive = false;
     await this.deviceRepository.save(device);
+    this.gatewayService.disconnectDevice(device.id);
 
     this.logger.log(`Device logged out: ${device.name} (${device.id})`);
   }
@@ -734,14 +739,15 @@ export class DevicesService {
 
     if (device.type === DeviceType.PRINTER_AGENT) {
       // Ein gesperrter Agent darf nicht weiter drucken oder per Heartbeat
-      // seine Drucker online melden: Drucker offline, Socket kappen. Beim
-      // Neuverbinden scheitert er, weil das Geraet inaktiv ist.
+      // seine Drucker online melden: Drucker offline.
       await this.printerAgentsService.markAgentOffline(
         device.id,
         organizationId,
       );
-      this.gatewayService.reassignDeviceRoom(device.id, null);
     }
+    // Socket kappen (jeder Geraetetyp); beim Neuverbinden scheitert das
+    // Geraet, weil es inaktiv ist.
+    this.gatewayService.disconnectDevice(device.id);
 
     return device;
   }
