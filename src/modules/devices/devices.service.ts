@@ -217,6 +217,7 @@ export class DevicesService {
       previousSettings?.waiterPinLockedAt &&
       !device.settings?.waiterPinLockedAt
     ) {
+      await this.waiterSessions.releaseDeviceLock(device.id);
       await this.deviceRepository.manager
         .query(
           `INSERT INTO admin_audit_logs (admin_user_id, organization_id, action, resource_type, resource_id, details, ip_address)

@@ -591,6 +591,26 @@ describeWithDb('Bedienungen against Postgres', () => {
     );
   });
 
+  it('a correct PIN between wrong ones does not reset the failure count', async () => {
+    const orgId = await org();
+    const { user: admin } = await member(orgId);
+    const anna = await waiters.create(orgId, { name: 'Anna' }, admin);
+    const pos = await device(orgId);
+    const wrong = anna.pin === '7777' ? '7778' : '7777';
+    for (let i = 0; i < 4; i += 1) {
+      expect(await reasonOf(sessions.login(pos, wrong))).toBe(
+        ErrorReasons.PIN_INVALID,
+      );
+    }
+    expect(await reasonOf(sessions.login(pos, anna.pin))).toBeNull();
+    expect(await reasonOf(sessions.login(pos, wrong))).toBe(
+      ErrorReasons.PIN_INVALID,
+    );
+    expect(await reasonOf(sessions.login(pos, anna.pin))).toBe(
+      ErrorReasons.PIN_LOCKED,
+    );
+  });
+
   it('a changed pepper invalidates stored PINs instead of matching wrong owners', async () => {
     const orgId = await org();
     const { user: admin } = await member(orgId);
