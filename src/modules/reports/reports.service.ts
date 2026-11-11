@@ -1,4 +1,4 @@
-import { tipByRate } from '../refunds/refund-calc';
+import { SERVICE_FEE_TAX_RATE, tipByRate } from '../refunds/refund-calc';
 
 /** § 19 Abs. 1 UStG (ab 2025): Grenzen fuer Kleinunternehmer in Euro. */
 export const SMALL_BUSINESS_LIMIT_CURRENT = 100_000;
@@ -213,6 +213,13 @@ const GOODWILL_TIP = `COALESCE((SELECT SUM(rf.tip_amount) FROM refunds rf WHERE 
  * `total − Pfand − Trinkgeld` ist der Warenwert nach Rabatt.
  */
 const NET_FACTOR = `(CASE WHEN order.subtotal > 0 THEN (order.total - order.pfandTotal - order.tipAmount) / order.subtotal ELSE 0 END)`;
+/**
+ * Wie `NET_FACTOR`, aber ohne die Servicegebuehr des Shops: fuer die
+ * Umsatzsteuer je Satz, in der die Gebuehr eine eigene Zeile mit ihrem
+ * Satz ist (`order.serviceFeeTaxRate`). Die Umsatzuebersicht rechnet die
+ * Gebuehr weiter anteilig zu den Waren (sie hat dort keine eigene Zeile).
+ */
+const GOODS_FACTOR = `(CASE WHEN order.subtotal > 0 THEN (order.total - order.pfandTotal - order.tipAmount - order.serviceFee) / order.subtotal ELSE 0 END)`;
 /** Noch nicht erstatteter Anteil einer Position (Kulanz nach Positionen). */
 const OPEN_SHARE = `(CASE WHEN item.quantity > 0 THEN CAST(item.quantity - item.refundedQuantity AS numeric) / item.quantity ELSE 0 END)`;
 /** Erstatteter Anteil einer Position. */
@@ -633,8 +640,25 @@ export class ReportsService {
 
     const goodsRows = await this.soldItemsQuery(organizationId, queryDto)
       .select('item.taxRate', 'rate')
-      .addSelect(`SUM(item.totalPrice * ${NET_FACTOR})`, 'gross')
+      .addSelect(`SUM(item.totalPrice * ${GOODS_FACTOR})`, 'gross')
       .groupBy('item.taxRate')
+      .getRawMany<{ rate: string; gross: string | null }>();
+    // Servicegebuehr des Shops: eigene Leistung mit ihrem Satz.
+    const feeQb = this.orderRepository
+      .createQueryBuilder('order')
+      .select(
+        `COALESCE(order.serviceFeeTaxRate, ${SERVICE_FEE_TAX_RATE})`,
+        'rate',
+      )
+      .addSelect('SUM(order.serviceFee)', 'gross')
+      .where('order.organizationId = :organizationId', { organizationId })
+      .andWhere('order.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: [OrderStatus.CANCELLED],
+      })
+      .andWhere('order.serviceFee <> 0');
+    this.applyOrderFilters(feeQb, queryDto);
+    const feeRows = await feeQb
+      .groupBy(`COALESCE(order.serviceFeeTaxRate, ${SERVICE_FEE_TAX_RATE})`)
       .getRawMany<{ rate: string; gross: string | null }>();
     const depositRows = await this.soldItemsQuery(organizationId, queryDto)
       .select('COALESCE(item.depositTaxRate, 0)', 'rate')
@@ -682,7 +706,7 @@ export class ReportsService {
     const tipRows = await this.soldItemsQuery(organizationId, queryDto)
       .select('order.id', 'orderId')
       .addSelect('item.taxRate', 'rate')
-      .addSelect(`SUM(item.totalPrice * ${NET_FACTOR})`, 'gross')
+      .addSelect(`SUM(item.totalPrice * ${GOODS_FACTOR})`, 'gross')
       .addSelect(`MAX(order.tipAmount + ${GOODWILL_TIP})`, 'tip')
       .addSelect(
         `MAX(COALESCE((SELECT SUM(p.tip_amount) FROM payments p JOIN waiters w ON w.id = p.processed_by_waiter_id
@@ -732,7 +756,7 @@ export class ReportsService {
       vatExempt,
       tips: { clubByRate, employeeCents },
       sales: {
-        goodsByRate: toMap(goodsRows),
+        goodsByRate: addRateMaps(toMap(goodsRows), toMap(feeRows)),
         depositsByRate: toMap(depositRows),
       },
       goodwillRefunds: refundRows.map(
@@ -1746,6 +1770,16 @@ export class ReportsService {
  * der ueber erstattete Mengen bei den Produkten abgezogen ist (positiv) —
  * der Rest sind die Erstattungen ohne Position.
  */
+/** Zwei Betraege-je-Satz-Tabellen (Cent) zusammenzaehlen. */
+function addRateMaps(
+  a: Map<number, number>,
+  b: Map<number, number>,
+): Map<number, number> {
+  const out = new Map(a);
+  for (const [rate, value] of b) out.set(rate, (out.get(rate) ?? 0) + value);
+  return out;
+}
+
 export function netSalesSummary(input: {
   netRevenue: number;
   tips: number;

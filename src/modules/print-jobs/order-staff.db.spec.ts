@@ -194,4 +194,99 @@ describeWithDb('order staff names against Postgres', () => {
       device_name: 'Handy Markus',
     });
   });
+
+  it('split bill: the tip is on the receipt of the payment that carried it only (payments.tip_amount)', async () => {
+    const orgId = await org();
+    await ds.query(`UPDATE organizations SET settings = $2 WHERE id = $1`, [
+      orgId,
+      JSON.stringify({ vatExempt: false }),
+    ]);
+    const [order] = await ds.query<{ id: string }[]>(
+      `INSERT INTO orders (organization_id, order_number, daily_number, status, payment_status, subtotal, total, tip_amount, paid_amount)
+       VALUES ($1, $2, 1, 'completed', 'paid', 20, 22, 2, 22) RETURNING id`,
+      [orgId, `T-${orgId.slice(0, 6)}`],
+    );
+    const [first] = await ds.query<{ id: string }[]>(
+      `INSERT INTO payments (order_id, amount, payment_method, payment_provider, status, tip_amount, created_at)
+       VALUES ($1, 10, 'cash', 'CASH', 'captured', 0, now() - interval '1 minute') RETURNING id`,
+      [order.id],
+    );
+    const [second] = await ds.query<{ id: string }[]>(
+      `INSERT INTO payments (order_id, amount, payment_method, payment_provider, status, tip_amount)
+       VALUES ($1, 12, 'card', 'CARD', 'captured', 2) RETURNING id`,
+      [order.id],
+    );
+    const service = new OrderPrintService(
+      ds.getRepository(Organization),
+      ds.getRepository(OrderItem),
+      ds.getRepository(Device),
+      ds.getRepository(Event),
+      {} as PrintJobsService,
+      {} as PrintRoutingService,
+    );
+    const loaded = await ds
+      .getRepository(Order)
+      .findOneByOrFail({ id: order.id });
+    const payload = (paymentId: string) =>
+      service.receiptPayload(orgId, {
+        orderId: order.id,
+        orderNumber: loaded.orderNumber,
+        paymentId,
+        amount: 10,
+        paymentMethod: 'cash',
+        isFullyPaid: true,
+        order: loaded,
+      });
+
+    expect((await payload(first.id)).tip_amount).toBe(0);
+    expect((await payload(second.id)).tip_amount).toBe(2);
+  });
+
+  it('kitchen ticket carries the TSE outage mark when the order could not be secured', async () => {
+    const orgId = await org();
+    await ds.query(`UPDATE organizations SET settings = $2 WHERE id = $1`, [
+      orgId,
+      JSON.stringify({
+        orderFlow: { kitchenTicketPrinting: { enabled: true } },
+      }),
+    ]);
+    const createFromWorkflow = jest.fn(() => Promise.resolve({}));
+    const service = new OrderPrintService(
+      ds.getRepository(Organization),
+      ds.getRepository(OrderItem),
+      ds.getRepository(Device),
+      ds.getRepository(Event),
+      { createFromWorkflow } as unknown as PrintJobsService,
+      {
+        resolveOrderPrinter: jest.fn(() =>
+          Promise.resolve({ printerId: 'printer-1' }),
+        ),
+      } as unknown as PrintRoutingService,
+    );
+    const base = {
+      order: {
+        id: randomUUID(),
+        organizationId: orgId,
+        orderNumber: 'K-1',
+        createdByDeviceId: null,
+      } as unknown as Order,
+      orderId: randomUUID(),
+      orderNumber: 'K-1',
+      total: 5,
+      source: 'pos',
+    };
+    await service.handleOrderCreated(orgId, {
+      ...base,
+      tse: { status: 'failed' } as never,
+    });
+    await service.handleOrderCreated(orgId, {
+      ...base,
+      tse: { status: 'signed' } as never,
+    });
+    const calls = createFromWorkflow.mock.calls as unknown as unknown[][];
+    expect((calls[0][5] as Record<string, unknown>).tse_outage).toBe(true);
+    expect('tse_outage' in (calls[1][5] as Record<string, unknown>)).toBe(
+      false,
+    );
+  });
 });

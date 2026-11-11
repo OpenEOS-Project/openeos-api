@@ -295,6 +295,10 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 {% if pfand_total is defined and pfand_total and pfand_total|float > 0 %}
 {{ row("Pfand:", pfand_total|float|currency) }}
 {% endif %}
+{# Servicegebuehr (Shop): eigene Leistung mit eigenem Satz, steckt in GESAMT. #}
+{% if service_fee is defined and service_fee and service_fee|float > 0 %}
+{{ row("Servicegebuehr:", service_fee|float|currency) }}
+{% endif %}
 {# Trinkgeld steckt in GESAMT; an den Verein ist es Entgelt und in der MwSt. #}
 {% if tip_amount is defined and tip_amount and tip_amount|float > 0 %}
 {{ row("Trinkgeld:", tip_amount|float|currency) }}

@@ -30,6 +30,7 @@ import {
   rateMapFrom,
   rateRecord,
   scaleComposition,
+  serviceFeeOf,
   tipByRate,
   unitGross,
   type Composition,
@@ -98,9 +99,16 @@ export interface SignInput extends TseActor {
   refundId?: string | null;
   pfandReturnId?: string | null;
   referencesTseTransactionId?: string | null;
+  /**
+   * Bestellvorgang vor dem Kuechenbon: bei offenem TSE-Ausfall nur das
+   * kurze Budget (`outageOrderBudgetMs`), damit die Kueche nicht wartet.
+   */
+  beforeKitchenTicket?: boolean;
 }
 
 const MIN_FINISH_BUDGET_MS = 300;
+/** Standard fuer `TSE_OUTAGE_ORDER_BUDGET_MS`. */
+const OUTAGE_ORDER_BUDGET_MS = 1_500;
 
 /**
  * Signiert Kassenvorgaenge ueber die Cloud-TSE der Organisation
@@ -213,7 +221,7 @@ export class TseSigningService {
     }
 
     const started = Date.now();
-    const budget = this.config.settings.timeouts.signBudgetMs;
+    const budget = await this.budgetFor(input, unit.id);
     const callTimeout = this.config.settings.timeouts.transactionMs;
     const client = this.swissbit.client;
     const request = {
@@ -291,6 +299,27 @@ export class TseSigningService {
       }
     }
     return tseReceiptView(tx, this.rememberUnit(unit));
+  }
+
+  /**
+   * Zeitbudget des Vorgangs. Bestellungen vor dem Kuechenbon bekommen bei
+   * offenem Ausfall nur das kurze Budget — der Kuechenbon kommt dann gleich
+   * mit Ausfallvermerk. Gelingt eine Signatur, schliesst das den Ausfall
+   * (recordSuccess), und es gilt wieder das volle Budget.
+   */
+  private async budgetFor(input: SignInput, unitId: string): Promise<number> {
+    const timeouts = this.config.settings.timeouts;
+    const full = timeouts.signBudgetMs;
+    if (!input.beforeKitchenTicket) return full;
+    try {
+      if (!(await this.outages.isOpen(unitId))) return full;
+    } catch {
+      return full;
+    }
+    return Math.min(
+      full,
+      timeouts.outageOrderBudgetMs ?? OUTAGE_ORDER_BUDGET_MS,
+    );
   }
 
   /**
@@ -916,6 +945,8 @@ export class TseSigningService {
       eventId: order.eventId,
       orderId: order.id,
       ...actor,
+      // Vor dem Kuechenbon: bei offenem Ausfall kurzes Budget.
+      beforeKitchenTicket: true,
     });
   }
 
@@ -1082,7 +1113,8 @@ function orderLine(
  * - sonst die Bestellung anteilig auf den Zahlbetrag skaliert.
  */
 export function paymentComposition(
-  order: Pick<Order, 'items' | 'discountAmount' | 'tipAmount' | 'total'>,
+  order: Pick<Order, 'items' | 'discountAmount' | 'tipAmount' | 'total'> &
+    Partial<Pick<Order, 'serviceFee' | 'serviceFeeTaxRate'>>,
   payment: Pick<Payment, 'amount' | 'metadata' | 'itemPayments'>,
 ): Composition {
   const amountCents = cents(payment.amount);
@@ -1118,6 +1150,8 @@ export function paymentComposition(
     discountAmount: Number(order.discountAmount) || 0,
     tipAmount: Number(order.tipAmount) || 0,
     total: Number(order.total) || 0,
+    serviceFee: order.serviceFee ?? null,
+    serviceFeeTaxRate: order.serviceFeeTaxRate ?? null,
   });
   if (cents(order.total) === amountCents) return whole;
   return scaleComposition(whole, amountCents);
@@ -1213,10 +1247,12 @@ export function receiptLines(
   order: Pick<
     Order,
     'orderNumber' | 'items' | 'discountAmount' | 'tipAmount' | 'total'
-  >,
+  > &
+    Partial<Pick<Order, 'serviceFee' | 'serviceFeeTaxRate'>>,
   payment: Pick<Payment, 'paymentMethod' | 'amount' | 'metadata'>,
   composition: Composition,
 ): Record<string, unknown> {
+  const fee = serviceFeeOf(order);
   return {
     orderNumber: order.orderNumber,
     paymentMethod: payment.paymentMethod,
@@ -1225,6 +1261,8 @@ export function receiptLines(
     items: snapshotItems(order.items),
     discount: Number(order.discountAmount) || 0,
     tip: Number(order.tipAmount) || 0,
+    // Servicegebuehr als eigene Leistung (DSFinV-K: eigene Bonpos).
+    ...(fee ? { serviceFee: { amount: fee.amount, taxRate: fee.rate } } : {}),
     composition: {
       goods: rateRecord(composition.goods),
       pfand: pfandSum(composition),

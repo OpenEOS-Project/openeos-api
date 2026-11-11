@@ -187,6 +187,10 @@ describe('builtin print templates and the Cloud-TSE block', () => {
   it('prints the tip and the § 19 notice (Steuerberater 2026-11-10, Fragen 3 und 9)', () => {
     const receipt = BUILTIN_PRINT_TEMPLATES.receipt;
     expect(receipt).toContain('row("Trinkgeld:", tip_amount|float|currency)');
+    // Servicegebuehr des Shops als eigene Zeile (eigene Leistung, 19 %).
+    expect(receipt).toContain(
+      'row("Servicegebuehr:", service_fee|float|currency)',
+    );
     for (const name of ['receipt', 'refund_receipt', 'pfand_return_receipt']) {
       expect({
         name,

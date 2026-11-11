@@ -192,6 +192,32 @@ export class Order extends BaseEntity {
   })
   tipAmount: number;
 
+  /**
+   * Servicegebuehr (Shop), brutto, in `total` enthalten — eine eigene
+   * Leistung des Vereins mit eigenem Steuersatz (`serviceFeeTaxRate`),
+   * eigene Zeile auf Bon, Kassenbeleg und DSFinV-K.
+   */
+  @Column({
+    name: 'service_fee',
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: 0,
+    transformer: numericTransformer,
+  })
+  serviceFee: number;
+
+  /** Steuersatz der Servicegebuehr beim Bezahlen (Schnappschuss). */
+  @Column({
+    name: 'service_fee_tax_rate',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    nullable: true,
+    transformer: numericTransformer,
+  })
+  serviceFeeTaxRate: number | null;
+
   @Column({
     name: 'discount_amount',
     type: 'decimal',

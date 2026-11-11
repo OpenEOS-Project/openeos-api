@@ -1056,6 +1056,7 @@ export class OnlineOrdersService {
         tableNumber: order.tableNumber,
         total: Number(order.total),
         source: order.source,
+        tse,
       })
       .catch((err) =>
         this.logger.error(

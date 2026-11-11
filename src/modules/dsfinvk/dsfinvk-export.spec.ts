@@ -487,6 +487,49 @@ describe('DSFinV-K export (own validator)', () => {
       (v) => v.BON_ID === line.BON_ID && v.POS_ZEILE === line.POS_ZEILE,
     )!;
 
+  it('shop service fee: own Umsatz line „Servicegebühr“ at 19 % (key 1), not in the goods slot', () => {
+    const seq = new Sequence();
+    const tx = sale(seq, VAT_LIABLE, {
+      items: [{ name: 'Bratwurst', quantity: 2, price: 4.5, rate: 7 }],
+      serviceFee: 0.5,
+      method: 'sumup_online',
+    });
+    // Kassenbeleg: 0,50 im 19-%-Slot, 9,00 im 7-%-Slot.
+    expect(tx.processData).toBe('Beleg^0.50_9.00_0.00_0.00_0.00^9.50:Unbar');
+    const { zip, result } = exportOf([
+      closingInput(1, Z1, [tx], { settings: VAT_LIABLE }),
+    ]);
+    expectValid(result);
+    const fee = rowsOf(zip, 'lines.csv').find(
+      (l) => l.ARTIKELTEXT === 'Servicegebühr',
+    )!;
+    expect(fee.GV_TYP).toBe('Umsatz');
+    expect(vatOf(zip, fee)).toMatchObject({
+      UST_SCHLUESSEL: '1',
+      POS_BRUTTO: '0,50',
+    });
+  });
+
+  it('shop service fee for a Kleinunternehmer: key 6, no VAT', () => {
+    const seq = new Sequence();
+    const tx = sale(seq, VAT_EXEMPT, {
+      items: [{ name: 'Bratwurst', quantity: 1, price: 4.5, rate: 7 }],
+      serviceFee: 0.5,
+      method: 'sumup_online',
+    });
+    const { zip, result } = exportOf([
+      closingInput(1, Z1, [tx], { settings: VAT_EXEMPT }),
+    ]);
+    expectValid(result);
+    const fee = rowsOf(zip, 'lines.csv').find(
+      (l) => l.ARTIKELTEXT === 'Servicegebühr',
+    )!;
+    expect(vatOf(zip, fee)).toMatchObject({
+      UST_SCHLUESSEL: '6',
+      POS_UST: '0,00',
+    });
+  });
+
   it('legacy tips (signed before 2026-11-11, no recipient): 0 % slot, GV_TYP from the old org setting', () => {
     const run = (settings: typeof VAT_LIABLE) => {
       const seq = new Sequence();

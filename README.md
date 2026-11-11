@@ -470,6 +470,7 @@ Die vollständige, kommentierte Liste steht in `.env.example` (Entwicklung) und 
 | `TSE_ENCRYPTION_KEY` | Schlüssel für die Access Tokens der TSEs (leer: `TWO_FACTOR_ENCRYPTION_KEY`) — sichern! | – |
 | `TSE_EXPORT_DIR` | Ablage der TAR-Exporte (nicht öffentlich) | `UPLOAD_DIR/tse-exports` |
 | `TSE_TX_TIMEOUT_MS` / `TSE_SIGN_BUDGET_MS` / `TSE_ADMIN_TIMEOUT_MS` | Zeitlimit je Transaktionsaufruf / Gesamtbudget je Vorgang / Verwaltung | 5000 / 8000 / 15000 |
+| `TSE_OUTAGE_ORDER_BUDGET_MS` | Budget fürs Absichern einer Bestellung vor dem Küchenbon, solange ein TSE-Ausfall offen ist (danach Küchenbon mit Ausfallvermerk; nach der ersten erfolgreichen Signatur wieder `TSE_SIGN_BUDGET_MS`) | 1500 |
 
 Siehe `.env.example` für alle verfügbaren Variablen.
 

@@ -61,6 +61,7 @@ import { EmailService } from '../email/email.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
+import { SERVICE_FEE_TAX_RATE, serviceFeeOf } from '../refunds/refund-calc';
 import { saveOrderWithNumbers } from '../orders/order-numbering';
 import { findTableIdByLabel } from '../tables/table-lookup';
 import { escapeHtml } from '../email/email-template';
@@ -709,6 +710,10 @@ export class EventsShopCheckoutController {
         total,
         paidAmount: total,
         tipAmount: 0,
+        // Eigene Leistung des Vereins mit eigenem Satz (Bon, Kassenbeleg,
+        // DSFinV-K), nicht anteilig in den Waren.
+        serviceFee: fee,
+        serviceFeeTaxRate: fee > 0 ? SERVICE_FEE_TAX_RATE : null,
         discountAmount: 0,
         // Wird nach dem Anlegen der Positionen berechnet (unten).
         taxTotal: 0,
@@ -755,14 +760,18 @@ export class EventsShopCheckoutController {
     });
     await this.orderItemRepository.save(items);
 
-    /* Die Steuer ergibt sich erst aus den Positionen. Die Servicegebuehr
-       ist keine Position und steckt nicht in `subtotal`; sie bleibt hier
-       wie bisher aussen vor. */
+    /* Die Steuer ergibt sich erst aus den Positionen; die Servicegebuehr
+       (nicht in `subtotal`) zaehlt mit ihrem eigenen Satz. */
     const organization = await this.organizationRepository.findOne({
       where: { id: order.organizationId },
       select: ['id', 'settings'],
     });
-    order.taxTotal = orderTaxTotal(items, 0, organization?.settings?.vatExempt);
+    order.taxTotal = orderTaxTotal(
+      items,
+      0,
+      organization?.settings?.vatExempt,
+      serviceFeeOf(order),
+    );
     await this.orderRepository.save(order);
 
     const payment = this.paymentRepository.create({
@@ -833,6 +842,7 @@ export class EventsShopCheckoutController {
         tableNumber: order.tableNumber,
         total: Number(order.total),
         source: order.source,
+        tse,
       })
       .catch((err) =>
         this.logger.error(

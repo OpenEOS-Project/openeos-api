@@ -95,6 +95,7 @@ import {
   tipByRate,
   round2,
   scaleComposition,
+  serviceFeeOf,
   subtractComposition,
   unitGross,
   type Composition,
@@ -190,10 +191,20 @@ export function recalcOrderTotals(
   order.subtotal = subtotal;
   order.pfandTotal = pfandTotal;
   order.discountAmount = round2(discount);
+  // Die Servicegebuehr (Shop) bleibt Teil der Bestellung.
   order.total = round2(
-    subtotal - discount + Number(order.tipAmount || 0) + pfandTotal,
+    subtotal -
+      discount +
+      Number(order.tipAmount || 0) +
+      pfandTotal +
+      Number(order.serviceFee || 0),
   );
-  order.taxTotal = orderTaxTotal(items, discount, vatExempt);
+  order.taxTotal = orderTaxTotal(
+    items,
+    discount,
+    vatExempt,
+    serviceFeeOf(order),
+  );
 }
 
 /**

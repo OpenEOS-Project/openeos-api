@@ -493,7 +493,7 @@ describeWithDb('Online prepayment with Cloud-TSE against Postgres', () => {
     });
   });
 
-  it('shop service fee: signed with the goods (largest slot), export stays valid', async () => {
+  it('shop service fee: its own line at 19 % in receipt, TSE and DSFinV-K', async () => {
     const w = await world();
     const checkoutId = randomUUID();
     await sql(
@@ -527,11 +527,20 @@ describeWithDb('Online prepayment with Cloud-TSE against Postgres', () => {
       `SELECT process_data FROM tse_transactions WHERE organization_id = $1`,
       [w.orgId],
     );
-    // Die Gebuehr ist keine Position: sie landet im Slot der Waren
-    // (Rundungsregel fitSlots/orderComposition) — offene Frage, s. README.
+    // Ware 9,00 zu 7 %, die Servicegebuehr 0,50 als eigene Leistung zu 19 %.
     expect(receipt.process_data).toBe(
-      'Beleg^0.00_9.50_0.00_0.00_0.00^9.50:Unbar',
+      'Beleg^0.50_9.00_0.00_0.00_0.00^9.50:Unbar',
     );
+    const [order] = await sql(
+      `SELECT service_fee, service_fee_tax_rate, tax_total FROM orders WHERE organization_id = $1`,
+      [w.orgId],
+    );
+    // 9,00 × 7/107 = 0,59 + 0,50 × 19/119 = 0,08.
+    expect(order).toMatchObject({
+      service_fee: '0.50',
+      service_fee_tax_rate: '19.00',
+      tax_total: '0.67',
+    });
     const created = await closings.closeUpTo(w.orgId, new Date(), {
       trigger: 'manual',
     });
@@ -549,6 +558,20 @@ describeWithDb('Online prepayment with Cloud-TSE against Postgres', () => {
     expect(
       rowsIn(file.data, 'datapayment.csv').map((p) => p.ZAHLART_TYP),
     ).toEqual(['ElZahlungsdienstleister']);
+    // Eigene Position „Servicegebühr“ mit USt-Schluessel 1 (19 %).
+    const lines = rowsIn(file.data, 'lines.csv');
+    const vat = rowsIn(file.data, 'lines_vat.csv');
+    expect(
+      lines.map((l) => [
+        l.ARTIKELTEXT,
+        l.GV_TYP,
+        vat.find((v) => v.POS_ZEILE === l.POS_ZEILE)?.UST_SCHLUESSEL,
+        vat.find((v) => v.POS_ZEILE === l.POS_ZEILE)?.POS_BRUTTO,
+      ]),
+    ).toEqual([
+      ['Bratwurst', 'Umsatz', '2', '9,00'],
+      ['Servicegebühr', 'Umsatz', '1', '0,50'],
+    ]);
   });
 
   it('QR table order paid with Google Pay (SumUp): webhook books, signs and exports it once', async () => {

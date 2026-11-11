@@ -215,6 +215,9 @@ export interface SaleSpec {
   items: ItemSpec[];
   discount?: number;
   tip?: number;
+  /** Servicegebuehr des Shops (eigene Leistung, `serviceFeeRate`, Standard 19 %). */
+  serviceFee?: number;
+  serviceFeeRate?: number;
   /**
    * Trinkgeld-Empfaenger wie `TseSigningService.signPayment` (ab
    * 2026-11-11): `employer` (Standard, TrinkgeldAG anteilig je Satz),
@@ -248,12 +251,20 @@ export function sale(
     0,
   );
   const total =
-    Math.round((subtotal - (spec.discount ?? 0) + (spec.tip ?? 0)) * 100) / 100;
+    Math.round(
+      (subtotal -
+        (spec.discount ?? 0) +
+        (spec.tip ?? 0) +
+        (spec.serviceFee ?? 0)) *
+        100,
+    ) / 100;
   const order = {
     orderNumber: spec.orderNumber ?? '42',
     items,
     discountAmount: spec.discount ?? 0,
     tipAmount: spec.tip ?? 0,
+    serviceFee: spec.serviceFee ?? 0,
+    serviceFeeTaxRate: spec.serviceFee ? (spec.serviceFeeRate ?? 19) : null,
     total,
   } as unknown as Order;
   const metadata = spec.split

@@ -35,6 +35,8 @@ export interface ReceiptDocument {
   pfand: number | null;
   /** Trinkgeld (steckt in `total`; an den Verein auch in der MwSt). */
   tip: number | null;
+  /** Servicegebuehr (Shop), eigene Leistung, steckt in `total`. */
+  serviceFee?: number | null;
   /** MwSt je Satz; leer bei steuerbefreiten Organisationen (§ 19 UStG). */
   taxLines: ReceiptTaxLine[];
   /** Kleinunternehmer: Hinweis auf die Steuerbefreiung (§ 34a UStDV). */
@@ -87,6 +89,7 @@ export function receiptDocumentFromPayload(
   const discount = num(payload.discount_amount);
   const pfand = num(payload.pfand_total);
   const tip = num(payload.tip_amount);
+  const serviceFee = num(payload.service_fee);
   const change = num(payload.change);
   return {
     orderId: str(payload.order_id) ?? '',
@@ -110,6 +113,7 @@ export function receiptDocumentFromPayload(
     discount: discount && discount > 0 ? discount : null,
     pfand: pfand && pfand > 0 ? pfand : null,
     tip: tip && tip > 0 ? tip : null,
+    serviceFee: serviceFee && serviceFee > 0 ? serviceFee : null,
     taxLines: Array.isArray(payload.tax_lines)
       ? (payload.tax_lines as ReceiptTaxLine[])
       : [],

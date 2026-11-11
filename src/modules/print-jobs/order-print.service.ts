@@ -12,7 +12,8 @@ import {
   OrderItem,
   OrderItemStatus,
 } from '../../database/entities/order-item.entity';
-import { Order } from '../../database/entities/order.entity';
+import { Order, PaymentStatus } from '../../database/entities/order.entity';
+import { serviceFeeOf } from '../refunds/refund-calc';
 import { Event, EventStatus } from '../../database/entities/event.entity';
 import { PrintJobsService } from './print-jobs.service';
 import { PrintRoutingService } from './print-routing.service';
@@ -264,6 +265,12 @@ export class OrderPrintService {
       tableNumber?: string | null;
       total: number;
       source: string;
+      /**
+       * Ergebnis der Absicherung vor dem Kuechenbon (Bestellung-V1 bzw.
+       * Kassenbeleg). Ohne Signatur traegt der Kuechenbon den
+       * Ausfallvermerk (`tse_outage`).
+       */
+      tse?: TseReceiptView | null;
     },
   ): Promise<void> {
     try {
@@ -272,6 +279,7 @@ export class OrderPrintService {
         data.order?.createdByDeviceId ?? null;
       const isTest = await this.isTestOrder(data.order);
       const staff = await this.orderStaff(data.order);
+      const marks = kitchenTseMarks(data.tse);
 
       // Kitchen ticket(s) on order creation — supports three dispatch modes.
       // The kitchen toggle gates ORG-level routing only. If a device has a
@@ -295,6 +303,7 @@ export class OrderPrintService {
           data,
           isTest,
           staff,
+          marks,
         );
       }
 
@@ -353,6 +362,7 @@ export class OrderPrintService {
     },
     isTest: boolean,
     staff: OrderStaff,
+    marks: Record<string, unknown> = {},
   ): Promise<void> {
     const { mode, templateId } = kitchen;
     const orgPayload = await this.buildOrgPayload(organizationId);
@@ -381,6 +391,7 @@ export class OrderPrintService {
           total: data.total,
           source: data.source,
           is_test: isTest,
+          ...marks,
         },
         null,
         'kitchen_ticket',
@@ -434,6 +445,7 @@ export class OrderPrintService {
             ],
             order_item_id: item.id,
             is_test: isTest,
+            ...marks,
           },
           item.id,
           'kitchen_ticket',
@@ -508,6 +520,7 @@ export class OrderPrintService {
               options: this.formatOptions(it),
             })),
             is_test: isTest,
+            ...marks,
           },
           null,
           'kitchen_ticket',
@@ -567,6 +580,45 @@ export class OrderPrintService {
     }
   }
 
+  /**
+   * Trinkgeld, das auf den Beleg dieser Zahlung gehoert. Seit es
+   * `payments.tip_amount` gibt, traegt jede Zahlung ihr eigenes Trinkgeld;
+   * auf den anderen Teilbelegen einer Bestellung steht keins. Bestand ohne
+   * Trinkgeld an einer Zahlung (Trinkgeld nur an der Bestellung): es steht
+   * auf dem Beleg der Zahlung, mit der die Bestellung bezahlt war.
+   */
+  private async tipOfPayment(
+    paymentId: string,
+    order: Order | null,
+  ): Promise<number> {
+    const orderTip = Number(order?.tipAmount) || 0;
+    try {
+      const rows: {
+        id: string;
+        tip_amount: string | null;
+      }[] = await this.organizationRepository.manager.query(
+        `SELECT p.id, p.tip_amount FROM payments p
+          WHERE p.order_id = (SELECT order_id FROM payments WHERE id = $1)
+            AND p.status IN ('captured', 'refunded')
+          ORDER BY p.created_at, p.id`,
+        [paymentId],
+      );
+      if (!Array.isArray(rows) || rows.length === 0) return orderTip;
+      const own = rows.find((r) => r.id === paymentId);
+      const ownTip = Number(own?.tip_amount) || 0;
+      if (ownTip > 0) return ownTip;
+      if (rows.some((r) => Number(r.tip_amount) > 0)) return 0;
+      if (orderTip <= 0) return 0;
+      const paid =
+        order?.paymentStatus === PaymentStatus.PAID ||
+        Math.round((Number(order?.paidAmount) || 0) * 100) >=
+          Math.round((Number(order?.total) || 0) * 100);
+      return paid && rows[rows.length - 1].id === paymentId ? orderTip : 0;
+    } catch {
+      return orderTip;
+    }
+  }
+
   /** `settings.vatExempt` der Organisation (fuer den § 19-Hinweis). */
   private async orgVatExempt(
     organizationId: string,
@@ -622,6 +674,10 @@ export class OrderPrintService {
       order: { createdAt: 'ASC' },
     });
     const staff = await this.orderStaff(data.order);
+    // Trinkgeld nur auf dem Beleg der Zahlung, die es gebracht hat (bei
+    // Teilzahlungen nicht auf jedem Teilbeleg).
+    const tip = await this.tipOfPayment(data.paymentId, data.order);
+    const serviceFee = serviceFeeOf(data.order);
     return {
       ...this.buildOrderPayload(data.order, staff),
       organization: orgPayload,
@@ -643,13 +699,17 @@ export class OrderPrintService {
         data.order?.discountAmount,
         org?.settings?.vatExempt,
         {
-          amount: data.order?.tipAmount,
+          amount: tip,
           toClub: !(await this.tipToEmployee(data.paymentId)),
         },
+        serviceFee,
       ),
       ...vatExemptNotice(org?.settings?.vatExempt),
-      // Trinkgeld steckt in GESAMT; eigene Zeile auf dem Bon.
-      tip_amount: Number(data.order?.tipAmount) || 0,
+      // Trinkgeld steckt in GESAMT; eigene Zeile auf dem Bon — nur auf dem
+      // Beleg der Zahlung, die es getragen hat.
+      tip_amount: tip,
+      // Servicegebuehr (Shop): eigene Leistung, eigene Zeile, eigener Satz.
+      service_fee: serviceFee?.amount ?? 0,
       // Pfand (deposit) is part of `total` but not `subtotal`, which is
       // why total > subtotal. Expose it so the receipt can show it.
       pfand_total: data.order?.pfandTotal ?? null,
@@ -1114,4 +1174,18 @@ export function pfandReturnPrintData(
     payment_method: 'cash',
     payment_label: paymentMethodLabel('cash'),
   };
+}
+
+/**
+ * Ausfallvermerk fuer den Kuechenbon: Die Bestellung (bzw. Zahlung) wurde
+ * vor dem Kuechenbon nicht von der TSE abgesichert (Ausfall, Zeitbudget).
+ * Ohne TSE oder bei Training nichts.
+ */
+export function kitchenTseMarks(tse: TseReceiptView | null | undefined): {
+  tse_outage?: true;
+} {
+  if (!tse) return {};
+  return tse.status === 'failed' || tse.status === 'pending'
+    ? { tse_outage: true }
+    : {};
 }

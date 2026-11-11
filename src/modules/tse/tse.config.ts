@@ -73,6 +73,12 @@ export interface TseSettings {
     transactionMs: number;
     signBudgetMs: number;
     adminMs: number;
+    /**
+     * Budget fuer das Absichern einer Bestellung vor dem Kuechenbon,
+     * solange ein TSE-Ausfall offen ist (Standard 1500 ms). Die Kueche soll
+     * bei einem bekannten Ausfall nicht jedes Mal das volle Budget warten.
+     */
+    outageOrderBudgetMs?: number;
   };
 }
 
@@ -120,6 +126,7 @@ export function tseSettingsFromEnv(
       transactionMs: intValue(env, 'TSE_TX_TIMEOUT_MS', 5_000),
       signBudgetMs: intValue(env, 'TSE_SIGN_BUDGET_MS', 8_000),
       adminMs: intValue(env, 'TSE_ADMIN_TIMEOUT_MS', 15_000),
+      outageOrderBudgetMs: intValue(env, 'TSE_OUTAGE_ORDER_BUDGET_MS', 1_500),
     },
   };
 }

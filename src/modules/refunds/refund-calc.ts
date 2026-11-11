@@ -138,13 +138,55 @@ export function discountFactor(
 }
 
 /**
+ * Steuersatz der Servicegebuehr des Shops. Sie ist eine eigene Leistung
+ * des Vereins (Abwicklung der Online-Bestellung), keine Ware: eigene Zeile
+ * mit dem Regelsatz statt anteilig in den Saetzen der Waren. Steuerbefreit
+ * (Kleinunternehmer) gilt wie fuer alles der § 19-Hinweis.
+ */
+export const SERVICE_FEE_TAX_RATE = 19;
+
+/** Servicegebuehr einer Bestellung (brutto, Euro) mit ihrem Satz. */
+export interface ServiceFeeLine {
+  amount: number;
+  rate: number;
+}
+
+export function serviceFeeOf(
+  order:
+    | {
+        serviceFee?: number | string | null;
+        serviceFeeTaxRate?: number | string | null;
+      }
+    | null
+    | undefined,
+): ServiceFeeLine | null {
+  const amount = Number(order?.serviceFee) || 0;
+  if (amount <= 0) return null;
+  const rate = order?.serviceFeeTaxRate;
+  return {
+    amount,
+    rate:
+      rate === null || rate === undefined
+        ? SERVICE_FEE_TAX_RATE
+        : Number(rate) || 0,
+  };
+}
+
+/**
  * Zusammensetzung der Bestellung, wie sie jetzt verkauft ist (stornierte
- * Positionen zaehlen nicht). Rundungsdifferenzen des Rabatts landen beim
- * groessten Satz, damit die Summe exakt `total` ergibt.
+ * Positionen zaehlen nicht). Die Servicegebuehr zaehlt mit ihrem eigenen
+ * Satz. Rundungsdifferenzen des Rabatts landen beim groessten Satz, damit
+ * die Summe exakt `total` ergibt.
  */
 export function orderComposition(
   items: ItemLike[],
-  order: { discountAmount: number; tipAmount: number; total: number },
+  order: {
+    discountAmount: number;
+    tipAmount: number;
+    total: number;
+    serviceFee?: number | null;
+    serviceFeeTaxRate?: number | null;
+  },
 ): Composition {
   const active = items.filter((i) => i.status !== OrderItemStatus.CANCELLED);
   const factor = discountFactor(active, order.discountAmount);
@@ -159,16 +201,20 @@ export function orderComposition(
     const deposit = cents(item.depositAmount || 0) * item.quantity;
     if (deposit) addTo(pfand, depositRateOf(item), deposit);
   }
+  const fee = serviceFeeOf(order);
+  const feeCents = fee ? cents(fee.amount) : 0;
   const composition: Composition = {
     goods,
     pfand,
     tip: cents(order.tipAmount),
   };
-  const diff = cents(order.total) - compositionTotal(composition);
+  // Rundung nur auf die Waren — die Gebuehr kommt danach exakt dazu.
+  const diff = cents(order.total) - compositionTotal(composition) - feeCents;
   if (diff !== 0 && goods.size > 0) {
     const biggest = [...goods.entries()].sort((a, b) => b[1] - a[1])[0][0];
     goods.set(biggest, (goods.get(biggest) ?? 0) + diff);
   }
+  if (fee) goods.set(fee.rate, (goods.get(fee.rate) ?? 0) + feeCents);
   return composition;
 }
 

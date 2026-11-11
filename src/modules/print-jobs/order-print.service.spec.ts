@@ -351,3 +351,137 @@ describe('OrderPrintService receipt payload', () => {
     expect(await service.receiptPayload('org-1', data)).toEqual(payload());
   });
 });
+
+describe('OrderPrintService receipt payload: tip per payment, service fee', () => {
+  /** Zahlungen der Bestellung, wie `payments` sie liefert. */
+  function setup(
+    payments: Array<{ id: string; tip_amount: string }>,
+    vatExempt = false,
+  ) {
+    const organization = {
+      id: 'org-1',
+      name: 'Verein',
+      settings: {
+        vatExempt,
+        orderFlow: { receiptPrinting: { enabled: true } },
+      },
+    } as unknown as Organization;
+    const query = jest.fn((sql: string) =>
+      Promise.resolve(sql.includes('tip_amount') ? payments : []),
+    );
+    const organizationRepository = {
+      findOne: jest.fn(() => Promise.resolve(organization)),
+      manager: { query },
+    } as unknown as Repository<Organization>;
+    const orderItemRepository = {
+      find: jest.fn(() =>
+        Promise.resolve([
+          item({ id: 'i-1', totalPrice: 11.9, taxRate: 19 }),
+          item({ id: 'i-2', totalPrice: 10.7, taxRate: 7 }),
+        ]),
+      ),
+    } as unknown as Repository<OrderItem>;
+    const service = new OrderPrintService(
+      organizationRepository,
+      orderItemRepository,
+      {} as Repository<Device>,
+      {
+        findOne: jest.fn(() => Promise.resolve(null)),
+      } as unknown as Repository<Event>,
+      {} as PrintJobsService,
+      {} as PrintRoutingService,
+    );
+    return { service };
+  }
+
+  const order = (extra: Partial<Order> = {}) =>
+    ({
+      id: 'order-1',
+      orderNumber: 'A-1',
+      eventId: null,
+      subtotal: 22.6,
+      discountAmount: 0,
+      pfandTotal: 0,
+      tipAmount: 2,
+      total: 24.6,
+      paidAmount: 24.6,
+      paymentStatus: 'paid',
+      ...extra,
+    }) as unknown as Order;
+
+  const data = (paymentId: string, o: Order) => ({
+    orderId: 'order-1',
+    orderNumber: 'A-1',
+    paymentId,
+    amount: 10,
+    paymentMethod: 'cash',
+    isFullyPaid: true,
+    order: o,
+  });
+
+  it('split payment: only the partial payment that carried the tip prints it', async () => {
+    const { service } = setup([
+      { id: 'pay-1', tip_amount: '0.00' },
+      { id: 'pay-2', tip_amount: '2.00' },
+    ]);
+
+    const first = await service.receiptPayload('org-1', data('pay-1', order()));
+    const second = await service.receiptPayload(
+      'org-1',
+      data('pay-2', order()),
+    );
+
+    expect(first.tip_amount).toBe(0);
+    expect(second.tip_amount).toBe(2);
+    // Steuer ohne Trinkgeld auf dem ersten Teilbeleg: nur die Ware.
+    expect(first.tax_amount).toBe(2.6);
+    expect(Number(second.tax_amount)).toBeGreaterThan(2.6);
+  });
+
+  it('tip only on the order (older data): printed on the payment that completed the order', async () => {
+    const { service } = setup([
+      { id: 'pay-1', tip_amount: '0.00' },
+      { id: 'pay-2', tip_amount: '0.00' },
+    ]);
+
+    const first = await service.receiptPayload('org-1', data('pay-1', order()));
+    const last = await service.receiptPayload('org-1', data('pay-2', order()));
+    const notYetPaid = await service.receiptPayload(
+      'org-1',
+      data('pay-2', order({ paidAmount: 10, paymentStatus: 'partly_paid' })),
+    );
+
+    expect(first.tip_amount).toBe(0);
+    expect(last.tip_amount).toBe(2);
+    expect(notYetPaid.tip_amount).toBe(0);
+  });
+
+  it('single payment keeps the order tip', async () => {
+    const { service } = setup([{ id: 'pay-1', tip_amount: '0.00' }]);
+    const p = await service.receiptPayload('org-1', data('pay-1', order()));
+    expect(p.tip_amount).toBe(2);
+  });
+
+  it('shop service fee: own receipt line and its own 19 % VAT line', async () => {
+    const { service } = setup([{ id: 'pay-1', tip_amount: '0.00' }]);
+    const p = await service.receiptPayload(
+      'org-1',
+      data(
+        'pay-1',
+        order({
+          tipAmount: 0,
+          total: 23.1,
+          serviceFee: 0.5,
+          serviceFeeTaxRate: 19,
+        }),
+      ),
+    );
+
+    expect(p.service_fee).toBe(0.5);
+    // 11,90 + 0,50 zu 19 %, 10,70 zu 7 %.
+    expect(p.tax_lines).toEqual([
+      { rate: 19, net: 10.42, tax: 1.98, gross: 12.4 },
+      { rate: 7, net: 10, tax: 0.7, gross: 10.7 },
+    ]);
+  });
+});
