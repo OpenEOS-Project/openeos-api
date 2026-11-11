@@ -79,8 +79,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Jest-Cache (uebersetzte und fuer die Abdeckung instrumentierte
+      # Dateien) zwischen den Laeufen behalten: Ohne ihn kostet die Abdeckung
+      # jedes Mal rund eine Minute extra. Schluessel ohne Commit, damit nicht
+      # jeder Lauf einen neuen Cache ablegt; neu angelegt wird er, wenn sich
+      # Abhaengigkeiten oder die Jest-/TS-Konfiguration aendern.
+      - name: Jest cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/jest-cache
+          key: jest-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'tsconfig.json') }}
+
       - name: Test
-        run: pnpm test:cov
+        run: pnpm test:cov --cacheDirectory /tmp/jest-cache
 
       # Darf CI nie rot machen: Faellt Codecov aus oder ist die App noch
       # nicht eingerichtet, laeuft der Job trotzdem weiter. Bei PRs aus
