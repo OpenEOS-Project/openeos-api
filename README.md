@@ -1,5 +1,7 @@
 # OpenEOS API
 
+[![codecov](https://codecov.io/gh/OpenEOS-Project/openeos-api/branch/dev/graph/badge.svg)](https://codecov.io/gh/OpenEOS-Project/openeos-api)
+
 Backend-Server für OpenEOS mit REST API, WebSocket und Authentifizierung.
 
 ## Features

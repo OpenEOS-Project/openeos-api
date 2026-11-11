@@ -42,3 +42,6 @@ Thumbs.db
 
 # User uploads (runtime data, volume-mounted in prod)
 /uploads/
+
+# Test coverage
+coverage/

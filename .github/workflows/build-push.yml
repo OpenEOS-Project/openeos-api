@@ -31,6 +31,10 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Codecov-Upload per OIDC statt Token (siehe codecov.yml).
+      id-token: write
     # Datenbank und Redis nur fuer `pnpm docs:check`: AppModule verbindet
     # beim Start, und die eingecheckte OpenAPI-Beschreibung (docs/) muss
     # zum Code passen — die Doku-Seite rendert sie.
@@ -76,7 +80,21 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test
-        run: pnpm test
+        run: pnpm test:cov
+
+      # Darf CI nie rot machen: Faellt Codecov aus oder ist die App noch
+      # nicht eingerichtet, laeuft der Job trotzdem weiter. Bei PRs aus
+      # Forks gibt es kein OIDC — die Action laedt dann ohne Token hoch,
+      # was Codecov fuer oeffentliche Repos annimmt.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
+        continue-on-error: true
+        with:
+          use_oidc: true
+          files: ./coverage/lcov.info
+          disable_search: true
+          flags: api
+          fail_ci_if_error: false
 
       - name: Lint
         run: pnpm lint
