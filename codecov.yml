@@ -1,6 +1,10 @@
 # Codecov: Testabdeckung als Information, nie als Sperre.
 # Hochgeladen wird aus dem Test-Job in .github/workflows/build-push.yml
 # (OIDC, kein Token noetig; PRs aus Forks laden ohne Token hoch).
+codecov:
+  # Integrationszweig; Vergleichsbasis fuer PRs und Stand fuer das Badge.
+  branch: dev
+
 coverage:
   status:
     project:
