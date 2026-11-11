@@ -132,9 +132,20 @@
       "node_modules/(?!uuid/)"
     ],
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "**/*.ts",
+      "!**/*.spec.ts",
+      "!**/*.d.ts",
+      "!main.ts",
+      "!**/*.module.ts",
+      "!database/migrations/**",
+      "!database/seeds/**"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "coverageReporters": [
+      "lcov",
+      "text-summary"
+    ],
+    "coverageProvider": "v8"
   }
 }
