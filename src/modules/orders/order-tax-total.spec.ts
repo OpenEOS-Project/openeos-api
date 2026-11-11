@@ -261,8 +261,10 @@ describe('EventsShopCheckoutController.createOrderFromCheckout', () => {
     const { order, items } = await run(false);
 
     expect(items.map((i) => i.taxRate)).toEqual([19, 7]);
-    // The 0.50 service fee is not an item and stays out of the VAT.
-    expect(order.taxTotal).toBe(2.6);
+    // Goods 1.90 + 0.70; the 0.50 service fee is the club's own service at
+    // 19 % (0.08) and is stored on the order as its own line.
+    expect(order.taxTotal).toBe(2.68);
+    expect(order).toMatchObject({ serviceFee: 0.5, serviceFeeTaxRate: 19 });
   });
 
   it('stores 0 for VAT-exempt organizations', async () => {

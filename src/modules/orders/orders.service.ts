@@ -57,6 +57,7 @@ import { Refund } from '../../database/entities/refund.entity';
 import {
   ORDER_DISPLAY_STATUSES,
   displayStatusOf,
+  serviceFeeOf,
 } from '../refunds/refund-calc';
 import {
   applyHistoryFilters,
@@ -230,7 +231,10 @@ export class OrdersService {
     // Cloud-TSE: Bestellung ohne Zahlung als Bestellvorgang (Bestellung-V1),
     // vor dem Kuechenbon („keine Kuechenbons ohne TSE-Spur“). Wirft nie,
     // begrenzt durch das Zeitbudget; ohne aktive TSE passiert nichts.
-    await this.tseSigning?.signOrderCreated(order.id, { userId: user.id });
+    const orderTse =
+      (await this.tseSigning?.signOrderCreated(order.id, {
+        userId: user.id,
+      })) ?? null;
 
     // Trigger auto-printing asynchronously
     const createdOrder = await this.findOne(organizationId, order.id, user);
@@ -242,6 +246,8 @@ export class OrdersService {
         tableNumber: createdOrder.tableNumber,
         total: createdOrder.total,
         source: createdOrder.source,
+        // Ohne Signatur: Kuechenbon mit Ausfallvermerk.
+        tse: orderTse,
       })
       .catch((error: Error) => {
         this.logger.error(
@@ -1819,9 +1825,15 @@ export class OrdersService {
       order.items,
       effectiveDiscount,
       organization?.settings?.vatExempt,
+      serviceFeeOf(order),
     );
+    // Die Servicegebuehr (Shop) bleibt Teil der Bestellung.
     order.total =
-      subtotal - effectiveDiscount + Number(order.tipAmount) + pfandTotal;
+      subtotal -
+      effectiveDiscount +
+      Number(order.tipAmount) +
+      pfandTotal +
+      Number(order.serviceFee || 0);
 
     await this.orderRepository.save(order);
   }

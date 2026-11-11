@@ -45,6 +45,7 @@ import {
   cashReceivedMetadata,
   orderTaxTotal,
 } from '../print-jobs/receipt-tax.util';
+import { serviceFeeOf } from '../refunds/refund-calc';
 import { BatchPaymentDto } from './dto/batch-payment.dto';
 import { NO_ATTRIBUTION, type Attribution } from '../waiters/waiter-operator';
 
@@ -320,6 +321,7 @@ export class PaymentsBatchService {
           itemsOf(order.id),
           order.discountAmount,
           organization?.settings?.vatExempt,
+          serviceFeeOf(order),
         );
         adjusted.set(order.id, {
           discountAmount: order.discountAmount,

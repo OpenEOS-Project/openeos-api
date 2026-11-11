@@ -436,6 +436,22 @@ export const CHANGELOG: ChangelogEintrag[] = [
     datum: '2026-11-09',
     art: 'behoben',
     titel: {
+      de: 'Trinkgeld, Servicegebühr und Küchenbons bei TSE-Ausfall',
+      en: 'Tips, service fee and kitchen tickets during a TSE outage',
+    },
+    kurz: {
+      de: 'Trinkgeld steht nur noch auf dem Teilbeleg, mit dem es gegeben wurde, die Servicegebühr des Shops ist eine eigene Zeile, und bei einem TSE-Ausfall kommen Küchenbons schneller.',
+      en: 'Tips now only appear on the partial receipt they were given with, the shop service fee is its own line, and kitchen tickets come faster during a TSE outage.',
+    },
+    text: {
+      de: 'Bei geteilten Rechnungen stand das Trinkgeld auf jedem Teilbeleg – jetzt nur auf dem, mit dessen Zahlung es gegeben wurde. Die Servicegebühr deines Shops steht auf Bon und digitalem Beleg als eigene Zeile „Servicegebühr“ und wird als eigene Leistung mit 19 % versteuert; bisher wurde sie still dem Steuersatz mit dem größten Warenanteil zugeschlagen. Kassenbeleg, DSFinV-K-Export und Umsatzsteuer-Bericht zeigen sie genauso; als Kleinunternehmer bleibt es beim Hinweis nach § 19 UStG. Ist die TSE gerade ausgefallen, wartet die Kasse vor dem Küchenbon nicht mehr bis zu acht Sekunden auf die Absicherung der Bestellung, sondern höchstens anderthalb; der Küchenbon kommt dann mit dem Vermerk „TSE-Ausfall“. Sobald die TSE wieder signiert, gilt wieder das normale Zeitlimit.',
+      en: 'With split bills the tip was printed on every partial receipt – now only on the one whose payment carried it. Your shop’s service fee appears on the printed and the digital receipt as its own line "Service fee" and is taxed as a service of its own at 19 %; until now it was silently added to the VAT rate with the largest share of goods. The signed receipt, the DSFinV-K export and the VAT report show it the same way; small businesses keep the § 19 UStG note. While the TSE is down, the till no longer waits up to eight seconds to secure an order before the kitchen ticket, but at most one and a half; the kitchen ticket then carries a "TSE outage" note. As soon as the TSE signs again, the normal time limit applies again.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'behoben',
+    titel: {
       de: 'Kartenzahlung bei QR-Bestellungen am Tisch',
       en: 'Card payments for QR orders at the table',
     },

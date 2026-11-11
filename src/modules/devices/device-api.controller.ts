@@ -82,6 +82,7 @@ import {
   cashReceivedMetadata,
   orderTaxTotal,
 } from '../print-jobs/receipt-tax.util';
+import { serviceFeeOf } from '../refunds/refund-calc';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { OrdersService } from '../orders/orders.service';
 import { DiscountVouchersService } from '../discount-vouchers/discount-vouchers.service';
@@ -1016,6 +1017,16 @@ export class DeviceApiController {
           tableNumber: completeOrder.tableNumber,
           total: Number(completeOrder.total),
           source: completeOrder.source,
+          // Absicherung vor dem Kuechenbon (Bestellung-V1 bzw. Kassenbeleg);
+          // ohne Signatur traegt der Kuechenbon den Ausfallvermerk.
+          tse:
+            orderTse ??
+            (
+              created.settled?.payments.find(
+                (p) => p.orderId === completeOrder.id,
+              ) as { tse?: TseReceiptView | null } | undefined
+            )?.tse ??
+            null,
         })
         .catch((err) =>
           this.logger.error(
@@ -2176,11 +2187,20 @@ export class DeviceApiController {
     );
     order.discountAmount = effectiveDiscount;
     order.total =
-      subtotal - effectiveDiscount + Number(order.tipAmount || 0) + pfandTotal;
+      subtotal -
+      effectiveDiscount +
+      Number(order.tipAmount || 0) +
+      pfandTotal +
+      Number(order.serviceFee || 0);
 
     // Wie in OrdersService.recalculateOrderTotals: enthaltene Steuer,
     // dieselbe Rechnung wie auf dem Bon.
-    order.taxTotal = orderTaxTotal(order.items, effectiveDiscount, vatExempt);
+    order.taxTotal = orderTaxTotal(
+      order.items,
+      effectiveDiscount,
+      vatExempt,
+      serviceFeeOf(order),
+    );
 
     await manager.save(order);
   }

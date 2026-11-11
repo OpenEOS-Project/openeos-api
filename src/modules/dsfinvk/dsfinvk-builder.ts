@@ -305,6 +305,31 @@ function itemSnapshot(raw: Record<string, unknown>): ItemSnapshot {
   };
 }
 
+/**
+ * Servicegebuehr des Shops (TSE-Kopie `serviceFee`, ab 2026-11): eigene
+ * Position `Umsatz` mit ihrem Satz. Aeltere Kopien haben sie nicht — dort
+ * steckt die Gebuehr wie signiert im groessten Satz.
+ */
+function serviceFeeLine(
+  s: Record<string, unknown>,
+  ctx: Ctx,
+): LineDraft | null {
+  const raw = s.serviceFee as
+    | { amount?: unknown; taxRate?: unknown }
+    | undefined;
+  if (!raw || typeof raw !== 'object') return null;
+  const gross = cents(raw.amount);
+  if (!gross) return null;
+  return {
+    text: 'Servicegebühr',
+    gvTyp: 'Umsatz',
+    key: rateKey(num(raw.taxRate), ctx.settings.vatExempt, ctx.zeroKey),
+    grossCents: gross,
+    quantity: 1,
+    unitCents: gross,
+  };
+}
+
 function itemLine(item: ItemSnapshot, quantity: number, ctx: Ctx): LineDraft {
   const key = rateKey(item.rate, ctx.settings.vatExempt, ctx.zeroKey);
   return {
@@ -501,13 +526,15 @@ function receiptLines(
     if (lines.length > 0) return lines;
   }
 
+  const fee = serviceFeeLine(s, ctx);
   const fullTotal =
     items.reduce(
       (sum, i) => sum + Math.round(i.quantity * (i.unitCents + i.depositCents)),
       0,
     ) -
     discount +
-    tip;
+    tip +
+    (fee?.grossCents ?? 0);
   if (
     items.length > 0 &&
     (Math.abs(fullTotal - amount) <= 1 || s.zeroTotal === true)
@@ -518,6 +545,7 @@ function receiptLines(
       const deposit = depositLine(item, item.quantity, ctx);
       if (deposit) lines.push(deposit);
     }
+    if (fee) lines.push(fee);
     lines.push(...tipLines(s, tip, ctx));
     // Rabatt je USt-Schluessel ergibt sich beim Abstimmen (reconcile).
     return lines;

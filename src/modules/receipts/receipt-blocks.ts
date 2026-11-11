@@ -129,6 +129,12 @@ export function amountBlocks(doc: ReceiptDocument): ReceiptBlock[] {
     out.push({ type: 'row', label: 'Rabatt', value: euro(-doc.discount) });
   if (doc.pfand)
     out.push({ type: 'row', label: 'Pfand', value: euro(doc.pfand) });
+  if (doc.serviceFee)
+    out.push({
+      type: 'row',
+      label: 'Servicegebühr',
+      value: euro(doc.serviceFee),
+    });
   if (doc.tip)
     out.push({ type: 'row', label: 'Trinkgeld', value: euro(doc.tip) });
   if (doc.vatExemptNotice)

@@ -16,10 +16,15 @@ import { rowsOf } from './tse-sql.util';
  * Start ist der Stand unbekannt (true). Ausfaelle, die eine andere Instanz
  * geoeffnet hat, schliesst spaetestens der Abgleich (TseReconcileService).
  */
+/** Hoechstalter des Ausfall-Stands aus der Datenbank (andere Instanzen). */
+const OPEN_CACHE_MS = 5_000;
+
 @Injectable()
 export class TseOutageService {
   private readonly logger = new Logger(TseOutageService.name);
   private readonly maybeOpen = new Map<string, boolean>();
+  /** Kurzzeit-Cache fuer `isOpen` (je TSE), damit nicht jede Bestellung fragt. */
+  private readonly openCache = new Map<string, { open: boolean; at: number }>();
 
   constructor(
     @InjectRepository(TseOutage)
@@ -34,6 +39,7 @@ export class TseOutageService {
     errorMessage: string,
   ): Promise<void> {
     this.maybeOpen.set(tseUnitId, true);
+    this.openCache.set(tseUnitId, { open: true, at: Date.now() });
     try {
       const inserted = rowsOf<{
         id: string;
@@ -100,6 +106,7 @@ export class TseOutageService {
     organizationId: string,
     tseUnitId: string,
   ): Promise<void> {
+    this.openCache.set(tseUnitId, { open: false, at: Date.now() });
     if (this.maybeOpen.get(tseUnitId) === false) return;
     try {
       const closed = rowsOf<{ id: string }>(
@@ -121,6 +128,28 @@ export class TseOutageService {
       this.logger.error(
         `Could not close TSE outage for unit ${tseUnitId}: ${(error as Error).message}`,
       );
+    }
+  }
+
+  /**
+   * Ist fuer diese TSE gerade ein Ausfall offen? Nach einem Fehlschlag bzw.
+   * Erfolg auf dieser Instanz sofort aktuell, sonst hoechstens
+   * `OPEN_CACHE_MS` alt (Ausfaelle anderer Instanzen). Wirft nie.
+   */
+  async isOpen(tseUnitId: string): Promise<boolean> {
+    const cached = this.openCache.get(tseUnitId);
+    if (cached && Date.now() - cached.at < OPEN_CACHE_MS) return cached.open;
+    try {
+      const open = await this.outageRepository.exists({
+        where: { tseUnitId, endedAt: IsNull() },
+      });
+      this.openCache.set(tseUnitId, { open, at: Date.now() });
+      return open;
+    } catch (error) {
+      this.logger.warn(
+        `Could not look up TSE outage for unit ${tseUnitId}: ${(error as Error).message}`,
+      );
+      return false;
     }
   }
 

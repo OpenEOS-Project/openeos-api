@@ -1,5 +1,9 @@
 import { PaymentMethod } from '../../database/entities/payment.entity';
-import { depositRateOf, tipByRate } from '../refunds/refund-calc';
+import {
+  depositRateOf,
+  tipByRate,
+  type ServiceFeeLine,
+} from '../refunds/refund-calc';
 import {
   OrderItem,
   OrderItemStatus,
@@ -46,6 +50,8 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
  *   anteilig nach den Nettoentgelten der Waren je Satz (`tipByRate`).
  *   Trinkgeld einer angestellten Bedienung (TrinkgeldAN) bleibt aussen vor
  *   (`tip.toClub = false`). Steuerberater 2026-11-10, Fragen 3–5.
+ * - Die Servicegebuehr des Shops ist eine eigene Leistung mit eigenem Satz
+ *   (`serviceFee`, Standard 19 %); ein Rabatt mindert sie nicht.
  * - Steuerbefreite Organisationen (Kleinunternehmer, viele Vereine) duerfen
  *   keine MwSt ausweisen. Wie bei `taxRatesFor` gilt nur ein ausdrueckliches
  *   `vatExempt: false` als steuerpflichtig.
@@ -78,6 +84,8 @@ export function buildReceiptTax(
   vatExempt: boolean | undefined,
   /** Trinkgeld der Bestellung; `toClub` = TrinkgeldAG (Entgelt). */
   tip: { amount: number | null | undefined; toClub: boolean } | null = null,
+  /** Servicegebuehr (Shop) mit eigenem Satz. */
+  serviceFee: ServiceFeeLine | null = null,
 ): ReceiptTax {
   if (vatExempt !== false) return {};
 
@@ -116,10 +124,16 @@ export function buildReceiptTax(
     }
   }
 
+  const feeByRate = new Map<number, number>();
+  if (serviceFee && serviceFee.amount > 0) {
+    feeByRate.set(serviceFee.rate, serviceFee.amount);
+  }
+
   const rates = new Set([
     ...grossByRate.keys(),
     ...depositByRate.keys(),
     ...tipByRateEuro.keys(),
+    ...feeByRate.keys(),
   ]);
   const lines: ReceiptTaxLine[] = [...rates]
     // Positionen mit 0 % tragen keine Steuer und brauchen keine eigene Zeile.
@@ -129,7 +143,8 @@ export function buildReceiptTax(
       const gross = round2(
         (grossByRate.get(rate) ?? 0) * factor +
           (depositByRate.get(rate) ?? 0) +
-          (tipByRateEuro.get(rate) ?? 0),
+          (tipByRateEuro.get(rate) ?? 0) +
+          (feeByRate.get(rate) ?? 0),
       );
       const tax = round2((gross * rate) / (100 + rate));
       return { rate, net: round2(gross - tax), tax, gross };
@@ -185,13 +200,18 @@ export function cashReceivedMetadata(
  * `order.taxTotal` — dieselbe Rechnung wie auf dem Bon, damit Beleg und
  * gespeicherte Summe nicht auseinanderlaufen koennen: im Bruttopreis
  * enthaltene Steuer je Satz, Rabatt anteilig, Pfand mit dem Satz seiner
- * Pfandart (Bestand: 0 %), Trinkgeld aussen vor, und 0 fuer jede
- * Organisation, die nicht ausdruecklich `vatExempt: false` hat.
+ * Pfandart (Bestand: 0 %), Servicegebuehr mit ihrem Satz, Trinkgeld
+ * aussen vor, und 0 fuer jede Organisation, die nicht ausdruecklich
+ * `vatExempt: false` hat.
  */
 export function orderTaxTotal(
   items: ReceiptTaxItem[],
   discountAmount: number | null | undefined,
   vatExempt: boolean | undefined,
+  serviceFee: ServiceFeeLine | null = null,
 ): number {
-  return buildReceiptTax(items, discountAmount, vatExempt).tax_amount ?? 0;
+  return (
+    buildReceiptTax(items, discountAmount, vatExempt, null, serviceFee)
+      .tax_amount ?? 0
+  );
 }
