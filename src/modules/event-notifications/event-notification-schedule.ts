@@ -8,7 +8,7 @@
  * | Art           | Faellig ab                                    | Spaetestens (Nachholen)          |
  * |---------------|-----------------------------------------------|----------------------------------|
  * | `week_before` | 9 Uhr, 7 Kalendertage vor dem ersten Festtag  | 5 Tage vor dem ersten Festtag    |
- * | `not_booked`  | wie `week_before`                             | wie `week_before`                |
+ * | `not_booked`  | 9 Uhr, 10 Kalendertage vor dem ersten Festtag | 8 Tage vor dem ersten Festtag    |
  * | `day_before`  | 9 Uhr am Tag des Verkaufsstarts, liegt der vor 12 Uhr: 9 Uhr am Vortag | Verkaufsstart (`realSalesFrom`) |
  * | `after_event` | Ende des Verkaufsfensters samt Kulanz, frühestens 9 Uhr, nach 20 Uhr erst am naechsten Morgen | 7 Tage danach |
  *
@@ -38,6 +38,14 @@ export const REMINDER_HOUR = 9;
 export const WEEK_BEFORE_DAYS = 7;
 /** … und nachgeholt hoechstens bis so viele Tage vorher. */
 export const WEEK_BEFORE_LATEST_DAYS = 5;
+/**
+ * „Noch nicht freigeschaltet“: frueher als die Woche-vorher-Mail, damit
+ * nach dem Buchen noch kostenlos storniert werden kann (bis 7 Kalendertage
+ * vor Beginn, siehe `cancellationDeadline`) …
+ */
+export const NOT_BOOKED_DAYS = 10;
+/** … und nachgeholt nur, solange diese Frist noch mindestens einen Tag laeuft. */
+export const NOT_BOOKED_LATEST_DAYS = 8;
 /** Der Rueckblick wird hoechstens so viele Tage nach dem Fest nachgeholt. */
 export const AFTER_EVENT_MAX_DAYS = 7;
 /** Nach dieser Stunde kein Rueckblick mehr am selben Tag. */
@@ -89,21 +97,22 @@ export function scheduleFor(
 
   switch (kind) {
     case 'week_before':
-    case 'not_booked':
+    case 'not_booked': {
+      const [days, latestDays] =
+        kind === 'not_booked'
+          ? [NOT_BOOKED_DAYS, NOT_BOOKED_LATEST_DAYS]
+          : [WEEK_BEFORE_DAYS, WEEK_BEFORE_LATEST_DAYS];
       return {
         kind,
         dueAt: atLocalHour(
-          shiftCalendarDaysInZone(firstDay, -WEEK_BEFORE_DAYS, timeZone),
+          shiftCalendarDaysInZone(firstDay, -days, timeZone),
           REMINDER_HOUR,
           timeZone,
         ),
-        validUntil: shiftCalendarDaysInZone(
-          firstDay,
-          -WEEK_BEFORE_LATEST_DAYS,
-          timeZone,
-        ),
+        validUntil: shiftCalendarDaysInZone(firstDay, -latestDays, timeZone),
         scheduleKey: firstDayKey,
       };
+    }
 
     case 'day_before': {
       const salesFrom = window.realSalesFrom;

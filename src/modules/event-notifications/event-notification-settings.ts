@@ -12,7 +12,7 @@ export interface EventReminderSettings {
   dayBefore?: boolean;
   /** „Danke! So lief dein Fest“, nach dem Fest. */
   afterEvent?: boolean;
-  /** „Noch nicht freigeschaltet“, 7 Tage vorher (nur mit Abrechnung). */
+  /** „Noch nicht freigeschaltet“, 10 Tage vorher (nur mit Abrechnung). */
   notBooked?: boolean;
 }
 

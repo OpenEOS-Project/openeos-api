@@ -82,8 +82,12 @@ export interface ReminderRunSummary {
   failed: number;
 }
 
-/** Wie weit der Lauf um heute herum nach Veranstaltungen sucht. */
-const SEARCH_DAYS = 10;
+/**
+ * Wie weit der Lauf um heute herum nach Veranstaltungen sucht: nach vorn
+ * mit Luft fuer die frueheste Mail (`not_booked`, 10 Tage vor dem ersten
+ * Festtag, der vor `start_date` beginnen kann), zurueck fuer den Rueckblick.
+ */
+const SEARCH_DAYS = 14;
 const DAY_MS = 86_400_000;
 
 /**
