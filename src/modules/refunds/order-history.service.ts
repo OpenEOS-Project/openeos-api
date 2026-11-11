@@ -142,12 +142,17 @@ export function applyHistoryFilters<T extends ObjectLiteral>(
       if (m === 'sumup') {
         methods.push(PaymentMethod.SUMUP_TERMINAL, PaymentMethod.SUMUP_ONLINE);
       }
+      if (m === 'tokens') methods.push(PaymentMethod.TOKENS);
     }
     const parts: string[] = [];
     if (methods.length) {
       parts.push(`EXISTS (SELECT 1 FROM payments fp
-        WHERE fp.order_id = ${alias}.id AND fp.payment_method::text IN (:...methods)
-          AND fp.status IN ('captured', 'refunded'))`);
+        WHERE fp.order_id = ${alias}.id AND fp.status IN ('captured', 'refunded')
+          AND (fp.payment_method::text IN (:...methods)${
+            methods.includes(PaymentMethod.TOKENS)
+              ? ' OR fp.token_amount > 0'
+              : ''
+          }))`);
     }
     if (filters.paymentMethods.includes('discount')) {
       parts.push(`${alias}.discount_amount > 0`);
@@ -327,8 +332,11 @@ export class OrderHistoryService {
         'w.name AS "waiterName"',
         'w.short_name AS "waiterShortName"',
         'w.color AS "waiterColor"',
-        `ARRAY(SELECT DISTINCT pm.payment_method::text FROM payments pm
-           WHERE pm.order_id = o.id AND pm.status IN ('captured', 'refunded'))
+        `ARRAY(SELECT DISTINCT m FROM payments pm
+           CROSS JOIN LATERAL unnest(ARRAY[pm.payment_method::text,
+             CASE WHEN pm.token_amount > 0 THEN 'tokens' END]) m
+           WHERE pm.order_id = o.id AND pm.status IN ('captured', 'refunded')
+             AND m IS NOT NULL)
            AS "paymentMethods"`,
       ])
       .orderBy('o.created_at', 'DESC')
@@ -558,8 +566,22 @@ export class OrderHistoryService {
       );
     }
 
+    // Zurueckgegebene Wertmarken zaehlen gegen den Markenanteil, nicht das Geld.
+    const tokenRefundsByPayment = new Map<string, number>();
+    for (const r of refunds) {
+      if (!r.paymentId || String(r.paymentMethod) !== 'tokens') continue;
+      tokenRefundsByPayment.set(
+        r.paymentId,
+        (tokenRefundsByPayment.get(r.paymentId) ?? 0) - cents(r.amount),
+      );
+    }
     const paymentRows = payments.map((p) => {
-      const refunded = (refundedByPayment.get(p.id) ?? 0) / 100;
+      const tokenRefunded = (tokenRefundsByPayment.get(p.id) ?? 0) / 100;
+      const refunded =
+        ((refundedByPayment.get(p.id) ?? 0) -
+          (tokenRefundsByPayment.get(p.id) ?? 0)) /
+        100;
+      const tokenAmount = Number(p.tokenAmount ?? 0);
       const amountReceived =
         typeof p.metadata?.amountReceived === 'number'
           ? p.metadata.amountReceived
@@ -592,6 +614,13 @@ export class OrderHistoryService {
         refundedAmount: round2(refunded),
         refundable: counted
           ? Math.max(0, round2(Number(p.amount) - refunded))
+          : 0,
+        /** Mit Wertmarken beglichen (Wert) und je Typ. */
+        tokenAmount,
+        tokenLines: p.tokenLines ?? [],
+        tokenRefunded: round2(tokenRefunded),
+        tokenRefundable: counted
+          ? Math.max(0, round2(tokenAmount - tokenRefunded))
           : 0,
         createdAt: p.createdAt,
         deviceId: p.processedByDeviceId,

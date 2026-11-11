@@ -12,9 +12,13 @@ import {
   OrderItemStatus,
 } from '../../database/entities/order-item.entity';
 import { Organization } from '../../database/entities/organization.entity';
-import { Payment } from '../../database/entities/payment.entity';
+import {
+  Payment,
+  type PaymentTokenLine,
+} from '../../database/entities/payment.entity';
 import type { PfandReturn } from '../../database/entities/pfand-return.entity';
 import type { Refund } from '../../database/entities/refund.entity';
+import type { TokenTransaction } from '../../database/entities/token-transaction.entity';
 import {
   TseTransaction,
   type TseTransactionKind,
@@ -50,7 +54,9 @@ import {
   PROCESS_TYPE_ORDER,
   PROCESS_TYPE_OTHER,
   PROCESS_TYPE_RECEIPT,
+  applyTokenRedemption,
   bestellungProcessData,
+  tokenSaleSlots,
   settlementProcessData,
   tipPayoutProcessData,
   cashbookProcessData,
@@ -98,6 +104,7 @@ export interface SignInput extends TseActor {
   paymentId?: string | null;
   refundId?: string | null;
   pfandReturnId?: string | null;
+  tokenTransactionId?: string | null;
   referencesTseTransactionId?: string | null;
   /**
    * Bestellvorgang vor dem Kuechenbon: bei offenem TSE-Ausfall nur das
@@ -209,6 +216,7 @@ export class TseSigningService {
           paymentId: input.paymentId ?? null,
           refundId: input.refundId ?? null,
           pfandReturnId: input.pfandReturnId ?? null,
+          tokenTransactionId: input.tokenTransactionId ?? null,
           referencesTseTransactionId: input.referencesTseTransactionId ?? null,
         }),
       );
@@ -447,45 +455,26 @@ export class TseSigningService {
       if (!order) return null;
       if (!(await this.isActive(order.organizationId))) return null;
       const vatExempt = await this.vatExempt(order.organizationId);
-
-      const amountCents = cents(payment.amount);
-      const composition = paymentComposition(order, payment);
       // Trinkgeld: an den Verein (TrinkgeldAG, Satz der Hauptleistung
       // anteilig) — ausser die kassierende Bedienung ist Arbeitnehmer
       // (TrinkgeldAN, kein Entgelt). Steuerbefreit: 0-%-Slot.
       const tipRecipient = await this.tipRecipientFor(
         payment.processedByWaiterId,
       );
-      const tipShares =
-        composition.tip && tipRecipient === 'employer' && !vatExempt
-          ? tipByRate(composition.goods, composition.tip)
-          : null;
-      const slots = fitSlots(
-        slotsFromComposition(composition, vatExempt, 1, tipShares),
-        amountCents,
-      );
       const training = order.isTest === true;
-      const amounts: ReceiptAmounts = {
-        slots,
-        payments: [
-          { type: paymentTypeFor(payment.paymentMethod), cents: amountCents },
-        ],
-      };
+      const receipt = paymentReceiptData(order, payment, {
+        vatExempt,
+        tipRecipient,
+        training,
+      });
       const view = await this.sign({
         organizationId: order.organizationId,
         kind: 'receipt',
         processType: PROCESS_TYPE_RECEIPT,
-        processData: kassenbelegProcessData(
-          training ? 'AVTraining' : 'Beleg',
-          amounts,
-        ),
+        processData: receipt.processData,
         training,
-        amountCents,
-        lines: {
-          ...receiptLines(order, payment, composition),
-          tipRecipient,
-          ...(tipShares ? { tipByRate: rateRecord(tipShares) } : {}),
-        },
+        amountCents: receipt.amountCents,
+        lines: receipt.lines,
         eventId: order.eventId,
         orderId: order.id,
         paymentId: payment.id,
@@ -597,19 +586,31 @@ export class TseSigningService {
               ),
             )
           : null;
-      const slots = fitSlots(
+      let slots = fitSlots(
         slotsFromComposition(composition, vatExempt, -1, tipShares),
         amountCents,
       );
+      // Rueckgabe von Wertmarken: die Ware geht zurueck, die Einloesung
+      // wird zurueckgenommen (Marke positiv im Slot ihrer Art), kein Geld.
+      const tokenLines = refundTokenLines(refund);
+      const tokenRefund = String(refund.paymentMethod) === 'tokens';
+      if (tokenRefund) {
+        slots = applyTokenRedemption(slots, tokenLines, vatExempt, -1);
+      }
       return this.sign({
         organizationId: refund.organizationId,
         kind: 'refund',
         processType: PROCESS_TYPE_RECEIPT,
         processData: kassenbelegProcessData(training ? 'AVTraining' : 'Beleg', {
           slots,
-          payments: [
-            { type: paymentTypeFor(refund.paymentMethod), cents: amountCents },
-          ],
+          payments: tokenRefund
+            ? []
+            : [
+                {
+                  type: paymentTypeFor(refund.paymentMethod),
+                  cents: amountCents,
+                },
+              ],
         }),
         training,
         amountCents,
@@ -634,6 +635,16 @@ export class TseSigningService {
           ...(tipRecipient ? { tipRecipient } : {}),
           ...(tipShares ? { tipByRate: rateRecord(tipShares) } : {}),
           paymentMethod: refund.paymentMethod,
+          ...(tokenRefund
+            ? {
+                tokens: tokenLines.map((l) => ({
+                  ...l,
+                  kind: vatExempt ? 'multi_purpose' : l.kind,
+                  vatRate: vatExempt ? null : (l.vatRate ?? null),
+                })),
+                tokenAmount: Math.abs(amountCents) / 100,
+              }
+            : {}),
         },
         eventId: refund.eventId,
         orderId: refund.orderId,
@@ -696,6 +707,51 @@ export class TseSigningService {
       );
       return null;
     }
+  }
+
+  /**
+   * Verkauf (Geld rein) bzw. Ruecktausch (Bargeld raus) von Wertmarken als
+   * eigener Kassenbeleg: Mehrzweckgutschein im 0-%-Slot (nicht steuerbar),
+   * Einzweckgutschein im Slot seines Satzes; Zahlung bar/unbar.
+   */
+  async signTokenTransaction(
+    tx: TokenTransaction,
+  ): Promise<TseReceiptView | null> {
+    try {
+      if (!(await this.isActive(tx.organizationId))) return null;
+      const vatExempt = await this.vatExempt(tx.organizationId);
+      const data = tokenTransactionReceiptData(tx, vatExempt);
+      return this.sign({
+        organizationId: tx.organizationId,
+        kind: tx.kind === 'buyback' ? 'token_buyback' : 'token_sale',
+        processType: PROCESS_TYPE_RECEIPT,
+        processData: data.processData,
+        training: tx.isTest === true,
+        amountCents: data.amountCents,
+        lines: data.lines,
+        eventId: tx.eventId,
+        tokenTransactionId: tx.id,
+        terminal: tx.deviceId,
+        userId: tx.userId,
+        waiterId: tx.waiterId ?? null,
+        operatorName: tx.actorName,
+      });
+    } catch (error) {
+      this.logger.error(
+        `TSE token transaction ${tx.id} failed: ${(error as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  async forTokenTransaction(
+    tokenTransactionId: string,
+  ): Promise<TseReceiptView | null> {
+    const tx = await this.txRepository.findOne({
+      where: { tokenTransactionId },
+      order: { createdAt: 'DESC' },
+    });
+    return tx ? (await this.viewsFor([tx]))[0] : null;
   }
 
   /**
@@ -1157,6 +1213,36 @@ export function paymentComposition(
   return scaleComposition(whole, amountCents);
 }
 
+/**
+ * Zurueckgegebene Wertmarken einer Erstattung (`metadata.tokenLines`,
+ * Betraege positiv). Nur bei `paymentMethod` `tokens`.
+ */
+export function refundTokenLines(
+  refund: Pick<Refund, 'metadata' | 'amount' | 'paymentMethod'>,
+): PaymentTokenLine[] {
+  if (String(refund.paymentMethod) !== 'tokens') return [];
+  const raw = (refund.metadata as { tokenLines?: unknown } | null)?.tokenLines;
+  const lines = Array.isArray(raw) ? (raw as PaymentTokenLine[]) : [];
+  if (lines.length > 0) {
+    return lines.map((l) => ({
+      ...l,
+      amount: Math.abs(Number(l.amount) || 0),
+    }));
+  }
+  const value = Math.abs(cents(refund.amount)) / 100;
+  return [
+    {
+      tokenTypeId: '',
+      name: 'Wertmarken',
+      kind: 'multi_purpose',
+      unitValue: value,
+      count: 1,
+      amount: value,
+      vatRate: null,
+    },
+  ];
+}
+
 /** Zusammensetzung (positiv) einer Erstattung. */
 export function refundComposition(
   refund: Pick<
@@ -1209,6 +1295,172 @@ export function fitSlots(slots: VatSlots, totalCents: number): VatSlots {
   });
   out[target] += diff;
   return out;
+}
+
+/**
+ * Kassenbeleg eines Verkaufs/Ruecktauschs von Wertmarken (rein).
+ * Mehrzweck 50 × 2 € bar: `Beleg^0.00_0.00_0.00_0.00_100.00^100.00:Bar`.
+ */
+export function tokenTransactionReceiptData(
+  tx: Pick<
+    TokenTransaction,
+    | 'kind'
+    | 'lines'
+    | 'totalAmount'
+    | 'paymentMethod'
+    | 'isTest'
+    | 'transactionNumber'
+    | 'reason'
+  >,
+  vatExempt: boolean,
+): {
+  processData: string;
+  amountCents: number;
+  lines: Record<string, unknown>;
+} {
+  const sign = tx.kind === 'buyback' ? -1 : 1;
+  const lines = (tx.lines ?? []).map((l) => ({
+    tokenTypeId: l.tokenTypeId,
+    name: l.name,
+    kind: vatExempt ? ('multi_purpose' as const) : l.kind,
+    unitValue: Number(l.unitValue),
+    count: sign * Math.abs(Number(l.count)),
+    amount: sign * Math.abs(Number(l.amount)),
+    vatRate: vatExempt ? null : (l.vatRate ?? null),
+  }));
+  const amountCents = sign * Math.abs(cents(tx.totalAmount));
+  const slots = fitSlots(tokenSaleSlots(lines, vatExempt), amountCents);
+  return {
+    processData: kassenbelegProcessData(tx.isTest ? 'AVTraining' : 'Beleg', {
+      slots,
+      payments: [
+        { type: paymentTypeFor(tx.paymentMethod), cents: amountCents },
+      ],
+    }),
+    amountCents,
+    lines: {
+      tokenTransactionKind: tx.kind,
+      transactionNumber: tx.transactionNumber,
+      paymentMethod: tx.paymentMethod,
+      tokens: lines,
+      ...(tx.reason ? { reason: tx.reason } : {}),
+    },
+  };
+}
+
+/** Wertmarken-Anteile einer Zahlung, Summe exakt `tokenCents`. */
+function tokenLinesOf(
+  payment: Partial<Pick<Payment, 'tokenAmount' | 'tokenLines'>>,
+): { lines: PaymentTokenLine[]; tokenCents: number } {
+  const tokenCents = cents(payment.tokenAmount ?? 0);
+  const raw = Array.isArray(payment.tokenLines) ? payment.tokenLines : [];
+  if (tokenCents <= 0) return { lines: [], tokenCents: 0 };
+  const lines = raw.map((l) => ({ ...l, amount: Number(l.amount) || 0 }));
+  if (lines.length === 0) {
+    // Ohne Aufschluesselung (sollte es nicht geben): als Mehrzweck.
+    lines.push({
+      tokenTypeId: '',
+      name: 'Wertmarken',
+      kind: 'multi_purpose',
+      unitValue: tokenCents / 100,
+      count: 1,
+      amount: tokenCents / 100,
+      vatRate: null,
+    });
+  }
+  const sum = lines.reduce((s, l) => s + cents(l.amount), 0);
+  if (sum !== tokenCents) {
+    const biggest = lines.reduce(
+      (best, l, i) => (l.amount > lines[best].amount ? i : best),
+      0,
+    );
+    lines[biggest].amount =
+      (cents(lines[biggest].amount) + tokenCents - sum) / 100;
+  }
+  return { lines, tokenCents };
+}
+
+/**
+ * Kassenbeleg einer Zahlung (rein): Prozessdaten, Betrag und TSE-Kopie.
+ * Beglichen = Geld (`amount`) + Wertmarken (`tokenAmount`); die Ware steht
+ * mit ihrem Satz in den Slots, die Marken negativ im Slot ihrer Art
+ * (Mehrzweck 0 %, Einzweck Satz), gezahlt wird nur das Geld. Nur mit
+ * Marken bezahlt: Zahlung `0.00:Bar`, in der DSFinV-K Zahlart „Keine“.
+ */
+export function paymentReceiptData(
+  order: Pick<
+    Order,
+    'orderNumber' | 'items' | 'discountAmount' | 'tipAmount' | 'total'
+  > &
+    Partial<Pick<Order, 'serviceFee' | 'serviceFeeTaxRate'>>,
+  payment: Pick<
+    Payment,
+    'paymentMethod' | 'amount' | 'metadata' | 'itemPayments'
+  > &
+    Partial<Pick<Payment, 'tokenAmount' | 'tokenLines'>>,
+  options: {
+    vatExempt: boolean;
+    tipRecipient: TipRecipient;
+    training: boolean;
+  },
+): {
+  processData: string;
+  amountCents: number;
+  lines: Record<string, unknown>;
+} {
+  const { vatExempt, tipRecipient, training } = options;
+  const moneyCents = cents(payment.amount);
+  const tokens = tokenLinesOf(payment);
+  const settledCents = moneyCents + tokens.tokenCents;
+  const composition = paymentComposition(order, {
+    ...payment,
+    amount: settledCents / 100,
+  });
+  const tipShares =
+    composition.tip && tipRecipient === 'employer' && !vatExempt
+      ? tipByRate(composition.goods, composition.tip)
+      : null;
+  let slots = fitSlots(
+    slotsFromComposition(composition, vatExempt, 1, tipShares),
+    settledCents,
+  );
+  if (tokens.tokenCents > 0) {
+    slots = applyTokenRedemption(slots, tokens.lines, vatExempt);
+  }
+  const amounts: ReceiptAmounts = {
+    slots,
+    payments:
+      moneyCents !== 0
+        ? [{ type: paymentTypeFor(payment.paymentMethod), cents: moneyCents }]
+        : [],
+  };
+  return {
+    processData: kassenbelegProcessData(
+      training ? 'AVTraining' : 'Beleg',
+      amounts,
+    ),
+    amountCents: moneyCents,
+    lines: {
+      ...receiptLines(order, payment, composition),
+      tipRecipient,
+      ...(tipShares ? { tipByRate: rateRecord(tipShares) } : {}),
+      ...(tokens.tokenCents > 0
+        ? {
+            settledAmount: settledCents / 100,
+            tokenAmount: tokens.tokenCents / 100,
+            tokens: tokens.lines.map((l) => ({
+              tokenTypeId: l.tokenTypeId,
+              name: l.name,
+              kind: vatExempt ? 'multi_purpose' : l.kind,
+              unitValue: l.unitValue,
+              count: l.count,
+              amount: l.amount,
+              vatRate: vatExempt ? null : (l.vatRate ?? null),
+            })),
+          }
+        : {}),
+    },
+  };
 }
 
 /**

@@ -239,6 +239,12 @@ export class OrganizationPurgeJob implements RetentionJob {
           AND (customer_name IS NOT NULL OR customer_phone IS NOT NULL OR notes IS NOT NULL)`,
     );
     await run(
+      'tokenTransactionsDeleted',
+      `DELETE FROM token_transactions WHERE organization_id = $1
+          AND id NOT IN (SELECT token_transaction_id FROM tse_transactions
+                          WHERE organization_id = $1 AND token_transaction_id IS NOT NULL)`,
+    );
+    await run(
       'pfandReturnsDeleted',
       `DELETE FROM pfand_returns WHERE organization_id = $1
           AND id NOT IN (SELECT pfand_return_id FROM tse_transactions

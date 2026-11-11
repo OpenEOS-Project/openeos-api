@@ -18,6 +18,7 @@ import { CreateOrderDto } from '../../orders/dto';
 import {
   BATCH_MAX_ORDERS,
   BATCH_PAYMENT_METHODS,
+  TokenTenderFields,
   type BatchPaymentMethod,
 } from '../../payments/dto/batch-payment.dto';
 
@@ -26,7 +27,7 @@ import {
  * Felder wie bei `POST /device-api/payments/batch`; die neue Bestellung
  * ist immer die letzte (Trinkgeld, erhaltenes Bargeld).
  */
-export class DeviceOrderPaymentDto {
+export class DeviceOrderPaymentDto extends TokenTenderFields {
   @ApiProperty({ enum: BATCH_PAYMENT_METHODS, example: 'cash' })
   @IsIn(BATCH_PAYMENT_METHODS)
   paymentMethod: BatchPaymentMethod;

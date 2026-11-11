@@ -52,6 +52,12 @@ export const PUBLIC_TAGS: ReadonlyArray<{
     description: 'Pfandarten der Organisation (z. B. Glas, Becher)',
   },
   {
+    internal: 'Wertmarken',
+    name: 'Wertmarken',
+    description:
+      'Markentypen (Mehrzweck-/Einzweckgutschein), Verkauf, Einlösung, Rücktausch und Bestand im Umlauf',
+  },
+  {
     internal: 'Tables',
     name: 'Tische & Bereiche',
     description: 'Bereiche, Tische und der Tischplan der Organisation',

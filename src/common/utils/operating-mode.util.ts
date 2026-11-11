@@ -97,6 +97,19 @@ export function isCashAllowed(
   return org?.operatingModeLegacy === true || hasActiveTse(org);
 }
 
+/**
+ * Wertmarken (Verkauf, Annahme, Ruecktausch) moeglich? Wie Bargeld, aber
+ * ohne Bestandsschutz: in Deutschland immer nur mit aktiver Cloud-TSE
+ * (Steuerberater 2026-11-10, Frage 13; AEAO zu § 146a Nr. 1.2).
+ */
+export function isTokensAllowed(
+  org: OperatingModeOrg | null | undefined,
+): boolean {
+  if (getOperatingMode(org) !== 'full') return false;
+  if (countryOf(org) !== 'DE') return isCashAllowed(org);
+  return hasActiveTse(org);
+}
+
 /** Preise und Betraege an Kasse, Bons, Kundendisplay und Berichten? */
 export function arePricesVisible(
   org: OperatingModeOrg | null | undefined,
@@ -152,6 +165,8 @@ export interface OperatingModeView {
   operatingModeSince: string | null;
   tseActive: boolean;
   cashAllowed: boolean;
+  /** Wertmarken verkaufen/annehmen (nur „Alle Funktionen“, DE mit TSE). */
+  tokensAllowed: boolean;
   pricesVisible: boolean;
 }
 
@@ -171,6 +186,7 @@ export function operatingModeView(
           : null,
     tseActive: hasActiveTse(org),
     cashAllowed: isCashAllowed(org),
+    tokensAllowed: isTokensAllowed(org),
     pricesVisible: arePricesVisible(org),
   };
 }

@@ -82,7 +82,9 @@ export type DsfinvkTxKind =
   | 'abort'
   | 'cashbook'
   | 'settlement'
-  | 'tip_payout';
+  | 'tip_payout'
+  | 'token_sale'
+  | 'token_buyback';
 
 /** Verweis eines Vorgangs auf einen anderen (Bon_Referenzen, REF_TYP Transaktion). */
 export interface DsfinvkReference {

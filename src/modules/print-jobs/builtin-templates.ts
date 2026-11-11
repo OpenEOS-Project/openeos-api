@@ -21,6 +21,8 @@ export const PFAND_RETURN_RECEIPT_TEMPLATE = 'pfand_return_receipt';
 export const WAITER_SETTLEMENT_TEMPLATE = 'waiter_settlement';
 /** Bewirtungsbeleg (openeos-web#9). */
 export const HOSPITALITY_RECEIPT_TEMPLATE = 'hospitality_receipt';
+/** Verkauf bzw. Ruecktausch von Wertmarken. */
+export const TOKEN_RECEIPT_TEMPLATE = 'token_receipt';
 
 /**
  * Bewirtungsbeleg: Die API schickt den fertigen Aufbau als `blocks`
@@ -318,6 +320,24 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 {% endif %}
 <<BOLD>>{{ row("GESAMT:", total|default(0)|currency) }}<</BOLD>>
 {{ line }}
+{# Wertmarken (Mehrzweck-/Einzweckgutschein): mit Marken bezahlter Teil,
+   Wechselgeld in Marken gibt es nicht. #}
+{% if tokens is defined and tokens %}
+Bezahlt mit Wertmarken:
+{% for t in tokens %}
+{% set qty = "%-3s"|format(t.count_label|default(t.count) ~ "x") %}
+{% set amount = t.amount|currency %}
+{% set name_width = cols - qty|length - amount|length - 2 %}
+{% set name_lines = ((t.name ~ " je " ~ t.unit_value|default(0)|currency)|wordwrap(name_width, true, "\\n")).split("\\n") %}
+{{ qty }} {{ name_lines[0].ljust(name_width) }} {{ amount }}
+{% for rest in name_lines[1:] %}
+{{ " " * (qty|length + 1) }}{{ rest }}
+{% endfor %}
+{% endfor %}
+{% if token_note is defined and token_note %}
+{{ token_note|replace("§", "Par.")|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% endif %}
 {% if payment_method is defined %}
 {{ ("Zahlungsart: " ~ payment_label|default(payment_method))|wordwrap(cols, true, "\\n") }}
 {% if paid_amount is defined %}
@@ -508,6 +528,101 @@ Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
 `;
 
 /**
+ * Beleg eines Verkaufs bzw. Ruecktauschs von Wertmarken: Marken je Typ mit
+ * Art (Mehrzweck-Gutschein nicht steuerbar, Einzweck-Gutschein mit Satz),
+ * MwSt nur fuer Einzweckgutscheine, Zahlart, Rueckgeld, Kasse/Bediener,
+ * TSE-Block; Ruecktausch mit Grund und Unterschriftszeile. Nur vom Server
+ * ausgeliefert (der Agent kennt die Vorlage nicht selbst).
+ */
+const TOKEN_RECEIPT_SOURCE =
+  `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
+   Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
+{% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}
+{% set sep = "=" * cols %}
+{% set line = "-" * cols %}
+{% macro row(label, value) %}{{ label }}{{ value|rjust(cols - label|length) }}{% endmacro %}
+{% set buyback = token_kind|default("sale") == "buyback" %}
+{% if is_test %}
+<<CENTER>><<BOLD>><<BIG>>** TESTMODUS **<</BIG>><</BOLD>><</CENTER>>
+
+{% endif %}
+<<CENTER>><<BIG>>{{ organization.name|default("OpenEOS")|wordwrap(cols // 2, true, "\\n") }}<</BIG>><</CENTER>>
+{% if organization.address is defined and organization.address %}
+<<CENTER>>{{ organization.address|wordwrap(cols, true, "\\n") }}<</CENTER>>
+{% endif %}
+{% if organization.phone is defined and organization.phone %}
+<<CENTER>>{{ ("Tel: " ~ organization.phone)|wordwrap(cols, true, "\\n") }}<</CENTER>>
+{% endif %}
+<<CENTER>>{{ sep }}<</CENTER>>
+<<CENTER>><<BOLD>><<BIG>>WERTMARKEN<</BIG>><</BOLD>><</CENTER>>
+<<CENTER>><<BOLD>>{{ "Ruecktausch / Auszahlung" if buyback else "Verkauf" }}<</BOLD>><</CENTER>>
+{% if reprint %}
+<<CENTER>><<BOLD>>-- NACHDRUCK --<</BOLD>><</CENTER>>
+{% endif %}
+{{ line }}
+<<BOLD>>{{ ("Beleg " ~ transaction_number|default("---", true))|wordwrap(cols, true, "\\n") }}<</BOLD>>
+Datum: {{ created_at|strftime("%d.%m.%Y %H:%M") }}
+{{ line }}
+{% for item in items|default([]) %}
+{% set qty = "%-4s"|format(("-" if buyback else "") ~ item.count ~ "x") %}
+{% set amount = item.total|currency %}
+{% set name_width = cols - qty|length - amount|length - 2 %}
+{% set name_lines = (item.name|wordwrap(name_width, true, "\\n")).split("\\n") %}
+{{ qty }} {{ name_lines[0].ljust(name_width) }} {{ amount }}
+{% for rest in name_lines[1:] %}
+{{ " " * (qty|length + 1) }}{{ rest }}
+{% endfor %}
+{{ " " * (qty|length + 1) }}{{ ("je " ~ item.unit_value|currency)|wordwrap(cols - qty|length - 1, true, "\\n") }}
+{{ " " * (qty|length + 1) }}{{ item.kind_label|replace("§", "Par.")|wordwrap(cols - qty|length - 1, true, "\\n" ~ " " * (qty|length + 1)) }}
+{% endfor %}
+{{ sep }}
+{% if tax_lines is defined and tax_lines %}
+{% for tl in tax_lines %}
+{{ row("enth. MwSt " ~ (tl.rate|int if tl.rate == tl.rate|int else tl.rate) ~ "%:", tl.tax|currency) }}
+{% endfor %}
+{% endif %}
+{% if token_note is defined and token_note %}
+{{ token_note|replace("§", "Par.")|wordwrap(cols, true, "\\n") }}
+{% endif %}
+<<BOLD>>{{ row("AUSGEZAHLT:" if buyback else "GESAMT:", total|default(0)|currency) }}<</BOLD>>
+{{ line }}
+{{ ("Zahlungsart: " ~ payment_label|default(payment_method))|wordwrap(cols, true, "\\n") }}
+{% if amount_received is defined and amount_received %}
+Gegeben: {{ amount_received|currency }}
+{% endif %}
+{% if change is defined and change > 0 %}
+Rueckgeld: {{ change|currency }}
+{% endif %}
+{% if reason is defined and reason %}
+{{ ("Grund: " ~ reason)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if actor_name is defined and actor_name %}
+{{ ("Bediener: " ~ actor_name)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if device_name is defined and device_name %}
+{{ ("Kasse: " ~ device_name)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+{% if event_name is defined and event_name %}
+{{ ("Veranstaltung: " ~ event_name)|wordwrap(cols, true, "\\n") }}
+{% endif %}
+` +
+  TSE_PRINT_BLOCK +
+  `{{ line }}
+{% if buyback %}
+<<CENTER>>Betrag erhalten:<</CENTER>>
+
+
+<<CENTER>>________________________<</CENTER>>
+<<CENTER>>Unterschrift<</CENTER>>
+{% else %}
+<<CENTER>>Marken sind kein Wechselgeld.<</CENTER>>
+<<CENTER>>Viel Spass beim Fest!<</CENTER>>
+{% endif %}
+<<FEED:3>>
+<<CUT>>
+`;
+
+/**
  * Kellnerabrechnung („ABRECHNUNG Nr. N“) bzw. Zwischenstand einer Bedienung:
  * Kopf (Verein, Veranstaltung, Bedienung, Zeitraum, Geraet, abgerechnet
  * von), Bloecke mit Zeilen (`blocks[].rows[]`: `label` und `amount` bzw.
@@ -640,6 +755,7 @@ export const TSE_RECEIPT_TEMPLATES: readonly string[] = [
   RECEIPT_TEMPLATE,
   REFUND_RECEIPT_TEMPLATE,
   PFAND_RETURN_RECEIPT_TEMPLATE,
+  TOKEN_RECEIPT_TEMPLATE,
 ];
 
 /** Leerzeilen, Vorschub und Schnitt am Ende einer Vorlage. */
@@ -687,6 +803,7 @@ export const BUILTIN_PRINT_TEMPLATES: Record<string, string> = {
   [PFAND_RETURN_RECEIPT_TEMPLATE]: PFAND_RETURN_RECEIPT_SOURCE,
   [WAITER_SETTLEMENT_TEMPLATE]: WAITER_SETTLEMENT_SOURCE,
   [HOSPITALITY_RECEIPT_TEMPLATE]: HOSPITALITY_RECEIPT_SOURCE,
+  [TOKEN_RECEIPT_TEMPLATE]: TOKEN_RECEIPT_SOURCE,
   [CANCELLATION_TICKET_TEMPLATE]: `{# Zeichen pro Zeile: \`columns\` des Druckers, sonst 42 (80 mm) bzw. 32 (58 mm).
    Keine Zeile darf breiter sein, BIG zaehlt doppelt. #}
 {% set cols = columns|default(42 if paper_width|default(80) == 80 else 32, true)|int %}

@@ -40,6 +40,7 @@ export interface LiveCashAuditRow {
   tips: number | null;
   refunds: WaiterSummaryView['totals']['refunds'];
   pfandReturns: WaiterSummaryView['totals']['pfandReturns'];
+  tokens?: WaiterSummaryView['totals']['tokens'];
   openTables: number;
   /** Arbeitnehmer (Lohnkonto): noch nicht ausgezahltes Kartentrinkgeld. */
   openCardTips: number | null;
@@ -124,6 +125,9 @@ export class WaiterCashAuditService {
            UNION
            SELECT pr.waiter_id, CASE WHEN pr.waiter_id IS NULL THEN pr.created_by_user_id END
              FROM pfand_returns pr WHERE pr.organization_id = $1 AND pr.event_id = $2
+           UNION
+           SELECT t.waiter_id, CASE WHEN t.waiter_id IS NULL THEN t.user_id END
+             FROM token_transactions t WHERE t.organization_id = $1 AND t.event_id = $2
          ) s WHERE waiter_id IS NOT NULL OR user_id IS NOT NULL`,
         [organizationId, event.id],
       ),
@@ -155,6 +159,7 @@ export class WaiterCashAuditService {
         tips: t.tips ?? null,
         refunds: t.refunds,
         pfandReturns: t.pfandReturns,
+        tokens: t.tokens,
         openTables: summary.openTables.length,
         openCardTips:
           subject.kind === 'waiter'
@@ -202,10 +207,10 @@ export class WaiterCashAuditService {
         `SELECT
            (SELECT COALESCE(SUM(p.tip_amount), 0) FROM payments p JOIN orders o ON o.id = p.order_id
              WHERE o.organization_id = $1 AND o.is_test = false AND p.processed_by_waiter_id = $2
-               AND p.payment_method <> 'cash' AND p.status IN ('captured', 'refunded')) AS tips,
+               AND p.payment_method NOT IN ('cash', 'tokens') AND p.status IN ('captured', 'refunded')) AS tips,
            (SELECT COALESCE(SUM(ABS(r.tip_amount)), 0) FROM refunds r JOIN payments p ON p.id = r.payment_id
              WHERE r.organization_id = $1 AND r.is_test = false AND p.processed_by_waiter_id = $2
-               AND p.payment_method <> 'cash') AS refunded,
+               AND p.payment_method NOT IN ('cash', 'tokens')) AS refunded,
            (SELECT COALESCE(SUM(t.amount), 0) FROM tip_payouts t
              WHERE t.organization_id = $1 AND t.waiter_id = $2 AND t.is_test = false) AS paid`,
         [organizationId, waiterId],

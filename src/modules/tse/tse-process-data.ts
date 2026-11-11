@@ -336,3 +336,60 @@ export function tipPayoutProcessData(amountCents: number): string {
     payments: [{ type: 'Bar', cents: amount }],
   });
 }
+
+/** Wertmarken-Anteil fuer die Prozessdaten (Euro, mit Art und Satz). */
+export interface TokenSlotLine {
+  kind: 'multi_purpose' | 'single_purpose';
+  /** Betrag in Euro (Vorzeichen wie gebucht). */
+  amount: number;
+  vatRate?: number | null;
+}
+
+/**
+ * Slot einer Wertmarke: Mehrzweckgutschein (und alles bei steuerbefreiten
+ * Organisationen) im 0-%-Slot (nicht steuerbar), Einzweckgutschein im Slot
+ * seines Satzes (Steuerberater 2026-11-10, Frage 13; DSFinV-K Anhang C).
+ */
+export function tokenSlot(line: TokenSlotLine, vatExempt: boolean): number {
+  if (vatExempt || line.kind !== 'single_purpose') return 4;
+  return vatSlot(Number(line.vatRate ?? 0) || 0, false);
+}
+
+/**
+ * Verkauf (positiv) bzw. Ruecktausch (negativ) von Wertmarken.
+ * Mehrzweck 100 € bar: `Beleg^0.00_0.00_0.00_0.00_100.00^100.00:Bar`;
+ * Einzweck „Getraenkemarke“ (19 %) 30 €: `Beleg^30.00_0.00_0.00_0.00_0.00^30.00:Bar`.
+ */
+export function tokenSaleSlots(
+  lines: TokenSlotLine[],
+  vatExempt: boolean,
+): VatSlots {
+  const slots = emptySlots();
+  for (const line of lines) {
+    slots[tokenSlot(line, vatExempt)] += Math.round(Number(line.amount) * 100);
+  }
+  return slots;
+}
+
+/**
+ * Einloesung im Kassenbeleg einer Zahlung: der mit Marken beglichene Teil
+ * steht negativ im Slot der Marke (Mehrzweck 0 %, Einzweck Satz), die Ware
+ * bleibt mit ihrem Satz stehen. `sign` -1 fuer die Rueckgabe von Marken bei
+ * einer Erstattung (Einloesung wird zurueckgenommen).
+ * Beispiel aus dem Steuerberater-Gutachten: Ware 60 € zu 19 % + 60 € zu 7 %,
+ * 100 € in Mehrzweckmarken, 20 € bar →
+ * `Beleg^60.00_60.00_0.00_0.00_-100.00^20.00:Bar`.
+ */
+export function applyTokenRedemption(
+  slots: VatSlots,
+  lines: TokenSlotLine[],
+  vatExempt: boolean,
+  sign: 1 | -1 = 1,
+): VatSlots {
+  const out = [...slots] as VatSlots;
+  for (const line of lines) {
+    out[tokenSlot(line, vatExempt)] -=
+      sign * Math.abs(Math.round(Number(line.amount) * 100));
+  }
+  return out;
+}

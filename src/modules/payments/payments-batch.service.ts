@@ -45,7 +45,20 @@ import {
   cashReceivedMetadata,
   orderTaxTotal,
 } from '../print-jobs/receipt-tax.util';
-import { serviceFeeOf } from '../refunds/refund-calc';
+import {
+  discountFactor,
+  serviceFeeOf,
+  unitGross,
+} from '../refunds/refund-calc';
+import { TokenType } from '../../database/entities/token-type.entity';
+import {
+  allocateTokens,
+  assertTokensAllowed,
+  paymentTokenLines,
+  tokenNotEligibleError,
+  tokenOverpaymentError,
+  type TokenOrderInput,
+} from '../tokens/token-rules';
 import { BatchPaymentDto } from './dto/batch-payment.dto';
 import { NO_ATTRIBUTION, type Attribution } from '../waiters/waiter-operator';
 
@@ -105,6 +118,8 @@ export function distributeDiscount(
 
 function providerForMethod(method: PaymentMethod): PaymentProvider {
   switch (method) {
+    case PaymentMethod.TOKENS:
+      return PaymentProvider.TOKENS;
     case PaymentMethod.CARD:
       return PaymentProvider.CARD;
     case PaymentMethod.SUMUP_TERMINAL:
@@ -123,6 +138,66 @@ function mergeReason(
   if (!next) return existing;
   if (!existing) return next.slice(0, 255);
   return `${existing}; ${next}`.slice(0, 255);
+}
+
+/** Gleiche Markentypen zusammenfassen (Stueckzahl addieren). */
+export function mergeTenders(
+  tenders: { tokenTypeId: string; count: number }[] | undefined,
+): { tokenTypeId: string; count: number }[] {
+  const byId = new Map<string, number>();
+  for (const t of tenders ?? []) {
+    const count = Math.round(Number(t.count) || 0);
+    if (count <= 0) continue;
+    byId.set(t.tokenTypeId, (byId.get(t.tokenTypeId) ?? 0) + count);
+  }
+  return [...byId.entries()].map(([tokenTypeId, count]) => ({
+    tokenTypeId,
+    count,
+  }));
+}
+
+/**
+ * Markentypen einer Kassierung laden: gibt es sie (404), sind sie aktiv
+ * und gelten sie fuer die Veranstaltung der Bestellungen (400)?
+ */
+export async function loadTenderTypes(
+  manager: EntityManager,
+  organizationId: string,
+  ids: string[],
+  eventIds: (string | null)[],
+): Promise<Map<string, TokenType>> {
+  const found = await manager.find(TokenType, {
+    where: { id: In(ids), organizationId },
+  });
+  const types = new Map(found.map((t) => [t.id, t]));
+  const missing = ids.filter((id) => !types.has(id));
+  if (missing.length) {
+    throw new NotFoundException({
+      code: ErrorCodes.NOT_FOUND,
+      reason: ErrorReasons.TOKEN_TYPE_NOT_FOUND,
+      message: 'Diesen Markentyp gibt es nicht (mehr).',
+      params: { tokenTypeIds: missing },
+    });
+  }
+  for (const type of types.values()) {
+    if (!type.isActive) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TOKEN_TYPE_INACTIVE,
+        message: `${type.name} ist deaktiviert und wird gerade nicht angenommen.`,
+        params: { tokenType: type.name },
+      });
+    }
+    if (type.eventId && eventIds.some((e) => e && e !== type.eventId)) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TOKEN_NOT_ELIGIBLE,
+        message: `${type.name} gilt nur für eine andere Veranstaltung.`,
+        params: { tokenTypes: [type.name] },
+      });
+    }
+  }
+  return types;
 }
 
 /** Zahlung mit TSE-Daten ihres Kassenbelegs (null ohne aktive TSE). */
@@ -209,10 +284,25 @@ export class PaymentsBatchService {
     // Bargeld haengen an derselben Zahlart).
     // „Nur Bons“: keine Zahlung an der Kasse (403 ORDER_ONLY_MODE).
     assertPaymentsAllowed(organization);
+    // Wertmarken: wie Bargeld eine Kassenfunktion — nur „Alle Funktionen“,
+    // in Deutschland nur mit aktiver Cloud-TSE (Steuerberater 2026-11-10,
+    // Frage 13). Vor der Pruefung des Geldes, damit die Meldung passt.
+    const tokensOnly = dto.paymentMethod === PaymentMethod.TOKENS;
+    const tenders = mergeTenders(dto.tokens);
+    if (tenders.length > 0 || tokensOnly) {
+      assertTokensAllowed(organization);
+      if (tenders.length === 0) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.TOKEN_LINES_INVALID,
+          message: 'Gib an, welche Wertmarken der Gast gegeben hat.',
+        });
+      }
+    }
     if (provider === PaymentProvider.SUMUP) {
       assertIntegrationEnabled(organization?.settings, 'sumup');
     }
-    assertCashAllowed(organization, dto.paymentMethod);
+    if (!tokensOnly) assertCashAllowed(organization, dto.paymentMethod);
 
     const locked = await manager.find(Order, {
       where: { id: In(dto.orderIds), organizationId },
@@ -333,11 +423,11 @@ export class PaymentsBatchService {
     }
 
     // Trinkgeld auf die letzte Bestellung.
-    const tip = round2(dto.tipAmount ?? 0);
-    if (tip > 0) {
+    const requestedTip = round2(dto.tipAmount ?? 0);
+    if (requestedTip > 0) {
       const last = orders[orders.length - 1];
-      last.tipAmount = round2(Number(last.tipAmount || 0) + tip);
-      last.total = round2(Number(last.total) + tip);
+      last.tipAmount = round2(Number(last.tipAmount || 0) + requestedTip);
+      last.total = round2(Number(last.total) + requestedTip);
       adjusted.set(last.id, {
         ...(adjusted.get(last.id) ?? {}),
         tipAmount: last.tipAmount,
@@ -348,7 +438,35 @@ export class PaymentsBatchService {
     const due = orders.map((o) =>
       round2(Math.max(0, Number(o.total) - Number(o.paidAmount))),
     );
-    const totalDue = round2(due.reduce((sum, amount) => sum + amount, 0));
+
+    // Wertmarken zuerst: was sie decken duerfen, decken sie; den Rest
+    // kassiert die Zahlart. Ueberzahlung nur als Trinkgeld (kein
+    // Wechselgeld in Marken).
+    const tokens = await this.allocateTenders(manager, {
+      organizationId,
+      organization,
+      orders,
+      itemsOf,
+      due,
+      tenders,
+      excessAsTip: dto.tokenExcessAsTip === true,
+      adjusted,
+    });
+    if (tokensOnly && tokens.moneyDueCents > 0) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        reason: ErrorReasons.TOKEN_AMOUNT_INSUFFICIENT,
+        message: `Die Marken reichen nicht: ${(tokens.moneyDueCents / 100).toFixed(2).replace('.', ',')} € sind noch offen. Kassiere den Rest bar oder mit Karte.`,
+        params: { missing: tokens.moneyDueCents / 100 },
+      });
+    }
+    const tokenCentsOf = (orderId: string) =>
+      tokens.totalByOrder.get(orderId) ?? 0;
+    const money = orders.map((o, i) =>
+      round2(Math.max(0, cents(due[i]) - tokenCentsOf(o.id)) / 100),
+    );
+    const totalDue = round2(money.reduce((sum, amount) => sum + amount, 0));
+    const tip = round2(Number(dto.tipAmount ?? 0) + tokens.tipAddedCents / 100);
 
     const isCash = dto.paymentMethod === PaymentMethod.CASH;
     if (
@@ -364,42 +482,78 @@ export class PaymentsBatchService {
       });
     }
 
-    // Zahlungen nur fuer Bestellungen mit Restbetrag.
+    // Zahlungen nur fuer Bestellungen mit Restbetrag. `amount` ist das
+    // Geld in der Zahlart, der Markenwert steht in `tokenAmount`; nur mit
+    // Marken beglichen: Zahlart `tokens`, `amount` 0.
     const payable = orders
-      .map((order, i) => ({ order, amount: due[i] }))
-      .filter((p) => p.amount > 0);
-    const payableAmounts = payable.map((p) => p.amount);
+      .map((order, i) => ({
+        order,
+        amount: money[i],
+        tokenCents: tokenCentsOf(order.id),
+      }))
+      .filter((p) => p.amount > 0 || p.tokenCents > 0);
+    const moneyPayable = payable.filter((p) => p.amount > 0);
+    const payableAmounts = moneyPayable.map((p) => p.amount);
 
     const payments: Payment[] = [];
     const tipOrderId = tip > 0 ? orders[orders.length - 1].id : null;
-    payable.forEach(({ order, amount }, index) => {
-      const received = isCash
-        ? amountReceivedFor(index, payableAmounts, dto.amountReceived)
-        : undefined;
+    payable.forEach(({ order, amount, tokenCents }) => {
+      const moneyIndex = moneyPayable.findIndex((p) => p.order.id === order.id);
+      const received =
+        isCash && moneyIndex >= 0
+          ? amountReceivedFor(moneyIndex, payableAmounts, dto.amountReceived)
+          : undefined;
+      const withMoney = amount > 0;
+      const method = withMoney ? dto.paymentMethod : PaymentMethod.TOKENS;
       payments.push(
         manager.create(Payment, {
           orderId: order.id,
           amount,
-          paymentMethod: dto.paymentMethod,
-          paymentProvider: provider,
-          providerTransactionId: dto.providerTransactionId ?? null,
+          paymentMethod: method,
+          paymentProvider: withMoney ? provider : PaymentProvider.TOKENS,
+          providerTransactionId: withMoney
+            ? (dto.providerTransactionId ?? null)
+            : null,
           status: PaymentTransactionStatus.CAPTURED,
           metadata: {
             ...(dto.metadata ?? {}),
             batchId,
             batchOrderCount: orders.length,
-            ...cashReceivedMetadata(dto.paymentMethod, amount, received),
+            ...(withMoney
+              ? cashReceivedMetadata(dto.paymentMethod, amount, received)
+              : {}),
+            ...(tokens.tipAddedCents > 0 && order.id === tipOrderId
+              ? { tokenExcessAsTip: tokens.tipAddedCents / 100 }
+              : {}),
           },
           processedByDeviceId: deviceId,
           // Wer kassiert: Bedienung bzw. Mitglied der Sitzung.
           processedByWaiterId: attribution.waiterId,
           processedByUserId: attribution.userId,
           // Trinkgeld dieser Kassierung haengt an der letzten Bestellung.
-          tipAmount: order.id === tipOrderId ? Math.min(tip, amount) : 0,
+          tipAmount:
+            order.id === tipOrderId
+              ? Math.min(tip, round2(amount + tokenCents / 100))
+              : 0,
+          tokenAmount: tokenCents / 100,
+          tokenLines: paymentTokenLines(
+            tokens.perOrder.get(order.id),
+            tokens.types,
+            organization?.settings?.vatExempt,
+          ),
         }),
       );
     });
-    if (payments.length) await manager.save(payments);
+    if (payments.length) {
+      await manager.save(payments);
+      // Gespeicherte Defaults kommen als Text zurueck (decimal): fuer die
+      // Antwort wieder Zahlen.
+      for (const p of payments) {
+        p.amount = Number(p.amount);
+        p.tokenAmount = Number(p.tokenAmount ?? 0);
+        p.tipAmount = Number(p.tipAmount ?? 0);
+      }
+    }
 
     const now = new Date();
     const settledWithoutPayment: string[] = [];
@@ -458,6 +612,121 @@ export class PaymentsBatchService {
       adjusted,
       settledWithoutPayment,
     } satisfies SettledBatch;
+  }
+
+  /**
+   * Wertmarken einer Kassierung pruefen und auf die Bestellungen verteilen
+   * (`allocateTokens`). Ueberzahlung: mit `excessAsTip` als Trinkgeld auf
+   * die letzte Bestellung (der Gast verzichtet auf Wechselgeld), sonst
+   * 400 TOKEN_OVERPAYMENT. Marken, die fuer die Artikel nicht gelten,
+   * waehrend noch Geld offen ist: 400 TOKEN_NOT_ELIGIBLE.
+   */
+  private async allocateTenders(
+    manager: EntityManager,
+    input: {
+      organizationId: string;
+      organization: Organization | null;
+      orders: Order[];
+      itemsOf: (orderId: string) => OrderItem[];
+      due: number[];
+      tenders: { tokenTypeId: string; count: number }[];
+      excessAsTip: boolean;
+      adjusted: Map<string, Record<string, unknown>>;
+    },
+  ): Promise<{
+    perOrder: Map<string, Map<string, number>>;
+    totalByOrder: Map<string, number>;
+    moneyDueCents: number;
+    tipAddedCents: number;
+    types: Map<string, TokenType>;
+  }> {
+    const empty = {
+      perOrder: new Map<string, Map<string, number>>(),
+      totalByOrder: new Map<string, number>(),
+      moneyDueCents: input.due.reduce((s, d) => s + cents(d), 0),
+      tipAddedCents: 0,
+      types: new Map<string, TokenType>(),
+    };
+    if (input.tenders.length === 0) return empty;
+    const types = await loadTenderTypes(
+      manager,
+      input.organizationId,
+      input.tenders.map((t) => t.tokenTypeId),
+      input.orders.map((o) => o.eventId),
+    );
+    const orderInputs: TokenOrderInput[] = input.orders.map((order, i) => {
+      const items = input.itemsOf(order.id);
+      const factor = discountFactor(items, order.discountAmount);
+      return {
+        id: order.id,
+        dueCents: cents(input.due[i]),
+        items: items
+          .filter((item) => item.status !== OrderItemStatus.CANCELLED)
+          .map((item) => {
+            const open = Math.max(0, item.quantity - (item.paidQuantity || 0));
+            return {
+              id: item.id,
+              productId: item.productId,
+              categoryId: item.categoryId,
+              taxRate: item.taxRate,
+              status: item.status,
+              openCents: Math.round(cents(unitGross(item)) * open * factor),
+              depositCents: cents(item.depositAmount || 0) * open,
+            };
+          }),
+      };
+    });
+    const allocation = allocateTokens(
+      orderInputs,
+      input.tenders.map((t) => ({
+        type: types.get(t.tokenTypeId)!,
+        count: t.count,
+      })),
+    );
+    let tipAddedCents = 0;
+    if (allocation.excessCents > 0) {
+      if (allocation.moneyDueCents > 0) {
+        throw tokenNotEligibleError(
+          [...allocation.excessByType.keys()].map(
+            (id) => types.get(id)?.name ?? id,
+          ),
+          allocation.excessCents,
+        );
+      }
+      if (!input.excessAsTip)
+        throw tokenOverpaymentError(allocation.excessCents);
+      // Rest als Trinkgeld der letzten Bestellung, bezahlt mit den Marken.
+      tipAddedCents = allocation.excessCents;
+      const last = input.orders[input.orders.length - 1];
+      const lastIndex = input.orders.length - 1;
+      last.tipAmount = round2(
+        Number(last.tipAmount || 0) + tipAddedCents / 100,
+      );
+      last.total = round2(Number(last.total) + tipAddedCents / 100);
+      input.due[lastIndex] = round2(input.due[lastIndex] + tipAddedCents / 100);
+      input.adjusted.set(last.id, {
+        ...(input.adjusted.get(last.id) ?? {}),
+        tipAmount: last.tipAmount,
+        total: last.total,
+      });
+      const byType =
+        allocation.perOrder.get(last.id) ?? new Map<string, number>();
+      for (const [typeId, value] of allocation.excessByType) {
+        byType.set(typeId, (byType.get(typeId) ?? 0) + value);
+      }
+      allocation.perOrder.set(last.id, byType);
+      allocation.totalByOrder.set(
+        last.id,
+        (allocation.totalByOrder.get(last.id) ?? 0) + tipAddedCents,
+      );
+    }
+    return {
+      perOrder: allocation.perOrder,
+      totalByOrder: allocation.totalByOrder,
+      moneyDueCents: allocation.moneyDueCents,
+      tipAddedCents,
+      types,
+    };
   }
 
   /**

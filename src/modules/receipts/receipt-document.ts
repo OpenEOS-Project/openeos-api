@@ -42,6 +42,9 @@ export interface ReceiptDocument {
   /** Kleinunternehmer: Hinweis auf die Steuerbefreiung (§ 34a UStDV). */
   vatExemptNotice: string | null;
   total: number;
+  /** Mit Wertmarken bezahlt: „3 x 2,00 EUR 2-€-Marke“ je Typ, Hinweis zur USt. */
+  tokens?: { label: string; amount: number }[];
+  tokenNote?: string | null;
   payment: {
     method: string | null;
     label: string | null;
@@ -119,6 +122,18 @@ export function receiptDocumentFromPayload(
       : [],
     vatExemptNotice: str(payload.vat_exempt_notice),
     total: num(payload.total) ?? 0,
+    ...(Array.isArray(payload.tokens) && payload.tokens.length > 0
+      ? {
+          tokens: (payload.tokens as Record<string, unknown>[]).map((t) => ({
+            label: (str(t.label) ?? '').replace(/ EUR /, ' € '),
+            amount: num(t.amount) ?? 0,
+          })),
+          // Der Bon druckt ohne Umlaute; digital mit.
+          tokenNote:
+            str(payload.token_note)?.replace(/Einloesung/g, 'Einlösung') ??
+            null,
+        }
+      : {}),
     payment: {
       method: str(payload.payment_method),
       label: str(payload.payment_label) ?? str(payload.payment_method),

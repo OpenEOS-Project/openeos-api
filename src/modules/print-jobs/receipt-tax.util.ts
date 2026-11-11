@@ -215,3 +215,102 @@ export function orderTaxTotal(
       .tax_amount ?? 0
   );
 }
+
+/** Wertmarken-Anteil einer Zahlung (Schnappschuss `payments.token_lines`). */
+export interface ReceiptTokenLine {
+  name: string;
+  kind: 'multi_purpose' | 'single_purpose';
+  unitValue: number;
+  count: number;
+  amount: number;
+  vatRate?: number | null;
+}
+
+/**
+ * MwSt-Zeilen ohne den Teil, den Einzweckgutscheine bezahlt haben: deren
+ * Steuer stand schon auf dem Beleg des Markenverkaufs (§ 3 Abs. 14 UStG).
+ * Mehrzweckgutscheine aendern nichts — die Steuer entsteht mit dieser
+ * Einloesung zum Satz der Ware.
+ */
+export function withoutSinglePurposeTax(
+  tax: ReceiptTax,
+  tokens: ReceiptTokenLine[],
+): ReceiptTax {
+  const reduce = new Map<number, number>();
+  for (const t of tokens) {
+    if (t.kind !== 'single_purpose' || !t.vatRate) continue;
+    reduce.set(
+      Number(t.vatRate),
+      (reduce.get(Number(t.vatRate)) ?? 0) + Number(t.amount),
+    );
+  }
+  if (reduce.size === 0 || !tax.tax_lines) return tax;
+  const lines = tax.tax_lines
+    .map((line) => {
+      const minus = reduce.get(line.rate) ?? 0;
+      if (!minus) return line;
+      const gross = round2(Math.max(0, line.gross - minus));
+      const t = round2((gross * line.rate) / (100 + line.rate));
+      return { rate: line.rate, gross, tax: t, net: round2(gross - t) };
+    })
+    .filter((line) => line.gross > 0);
+  if (lines.length === 0) return {};
+  return {
+    tax_amount: round2(lines.reduce((acc, line) => acc + line.tax, 0)),
+    tax_rate: lines.length === 1 ? lines[0].rate : undefined,
+    tax_lines: lines,
+  };
+}
+
+/** `3 x 2-€-Marke` (Bruchteile mit Komma, bei Aufteilung auf Bestellungen). */
+export function tokenCountLabel(count: number): string {
+  const rounded = Math.round(Number(count) * 1000) / 1000;
+  return Number.isInteger(rounded)
+    ? String(rounded)
+    : String(rounded).replace('.', ',');
+}
+
+/**
+ * Zeilen „bezahlt mit Wertmarken“ fuer Bon und digitalen Beleg sowie der
+ * Hinweis zur Steuer (Steuerberater 2026-11-10, Frage 13).
+ */
+export function receiptTokenBlock(
+  tokens: ReceiptTokenLine[],
+  vatExempt: boolean | undefined,
+): {
+  tokens?: {
+    label: string;
+    name: string;
+    count: number;
+    count_label: string;
+    unit_value: number;
+    amount: number;
+  }[];
+  token_amount?: number;
+  token_note?: string;
+} {
+  const lines = tokens.filter((t) => Number(t.amount) > 0);
+  if (lines.length === 0) return {};
+  const euro = (v: number) => `${Number(v).toFixed(2).replace('.', ',')} EUR`;
+  const single = lines.some((t) => t.kind === 'single_purpose');
+  const multi = lines.some((t) => t.kind !== 'single_purpose');
+  const notes: string[] = [];
+  if (vatExempt === false && multi)
+    notes.push('Wertmarken (Mehrzweck-Gutschein): USt mit dieser Einloesung.');
+  if (vatExempt === false && single)
+    notes.push(
+      'Einzweck-Wertmarken: USt bereits beim Kauf der Marken ausgewiesen.',
+    );
+  return {
+    tokens: lines.map((t) => ({
+      label: `${tokenCountLabel(t.count)} x ${euro(t.unitValue)} ${t.name}`,
+      name: t.name,
+      count: Number(t.count),
+      count_label: tokenCountLabel(t.count),
+      unit_value: Number(t.unitValue),
+      amount: round2(Number(t.amount)),
+    })),
+    token_amount: round2(lines.reduce((s, t) => s + Number(t.amount), 0)),
+    ...(notes.length ? { token_note: notes.join(' ') } : {}),
+  };
+}

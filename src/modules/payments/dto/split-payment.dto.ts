@@ -1,7 +1,7 @@
 import {
   IsUUID,
   IsNumber,
-  IsEnum,
+  IsIn,
   IsArray,
   ValidateNested,
   Min,
@@ -11,6 +11,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentMethod } from '../../../database/entities/payment.entity';
+import { DIRECT_PAYMENT_METHODS } from './create-payment.dto';
 
 export class SplitPaymentItemDto {
   @ApiProperty({
@@ -44,10 +45,11 @@ export class SplitPaymentDto {
 
   @ApiProperty({
     example: 'card',
-    description: 'Zahlungsmethode',
-    enum: PaymentMethod,
+    description:
+      'Zahlungsmethode (Wertmarken nur über die Kasse: `POST /device-api/payments/batch` bzw. Bestellung mit Zahlung)',
+    enum: DIRECT_PAYMENT_METHODS,
   })
-  @IsEnum(PaymentMethod)
+  @IsIn(DIRECT_PAYMENT_METHODS)
   paymentMethod: PaymentMethod;
 
   @ApiProperty({

@@ -1,13 +1,18 @@
 import {
   IsUUID,
   IsNumber,
-  IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentMethod } from '../../../database/entities/payment.entity';
+
+/** Zahlarten fuer Einzel-/Splitzahlungen (ohne Wertmarken). */
+export const DIRECT_PAYMENT_METHODS = Object.values(PaymentMethod).filter(
+  (m) => m !== PaymentMethod.TOKENS,
+);
 
 export class CreatePaymentDto {
   @ApiProperty({
@@ -24,10 +29,11 @@ export class CreatePaymentDto {
 
   @ApiProperty({
     example: 'cash',
-    description: 'Zahlungsmethode',
-    enum: PaymentMethod,
+    description:
+      'Zahlungsmethode (Wertmarken nur über die Kasse: `POST /device-api/payments/batch` bzw. Bestellung mit Zahlung)',
+    enum: DIRECT_PAYMENT_METHODS,
   })
-  @IsEnum(PaymentMethod)
+  @IsIn(DIRECT_PAYMENT_METHODS)
   paymentMethod: PaymentMethod;
 
   @ApiPropertyOptional({

@@ -111,6 +111,14 @@ export class TestOrderCleanupService {
       [organizationId, eventId],
     );
 
+    // Wertmarken-Verkauf/-Ruecktausch im Testmodus (die TSE-Vorgaenge
+    // bleiben als Training erhalten, ohne Fremdschluessel).
+    await manager.query(
+      `DELETE FROM token_transactions
+       WHERE organization_id = $1 AND event_id = $2 AND is_test`,
+      [organizationId, eventId],
+    );
+
     // Kellnerabrechnungen nur aus Testbuchungen (Training, ohne Nummer).
     await manager.query(
       `DELETE FROM waiter_settlements

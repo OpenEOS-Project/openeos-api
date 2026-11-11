@@ -20,6 +20,22 @@ export const CHANGELOG: ChangelogEintrag[] = [
     datum: '2026-11-09',
     art: 'neu',
     titel: {
+      de: 'Wertmarken: verkaufen, annehmen, zurücktauschen',
+      en: 'Tokens: sell, accept, buy back',
+    },
+    kurz: {
+      de: 'Gäste kaufen an der Zentralkasse Wertmarken und bezahlen damit an den Ständen – mit richtiger Umsatzsteuer, Kassenbuch und Abrechnung. Nur in „Alle Funktionen“, in Deutschland mit Cloud-TSE.',
+      en: 'Guests buy tokens at the central cash desk and pay with them at the stands – with correct VAT, cash book and settlement. Only in "All features", in Germany with the Cloud-TSE.',
+    },
+    text: {
+      de: 'Unter „Wertmarken“ legst du deine Marken an, zum Beispiel „2-€-Marke“ oder „Getränkemarke“, mit Nennwert und Farbe. Standard ist der Mehrzweckgutschein: Der Verkauf der Marke ist kein Umsatz, die Umsatzsteuer entsteht erst beim Einlösen mit dem Satz der Ware (7 % Speisen, 19 % Getränke). Gilt eine Marke nur für Artikel mit genau einem Steuersatz, kannst du sie als Einzweckgutschein führen; dann wird sie beim Verkauf versteuert. An der Kasse verkaufst du Marken bar oder mit Karte („Wertmarken verkaufen“), an den Ständen tippst du beim Kassieren ein, wie viele Marken der Gast gibt – den Rest zahlt er bar oder mit Karte. Wechselgeld in Marken gibt es nicht; zahlt jemand mit Marken zu viel, buchst du den Rest auf Wunsch als Trinkgeld. Ein Rücktausch gegen Bargeld geht nur, wenn du ihn für die Marke erlaubst, mit Beleg und Unterschrift. Bericht, Kassenbuch, Kellnerabrechnung und der Export für das Finanzamt (DSFinV-K) zeigen verkaufte, eingelöste, zurückgetauschte und noch umlaufende Marken. Weil Marken wie Bargeld angenommen werden, gibt es sie nur in der Betriebsart „Alle Funktionen“ – in Deutschland nur mit aktiver Cloud-TSE.',
+      en: 'Under "Tokens" you set up your tokens, for example "2 € token" or "drink token", with face value and colour. The default is the multi-purpose voucher: selling the token is not revenue, VAT arises only when it is redeemed, at the rate of the goods (7 % food, 19 % drinks). If a token only covers items with exactly one VAT rate, you can run it as a single-purpose voucher; then it is taxed when sold. At the till you sell tokens for cash or card ("Sell tokens"); at the stands you enter how many tokens the guest hands over when taking payment – the rest is paid in cash or by card. There is no change in tokens; if someone pays too much with tokens, you can book the rest as a tip. Buying tokens back for cash only works if you allow it for the token, with a receipt and signature. Report, cash book, server settlement and the tax export (DSFinV-K) show tokens sold, redeemed, bought back and still in circulation. Because tokens are accepted like cash, they are only available in the operating mode "All features" – in Germany only with an active Cloud-TSE.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
       de: 'Bewirtungsbeleg an der Kasse',
       en: 'Hospitality receipt at the till',
     },

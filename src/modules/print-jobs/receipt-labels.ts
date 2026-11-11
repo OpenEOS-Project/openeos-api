@@ -13,6 +13,7 @@ export const PAYMENT_LABELS: Readonly<Record<string, string>> = {
   paypal: 'PayPal',
   google_pay: 'Google Pay',
   apple_pay: 'Apple Pay',
+  tokens: 'Wertmarken',
 };
 
 /** Anzeigename einer Zahlart; Unbekanntes bleibt wie geliefert. */

@@ -484,14 +484,99 @@ function splitZeroSlot(bon: BonDraft, zeroKey: number): void {
 
 // ------------------------------------------------- Positionen je Vorgang
 
+/**
+ * Wertmarken eines Belegs (TSE-Kopie `tokens`, Steuerberater 2026-11-10,
+ * Frage 13): Einloesung negativ — Mehrzweckgutschein mit Schluessel 5
+ * (nicht steuerbar; die Ware steht mit ihrem Satz daneben),
+ * Einzweckgutschein mit dem Schluessel seines Satzes (die Steuer entstand
+ * beim Verkauf). `sign` -1: Rueckgabe der Marken bei einer Erstattung.
+ */
+function tokenRedemptionLines(
+  s: Record<string, unknown>,
+  ctx: Ctx,
+  sign: 1 | -1,
+): LineDraft[] {
+  return arr(s.tokens).flatMap((raw) => {
+    const gross = Math.abs(cents(raw.amount));
+    if (!gross) return [];
+    const single =
+      str(raw.kind) === 'single_purpose' && !ctx.settings.vatExempt;
+    const count = Math.abs(num(raw.count)) || 1;
+    const name = str(raw.name) || 'Wertmarken';
+    return [
+      {
+        text:
+          sign === 1
+            ? `Wertmarken ${name}`.trim()
+            : `Wertmarken ${name} zurückgegeben`.trim(),
+        gvTyp: single
+          ? ('EinzweckgutscheinEinloesung' as const)
+          : ('MehrzweckgutscheinEinloesung' as const),
+        key: single ? rateKey(num(raw.vatRate), false, 5) : 5,
+        grossCents: -sign * gross,
+        quantity: -sign * count,
+        unitCents: gross / count,
+        artNr: str(raw.tokenTypeId) || undefined,
+      },
+    ];
+  });
+}
+
+/**
+ * Verkauf (positiv) bzw. Ruecktausch (negativ) von Wertmarken:
+ * `MehrzweckgutscheinKauf` mit Schluessel 5 (nicht steuerbar),
+ * `EinzweckgutscheinKauf` mit dem Schluessel seines Satzes. Ein Ruecktausch
+ * ist beim Mehrzweckgutschein Zahlungsmitteltausch, beim Einzweckgutschein
+ * eine Minderung nach § 17 UStG (negativer Kauf zum selben Satz).
+ */
+function tokenTransactionLines(tx: DsfinvkTransaction, ctx: Ctx): LineDraft[] {
+  const s = tx.lines ?? {};
+  const sign = tx.kind === 'token_buyback' ? -1 : 1;
+  return arr(s.tokens).flatMap((raw) => {
+    const gross = sign * Math.abs(cents(raw.amount));
+    if (!gross) return [];
+    const single =
+      str(raw.kind) === 'single_purpose' && !ctx.settings.vatExempt;
+    const count = sign * (Math.abs(num(raw.count)) || 1);
+    return [
+      {
+        text: str(raw.name) || 'Wertmarken',
+        gvTyp: single
+          ? ('EinzweckgutscheinKauf' as const)
+          : ('MehrzweckgutscheinKauf' as const),
+        key: single ? rateKey(num(raw.vatRate), false, 5) : 5,
+        grossCents: gross,
+        quantity: count,
+        unitCents: gross / count,
+        artNr: str(raw.tokenTypeId) || undefined,
+      },
+    ];
+  });
+}
+
 function receiptLines(
+  tx: DsfinvkTransaction,
+  ctx: Ctx,
+  vat: Map<number, number>,
+): LineDraft[] {
+  return [
+    ...receiptGoodsLines(tx, ctx, vat),
+    ...tokenRedemptionLines(tx.lines ?? {}, ctx, 1),
+  ];
+}
+
+function receiptGoodsLines(
   tx: DsfinvkTransaction,
   ctx: Ctx,
   vat: Map<number, number>,
 ): LineDraft[] {
   const s = tx.lines ?? {};
   const items = arr(s.items).map(itemSnapshot);
-  const amount = tx.amountCents ?? cents(s.amount);
+  // Mit Wertmarken: beglichen = Geld + Marken (die Ware steht voll da).
+  const amount =
+    s.settledAmount !== undefined
+      ? cents(s.settledAmount)
+      : (tx.amountCents ?? cents(s.amount));
   const discount = cents(s.discount);
   const tip = cents(s.tip);
   const composition = (s.composition ?? {}) as {
@@ -682,6 +767,7 @@ function refundLines(tx: DsfinvkTransaction, ctx: Ctx): LineDraft[] {
     });
   }
   lines.push(...tipLines(s, -Math.abs(cents(s.tip)), ctx));
+  lines.push(...tokenRedemptionLines(s, ctx, -1));
   return lines;
 }
 
@@ -864,6 +950,8 @@ const BON_NAMES: Record<string, string> = {
   cashbook: 'Kassenbuch',
   settlement: 'Kellnerabrechnung',
   tip_payout: 'Trinkgeld-Auszahlung',
+  token_sale: 'Wertmarkenverkauf',
+  token_buyback: 'Wertmarken-Rücktausch',
 };
 
 function draftBon(
@@ -872,7 +960,11 @@ function draftBon(
 ): BonDraft {
   // Kassenbuch und TrinkgeldAN sind nie Umsatz → immer Schluessel 5.
   const zeroKey =
-    tx.kind === 'cashbook' || tx.kind === 'tip_payout'
+    tx.kind === 'cashbook' ||
+    tx.kind === 'tip_payout' ||
+    // Mehrzweckgutschein: Verkauf und Ruecktausch sind nie Umsatz.
+    tx.kind === 'token_sale' ||
+    tx.kind === 'token_buyback'
       ? 5
       : settings.vatExempt
         ? 6
@@ -991,15 +1083,33 @@ function draftBon(
       };
       break;
     }
+    case 'token_sale':
+    case 'token_buyback': {
+      bon.lines = tokenTransactionLines(tx, ctx);
+      const first = bon.lines[0];
+      reconcile(bon, false, {
+        text: first?.text ?? 'Wertmarken',
+        gvTyp: first?.gvTyp ?? 'MehrzweckgutscheinKauf',
+      });
+      break;
+    }
     case 'abort':
     default:
       break;
   }
 
   const total = [...vat.values()].reduce((a, b) => a + b, 0);
+  // Vollstaendig mit Wertmarken bezahlt (bzw. nur Marken zurueckgegeben):
+  // kein Geld, Zahlart „Keine“ (Steuerberater 2026-11-10, Frage 13).
+  const tokensOnly =
+    (tx.kind === 'receipt' || tx.kind === 'refund') &&
+    arr(s.tokens).length > 0 &&
+    bon.payments.every((p) => p.cents === 0);
   if ((bonTyp !== 'Beleg' && bonTyp !== 'AVTraining') || isOrder) {
     // Andere Vorgaenge kennen nur die Zahlart „Keine“ (Anhang B).
     bon.payments = [{ type: 'Keine', name: 'Keine', cents: total }];
+  } else if (tokensOnly && total === 0) {
+    bon.payments = [{ type: 'Keine', name: 'Wertmarken', cents: 0 }];
   } else if (bon.payments.length === 0 && total === 0) {
     bon.payments = [{ type: 'Bar', name: 'Bargeld', cents: 0 }];
   }
@@ -1026,6 +1136,15 @@ function draftBon(
     notes.push(`Quittiert von ${str(s.recipientName)}`);
   if (tx.kind === 'refund' && s.refundNumber)
     notes.push(`Erstattung ${str(s.refundNumber)}`);
+  if (
+    (tx.kind === 'token_sale' || tx.kind === 'token_buyback') &&
+    s.transactionNumber
+  ) {
+    notes.push(
+      `${tx.kind === 'token_sale' ? 'Wertmarkenverkauf' : 'Wertmarken-Rücktausch'} ${str(s.transactionNumber)}`,
+    );
+    if (s.reason) notes.push(str(s.reason));
+  }
   bon.note = notes.join('; ');
   if (tx.orderId) {
     const table = tx.tableNumber ? `Tisch ${tx.tableNumber} / ` : '';

@@ -64,6 +64,12 @@ export interface CashSummary {
   pfandPayouts: number;
   /** Barauszahlung von Kartentrinkgeld an Arbeitnehmer (negativ). */
   tipPayouts: number;
+  /**
+   * Wertmarken: Barverkauf (positiv) und Ruecktausch (negativ). Eingeloeste
+   * Marken sind kein Bargeld und zaehlen hier nicht.
+   */
+  tokenSales: number;
+  tokenBuybacks: number;
   differences: number;
   /** Soll-Bestand = Summe aller Bargeldbewegungen des Geschaeftstags. */
   expected: number;
@@ -361,6 +367,7 @@ export class CashbookService {
          UNION SELECT device_id FROM refunds WHERE organization_id = $1 AND payment_method = 'cash' AND created_at >= $2 AND created_at < $3
          UNION SELECT device_id FROM pfand_returns WHERE organization_id = $1 AND created_at >= $2 AND created_at < $3
          UNION SELECT device_id FROM tip_payouts WHERE organization_id = $1 AND created_at >= $2 AND created_at < $3
+         UNION SELECT device_id FROM token_transactions WHERE organization_id = $1 AND payment_method = 'cash' AND created_at >= $2 AND created_at < $3
          UNION SELECT device_id FROM cashbook_entries WHERE organization_id = $1 AND business_date = $4
        ) d`,
         [organizationId, from, to, businessDate],
@@ -417,6 +424,16 @@ export class CashbookService {
         params,
       ),
     );
+    // Wertmarken bar verkauft (rein) bzw. zurueckgetauscht (raus).
+    const tokenRows = rowsOf<{ kind: string; v: string }>(
+      await this.dataSource.query(
+        `SELECT kind, COALESCE(SUM(total_amount), 0) AS v FROM token_transactions
+        WHERE organization_id = $1 AND is_test = false AND payment_method = 'cash'
+          AND created_at >= $2 AND created_at < $3${device('device_id')}
+        GROUP BY kind`,
+        params,
+      ),
+    );
     const entryParams: unknown[] = [organizationId, businessDate];
     if (byDevice) entryParams.push(deviceId);
     const entries = rowsOf<{
@@ -454,6 +471,12 @@ export class CashbookService {
     const cashRefunds = toCents(refunds?.v); // negativ
     const pfandPayouts = -Math.abs(toCents(pfand?.v));
     const tipPayouts = -Math.abs(toCents(tipPayoutRow?.v));
+    const tokenSales = Math.abs(
+      toCents(tokenRows.find((r) => r.kind === 'sale')?.v),
+    );
+    const tokenBuybacks = -Math.abs(
+      toCents(tokenRows.find((r) => r.kind === 'buyback')?.v),
+    );
     const expected =
       opening +
       deposits +
@@ -462,7 +485,9 @@ export class CashbookService {
       cashSales +
       cashRefunds +
       pfandPayouts +
-      tipPayouts;
+      tipPayouts +
+      tokenSales +
+      tokenBuybacks;
     const lastCount = [...entries]
       .reverse()
       .find((e) => e.type === 'cash_count');
@@ -476,6 +501,8 @@ export class CashbookService {
         cashRefunds: euros(cashRefunds),
         pfandPayouts: euros(pfandPayouts),
         tipPayouts: euros(tipPayouts),
+        tokenSales: euros(tokenSales),
+        tokenBuybacks: euros(tokenBuybacks),
         differences: euros(differences),
         expected: euros(expected),
         lastCount: lastCount

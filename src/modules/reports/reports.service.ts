@@ -288,6 +288,10 @@ export function countsOnly<T>(value: T): T {
 
 /** Erstattungen je Zahlung (negativ, alle Arten — Geldfluss). */
 export const PAYMENT_REFUNDS = `COALESCE((SELECT SUM(rf.amount) FROM refunds rf WHERE rf.payment_id = payment.id), 0)`;
+/** Erstattetes Geld einer Zahlung (ohne zurueckgegebene Wertmarken). */
+export const PAYMENT_MONEY_REFUNDS = `COALESCE((SELECT SUM(rf.amount) FROM refunds rf WHERE rf.payment_id = payment.id AND rf.payment_method <> 'tokens'), 0)`;
+/** Bei Storno/Erstattung zurueckgegebene Wertmarken einer Zahlung (negativ). */
+export const PAYMENT_TOKEN_REFUNDS = `COALESCE((SELECT SUM(rf.amount) FROM refunds rf WHERE rf.payment_id = payment.id AND rf.payment_method = 'tokens'), 0)`;
 
 @Injectable()
 export class ReportsService {
@@ -752,9 +756,16 @@ export class ReportsService {
       }
     }
 
+    const tokens = await this.vatTokenFigures(
+      organizationId,
+      queryDto,
+      vatExempt,
+    );
+
     return buildVatReport({
       vatExempt,
       tips: { clubByRate, employeeCents },
+      tokens,
       sales: {
         goodsByRate: addRateMaps(toMap(goodsRows), toMap(feeRows)),
         depositsByRate: toMap(depositRows),
@@ -766,6 +777,111 @@ export class ReportsService {
       ),
       pfandReturnLines: returnRows.flatMap((r) => r.lines ?? []),
     });
+  }
+
+  /**
+   * Wertmarken fuer den Bericht „Umsatzsteuer“ (Cent):
+   * - Einzweckgutschein je Satz: Verkauf (+) und Ruecktausch (−) im
+   *   Zeitraum/der Veranstaltung der Buchung; Einloesung (−) und Rueckgabe
+   *   bei Storno/Erstattung (+) wie die Ware nach Bestelldatum — die
+   *   eingeloeste Ware steht in `goods`, ihre Steuer entstand beim Verkauf.
+   * - Mehrzweckgutschein nachrichtlich (nicht steuerbar).
+   * Kleinunternehmer buchen alles als Mehrzweck.
+   */
+  private async vatTokenFigures(
+    organizationId: string,
+    queryDto: QueryReportsDto,
+    vatExempt: boolean,
+  ): Promise<{
+    singlePurposeByRate: Map<number, number>;
+    multiPurposeSoldCents: number;
+    multiPurposeBoughtBackCents: number;
+  }> {
+    const { eventId, startDate, endDate } = queryDto;
+    const filters = (
+      eventColumn: string,
+      dateColumn: string,
+      params: unknown[],
+    ) => {
+      const where: string[] = [];
+      if (eventId) {
+        params.push(eventId);
+        where.push(`${eventColumn} = $${params.length}`);
+      }
+      if (startDate) {
+        params.push(startOfDay(startDate));
+        where.push(`${dateColumn} >= $${params.length}`);
+      }
+      if (endDate) {
+        params.push(endOfDay(endDate));
+        where.push(`${dateColumn} <= $${params.length}`);
+      }
+      return where.length ? ` AND ${where.join(' AND ')}` : '';
+    };
+    const txParams: unknown[] = [organizationId];
+    const txRows = await this.orderRepository.manager.query<
+      { kind: string; lkind: string; rate: string | null; amount: string }[]
+    >(
+      `SELECT t.kind, l->>'kind' AS lkind, l->>'vatRate' AS rate,
+              COALESCE(SUM(abs((l->>'amount')::numeric)), 0) AS amount
+         FROM token_transactions t
+         CROSS JOIN LATERAL jsonb_array_elements(t.lines) l
+        WHERE t.organization_id = $1 AND t.is_test = false${filters('t.event_id', 't.created_at', txParams)}
+        GROUP BY 1, 2, 3`,
+      txParams,
+    );
+    const redParams: unknown[] = [organizationId];
+    const orderFilter = filters('o.event_id', 'o.created_at', redParams);
+    const redeemedRows = await this.orderRepository.manager.query<
+      { source: string; rate: string | null; amount: string }[]
+    >(
+      `SELECT 'redeemed' AS source, l->>'vatRate' AS rate,
+              COALESCE(SUM((l->>'amount')::numeric), 0) AS amount
+         FROM payments p
+         JOIN orders o ON o.id = p.order_id
+         CROSS JOIN LATERAL jsonb_array_elements(p.token_lines) l
+        WHERE o.organization_id = $1 AND o.is_test = false AND o.status <> 'cancelled'
+          AND p.status IN ('captured', 'refunded') AND l->>'kind' = 'single_purpose'${orderFilter}
+        GROUP BY 1, 2
+       UNION ALL
+       SELECT 'returned', l->>'vatRate',
+              COALESCE(SUM(abs((l->>'amount')::numeric)), 0)
+         FROM refunds r
+         JOIN orders o ON o.id = r.order_id
+         CROSS JOIN LATERAL jsonb_array_elements(COALESCE(r.metadata->'tokenLines', '[]'::jsonb)) l
+        WHERE o.organization_id = $1 AND r.is_test = false AND o.status <> 'cancelled'
+          AND r.payment_method = 'tokens' AND l->>'kind' = 'single_purpose'${orderFilter}
+        GROUP BY 1, 2`,
+      redParams,
+    );
+    const singlePurposeByRate = new Map<number, number>();
+    const addRate = (rate: string | null, value: number) => {
+      const r = Number(rate) || 0;
+      singlePurposeByRate.set(r, (singlePurposeByRate.get(r) ?? 0) + value);
+    };
+    let multiPurposeSoldCents = 0;
+    let multiPurposeBoughtBackCents = 0;
+    for (const row of txRows) {
+      const value = Math.round(Number(row.amount) * 100);
+      const single = row.lkind === 'single_purpose' && !vatExempt;
+      if (!single) {
+        if (row.kind === 'sale') multiPurposeSoldCents += value;
+        else multiPurposeBoughtBackCents -= value;
+        continue;
+      }
+      addRate(row.rate, row.kind === 'sale' ? value : -value);
+    }
+    if (!vatExempt) {
+      for (const row of redeemedRows) {
+        const value = Math.round(Number(row.amount) * 100);
+        addRate(row.rate, row.source === 'redeemed' ? -value : value);
+      }
+    }
+    return {
+      singlePurposeByRate,
+      multiPurposeSoldCents,
+      multiPurposeBoughtBackCents,
+    };
   }
 
   /**
@@ -797,7 +913,7 @@ export class ReportsService {
       { current: string | null; previous: string | null }[]
     >(
       `WITH moves AS (
-         SELECT p.created_at AS at, p.amount AS amount
+         SELECT p.created_at AS at, p.amount + p.token_amount AS amount
            FROM payments p JOIN orders o ON o.id = p.order_id
           WHERE o.organization_id = $1 AND o.is_test = false
             AND p.status IN ('captured', 'refunded')
@@ -905,21 +1021,44 @@ export class ReportsService {
         // Entity property is paymentMethod (column payment_method)
         'payment.paymentMethod as method',
         'COUNT(payment.id) as count',
-        `SUM(payment.amount + ${PAYMENT_REFUNDS}) as total`,
+        `SUM(payment.amount + ${PAYMENT_MONEY_REFUNDS}) as total`,
+        // Wertmarken: eigener Posten ueber alle Zahlungen (auch Bar + Marken).
+        `COUNT(payment.id) FILTER (WHERE payment.token_amount > 0) as "tokenCount"`,
+        `SUM(payment.token_amount + ${PAYMENT_TOKEN_REFUNDS}) as "tokenTotal"`,
       ])
       .groupBy('payment.paymentMethod')
       .getRawMany<{
         method: string;
         count: string | null;
         total: string | null;
+        tokenCount: string | null;
+        tokenTotal: string | null;
       }>();
 
-    const grandTotal = results.reduce(
-      (sum, r) => sum + Number(r.total || 0),
+    // Zahlungen nur mit Marken haben kein Geld: sie zaehlen im Posten
+    // „Wertmarken“, der den Markenwert aller Zahlungen traegt.
+    const tokenCount = results.reduce(
+      (sum, r) => sum + Number(r.tokenCount || 0),
       0,
     );
+    const tokenTotal =
+      Math.round(
+        results.reduce((sum, r) => sum + Number(r.tokenTotal || 0), 0) * 100,
+      ) / 100;
+    const merged = results
+      .filter((r) => r.method !== 'tokens')
+      .map((r) => ({ method: r.method, count: r.count, total: r.total }));
+    if (tokenCount > 0) {
+      merged.push({
+        method: 'tokens',
+        count: String(tokenCount),
+        total: String(tokenTotal),
+      });
+    }
 
-    return results.map((r) => ({
+    const grandTotal = merged.reduce((sum, r) => sum + Number(r.total || 0), 0);
+
+    return merged.map((r) => ({
       method: r.method,
       count: Number(r.count || 0),
       total: Number(r.total || 0),

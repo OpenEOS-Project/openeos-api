@@ -19,12 +19,16 @@ import {
   kassenbelegProcessData,
   paymentTypeFor,
   slotsFromComposition,
+  applyTokenRedemption,
 } from '../../tse/tse-process-data';
 import {
   fitSlots,
   paymentComposition,
+  paymentReceiptData,
   receiptLines,
+  tokenTransactionReceiptData,
 } from '../../tse/tse-signing.service';
+import type { TokenTransaction } from '../../../database/entities/token-transaction.entity';
 import { VAT_KEYS } from '../dsfinvk-builder';
 import type {
   DsfinvkClosingInput,
@@ -229,6 +233,12 @@ export interface SaleSpec {
   training?: boolean;
   /** Teilbetrag statt Gesamtsumme (anteilige Zahlung). */
   amount?: number;
+  /**
+   * Wertmarken (Einloesung): Wert je Typ; `amount` ist dann das Geld
+   * (Standard: Rest bis zur Summe). Gebaut mit `paymentReceiptData` wie im
+   * Verkauf.
+   */
+  tokens?: TokenSpec[];
   /** Positionsweise Teilzahlung: Index der Position → Menge. */
   split?: { index: number; quantity: number }[];
   terminal?: string | null;
@@ -237,6 +247,26 @@ export interface SaleSpec {
   orderId?: string;
   unit?: DsfinvkTseUnit;
   references?: DsfinvkReference[];
+}
+
+export interface TokenSpec {
+  name: string;
+  kind?: 'multi_purpose' | 'single_purpose';
+  unitValue: number;
+  count: number;
+  vatRate?: number | null;
+}
+
+function tokenLinesOf(tokens: TokenSpec[]) {
+  return tokens.map((t, i) => ({
+    tokenTypeId: `tt-${i + 1}`,
+    name: t.name,
+    kind: t.kind ?? 'multi_purpose',
+    unitValue: t.unitValue,
+    count: t.count,
+    amount: Math.round(t.unitValue * t.count * 100) / 100,
+    vatRate: t.kind === 'single_purpose' ? (t.vatRate ?? 19) : null,
+  }));
 }
 
 /** Kassenbeleg einer Zahlung, wie TseSigningService.signPayment ihn speichert. */
@@ -289,6 +319,45 @@ export function sale(
             x.quantity,
         0,
       ) / 100;
+  }
+  if (spec.tokens?.length) {
+    const tokenLines = tokenLinesOf(spec.tokens);
+    const tokenAmount =
+      tokenLines.reduce((s, l) => s + Math.round(l.amount * 100), 0) / 100;
+    const money = spec.amount ?? Math.round((amount - tokenAmount) * 100) / 100;
+    const recipient = spec.tipRecipient ?? 'employer';
+    const data = paymentReceiptData(
+      order,
+      {
+        paymentMethod: (money > 0
+          ? (spec.method ?? 'cash')
+          : 'tokens') as never,
+        amount: money,
+        metadata,
+        itemPayments: [],
+        tokenAmount,
+        tokenLines,
+      } as unknown as Payment,
+      {
+        vatExempt: settings.vatExempt,
+        tipRecipient: recipient === 'employee' ? 'employee' : 'employer',
+        training: spec.training ?? false,
+      },
+    );
+    return signed(seq, spec.unit ?? TSE_A, {
+      kind: 'receipt',
+      processType: PROCESS_TYPE_RECEIPT,
+      processData: data.processData,
+      training: spec.training ?? false,
+      amountCents: data.amountCents,
+      lines: data.lines,
+      orderId:
+        spec.orderId ?? `order-${spec.orderNumber ?? '42'}-0000-4000-8000`,
+      orderNumber: spec.orderNumber ?? '42',
+      tableNumber: spec.tableNumber ?? null,
+      terminal: spec.terminal === undefined ? TERMINAL_1 : spec.terminal,
+      references: spec.references ?? [],
+    });
   }
   const payment = {
     paymentMethod: spec.method ?? 'cash',
@@ -465,6 +534,121 @@ export function refund(
         : {}),
       tip: -(spec.tip ?? 0),
       paymentMethod: method,
+    },
+    orderId: spec.original.orderId,
+    orderNumber: spec.original.orderNumber,
+    originalAmountCents: spec.original.amountCents,
+    references: [
+      {
+        zNr: spec.closing.zNr,
+        closingCreatedAt: spec.closing.createdAt,
+        registerId: REGISTER_ID,
+        bonId: spec.original.bonId,
+      },
+    ],
+  });
+}
+
+/**
+ * Verkauf bzw. Ruecktausch von Wertmarken
+ * (TseSigningService.signTokenTransaction).
+ */
+export function tokenTransaction(
+  seq: Sequence,
+  settings: DsfinvkSettings,
+  spec: {
+    kind?: 'sale' | 'buyback';
+    tokens: TokenSpec[];
+    method?: string;
+    training?: boolean;
+    number?: string;
+    terminal?: string;
+  },
+): DsfinvkTransaction {
+  const kind = spec.kind ?? 'sale';
+  const lines = tokenLinesOf(spec.tokens);
+  const total = lines.reduce((s, l) => s + Math.round(l.amount * 100), 0) / 100;
+  const data = tokenTransactionReceiptData(
+    {
+      kind,
+      lines,
+      totalAmount: kind === 'buyback' ? -total : total,
+      paymentMethod: spec.method ?? 'cash',
+      isTest: spec.training ?? false,
+      transactionNumber: spec.number ?? 'W-20261103-0001',
+      reason: kind === 'buyback' ? 'Ruecktausch am Ende des Festes' : null,
+    } as unknown as TokenTransaction,
+    settings.vatExempt,
+  );
+  return signed(seq, TSE_A, {
+    kind: kind === 'buyback' ? 'token_buyback' : 'token_sale',
+    processType: PROCESS_TYPE_RECEIPT,
+    processData: data.processData,
+    training: spec.training ?? false,
+    amountCents: data.amountCents,
+    lines: data.lines,
+    terminal: spec.terminal ?? TERMINAL_2,
+  });
+}
+
+/**
+ * Rueckgabe von Wertmarken bei einem Storno (Erstattung mit Zahlart
+ * `tokens`, wie TseSigningService.signRefund): Ware negativ, Einloesung
+ * positiv zurueck, kein Geld.
+ */
+export function tokenRefund(
+  seq: Sequence,
+  settings: DsfinvkSettings,
+  spec: {
+    items: {
+      name: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate: number;
+      amount: number;
+    }[];
+    tokens: TokenSpec[];
+    original: DsfinvkTransaction;
+    closing: { zNr: number; createdAt: Date };
+  },
+): DsfinvkTransaction {
+  const goods = new Map<number, number>();
+  for (const item of spec.items) {
+    goods.set(
+      item.taxRate,
+      (goods.get(item.taxRate) ?? 0) + Math.abs(cents(item.amount)),
+    );
+  }
+  const amountCents = -[...goods.values()].reduce((a, b) => a + b, 0);
+  const tokenLines = tokenLinesOf(spec.tokens);
+  const slots = applyTokenRedemption(
+    fitSlots(
+      slotsFromComposition(
+        { goods, pfand: new Map(), tip: 0 },
+        settings.vatExempt,
+        -1,
+      ),
+      amountCents,
+    ),
+    tokenLines,
+    settings.vatExempt,
+    -1,
+  );
+  return signed(seq, TSE_A, {
+    kind: 'refund',
+    processType: PROCESS_TYPE_RECEIPT,
+    processData: kassenbelegProcessData('Beleg', { slots, payments: [] }),
+    amountCents,
+    lines: {
+      refundNumber: 'R-T1',
+      refundKind: 'cancellation',
+      storno: true,
+      items: spec.items.map((i) => ({ ...i, amount: -Math.abs(i.amount) })),
+      pfand: 0,
+      tip: 0,
+      paymentMethod: 'tokens',
+      tokens: tokenLines,
+      tokenAmount: -amountCents / 100,
     },
     orderId: spec.original.orderId,
     orderNumber: spec.original.orderNumber,

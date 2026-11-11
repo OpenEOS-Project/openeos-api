@@ -157,6 +157,14 @@ export function amountBlocks(doc: ReceiptDocument): ReceiptBlock[] {
 
 export function paymentBlocks(doc: ReceiptDocument): ReceiptBlock[] {
   const out: ReceiptBlock[] = [];
+  if (doc.tokens?.length) {
+    out.push({ type: 'rule' });
+    out.push({ type: 'text', text: 'Bezahlt mit Wertmarken:' });
+    for (const t of doc.tokens) {
+      out.push({ type: 'row', label: t.label, value: euro(t.amount) });
+    }
+    if (doc.tokenNote) out.push({ type: 'note', text: doc.tokenNote });
+  }
   if (doc.payment.label) {
     out.push({ type: 'rule' });
     out.push({ type: 'row', label: 'Zahlungsart', value: doc.payment.label });
