@@ -9,12 +9,14 @@ import {
   CashPointClosing,
   Category,
   Event,
+  OnlineOrderSession,
   Order,
   OrderEvent,
   OrderItem,
   Organization,
   Payment,
   Product,
+  QrCode,
   Refund,
   ShopCheckout,
   TseTransaction,
@@ -24,6 +26,10 @@ import {
 } from '../../database/entities';
 import type { CronLockService } from '../../common/redis/cron-lock.service';
 import { EventsShopCheckoutController } from '../events/events-shop-checkout.controller';
+import { OnlinePaymentMethod } from '../online-orders/dto';
+import { OnlineOrdersService } from '../online-orders/online-orders.service';
+import { SumUpApiService } from '../sumup/sumup-api.service';
+import { SumUpService } from '../sumup/sumup.service';
 import { OrderHistoryService } from '../refunds/order-history.service';
 import { RefundsService, type RefundActor } from '../refunds/refunds.service';
 import { clientIdForOrganization } from '../tse/tse-process-data';
@@ -222,6 +228,14 @@ describeWithDb('Online prepayment with Cloud-TSE against Postgres', () => {
           `DELETE FROM orders WHERE organization_id = ANY($1::uuid[])`,
           [orgIds],
         );
+        await sql(
+          `DELETE FROM online_order_sessions WHERE organization_id = ANY($1::uuid[])`,
+          [orgIds],
+        );
+        await sql(
+          `DELETE FROM qr_codes WHERE organization_id = ANY($1::uuid[])`,
+          [orgIds],
+        );
         await sql(`DELETE FROM organizations WHERE id = ANY($1::uuid[])`, [
           orgIds,
         ]);
@@ -252,6 +266,10 @@ describeWithDb('Online prepayment with Cloud-TSE against Postgres', () => {
           },
           sumup: { apiKey: 'sup_sk_test', merchantCode: 'MCODE' },
           integrations: { tse: { enabled: true }, sumup: { enabled: true } },
+          legal: {
+            imprintUrl: 'https://tsv.example/impressum',
+            privacyUrl: 'https://tsv.example/datenschutz',
+          },
         }),
       ],
     );
@@ -531,5 +549,160 @@ describeWithDb('Online prepayment with Cloud-TSE against Postgres', () => {
     expect(
       rowsIn(file.data, 'datapayment.csv').map((p) => p.ZAHLART_TYP),
     ).toEqual(['ElZahlungsdienstleister']);
+  });
+
+  it('QR table order paid with Google Pay (SumUp): webhook books, signs and exports it once', async () => {
+    const w = await world();
+    await sql(
+      `INSERT INTO qr_codes (organization_id, event_id, code, type, table_number)
+       VALUES ($1, $2, $3, 'table', '7')`,
+      [w.orgId, w.eventId, `T7-${w.orgId.slice(0, 8)}`],
+    );
+    const config = {
+      get: (key: string) =>
+        key === 'API_PUBLIC_URL' ? 'https://api.example.org' : undefined,
+    };
+    const qr = new OnlineOrdersService(
+      ds.getRepository(OnlineOrderSession),
+      ds.getRepository(QrCode),
+      ds.getRepository(Product),
+      ds.getRepository(Category),
+      ds.getRepository(Order),
+      ds.getRepository(OrderItem),
+      ds.getRepository(Organization),
+      ds.getRepository(Payment),
+      {} as never,
+      new SumUpService(
+        ds.getRepository(Organization),
+        {} as never,
+        new SumUpApiService(),
+        config as never,
+        ds.getRepository(Event),
+      ),
+      config as never,
+      print as never,
+      { ...gateway, notifyPaymentReceived: jest.fn() } as never,
+      undefined,
+      signing,
+    );
+
+    // Nachgebauter SumUp: Checkout anlegen, danach Stand abfragen.
+    let sumupStatus = 'PENDING';
+    let reference = '';
+    let returnUrl = '';
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockImplementation((input: unknown, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          const body = JSON.parse(init.body as string) as Record<
+            string,
+            string
+          >;
+          reference = body.checkout_reference;
+          returnUrl = body.return_url;
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                id: 'chk-qr-1',
+                hosted_checkout_url: 'https://pay.sumup.example/chk-qr-1',
+              }),
+          } as Response);
+        }
+        expect(String(input)).toContain('/v0.1/checkouts/chk-qr-1');
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              id: 'chk-qr-1',
+              status: sumupStatus,
+              amount: 8.5,
+              currency: 'EUR',
+              checkout_reference: reference,
+            }),
+        } as Response);
+      });
+    print.handlePaymentReceived.mockClear();
+    print.handleOrderCreated.mockClear();
+
+    const { sessionToken } = await qr.startSession({
+      code: `T7-${w.orgId.slice(0, 8)}`,
+    });
+    await qr.addToCart(sessionToken, { productId: w.wurstId, quantity: 1 });
+    await qr.addToCart(sessionToken, { productId: w.bierId, quantity: 1 });
+    await qr.submitOrder(sessionToken, {});
+    const started = (await qr.initiatePayment(sessionToken, {
+      paymentMethod: OnlinePaymentMethod.GOOGLE_PAY,
+    })) as { data: { paymentId: string } };
+    const paymentId = started.data.paymentId;
+    expect(returnUrl).toBe(
+      `https://api.example.org/api/public/order/pay/${paymentId}/webhook`,
+    );
+
+    // Vor der Zahlung: nichts gebucht, nichts signiert.
+    await qr.handleSumUpWebhook(paymentId);
+    let [row] = await sql(
+      `SELECT p.status, o.payment_status FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = $1`,
+      [paymentId],
+    );
+    expect(row).toMatchObject({ status: 'pending', payment_status: 'unpaid' });
+
+    // Bezahlt: Webhook und Rueckkehrseite gleichzeitig.
+    sumupStatus = 'PAID';
+    await Promise.all([
+      qr.handleSumUpWebhook(paymentId),
+      qr.confirmPayment(sessionToken, paymentId),
+      qr.handleSumUpWebhook(paymentId),
+    ]);
+    fetchSpy.mockRestore();
+
+    [row] = await sql(
+      `SELECT p.status, p.payment_method, o.payment_status, o.paid_amount
+         FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = $1`,
+      [paymentId],
+    );
+    expect(row).toMatchObject({
+      status: 'captured',
+      payment_method: 'google_pay',
+      payment_status: 'paid',
+      paid_amount: '8.50',
+    });
+    const receipts = await sql(
+      `SELECT kind, status, process_data FROM tse_transactions
+        WHERE organization_id = $1 AND payment_id = $2`,
+      [w.orgId, paymentId],
+    );
+    expect(receipts).toEqual([
+      expect.objectContaining({
+        kind: 'receipt',
+        status: 'signed',
+        // Bratwurst 4,50 zu 7 %, Bier 4,00 zu 19 %, unbar.
+        process_data: 'Beleg^4.00_4.50_0.00_0.00_0.00^8.50:Unbar',
+      }),
+    ]);
+    expect(print.handleOrderCreated).toHaveBeenCalledTimes(1);
+    expect(print.handlePaymentReceived).toHaveBeenCalledTimes(1);
+
+    const created = await closings.closeUpTo(w.orgId, new Date(), {
+      trigger: 'manual',
+    });
+    const file = await closings.exportZip(
+      w.orgId,
+      admin,
+      { zFrom: created[0].zNr, zTo: created[0].zNr },
+      {},
+    );
+    keep(file.data, `online-prepayment-qr-${w.orgId.slice(0, 8)}.zip`);
+    const result = validateZip(file.data);
+    expect(
+      result.errors.map((e) => `${e.code} ${e.file ?? ''} ${e.message}`),
+    ).toEqual([]);
+    expect(
+      rowsIn(file.data, 'datapayment.csv').map((p) => [
+        p.ZAHLART_TYP,
+        p.ZAHLART_NAME,
+        p.BASISWAEH_BETRAG,
+      ]),
+    ).toEqual([['ElZahlungsdienstleister', 'Google Pay', '8,50']]);
   });
 });

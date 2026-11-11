@@ -23,7 +23,7 @@ import {
 } from '../../common/utils/sumup-test-mode.util';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
-import { SumUpApiService } from './sumup-api.service';
+import { SumUpApiService, type SumUpOnlineCheckout } from './sumup-api.service';
 import type { SumUpCredentials } from './interfaces/sumup.interfaces';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import {
@@ -265,12 +265,19 @@ export class SumUpService {
     );
   }
 
+  /**
+   * Online-Checkout der Bestellseite (QR-Bestellung am Tisch).
+   * `webhookUrl` ist SumUps `return_url` — dorthin meldet SumUp den neuen
+   * Stand, auch wenn der Gast nie zurueckkommt; `redirectUrl` ist die
+   * Seite, auf die der Browser des Gasts nach dem Bezahlen geht.
+   */
   async createOnlineCheckout(
     organizationId: string,
     amount: number,
     currency: string,
     description: string,
-    returnUrl: string,
+    urls: { redirectUrl: string; webhookUrl: string },
+    checkoutReference: string,
   ): Promise<{ checkoutUrl: string; checkoutId: string }> {
     const credentials = await this.getCredentials(organizationId);
 
@@ -283,12 +290,9 @@ export class SumUpService {
         amount,
         currency,
         description,
-        checkoutReference: `openeos-${Date.now()}`,
-        returnUrl,
-        // This flow has no server webhook (the order exists before payment
-        // and the status page polls) — the URL doubles as browser redirect
-        // so the customer lands back in the app after paying.
-        redirectUrl: returnUrl,
+        checkoutReference,
+        returnUrl: urls.webhookUrl,
+        redirectUrl: urls.redirectUrl,
       },
     );
 
@@ -298,6 +302,26 @@ export class SumUpService {
         `https://pay.sumup.com/b2c/checkout/${response.id}`,
       checkoutId: response.id,
     };
+  }
+
+  /**
+   * Stand eines Online-Checkouts bei SumUp. Absichtlich ohne die Sperre
+   * „Integration ausgeschaltet“: ist der Gast schon belastet, muss die
+   * Zahlung auch dann noch gebucht werden, wenn der Verein SumUp
+   * inzwischen abgeschaltet hat. `null` ohne Zugangsdaten oder Antwort.
+   */
+  async getOnlineCheckout(
+    organizationId: string,
+    checkoutId: string,
+  ): Promise<SumUpOnlineCheckout | null> {
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
+    const apiKey =
+      organization?.settings?.sumup?.apiKey ||
+      this.configService.get<string>('SUMUP_API_KEY');
+    if (!apiKey) return null;
+    return this.sumUpApiService.getOnlineCheckout(apiKey, checkoutId);
   }
 
   private async checkMembership(

@@ -14,6 +14,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
 import { v4 as uuidv4 } from 'uuid';
 import {
   OnlineOrderSession,
@@ -60,11 +61,17 @@ import { saveOrderWithNumbers } from '../orders/order-numbering';
 import { assertLegalInfoComplete } from '../organizations/legal/legal-settings.util';
 import { TseSigningService } from '../tse/tse-signing.service';
 import type { TseReceiptView } from '../tse/tse-view';
+import { CronLockService } from '../../common/redis/cron-lock.service';
+
+/** Mindestabstand zweier SumUp-Nachfragen je Zahlung aus der Statusseite. */
+const SUMUP_LOOKUP_INTERVAL_MS = 3_000;
 
 @Injectable()
 export class OnlineOrdersService {
   private readonly logger = new Logger(OnlineOrdersService.name);
   private readonly SESSION_TTL_HOURS = 2;
+  /** Letzte Nachfrage bei SumUp je Zahlung (Statusseite pollt). */
+  private readonly sumUpLookups = new Map<string, number>();
 
   constructor(
     @InjectRepository(OnlineOrderSession)
@@ -95,6 +102,9 @@ export class OnlineOrdersService {
     // Cloud-TSE: Kassenbeleg der Online-Zahlung (ohne aktive TSE nichts).
     @Optional()
     private readonly tseSigning?: TseSigningService,
+    // Abgleich offener SumUp-Zahlungen nur auf einer Instanz.
+    @Optional()
+    private readonly cronLock?: CronLockService,
   ) {}
 
   private get eventPhase(): EventPhaseService {
@@ -547,6 +557,11 @@ export class OnlineOrdersService {
   async getOrderStatus(sessionToken: string): Promise<Order[]> {
     const session = await this.getSession(sessionToken);
 
+    // Die Statusseite pollt: offene SumUp-Zahlungen dieser Sitzung bei
+    // SumUp nachsehen (gedrosselt), damit eine bezahlte Bestellung auch
+    // ohne Webhook und ohne „pay/confirm“ als bezahlt erscheint.
+    await this.refreshPendingSumUpPayments(session.id);
+
     const orders = await this.orderRepository.find({
       where: { onlineSessionId: session.id },
       relations: ['items'],
@@ -554,6 +569,31 @@ export class OnlineOrdersService {
     });
 
     return orders;
+  }
+
+  private async refreshPendingSumUpPayments(sessionId: string): Promise<void> {
+    try {
+      const pending = await this.paymentRepository.find({
+        where: {
+          status: PaymentTransactionStatus.PENDING,
+          paymentProvider: PaymentProvider.SUMUP,
+          order: { onlineSessionId: sessionId },
+        },
+        relations: ['order'],
+      });
+      const now = Date.now();
+      for (const payment of pending) {
+        const last = this.sumUpLookups.get(payment.id) ?? 0;
+        if (now - last < SUMUP_LOOKUP_INTERVAL_MS) continue;
+        if (this.sumUpLookups.size > 1000) this.sumUpLookups.clear();
+        this.sumUpLookups.set(payment.id, now);
+        await this.settleSumUpPayment(payment);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Refreshing SumUp payments of session ${sessionId} failed: ${(error as Error).message}`,
+      );
+    }
   }
 
   async initiatePayment(
@@ -647,12 +687,22 @@ export class OnlineOrdersService {
       case OnlinePaymentMethod.SUMUP_ONLINE:
       case OnlinePaymentMethod.GOOGLE_PAY:
       case OnlinePaymentMethod.APPLE_PAY: {
+        /* Die Zahlung bekommt ihre ID vorab: SumUp meldet den Stand an
+           den Webhook dieser Zahlung (`return_url`), der Browser des Gasts
+           geht zurueck auf die Bestellseite (`redirect_url`). Gebucht wird
+           erst, wenn SumUp selbst „bezahlt“ sagt (settleSumUpPayment). */
+        const paymentId = uuidv4();
+        const checkoutReference = qrCheckoutReference(paymentId);
         const checkout = await this.sumUpService.createOnlineCheckout(
           session.organizationId,
           Number(order.total),
           'EUR',
           description,
-          returnUrl,
+          {
+            redirectUrl: returnUrl,
+            webhookUrl: `${this.apiPublicUrl()}/api/public/order/pay/${paymentId}/webhook`,
+          },
+          checkoutReference,
         );
 
         const paymentMethod =
@@ -663,13 +713,14 @@ export class OnlineOrdersService {
               : PaymentMethod.SUMUP_ONLINE;
 
         const payment = this.paymentRepository.create({
+          id: paymentId,
           orderId: order.id,
           amount: order.total,
           paymentMethod,
           paymentProvider: PaymentProvider.SUMUP,
           status: PaymentTransactionStatus.PENDING,
           providerTransactionId: checkout.checkoutId,
-          metadata: { checkoutId: checkout.checkoutId },
+          metadata: { checkoutId: checkout.checkoutId, checkoutReference },
         });
         await this.paymentRepository.save(payment);
 
@@ -699,7 +750,7 @@ export class OnlineOrdersService {
   async confirmPayment(
     sessionToken: string,
     paymentId: string,
-    providerOrderId: string,
+    providerOrderId?: string,
   ): Promise<{ data: { status: string } }> {
     const session = await this.getSession(sessionToken);
 
@@ -720,7 +771,28 @@ export class OnlineOrdersService {
       return { data: { status: 'already_captured' } };
     }
 
+    // SumUp (Karte, Google Pay, Apple Pay): bei SumUp nachsehen und bei
+    // „bezahlt“ buchen — dieselbe Pruefung wie Webhook und Statusabfrage.
+    if (payment.paymentProvider === PaymentProvider.SUMUP) {
+      const status = await this.settleSumUpPayment(payment);
+      return { data: { status } };
+    }
+
     if (payment.paymentProvider === PaymentProvider.PAYPAL) {
+      // Erfasst wird immer die PayPal-Bestellung, die zu dieser Zahlung
+      // angelegt wurde — nie eine, die der Aufrufer nennt.
+      const paypalOrderId = payment.providerTransactionId || providerOrderId;
+      if (
+        !paypalOrderId ||
+        (providerOrderId && providerOrderId !== paypalOrderId)
+      ) {
+        throw new NotFoundException({
+          code: ErrorCodes.NOT_FOUND,
+          reason: ErrorReasons.PAYMENT_NOT_FOUND,
+          message: 'Zahlung nicht gefunden',
+        });
+      }
+
       const organization = await this.organizationRepository.findOne({
         where: { id: session.organizationId },
       });
@@ -743,7 +815,7 @@ export class OnlineOrdersService {
       }
 
       const capture = await this.paypalService.captureOrder(
-        providerOrderId,
+        paypalOrderId,
         settings.clientId,
         settings.clientSecret,
       );
@@ -759,68 +831,273 @@ export class OnlineOrdersService {
           return { data: { status: 'already_captured' } };
         }
         payment.status = PaymentTransactionStatus.CAPTURED;
-
-        const order = payment.order;
-        order.paidAmount = Number(order.paidAmount) + Number(payment.amount);
-        order.paymentStatus =
-          order.paidAmount >= Number(order.total)
-            ? PaymentStatus.PAID
-            : PaymentStatus.PARTLY_PAID;
-        await this.orderRepository.save(order);
-
-        // Cloud-TSE: Kassenbeleg der Online-Zahlung nach dem Speichern und
-        // vor Kuechen- und Kassenbon (wirft nie; ohne aktive TSE nichts).
-        let tse: TseReceiptView | null = null;
-        if (
-          this.tseSigning &&
-          (await this.tseSigning.isActive(order.organizationId))
-        ) {
-          tse = await this.tseSigning.signPayment(payment.id);
-        }
-
-        // Online orders have no POS device, so the kitchen ticket + receipt are
-        // triggered here once payment is captured (routing falls back to the
-        // org-level print settings / production-station printers). Fire-and-
-        // forget so a printing hiccup never fails the payment.
-        this.orderPrintService
-          .handleOrderCreated(order.organizationId, {
-            order,
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            tableNumber: order.tableNumber,
-            total: Number(order.total),
-            source: order.source,
-          })
-          .catch((err) =>
-            this.logger.error(
-              `Online order ${order.id} kitchen print failed: ${(err as Error)?.message}`,
-            ),
-          );
-        this.orderPrintService
-          .handlePaymentReceived(order.organizationId, {
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            paymentId: payment.id,
-            amount: Number(payment.amount),
-            paymentMethod: 'online',
-            isFullyPaid: order.paymentStatus === PaymentStatus.PAID,
-            order,
-            tse,
-          })
-          .catch((err) =>
-            this.logger.error(
-              `Online order ${order.id} receipt print failed: ${(err as Error)?.message}`,
-            ),
-          );
+        await this.bookCapturedPayment(payment);
       }
     }
 
-    // SumUp webhooks handle confirmation separately
-
     return { data: { status: payment.status } };
+  }
+
+  /**
+   * SumUp meldet einen neuen Stand des Checkouts dieser Zahlung (Webhook,
+   * `return_url`). Der Inhalt der Meldung zaehlt nicht — nachgesehen wird
+   * direkt bei SumUp. Wirft nie (SumUp wiederholt sonst).
+   */
+  async handleSumUpWebhook(paymentId: string): Promise<void> {
+    try {
+      const payment = await this.paymentRepository.findOne({
+        where: { id: paymentId },
+        relations: ['order'],
+      });
+      if (
+        !payment ||
+        payment.paymentProvider !== PaymentProvider.SUMUP ||
+        !payment.order?.onlineSessionId
+      ) {
+        return;
+      }
+      const status = await this.settleSumUpPayment(payment);
+      this.logger.log(`SumUp webhook for QR payment ${paymentId}: ${status}`);
+    } catch (error) {
+      this.logger.error(
+        `SumUp webhook for QR payment ${paymentId} failed: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Offene SumUp-Zahlungen der Bestellseite nachpruefen, deren Webhook nie
+   * ankam und deren Gast nicht zurueckkam (alle 2 Minuten, eine Instanz).
+   */
+  @Cron('25 */2 * * * *', { name: 'qr-sumup-reconcile' })
+  async reconcilePendingSumUpPayments(): Promise<void> {
+    const run = async () => {
+      const pending = await this.paymentRepository
+        .createQueryBuilder('payment')
+        .innerJoinAndSelect('payment.order', 'order')
+        .where('payment.status = :status', {
+          status: PaymentTransactionStatus.PENDING,
+        })
+        .andWhere('payment.payment_provider = :provider', {
+          provider: PaymentProvider.SUMUP,
+        })
+        .andWhere('order.online_session_id IS NOT NULL')
+        .andWhere("payment.created_at > now() - interval '24 hours'")
+        .andWhere("payment.created_at < now() - interval '1 minute'")
+        .orderBy('payment.created_at', 'ASC')
+        .take(50)
+        .getMany();
+      for (const payment of pending) {
+        try {
+          await this.settleSumUpPayment(payment);
+        } catch (error) {
+          this.logger.error(
+            `Reconciling QR payment ${payment.id} failed: ${(error as Error).message}`,
+          );
+        }
+      }
+    };
+    try {
+      if (this.cronLock) {
+        await this.cronLock.runExclusive('qr-sumup-reconcile', run);
+      } else {
+        await run();
+      }
+    } catch (error) {
+      this.logger.error(
+        `QR payment reconcile run failed: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Stand einer SumUp-Zahlung der Bestellseite bei SumUp abfragen und
+   * uebernehmen: „bezahlt“ (Betrag, Waehrung und Referenz passen) → genau
+   * einmal buchen, signieren und drucken; „fehlgeschlagen“/„abgelaufen“ →
+   * Zahlung fehlgeschlagen; sonst bleibt sie offen. Idempotent: Webhook,
+   * Rueckkehrseite, Statusabfrage und Abgleich duerfen gleichzeitig kommen.
+   */
+  async settleSumUpPayment(
+    payment: Payment,
+  ): Promise<PaymentTransactionStatus> {
+    if (payment.status !== PaymentTransactionStatus.PENDING) {
+      return payment.status;
+    }
+    const checkoutId = payment.providerTransactionId;
+    const organizationId = payment.order?.organizationId;
+    if (!checkoutId || !organizationId) return payment.status;
+
+    const checkout = await this.sumUpService.getOnlineCheckout(
+      organizationId,
+      checkoutId,
+    );
+    if (!checkout) return PaymentTransactionStatus.PENDING;
+
+    if (checkout.status === 'PAID') {
+      const expectedReference = (
+        payment.metadata as { checkoutReference?: string } | null
+      )?.checkoutReference;
+      const mismatch =
+        checkout.id !== checkoutId
+          ? 'checkout id'
+          : checkout.amount === null ||
+              Math.round(checkout.amount * 100) !==
+                Math.round(Number(payment.amount) * 100)
+            ? 'amount'
+            : checkout.currency && checkout.currency !== 'EUR'
+              ? 'currency'
+              : expectedReference &&
+                  checkout.checkoutReference &&
+                  checkout.checkoutReference !== expectedReference
+                ? 'reference'
+                : null;
+      if (mismatch) {
+        // Nie etwas anderes buchen, als SumUp bestaetigt — bleibt offen
+        // und faellt im Log auf.
+        this.logger.error(
+          `SumUp checkout ${checkoutId} for QR payment ${payment.id} is PAID but the ${mismatch} does not match — not booked`,
+        );
+        return PaymentTransactionStatus.PENDING;
+      }
+
+      const claim = await this.paymentRepository.update(
+        { id: payment.id, status: PaymentTransactionStatus.PENDING },
+        {
+          status: PaymentTransactionStatus.CAPTURED,
+          metadata: {
+            ...(payment.metadata ?? {}),
+            ...(checkout.transactionCode
+              ? { transactionCode: checkout.transactionCode }
+              : {}),
+            ...(checkout.transactionId
+              ? { transactionId: checkout.transactionId }
+              : {}),
+          },
+        },
+      );
+      if (!claim.affected) return PaymentTransactionStatus.CAPTURED;
+      payment.status = PaymentTransactionStatus.CAPTURED;
+      await this.bookCapturedPayment(payment);
+      return PaymentTransactionStatus.CAPTURED;
+    }
+
+    if (checkout.status === 'FAILED' || checkout.status === 'EXPIRED') {
+      const claim = await this.paymentRepository.update(
+        { id: payment.id, status: PaymentTransactionStatus.PENDING },
+        { status: PaymentTransactionStatus.FAILED },
+      );
+      if (claim.affected) payment.status = PaymentTransactionStatus.FAILED;
+      return payment.status;
+    }
+
+    return PaymentTransactionStatus.PENDING;
+  }
+
+  /**
+   * Nach dem gewonnenen Wechsel auf CAPTURED (nur einmal je Zahlung):
+   * Bestellung bezahlt, Cloud-TSE-Kassenbeleg (Unbar, DSFinV-K
+   * `ElZahlungsdienstleister`), Kassen benachrichtigen, dann Kuechen- und
+   * Kassenbon. Signieren und Drucken werfen nie.
+   */
+  private async bookCapturedPayment(payment: Payment): Promise<void> {
+    const order =
+      (await this.orderRepository.findOne({
+        where: { id: payment.orderId },
+      })) ?? payment.order;
+    order.paidAmount = Number(order.paidAmount) + Number(payment.amount);
+    order.paymentStatus =
+      Math.round(order.paidAmount * 100) >=
+      Math.round(Number(order.total) * 100)
+        ? PaymentStatus.PAID
+        : PaymentStatus.PARTLY_PAID;
+    await this.orderRepository.save(order);
+
+    // Cloud-TSE: Kassenbeleg der Online-Zahlung nach dem Speichern und
+    // vor Kuechen- und Kassenbon (wirft nie; ohne aktive TSE nichts).
+    let tse: TseReceiptView | null = null;
+    if (
+      this.tseSigning &&
+      (await this.tseSigning.isActive(order.organizationId))
+    ) {
+      tse = await this.tseSigning.signPayment(payment.id);
+    }
+
+    // Kassen und Verwaltung: Tisch bzw. Bestellung ist bezahlt.
+    try {
+      this.gatewayService?.notifyPaymentReceived(
+        order.organizationId,
+        order.eventId,
+        {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          paymentId: payment.id,
+          amount: Number(payment.amount),
+          paymentMethod: payment.paymentMethod,
+          paidAmount: Number(order.paidAmount),
+          totalAmount: Number(order.total),
+          paymentStatus: order.paymentStatus,
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Notifying payment ${payment.id} failed: ${(error as Error).message}`,
+      );
+    }
+
+    // Online orders have no POS device, so the kitchen ticket + receipt are
+    // triggered here once payment is captured (routing falls back to the
+    // org-level print settings / production-station printers). Fire-and-
+    // forget so a printing hiccup never fails the payment.
+    this.orderPrintService
+      .handleOrderCreated(order.organizationId, {
+        order,
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        tableNumber: order.tableNumber,
+        total: Number(order.total),
+        source: order.source,
+      })
+      .catch((err) =>
+        this.logger.error(
+          `Online order ${order.id} kitchen print failed: ${(err as Error)?.message}`,
+        ),
+      );
+    this.orderPrintService
+      .handlePaymentReceived(order.organizationId, {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        paymentId: payment.id,
+        amount: Number(payment.amount),
+        paymentMethod: 'online',
+        isFullyPaid: order.paymentStatus === PaymentStatus.PAID,
+        order,
+        tse,
+      })
+      .catch((err) =>
+        this.logger.error(
+          `Online order ${order.id} receipt print failed: ${(err as Error)?.message}`,
+        ),
+      );
+  }
+
+  /** Oeffentliche Adresse dieser API (ohne /api) fuer SumUp-Webhooks. */
+  private apiPublicUrl(): string {
+    return (
+      this.configService.get<string>('API_PUBLIC_URL') ||
+      'https://api.openeos.de'
+    ).replace(/\/+$/, '');
   }
 
   private generateSessionToken(): string {
     return `sess_${uuidv4().replace(/-/g, '')}`;
   }
+}
+
+/**
+ * `checkout_reference` eines SumUp-Checkouts der Bestellseite: an die
+ * Zahlung gebunden, damit eine Bestaetigung nie einer anderen Zahlung
+ * zugeordnet wird.
+ */
+export function qrCheckoutReference(paymentId: string): string {
+  return `openeos-qr-${paymentId}`;
 }
