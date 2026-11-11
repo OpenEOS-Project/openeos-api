@@ -216,11 +216,11 @@ describe('notBookedMail', () => {
     tseIncluded: false,
   };
 
-  it('Frist noch offen: bis wann kostenlos storniert werden kann', () => {
+  it('zehn Tage vorher: Frist noch offen, bis wann kostenlos storniert werden kann', () => {
     const mail = notBookedMail({
       ...input,
       firstDay: new Date('2026-11-16T05:00:00Z'),
-      now: new Date('2026-11-09T08:20:00Z'),
+      now: new Date('2026-11-06T08:20:00Z'),
       cancellationDeadline: new Date('2026-11-09T17:00:00Z'),
     });
     expect(mail.subject).toBe(
@@ -237,7 +237,7 @@ describe('notBookedMail', () => {
     expect(mail.text).toContain('Notfall-Support');
   });
 
-  it('genau 7 Tage vorher: Frist ist abgelaufen, Buchung verbindlich', () => {
+  it('Frist schon abgelaufen: Buchung verbindlich', () => {
     const mail = notBookedMail({
       ...input,
       now: new Date('2026-11-09T08:20:00Z'),

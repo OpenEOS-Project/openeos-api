@@ -24,6 +24,7 @@ const describeWithDb = TEST_DB ? describe : describe.skip;
 // Fest 16.–17.11.2026 (reine Daten): Verkauf 15.11. 18:00 bis 18.11. 12:00
 const START = '2026-11-15T23:00:00.000Z';
 const END = '2026-11-16T23:00:00.000Z';
+const NOT_BOOKED = new Date('2026-11-06T09:20:00Z');
 const WEEK_BEFORE = new Date('2026-11-09T09:20:00Z');
 const DAY_BEFORE = new Date('2026-11-15T09:20:00Z');
 const AFTER = new Date('2026-11-18T12:20:00Z');
@@ -418,14 +419,21 @@ describeWithDb('Event reminders against Postgres', () => {
       billing: 'none',
     });
 
-    await service({ billingEnabled: false }).run(WEEK_BEFORE);
+    await service({ billingEnabled: false }).run(NOT_BOOKED);
     expect(mailsFor(name)).toHaveLength(0);
 
-    await service().run(WEEK_BEFORE);
+    await service().run(NOT_BOOKED);
     const [mail] = mailsFor(name);
     expect(mail.subject).toContain('ist noch nicht freigeschaltet');
     expect(mail.text).toContain(`/events?unlock=${eventId}`);
-    expect(mail.text).toContain('abgelaufen');
+    // Zehn Tage vorher laeuft die kostenlose Stornofrist noch.
+    expect(mail.text).toContain(
+      'Kostenlos stornieren kannst du bis 7 Tage vor Beginn, also bis Sonntag, 8. November 2026, 24:00 Uhr',
+    );
+
+    // Zur Woche vorher kommt keine zweite Mahnung.
+    await service().run(WEEK_BEFORE);
+    expect(mailsFor(name)).toHaveLength(0);
   });
 
   it('Schalter: Organisation aus → keine Mail und kein Merker; Admin abgemeldet → nur die anderen', async () => {

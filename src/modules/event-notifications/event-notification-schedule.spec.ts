@@ -10,6 +10,7 @@ import {
   nextSendStart,
   scheduleFor,
 } from './event-notification-schedule';
+import { cancellationDeadline } from '../events/event-unlock-cancellation.service';
 
 const TZ = 'Europe/Berlin';
 
@@ -49,11 +50,21 @@ describe('scheduleFor', () => {
     expect(s.scheduleKey).toBe('2026-11-16');
   });
 
-  it('not_booked: gleicher Termin wie week_before', () => {
-    const a = scheduleFor('week_before', HERBST, TZ);
-    const b = scheduleFor('not_booked', HERBST, TZ);
-    expect(b.dueAt).toEqual(a.dueAt);
-    expect(b.validUntil).toEqual(a.validUntil);
+  it('not_booked: 9 Uhr zehn Tage vor dem ersten Festtag, nachholen bis 8 Tage vorher', () => {
+    const s = scheduleFor('not_booked', HERBST, TZ);
+    expect(s.dueAt.toISOString()).toBe('2026-11-06T08:00:00.000Z');
+    expect(s.validUntil.toISOString()).toBe('2026-11-08T05:00:00.000Z');
+    expect(s.scheduleKey).toBe('2026-11-16');
+  });
+
+  it('not_booked: auch nachgeholt noch vor Ablauf der kostenlosen Stornofrist', () => {
+    const deadline = cancellationDeadline(
+      { startDate: new Date('2026-11-15T23:00:00.000Z') },
+      TZ,
+    );
+    expect(deadline?.toISOString()).toBe('2026-11-08T23:00:00.000Z');
+    const s = scheduleFor('not_booked', HERBST, TZ);
+    expect(s.validUntil.getTime()).toBeLessThan(deadline!.getTime());
   });
 
   it('day_before: Verkaufsstart am Abend → 9 Uhr am selben Tag, gueltig bis Verkaufsstart', () => {
@@ -164,6 +175,15 @@ describe('isDue', () => {
     expect(isDue(week, new Date('2026-11-11T04:59:00Z'), TZ)).toBe(false); // Ruhezeit
     expect(isDue(week, new Date('2026-11-11T08:00:00Z'), TZ)).toBe(false);
     expect(isDue(week, new Date('2026-11-14T08:00:00Z'), TZ)).toBe(false);
+  });
+
+  it('noch nicht freigeschaltet: ab 9 Uhr zehn Tage vorher, nachholen bis 8 Tage vorher', () => {
+    const notBooked = scheduleFor('not_booked', HERBST, TZ);
+    expect(isDue(notBooked, new Date('2026-11-06T07:59:00Z'), TZ)).toBe(false);
+    expect(isDue(notBooked, new Date('2026-11-06T08:20:00Z'), TZ)).toBe(true);
+    expect(isDue(notBooked, new Date('2026-11-07T15:00:00Z'), TZ)).toBe(true);
+    expect(isDue(notBooked, new Date('2026-11-08T08:00:00Z'), TZ)).toBe(false);
+    expect(isDue(notBooked, new Date('2026-11-09T08:20:00Z'), TZ)).toBe(false);
   });
 
   it('nachts nicht — ausser die Mail waere bis 7 Uhr veraltet', () => {

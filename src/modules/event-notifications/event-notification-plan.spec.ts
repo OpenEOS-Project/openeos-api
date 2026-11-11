@@ -25,6 +25,7 @@ const WINDOW = salesWindow(
   DEFAULT_EVENT_PHASE_SETTINGS,
 ) as SalesWindow;
 
+const NOT_BOOKED = new Date('2026-11-06T09:00:00Z'); // 10 Uhr MEZ
 const WEEK_BEFORE = new Date('2026-11-09T09:00:00Z'); // 10 Uhr MEZ
 const DAY_BEFORE = new Date('2026-11-15T09:00:00Z');
 const AFTER = new Date('2026-11-18T12:00:00Z');
@@ -109,15 +110,17 @@ describe('isEligible', () => {
 
 describe('dueReminders', () => {
   it('liefert je Zeitpunkt genau die faellige Mail', () => {
+    expect(kinds(event(), NOT_BOOKED)).toEqual([]);
     expect(kinds(event(), WEEK_BEFORE)).toEqual(['week_before']);
     expect(kinds(event(), DAY_BEFORE)).toEqual(['day_before']);
     expect(kinds(event(), AFTER)).toEqual(['after_event']);
     expect(kinds(event(), new Date('2026-11-12T09:00:00Z'))).toEqual([]);
   });
 
-  it('Testmodus: „noch nicht freigeschaltet“ zur Woche vorher', () => {
+  it('Testmodus: „noch nicht freigeschaltet“ zehn Tage vorher, nicht mehr zur Woche vorher', () => {
     const e = event({ status: 'test', billingStatus: 'none' });
-    expect(kinds(e, WEEK_BEFORE)).toEqual(['not_booked']);
+    expect(kinds(e, NOT_BOOKED)).toEqual(['not_booked']);
+    expect(kinds(e, WEEK_BEFORE)).toEqual([]);
     expect(kinds(e, DAY_BEFORE)).toEqual([]);
   });
 
@@ -125,14 +128,14 @@ describe('dueReminders', () => {
     const e = event({
       status: 'test',
       billingStatus: 'none',
-      createdAt: new Date('2026-11-09T08:30:00Z'),
+      createdAt: new Date('2026-11-06T08:30:00Z'),
     });
     expect(
       planReminder('not_booked', e, WINDOW, {
         billingEnabled: true,
         timeZone: TZ,
         organizationSettings: {},
-        now: WEEK_BEFORE,
+        now: NOT_BOOKED,
       }).skip,
     ).toBe('not_eligible');
   });
@@ -145,7 +148,7 @@ describe('dueReminders', () => {
     expect(
       kinds(
         event({ status: 'test', billingStatus: 'none' }),
-        WEEK_BEFORE,
+        NOT_BOOKED,
         true,
         notBookedOff,
       ),
