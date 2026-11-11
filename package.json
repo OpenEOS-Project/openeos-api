@@ -145,7 +145,6 @@
     "coverageReporters": [
       "lcov",
       "text-summary"
-    ],
-    "coverageProvider": "v8"
+    ]
   }
 }
