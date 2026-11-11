@@ -55,7 +55,7 @@ import {
   PaymentProvider,
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
-import { SumUpApiService } from '../sumup/sumup-api.service';
+import { SumUpApiService, sumUpApiBaseUrl } from '../sumup/sumup-api.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { EmailService } from '../email/email.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
@@ -478,7 +478,7 @@ export class EventsShopCheckoutController {
     let sumupStatus: string | undefined;
     try {
       const res = await fetch(
-        `https://api.sumup.com/v0.1/checkouts/${encodeURIComponent(checkout.sumupCheckoutId)}`,
+        `${sumUpApiBaseUrl()}/v0.1/checkouts/${encodeURIComponent(checkout.sumupCheckoutId)}`,
         {
           headers: {
             Authorization: `Bearer ${apiKey}`,

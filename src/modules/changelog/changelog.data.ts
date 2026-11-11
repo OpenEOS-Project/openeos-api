@@ -433,6 +433,22 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
+    datum: '2026-11-09',
+    art: 'behoben',
+    titel: {
+      de: 'Kartenzahlung bei QR-Bestellungen am Tisch',
+      en: 'Card payments for QR orders at the table',
+    },
+    kurz: {
+      de: 'Bezahlen Gäste ihre QR-Bestellung mit Karte, Google Pay oder Apple Pay, wird die Zahlung jetzt gebucht, abgesichert und die Bestellung geht in die Küche.',
+      en: 'When guests pay their QR order by card, Google Pay or Apple Pay, the payment is now booked and secured, and the order goes to the kitchen.',
+    },
+    text: {
+      de: 'Bei Bestellungen über den QR-Code am Tisch blieb eine Zahlung mit Karte (SumUp), Google Pay oder Apple Pay auf „offen“ hängen: Das Geld war beim Gast abgebucht, aber die Bestellung wurde nicht als bezahlt markiert, nicht von der TSE abgesichert, und Küchen- und Kassenbon kamen nicht. Jetzt fragt OpenEOS bei SumUp nach, sobald SumUp die Zahlung meldet, der Gast zurückkommt oder seine Bestellung ansieht – spätestens nach wenigen Minuten. Bestätigt SumUp die Zahlung, wird sie genau einmal gebucht: Bestellung bezahlt, Kassenbeleg mit TSE-Signatur, dann Küchen- und Kassenbon. Mit PayPal lief es schon vorher.',
+      en: 'For orders via the QR code at the table, a payment by card (SumUp), Google Pay or Apple Pay got stuck on "pending": the guest had been charged, but the order was not marked as paid, not secured by the TSE, and neither kitchen ticket nor receipt came. Now OpenEOS checks with SumUp as soon as SumUp reports the payment, the guest returns or looks at the order – within a few minutes at the latest. Once SumUp confirms the payment it is booked exactly once: order paid, receipt with TSE signature, then kitchen ticket and receipt. PayPal already worked.',
+    },
+  },
+  {
     datum: '2026-10-29',
     art: 'neu',
     titel: {

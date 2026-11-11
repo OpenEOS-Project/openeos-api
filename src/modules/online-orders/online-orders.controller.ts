@@ -9,9 +9,12 @@ import {
   Param,
   Headers,
   ParseIntPipe,
+  ParseUUIDPipe,
   BadRequestException,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiSecurity } from '@nestjs/swagger';
+import { ApiTags, ApiSecurity, ApiOperation } from '@nestjs/swagger';
 import { OnlineOrdersService } from './online-orders.service';
 import {
   StartSessionDto,
@@ -199,10 +202,17 @@ export class OnlineOrdersController {
     return this.onlineOrdersService.initiatePayment(sessionToken, payDto);
   }
 
+  /**
+   * Rueckkehr nach dem Bezahlen. PayPal: erfasst die Zahlung. SumUp (Karte,
+   * Google Pay, Apple Pay): sieht bei SumUp nach und bucht bei „bezahlt“.
+   * `providerOrderId` ist nur noch zur Kontrolle (PayPal); gebucht wird
+   * immer die Anbieter-Referenz, die zur Zahlung gespeichert ist.
+   * Antwort `status`: captured | already_captured | pending | failed.
+   */
   @Post('pay/confirm')
   async confirmPayment(
     @Headers() headers: Record<string, string>,
-    @Body() body: { paymentId: string; providerOrderId: string },
+    @Body() body: { paymentId: string; providerOrderId?: string },
   ) {
     const sessionToken = this.getSessionToken(headers);
     return this.onlineOrdersService.confirmPayment(
@@ -210,6 +220,22 @@ export class OnlineOrdersController {
       body.paymentId,
       body.providerOrderId,
     );
+  }
+
+  /**
+   * SumUp meldet den Stand des Online-Checkouts dieser Zahlung (`return_url`
+   * des Checkouts). Der Inhalt wird nicht geglaubt: gebucht wird nur, was
+   * SumUp auf Nachfrage als bezahlt bestaetigt. Antwortet immer 200.
+   */
+  @Post('pay/:paymentId/webhook')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'SumUp payment-status webhook for QR order payments; re-verified against SumUp',
+  })
+  async sumUpWebhook(@Param('paymentId', ParseUUIDPipe) paymentId: string) {
+    await this.onlineOrdersService.handleSumUpWebhook(paymentId);
+    return { received: true };
   }
 
   @Get('status')

@@ -61,6 +61,16 @@ export function sumUpErrorResponse(
   });
 }
 
+/**
+ * Basis der SumUp-REST-API fuer Online-Checkouts. `SUMUP_API_BASE_URL`
+ * nur fuer Tests gegen einen nachgebauten Anbieter; Standard ist SumUp.
+ */
+export function sumUpApiBaseUrl(): string {
+  return (
+    process.env.SUMUP_API_BASE_URL?.trim() || 'https://api.sumup.com'
+  ).replace(/\/+$/, '');
+}
+
 function isSumUpAPIError(err: unknown): err is SumUpAPIError {
   return (
     err instanceof Error &&
@@ -463,7 +473,7 @@ export class SumUpApiService {
       redirectUrl: string;
     },
   ): Promise<{ id: string; checkoutUrl: string }> {
-    const response = await fetch('https://api.sumup.com/v0.1/checkouts', {
+    const response = await fetch(`${sumUpApiBaseUrl()}/v0.1/checkouts`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -512,4 +522,75 @@ export class SumUpApiService {
     }
     return { id: result.id, checkoutUrl };
   }
+
+  /**
+   * Stand eines Online-Checkouts direkt bei SumUp (GET /v0.1/checkouts/:id).
+   * Grundlage jeder Buchung einer Online-Zahlung: Webhook-Inhalte und
+   * Rueckkehr-URLs sind nur der Anlass nachzusehen, nie der Beweis.
+   * `null`, wenn SumUp nicht antwortet oder den Checkout nicht kennt.
+   */
+  async getOnlineCheckout(
+    apiKey: string,
+    checkoutId: string,
+  ): Promise<SumUpOnlineCheckout | null> {
+    let response: Response;
+    try {
+      response = await fetch(
+        `${sumUpApiBaseUrl()}/v0.1/checkouts/${encodeURIComponent(checkoutId)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: 'application/json',
+          },
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `SumUp checkout ${checkoutId} lookup failed: ${(error as Error).message}`,
+      );
+      return null;
+    }
+    if (!response.ok) {
+      this.logger.warn(
+        `SumUp checkout ${checkoutId} lookup failed: HTTP ${response.status}`,
+      );
+      return null;
+    }
+    const json = (await response.json()) as Partial<{
+      id: string;
+      status: string;
+      amount: number;
+      currency: string;
+      checkout_reference: string;
+      transaction_code: string;
+      transaction_id: string;
+      transactions: Array<{
+        id?: string;
+        transaction_code?: string;
+        status?: string;
+      }>;
+    }>;
+    const paid = json.transactions?.find((t) => t.status === 'SUCCESSFUL');
+    return {
+      id: json.id ?? checkoutId,
+      status: String(json.status ?? '').toUpperCase(),
+      amount: typeof json.amount === 'number' ? json.amount : null,
+      currency: json.currency ?? null,
+      checkoutReference: json.checkout_reference ?? null,
+      transactionCode: json.transaction_code ?? paid?.transaction_code ?? null,
+      transactionId: json.transaction_id ?? paid?.id ?? null,
+    };
+  }
+}
+
+/** Stand eines Online-Checkouts laut SumUp. */
+export interface SumUpOnlineCheckout {
+  id: string;
+  /** PENDING, PAID, FAILED, EXPIRED (gross geschrieben). */
+  status: string;
+  amount: number | null;
+  currency: string | null;
+  checkoutReference: string | null;
+  transactionCode: string | null;
+  transactionId: string | null;
 }

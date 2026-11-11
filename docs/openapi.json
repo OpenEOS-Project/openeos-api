@@ -11698,6 +11698,35 @@
         ]
       }
     },
+    "/api/public/order/pay/{paymentId}/webhook": {
+      "post": {
+        "operationId": "onlineOrders_sumUpWebhook",
+        "parameters": [
+          {
+            "name": "paymentId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "X-Session-Token": []
+          }
+        ],
+        "summary": "SumUp payment-status webhook for QR order payments; re-verified against SumUp",
+        "tags": [
+          "Online Orders"
+        ]
+      }
+    },
     "/api/public/order/status": {
       "get": {
         "operationId": "onlineOrders_getOrderStatus",

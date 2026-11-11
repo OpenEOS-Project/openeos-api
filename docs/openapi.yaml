@@ -6839,6 +6839,21 @@ paths:
           description: ""
       security: *a66
       tags: *a67
+  /api/public/order/pay/{paymentId}/webhook:
+    post:
+      operationId: onlineOrders_sumUpWebhook
+      parameters:
+        - name: paymentId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a66
+      summary: SumUp payment-status webhook for QR order payments; re-verified against SumUp
+      tags: *a67
   /api/public/order/status:
     get:
       operationId: onlineOrders_getOrderStatus
