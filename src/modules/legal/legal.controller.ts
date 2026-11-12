@@ -15,7 +15,9 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { User } from '../../database/entities';
 import { AcceptLegalDto } from './dto';
 import { LegalService } from './legal.service';
+import { ConfigService } from '@nestjs/config';
 import { DeploymentService } from '../../common/services/deployment.service';
+import { tseConditionsFrom } from './tse-conditions';
 
 export function clientOf(request: Request): {
   ip?: string;
@@ -34,6 +36,7 @@ export class LegalController {
   constructor(
     private readonly legal: LegalService,
     private readonly deployment: DeploymentService,
+    private readonly configService: ConfigService,
   ) {}
 
   @Public()
@@ -41,13 +44,14 @@ export class LegalController {
   @ApiOperation({
     summary: 'Current legal texts (AGB, AVV, privacy, imprint)',
     description:
-      'Aktuelle Fassungen (Datum der „Stand“-Zeile) mit Links auf die Website, die Archiv-Adresse der Fassung und das PDF. `enabled` ist bei eigenständigem Betrieb false — dort gelten die Texte von LUXCODE nicht. `platform`: Impressum und Datenschutz des Plattformbetreibers für öffentliche Seiten ohne Verein (z. B. Startseite des Shops); `null` = nicht anzeigen.',
+      'Aktuelle Fassungen (Datum der „Stand“-Zeile) mit Links auf die Website, die Archiv-Adresse der Fassung und das PDF. `enabled` ist bei eigenständigem Betrieb false — dort gelten die Texte von LUXCODE nicht. `platform`: Impressum und Datenschutz des Plattformbetreibers für öffentliche Seiten ohne Verein (z. B. Startseite des Shops); `null` = nicht anzeigen. `tseConditions`: Einsatzbedingungen der Cloud-TSE (Umgebungsschutzkonzept; `url`, `text`), nur wenn die Cloud-TSE verfügbar ist, sonst `null`.',
   })
   getVersions() {
     return {
       data: {
         ...this.legal.versions(),
         platform: this.deployment.platformLegal,
+        tseConditions: tseConditionsFrom(this.configService),
       },
     };
   }
