@@ -539,7 +539,8 @@ export class AuthService {
     user: User,
     ip?: string | null,
   ): Promise<void> {
-    const backoffMs = (await this.loginBackoff?.recordFailure(user.id, ip)) ?? 0;
+    const backoffMs =
+      (await this.loginBackoff?.recordFailure(user.id, ip)) ?? 0;
 
     user.failedLoginAttempts += 1;
     let accountLocked = false;

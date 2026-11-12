@@ -59,7 +59,9 @@ export class LoginBackoffService {
     try {
       return (await this.cache.get<BackoffState>(key)) ?? null;
     } catch (error) {
-      this.logger.warn(`Login backoff unavailable: ${(error as Error).message}`);
+      this.logger.warn(
+        `Login backoff unavailable: ${(error as Error).message}`,
+      );
       return null;
     }
   }
@@ -69,7 +71,9 @@ export class LoginBackoffService {
     try {
       await this.cache.set(key, state, STATE_TTL_MS);
     } catch (error) {
-      this.logger.warn(`Login backoff unavailable: ${(error as Error).message}`);
+      this.logger.warn(
+        `Login backoff unavailable: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -117,7 +121,9 @@ export class LoginBackoffService {
     try {
       await this.cache.del(this.key(userId, ip));
     } catch (error) {
-      this.logger.warn(`Login backoff unavailable: ${(error as Error).message}`);
+      this.logger.warn(
+        `Login backoff unavailable: ${(error as Error).message}`,
+      );
     }
   }
 }
