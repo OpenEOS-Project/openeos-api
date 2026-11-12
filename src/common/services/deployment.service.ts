@@ -31,6 +31,10 @@ export class DeploymentService {
   readonly platformLegal: {
     imprintUrl: string | null;
     privacyUrl: string | null;
+    /** Kontaktstelle nach Art. 11/12 DSA; null = nicht anzeigen. */
+    contactEmail: string | null;
+    /** Formular „Inhalt melden“ (Art. 16 DSA); null = kein Link. */
+    reportUrl: string | null;
   };
 
   constructor(private readonly configService: ConfigService) {
@@ -43,6 +47,9 @@ export class DeploymentService {
     this.platformLegal = {
       imprintUrl: this.configService.get<string>('platform.imprintUrl') || null,
       privacyUrl: this.configService.get<string>('platform.privacyUrl') || null,
+      contactEmail:
+        this.configService.get<string>('platform.contactEmail') || null,
+      reportUrl: this.configService.get<string>('platform.reportUrl') || null,
     };
 
     if (this.isSelfHosted) {

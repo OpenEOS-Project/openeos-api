@@ -11,6 +11,8 @@ import {
   rahmen,
   stapeln,
   ueberschrift,
+  zitat,
+  fussnote,
 } from './email-template';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
@@ -1453,6 +1455,149 @@ export class EmailService {
     `);
 
     return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  // ============ Inhaltsmeldungen (Art. 16/17 DSA) ============
+
+  /** Eingangsbestaetigung an den Meldenden (Art. 16 Abs. 4 DSA). */
+  async sendContentReportReceipt(options: {
+    to: string;
+    name: string;
+    url: string;
+    reason: string;
+    description: string;
+    receivedAt: Date;
+    contactEmail: string | null;
+  }): Promise<boolean> {
+    const subject = 'Deine Meldung ist bei uns eingegangen';
+    const eingang = `${new Intl.DateTimeFormat('de-DE', {
+      dateStyle: 'medium',
+      timeStyle: 'medium',
+      timeZone: 'Europe/Berlin',
+    }).format(options.receivedAt)} Uhr`;
+    const intro = `Hallo ${options.name}, danke für deine Meldung. Wir prüfen den gemeldeten Inhalt sorgfältig und ohne unnötige Verzögerung und teilen dir unsere Entscheidung per E-Mail mit.`;
+    const html = rahmen({
+      kontext: 'Inhalt melden',
+      titel: `OpenEOS — ${subject}`,
+      preheader: intro,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift(subject),
+        absatz(intro),
+        datenblock('Deine Meldung', [
+          ['Fundstelle', options.url],
+          ['Grund', options.reason],
+          ['Eingegangen am', eingang],
+        ]),
+        zitat(options.description),
+        options.contactEmail
+          ? absatz(
+              `Fragen oder Ergänzungen schickst du an ${options.contactEmail} (Deutsch oder Englisch).`,
+            )
+          : null,
+      ),
+    });
+    return this.sendEmail({
+      to: options.to,
+      subject,
+      html,
+      replyTo: options.contactEmail ?? undefined,
+      redactRecipient: true,
+    });
+  }
+
+  /** Neue Meldung an den Betreiber — nicht abbestellbar. */
+  async sendAdminContentReportNotification(options: {
+    to: string;
+    url: string;
+    reason: string;
+    description: string;
+    reporterName: string;
+    reporterEmail: string;
+    targetType: string;
+    adminPath: string;
+  }): Promise<boolean> {
+    const subject = 'Neue Inhaltsmeldung (DSA)';
+    const ziel: Record<string, string> = {
+      shop: 'Shop einer Veranstaltung',
+      helper_page: 'Helferseite',
+      unknown: 'nicht zugeordnet',
+    };
+    const html = rahmen({
+      kontext: 'Inhalt melden',
+      titel: `OpenEOS — ${subject}`,
+      preheader: `${options.reason}: ${options.url}`,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift(subject),
+        absatz(
+          'Über das Formular „Inhalt melden“ ist eine Meldung eingegangen. Prüfe sie zügig und teile dem Meldenden die Entscheidung mit; wird ein Inhalt eingeschränkt, bekommt der Verein eine Begründung.',
+        ),
+        datenblock('Meldung', [
+          ['Fundstelle', options.url],
+          ['Seite', ziel[options.targetType] ?? options.targetType],
+          ['Grund', options.reason],
+          [
+            'Gemeldet von',
+            `${options.reporterName} <${options.reporterEmail}>`,
+          ],
+        ]),
+        zitat(options.description),
+        knopf(`${this.appUrl}${options.adminPath}`, 'Meldung öffnen'),
+      ),
+    });
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
+  /**
+   * Entscheidung an den Meldenden (Art. 16 Abs. 5 DSA) bzw. Begruendung an
+   * die Admins des Vereins (Art. 17 DSA). Eine Mail je Empfaenger.
+   */
+  async sendContentReportDecision(options: {
+    to: string[];
+    audience: 'reporter' | 'organization';
+    name: string | null;
+    rows: [string, string][];
+    contactEmail: string | null;
+  }): Promise<boolean> {
+    const reporter = options.audience === 'reporter';
+    const subject = reporter
+      ? 'Entscheidung zu deiner Meldung'
+      : 'Begründung: Maßnahme zu einem Inhalt eures Vereins';
+    const intro = reporter
+      ? `Hallo${options.name ? ` ${options.name}` : ''}, wir haben den von dir gemeldeten Inhalt geprüft. Hier ist unsere Entscheidung.`
+      : `Zu einem öffentlichen Inhalt${options.name ? ` von ${options.name}` : ''} (Shop bzw. Helferseite) ist eine Meldung eingegangen. Wir haben ihn geprüft und begründen unsere Entscheidung nach Art. 17 des Digital Services Act. Wer gemeldet hat, nennen wir nicht.`;
+    let ok = true;
+    for (const to of options.to) {
+      const html = rahmen({
+        kontext: 'Inhalt melden',
+        titel: `OpenEOS — ${subject}`,
+        preheader: intro,
+        empfaenger: to,
+        appUrl: this.appUrl,
+        inhalt: stapeln(
+          ueberschrift(subject),
+          absatz(intro),
+          datenblock(reporter ? 'Entscheidung' : 'Begründung', options.rows),
+          options.contactEmail
+            ? fussnote(
+                `Kontaktstelle nach Art. 11 und 12 DSA: ${options.contactEmail} (Deutsch oder Englisch).`,
+              )
+            : null,
+        ),
+      });
+      const sent = await this.sendEmail({
+        to,
+        subject,
+        html,
+        replyTo: options.contactEmail ?? undefined,
+        redactRecipient: reporter,
+      });
+      ok = ok && sent;
+    }
+    return ok;
   }
 
   async sendAdminContactRequestNotification(options: {
