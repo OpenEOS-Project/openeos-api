@@ -102,6 +102,12 @@ export const validationSchema = Joi.object({
   PLATFORM_PRIVACY_URL: Joi.string()
     .uri({ scheme: ['http', 'https'] })
     .allow(''),
+  // Einsatzbedingungen der Cloud-TSE (Umgebungsschutzkonzept des
+  // TSE-Herstellers) unter „Rechtliches“; nur bei verfuegbarer Cloud-TSE.
+  TSE_CONDITIONS_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .allow(''),
+  TSE_CONDITIONS_TEXT: Joi.string().allow('').max(5000),
 
   // Rechtstexte von LUXCODE: Website mit den Fassungen (Standard: aus
   // APP_URL abgeleitet, sonst https://openeos.de) und die aktuellen
