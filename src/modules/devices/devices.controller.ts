@@ -176,12 +176,13 @@ export class DevicesController {
     operationId: 'listOnlineDeviceIds',
     summary: 'IDs der verbundenen Geräte',
     description:
-      'Liefert die IDs der Geräte, die gerade per WebSocket mit der API verbunden sind. Scope `read`.',
+      'Liefert die IDs der Geräte, die gerade per WebSocket mit der API verbunden sind. Scope `read`, für Administratoren und Mitglieder mit Geräterecht.',
   })
   async getOnlineDeviceIds(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
-    @CurrentUser() _user: User,
+    @CurrentUser() user: User,
   ) {
+    await this.devicesService.assertCanViewDeviceStatus(organizationId, user);
     const onlineIds =
       await this.gatewayService.getOnlineDeviceIds(organizationId);
     return { data: onlineIds };

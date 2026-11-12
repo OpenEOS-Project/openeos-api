@@ -11,6 +11,9 @@ import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CurrentDevice, Public } from '../../common/decorators';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
+import { DeviceCapabilityGuard } from '../../common/guards/device-capability.guard';
+import { DeviceCapability } from '../../common/decorators/device-capability.decorator';
+import { DeviceCapabilityName } from '../../common/constants/device-capabilities';
 import type { Device } from '../../database/entities';
 import { requireOrganization } from '../devices/device-api.controller';
 import { CashbookService } from './cashbook.service';
@@ -28,10 +31,11 @@ import { assertOperatorMay } from '../waiters/waiter-sessions.service';
 })
 @Controller('device-api/cashbook')
 @Public()
-@UseGuards(DeviceAuthGuard)
+@UseGuards(DeviceAuthGuard, DeviceCapabilityGuard)
 export class DeviceCashbookController {
   constructor(private readonly cashbook: CashbookService) {}
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get()
   @ApiOperation({
     summary: 'Cash book of today for this device',
@@ -45,6 +49,7 @@ export class DeviceCashbookController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
