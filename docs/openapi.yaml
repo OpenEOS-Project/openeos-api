@@ -9880,16 +9880,6 @@ paths:
           in: path
           schema:
             type: string
-        - name: origin
-          required: true
-          in: header
-          schema:
-            type: string
-        - name: referer
-          required: true
-          in: header
-          schema:
-            type: string
       responses:
         "201":
           description: ""
@@ -9917,16 +9907,6 @@ paths:
         - name: slug
           required: true
           in: path
-          schema:
-            type: string
-        - name: origin
-          required: true
-          in: header
-          schema:
-            type: string
-        - name: referer
-          required: true
-          in: header
           schema:
             type: string
       requestBody:
@@ -9961,16 +9941,6 @@ paths:
         - name: slug
           required: true
           in: path
-          schema:
-            type: string
-        - name: origin
-          required: true
-          in: header
-          schema:
-            type: string
-        - name: referer
-          required: true
-          in: header
           schema:
             type: string
       responses:

@@ -16759,22 +16759,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "origin",
-            "required": true,
-            "in": "header",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "referer",
-            "required": true,
-            "in": "header",
-            "schema": {
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -16824,22 +16808,6 @@
             "name": "slug",
             "required": true,
             "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "origin",
-            "required": true,
-            "in": "header",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "referer",
-            "required": true,
-            "in": "header",
             "schema": {
               "type": "string"
             }
@@ -16898,22 +16866,6 @@
             "name": "slug",
             "required": true,
             "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "origin",
-            "required": true,
-            "in": "header",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "referer",
-            "required": true,
-            "in": "header",
             "schema": {
               "type": "string"
             }
