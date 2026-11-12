@@ -225,7 +225,7 @@ export class CategoriesService {
       ],
     );
     if (!categoryId || !dto.parentId) return;
-    const rows = (await this.dataSource.query(
+    const rows: unknown[] = await this.dataSource.query<unknown[]>(
       `WITH RECURSIVE ancestors(id, parent_id) AS (
          SELECT id, parent_id FROM categories WHERE id = $1 AND event_id = $2
          UNION
@@ -235,7 +235,7 @@ export class CategoriesService {
        )
        SELECT 1 FROM ancestors WHERE id = $3 LIMIT 1`,
       [dto.parentId, event.id, categoryId],
-    )) as unknown[];
+    );
     if (rows.length > 0) {
       throw referenceNotFound('category', 'parentId');
     }

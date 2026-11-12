@@ -1,10 +1,6 @@
 import type { Repository } from 'typeorm';
 
-import type {
-  Device,
-  User,
-  UserOrganization,
-} from '../../database/entities';
+import type { Device, User, UserOrganization } from '../../database/entities';
 import { DeviceType } from '../../database/entities/device.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorReasons } from '../../common/constants/error-codes';
@@ -27,7 +23,7 @@ function setup() {
     id: DEVICE,
     organizationId: ORG,
     name: 'Kundenanzeige',
-    type: DeviceType.CUSTOMER_DISPLAY,
+    type: DeviceType.DISPLAY,
     settings: {},
   } as unknown as Device;
   const save = jest.fn((row: unknown) => Promise.resolve(row));

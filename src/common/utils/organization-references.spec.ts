@@ -86,11 +86,9 @@ describe('assertReferencesInOrganization', () => {
 
   it('rejects a category from another organization', async () => {
     const error = await rejection(
-      assertReferencesInOrganization(
-        db(),
-        { organizationId: ORG },
-        [{ kind: 'category', ids: FOREIGN_CAT, field: 'categoryId' }],
-      ),
+      assertReferencesInOrganization(db(), { organizationId: ORG }, [
+        { kind: 'category', ids: FOREIGN_CAT, field: 'categoryId' },
+      ]),
     );
     expect(error).toBeInstanceOf(BadRequestException);
     expect(error.getResponse()).toMatchObject({

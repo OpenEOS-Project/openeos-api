@@ -18,7 +18,9 @@ export function fakeReferenceDb(tables: ReferenceTables) {
     (tables[table] ?? []).find((row) => row.id === id);
   const ownerOf = (row: ReferenceRow): string | undefined =>
     row.organization_id ??
-    (row.event_id ? find('events', row.event_id)?.organization_id : undefined) ??
+    (row.event_id
+      ? find('events', row.event_id)?.organization_id
+      : undefined) ??
     (row.order_id ? find('orders', row.order_id)?.organization_id : undefined);
 
   const query = jest.fn((sql: string, params: unknown[] = []) => {

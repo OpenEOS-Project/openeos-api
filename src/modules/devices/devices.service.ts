@@ -88,7 +88,11 @@ export class DevicesService {
     await this.checkPermission(organizationId, user.id, 'devices');
     assertDeviceSettings(createDto.settings);
     await this.assertWaiterOfOrganization(organizationId, createDto.settings);
-    await this.assertSettingsReferences(organizationId, null, createDto.settings);
+    await this.assertSettingsReferences(
+      organizationId,
+      null,
+      createDto.settings,
+    );
 
     // Generate unique device token
     const deviceToken = this.generateDeviceToken();
@@ -207,7 +211,11 @@ export class DevicesService {
     }
 
     await this.assertWaiterOfOrganization(organizationId, device.settings);
-    await this.assertSettingsReferences(organizationId, device.id, neueSettings);
+    await this.assertSettingsReferences(
+      organizationId,
+      device.id,
+      neueSettings,
+    );
     await this.deviceRepository.save(device);
 
     this.logger.log(`Device updated: ${device.name} (${device.id})`);
@@ -955,7 +963,6 @@ export class DevicesService {
     };
   }
 
-  /** Feste Bedienung muss zur Organisation gehoeren. */
   /**
    * Drucker, Standardbereich und gespiegelte Kasse in den Einstellungen
    * gehoeren zur selben Organisation. Geprueft werden nur die mitgeschickten
@@ -970,7 +977,7 @@ export class DevicesService {
     const values = settings as Record<string, unknown>;
     const id = (key: string): string | null =>
       typeof values[key] === 'string' && values[key] !== ''
-        ? (values[key] as string)
+        ? values[key]
         : null;
     if (deviceId && id('posDeviceId') === deviceId) {
       throw referenceNotFound('device', 'posDeviceId');
@@ -992,6 +999,7 @@ export class DevicesService {
     );
   }
 
+  /** Feste Bedienung muss zur Organisation gehoeren. */
   private async assertWaiterOfOrganization(
     organizationId: string,
     settings: Device['settings'] | null | undefined,

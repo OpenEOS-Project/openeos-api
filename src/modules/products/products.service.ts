@@ -339,7 +339,11 @@ export class ProductsService {
         .map(pick)
         .filter((id): id is string => typeof id === 'string' && id !== '');
     const checks: ReferenceCheck[] = [
-      { kind: 'category', ids: collect((d) => d.categoryId), field: 'categoryId' },
+      {
+        kind: 'category',
+        ids: collect((d) => d.categoryId),
+        field: 'categoryId',
+      },
       {
         kind: 'pfandType',
         ids: collect((d) => d.pfandTypeId),

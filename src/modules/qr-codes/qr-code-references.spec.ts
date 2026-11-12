@@ -1,11 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 
-import type {
-  QrCode,
-  User,
-  UserOrganization,
-} from '../../database/entities';
+import type { QrCode, User, UserOrganization } from '../../database/entities';
 import { QrCodeType } from '../../database/entities/qr-code.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorReasons } from '../../common/constants/error-codes';
@@ -53,7 +49,11 @@ describe('QR code references', () => {
   it('rejects an event of another organization', async () => {
     const { service, save } = setup();
     await expect(
-      service.create(ORG, { type: QrCodeType.TABLE, eventId: OTHER_EVENT }, user),
+      service.create(
+        ORG,
+        { type: QrCodeType.TABLE, eventId: OTHER_EVENT },
+        user,
+      ),
     ).rejects.toMatchObject({
       response: { reason: ErrorReasons.EVENT_NOT_FOUND },
     });
@@ -76,7 +76,10 @@ describe('QR code references', () => {
         event: { id: OTHER_EVENT, organizationId: OTHER_ORG } as never,
       },
     ]);
-    const page = await service.findAll(ORG, user, { page: 1, limit: 50 } as never);
+    const page = await service.findAll(ORG, user, {
+      page: 1,
+      limit: 50,
+    } as never);
     expect(page.data[0]).toMatchObject({ eventId: null, event: null });
   });
 });

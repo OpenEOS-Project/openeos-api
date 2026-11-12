@@ -153,8 +153,7 @@ export interface ReferenceQueryRunner {
   query(sql: string, parameters?: unknown[]): Promise<unknown>;
 }
 
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function idsOf(ids: ReferenceCheck['ids']): string[] {
   if (ids === null || ids === undefined) return [];
