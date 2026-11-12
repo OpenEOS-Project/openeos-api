@@ -942,15 +942,16 @@ export class DevicesService {
     waiter: ReturnType<typeof operatorView>;
   }> {
     const session = await this.waiterSessions.login(device, pin);
-    const user = session.waiter.userId
-      ? await this.userOrganizationRepository.findOne({
-          where: {
-            organizationId: device.organizationId!,
-            userId: session.waiter.userId,
-          },
-          relations: ['user'],
-        })
-      : null;
+    const user =
+      session.waiter.userId && device.organizationId
+        ? await this.userOrganizationRepository.findOne({
+            where: {
+              organizationId: device.organizationId,
+              userId: session.waiter.userId,
+            },
+            relations: ['user'],
+          })
+        : null;
     return {
       userId: session.waiter.userId ?? session.waiter.waiterId,
       firstName: user?.user?.firstName ?? session.waiter.name,

@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not } from 'typeorm';
+import { IsNull, Repository, Not } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { User, RefreshToken, UserPreferences } from '../../database/entities';
@@ -311,7 +311,7 @@ export class UsersService {
    */
   async revokeSession(userId: string, sessionId: string): Promise<void> {
     const result = await this.refreshTokenRepository.update(
-      { id: sessionId, userId, revokedAt: null as unknown as undefined },
+      { id: sessionId, userId, revokedAt: IsNull() },
       { revokedAt: new Date() },
     );
 

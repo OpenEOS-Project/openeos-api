@@ -279,20 +279,21 @@ export class TokenTypesService {
       });
     }
     let restrictedRates: number[] | null = null;
-    if (restricted) {
+    const restrictionEventId = input.eventId;
+    if (restricted && restrictionEventId) {
       const foundCategories = categories.length
         ? await this.manager.find(Category, {
-            where: { id: In(categories), eventId: input.eventId! },
+            where: { id: In(categories), eventId: restrictionEventId },
             select: { id: true },
           })
         : [];
       const foundProducts = await this.manager.find(Product, {
         where: [
           ...(categories.length
-            ? [{ categoryId: In(categories), eventId: input.eventId! }]
+            ? [{ categoryId: In(categories), eventId: restrictionEventId }]
             : []),
           ...(products.length
-            ? [{ id: In(products), eventId: input.eventId! }]
+            ? [{ id: In(products), eventId: restrictionEventId }]
             : []),
         ],
         select: { id: true, taxRate: true, isActive: true },

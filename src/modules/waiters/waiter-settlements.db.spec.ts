@@ -1,3 +1,4 @@
+import { INVALID_WHERE_VALUES_BEHAVIOR } from '../../config/where-values';
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return -- Zeilen aus SQL */
 import { randomUUID } from 'crypto';
 import * as path from 'path';
@@ -107,6 +108,7 @@ describeWithDb('Kellnerabrechnung against Postgres', () => {
       throw new Error(`Database "${name}" does not end in _test/_scratch`);
     }
     ds = new DataSource({
+      invalidWhereValuesBehavior: INVALID_WHERE_VALUES_BEHAVIOR,
       type: 'postgres',
       url: TEST_DB,
       entities: [path.join(__dirname, '../../database/entities/*.entity.ts')],

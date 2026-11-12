@@ -1,5 +1,6 @@
 import { DataSource, DataSourceOptions } from 'typeorm';
 import * as dotenv from 'dotenv';
+import { INVALID_WHERE_VALUES_BEHAVIOR } from './where-values';
 
 dotenv.config();
 
@@ -15,6 +16,7 @@ export const dataSourceOptions: DataSourceOptions = {
   synchronize: process.env.DATABASE_SYNCHRONIZE === 'true',
   logging: process.env.DATABASE_LOGGING === 'true',
   migrationsRun: process.env.DATABASE_MIGRATIONS_RUN === 'true',
+  invalidWhereValuesBehavior: INVALID_WHERE_VALUES_BEHAVIOR,
 };
 
 const dataSource = new DataSource(dataSourceOptions);

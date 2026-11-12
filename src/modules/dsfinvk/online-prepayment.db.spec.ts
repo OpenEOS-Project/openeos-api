@@ -1,3 +1,4 @@
+import { INVALID_WHERE_VALUES_BEHAVIOR } from '../../config/where-values';
 import { randomUUID } from 'crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -93,6 +94,7 @@ describeWithDb('Online prepayment with Cloud-TSE against Postgres', () => {
     if (!/_(test|scratch)$/.test(name))
       throw new Error(`Database "${name}" does not end in _test/_scratch`);
     ds = new DataSource({
+      invalidWhereValuesBehavior: INVALID_WHERE_VALUES_BEHAVIOR,
       type: 'postgres',
       url: TEST_DB,
       entities: [path.join(__dirname, '../../database/entities/*.entity.ts')],
