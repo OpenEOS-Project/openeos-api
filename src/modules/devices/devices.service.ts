@@ -966,6 +966,17 @@ export class DevicesService {
     }
   }
 
+  /**
+   * Wer sieht, welche Geraete gerade verbunden sind: wie die Geraeteseiten
+   * Admins und das Geraeterecht.
+   */
+  async assertCanViewDeviceStatus(
+    organizationId: string,
+    user: User,
+  ): Promise<void> {
+    await this.checkPermission(organizationId, user.id, 'devices');
+  }
+
   private async checkMembership(
     organizationId: string,
     userId: string,

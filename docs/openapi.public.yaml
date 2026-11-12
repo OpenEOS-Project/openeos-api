@@ -224,7 +224,7 @@ paths:
       x-api-token-scope: read
   /api/organizations/{organizationId}/devices/online/ids:
     get:
-      description: Liefert die IDs der Geräte, die gerade per WebSocket mit der API verbunden sind. Scope `read`.
+      description: Liefert die IDs der Geräte, die gerade per WebSocket mit der API verbunden sind. Scope `read`, für Administratoren und Mitglieder mit Geräterecht.
       operationId: listOnlineDeviceIds
       parameters:
         - name: organizationId
