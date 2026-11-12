@@ -123,32 +123,26 @@ function sameValue(a: unknown, b: unknown): boolean {
 }
 
 /**
- * Bereinigt `settings` aus dem PATCH-Body: unveraenderte Abschnitte fallen
+ * Prueft `settings` aus dem PATCH-Body und gibt eine neue Kopie mit den
+ * aenderbaren Abschnitten zurueck: unveraenderte andere Abschnitte fallen
  * weg, nicht aenderbare oder unbekannte Abschnitte mit neuem Wert und
- * ungueltige Werte enden in 400. Veraendert `incoming` an Ort und Stelle
- * und gibt es zurueck.
+ * ungueltige Werte enden in 400.
  */
-export function filterOrganizationSettingsUpdate<
-  T extends Record<string, unknown> | null | undefined,
->(incoming: T, stored: Record<string, unknown> | null | undefined): T {
-  if (!incoming) return incoming;
+export function filterOrganizationSettingsUpdate(
+  incoming: Record<string, unknown> | null | undefined,
+  stored: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | undefined {
+  if (!incoming) return undefined;
   const current = stored ?? {};
-  for (const key of Object.keys(incoming)) {
-    const value = incoming[key];
-    const check = Object.prototype.hasOwnProperty.call(
+  for (const [key, value] of Object.entries(incoming)) {
+    const updatable = Object.prototype.hasOwnProperty.call(
       UPDATABLE_ORGANIZATION_SETTINGS,
       key,
-    )
-      ? UPDATABLE_ORGANIZATION_SETTINGS[key]
-      : undefined;
-    if (value === undefined || sameValue(value, current[key])) {
-      // Unveraendert zurueckgeschickt: nichts zu tun. Bei aenderbaren
-      // Abschnitten trotzdem stehen lassen — die Normalisierung danach
-      // (z. B. rechtliche Angaben) soll denselben Weg nehmen wie bisher.
-      if (!check) delete incoming[key];
-      continue;
-    }
-    if (!check) {
+    );
+    if (value === undefined) continue;
+    if (!updatable) {
+      // Unveraendert zurueckgeschickt: nichts zu tun.
+      if (sameValue(value, current[key])) continue;
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.ORGANIZATION_SETTING_NOT_UPDATABLE,
@@ -157,7 +151,8 @@ export function filterOrganizationSettingsUpdate<
         details: [{ field: `settings.${key}`, code: 'notUpdatable' }],
       });
     }
-    const problem = check(value);
+    if (sameValue(value, current[key])) continue;
+    const problem = UPDATABLE_ORGANIZATION_SETTINGS[key](value);
     if (problem) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
@@ -170,7 +165,14 @@ export function filterOrganizationSettingsUpdate<
       });
     }
   }
-  return incoming;
+  // Nur Schluessel aus der festen Liste uebernehmen. Unveraenderte
+  // aenderbare Abschnitte bleiben drin: die Normalisierung danach (z. B.
+  // rechtliche Angaben) nimmt denselben Weg wie bisher.
+  return Object.fromEntries(
+    Object.keys(UPDATABLE_ORGANIZATION_SETTINGS)
+      .filter((key) => incoming[key] !== undefined)
+      .map((key) => [key, incoming[key]]),
+  );
 }
 
 /** Drucker- und Vorlagen-IDs, auf die der Bestellablauf verweist. */

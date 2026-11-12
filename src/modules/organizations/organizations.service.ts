@@ -423,11 +423,11 @@ export class OrganizationsService {
        ausserdem bedeutet, dass zwei gleichzeitig geoeffnete Reiter einander
        ueberschreiben. Zusammengefuehrt wird eine Ebene tief; wer `pos`
        schickt, ersetzt `pos` als Ganzes, und das ist auch gemeint. */
-    const { settings: incomingSettings, ...rest } = updateDto;
+    const { settings: requestedSettings, ...rest } = updateDto;
     // Nur die Abschnitte, die hierher gehoeren; Assistent, Integrationen,
     // Betriebsart, Steuerstatus-Verlauf usw. haben eigene Endpunkte.
-    filterOrganizationSettingsUpdate(
-      incomingSettings,
+    const incomingSettings = filterOrganizationSettingsUpdate(
+      requestedSettings,
       organization.settings as unknown as Record<string, unknown>,
     );
     await this.assertVatStatusChangeAllowed(organization, incomingSettings);
