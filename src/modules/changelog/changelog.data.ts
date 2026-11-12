@@ -16,6 +16,70 @@ import type { ChangelogEintrag } from './changelog.types';
  */
 export const CHANGELOG: ChangelogEintrag[] = [
   {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Inhalt melden in Shop und Helferseiten',
+      en: 'Report content in shops and on helper pages',
+    },
+    kurz: {
+      de: 'In der Fußzeile von Shop und Helferseiten steht jetzt „Inhalt melden“. Wird ein Inhalt deines Vereins eingeschränkt, bekommst du eine Begründung per E-Mail.',
+      en: 'The footer of shops and helper pages now has “Inhalt melden” (report content). If content of your club is restricted, you receive a statement of reasons by e-mail.',
+    },
+    text: {
+      de: 'Über den Link „Inhalt melden“ in der Fußzeile des Shops und der Helferseiten kann jeder einen Inhalt melden, den er für rechtswidrig hält – mit Fundstelle, Begründung, Name und E-Mail-Adresse. So verlangt es der Digital Services Act. Wir prüfen jede Meldung. Wird ein Inhalt deines Vereins eingeschränkt, etwa ein Artikel entfernt oder der Shop gesperrt, bekommen die Admins deiner Organisation eine Begründung per E-Mail: welche Maßnahme, warum und wie du widersprechen kannst. Wer gemeldet hat, nennen wir nicht. Zentrale Kontaktstelle ist hello@openeos.de.',
+      en: 'Using the “Inhalt melden” (report content) link in the footer of the shop and the helper pages, anyone can report content they consider illegal – with location, explanation, name and e-mail address, as required by the Digital Services Act. We review every report. If content of your club is restricted, e.g. an item removed or the shop blocked, the admins of your organization receive a statement of reasons by e-mail: which action, why and how you can object. We do not name the reporter. The single point of contact is hello@openeos.de.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
+      de: 'Widerrufsfunktion für deinen Shop',
+      en: 'Withdrawal function for your shop',
+    },
+    kurz: {
+      de: 'Besteht für deine Shop-Bestellungen ein Widerrufsrecht, schaltest du es in den rechtlichen Angaben ein – der Shop zeigt dann „Vertrag widerrufen“.',
+      en: 'If your shop orders come with a right of withdrawal, turn it on in the legal information – the shop then shows “Vertrag widerrufen” (withdraw from contract).',
+    },
+    text: {
+      de: 'Für Speisen und Getränke zu einer Veranstaltung besteht in aller Regel kein Widerrufsrecht. Verkaufst du im Shop aber etwa Vereins-T-Shirts, kann eines bestehen – dann brauchst du seit Juni 2026 eine elektronische Widerrufsfunktion. Unter Einstellungen → Rechtliche Angaben schaltest du „Für Bestellungen besteht ein Widerrufsrecht“ ein. Der Shop zeigt dann in der Fußzeile und in der Bestellbestätigung „Vertrag widerrufen“. Gäste geben Name, E-Mail-Adresse und Bestellnummer an und bestätigen den Widerruf; sie bekommen sofort eine Eingangsbestätigung mit Datum und Uhrzeit, und du bekommst den Widerruf per E-Mail. Ob ein Widerrufsrecht besteht, entscheidest du als Verkäufer – das Handbuch erklärt, worauf es ankommt.',
+      en: 'Food and drinks for an event generally come without a right of withdrawal. But if your shop sells e.g. club T-shirts, one may exist – and since June 2026 you then need an electronic withdrawal function. Under Settings → Legal information turn on “Orders come with a right of withdrawal”. The shop then shows “Vertrag widerrufen” (withdraw from contract) in the footer and in the order confirmation. Guests enter name, e-mail address and order number and confirm the withdrawal; they immediately receive a confirmation of receipt with date and time, and you receive the withdrawal by e-mail. As the seller you decide whether a right of withdrawal exists – the manual explains what matters.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'verbessert',
+    titel: {
+      de: 'Assistent: Vorschläge sind als KI-generiert gekennzeichnet',
+      en: 'Assistant: suggestions are labelled as AI-generated',
+    },
+    kurz: {
+      de: 'Vorschläge des Assistenten tragen bis zur Übernahme den Hinweis „KI-generierter Vorschlag“.',
+      en: 'Assistant suggestions carry the label “AI-generated suggestion” until you apply them.',
+    },
+    text: {
+      de: 'Was der Assistent mit dem Sprachmodell erzeugt – die Vorschau beim Speisekarten-Import und Icon-Vorschläge aus dem Sprachmodell – trägt jetzt den Hinweis „KI-generierter Vorschlag“, bis du ihn übernimmst. So verlangt es die KI-Verordnung der EU ab Dezember 2026. Übernommen wird weiterhin nichts von allein, und in deinen Produkten steht der Hinweis nicht.',
+      en: 'What the assistant generates with the language model – the menu import preview and icon suggestions from the language model – now carries the label “AI-generated suggestion” until you apply it, as required by the EU AI Act from December 2026. Nothing is applied on its own, and your products do not carry the label.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'verbessert',
+    titel: {
+      de: 'Rechtliches: Leistungsbeschreibung, Data Act und TSE-Einsatzbedingungen',
+      en: 'Legal: service description, Data Act and TSE conditions of use',
+    },
+    kurz: {
+      de: 'Unter „Rechtliches“ findest du jetzt auch Anlage 1 (Leistungsbeschreibung und Preisliste), die Data-Act-Seite und – mit Cloud-TSE – deren Einsatzbedingungen.',
+      en: 'Under “Legal” you now also find annex 1 (service description and price list), the Data Act page and – with the Cloud-TSE – its conditions of use.',
+    },
+    text: {
+      de: 'Die Rechtstexte von OpenEOS gibt es in der Fassung vom 12. November 2026, dazu neu die Anlage 1 zu den AGB mit Leistungsbeschreibung und Preisliste. Auf openeos.de/data-act steht, wo deine Daten verarbeitet werden, wie wir sie vor Zugriffen aus Drittstaaten schützen, in welchen Formaten du sie exportierst und wie ein Anbieterwechsel abläuft – ohne Wechselentgelt. Ist die Cloud-TSE verfügbar, zeigt „Rechtliches“ außerdem die Einsatzbedingungen des TSE-Herstellers. Den Quellcode von OpenEOS verlinken Website, App und Shop unter „Quellcode“.',
+      en: 'The OpenEOS legal texts are available in the version of 12 November 2026, plus the new annex 1 to the terms with service description and price list. openeos.de/en/data-act explains where your data is processed, how we protect it against access from third countries, in which formats you export it and how switching provider works – without switching charges. When the Cloud-TSE is available, “Legal” also shows the conditions of use of the TSE manufacturer. Website, app and shop link the OpenEOS source code under “Source code”.',
+    },
+  },
+  {
     // Naechste Veroeffentlichung (1.8): Datum beim Release anpassen.
     datum: '2026-11-09',
     art: 'neu',
