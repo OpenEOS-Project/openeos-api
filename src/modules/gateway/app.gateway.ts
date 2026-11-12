@@ -108,6 +108,45 @@ const erlaubteUrspruenge = (process.env.CORS_ORIGINS ?? 'http://localhost:3001')
   .map((eintrag) => eintrag.trim())
   .filter(Boolean);
 
+/** Cookie with the access token, set by AuthController at sign-in. */
+const ACCESS_TOKEN_COOKIE = 'accessToken';
+
+/**
+ * May a handshake from this origin authenticate with the session cookie?
+ * Only browsers send cookies, and only pages of the app may use them
+ * (in development any page, as for HTTP CORS). Without an Origin header
+ * the cookie is not used.
+ */
+export function isAllowedSocketOrigin(
+  origin: string | undefined,
+  allowed: string[] = erlaubteUrspruenge,
+  production = process.env.NODE_ENV === 'production',
+): boolean {
+  if (!origin) return false;
+  if (!production) return true;
+  return allowed.includes(origin);
+}
+
+/** Value of one cookie from a Cookie header. */
+export function readCookie(
+  header: string | undefined,
+  name: string,
+): string | null {
+  if (!header) return null;
+  for (const part of header.split(';')) {
+    const index = part.indexOf('=');
+    if (index < 0) continue;
+    if (part.slice(0, index).trim() !== name) continue;
+    const raw = part.slice(index + 1).trim();
+    try {
+      return decodeURIComponent(raw) || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 @WebSocketGateway({
   cors: {
     // In der Entwicklung jeden Ursprung spiegeln — wie auf der HTTP-Seite.
@@ -927,16 +966,30 @@ export class AppGateway
 
   // Helper methods
 
+  /**
+   * The JWT of a user socket: `Authorization` header, `auth.token` or the
+   * `token` query parameter. Without one, a browser connecting from an
+   * allowed origin may use the httpOnly `accessToken` cookie the API sets
+   * at sign-in (the web app keeps its token in memory only, so after a
+   * reload it has none to hand over). The token goes through the same
+   * checks either way.
+   */
   private extractToken(client: Socket): string | null {
     const authHeader = client.handshake.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       return authHeader.substring(7);
     }
-    return (
+    const explicit =
       (client.handshake.auth?.token as string | undefined) ||
-      (client.handshake.query?.token as string | undefined) ||
-      null
-    );
+      (client.handshake.query?.token as string | undefined);
+    if (typeof explicit === 'string' && explicit) return explicit;
+    return this.cookieToken(client);
+  }
+
+  private cookieToken(client: Socket): string | null {
+    const origin = client.handshake.headers.origin;
+    if (!isAllowedSocketOrigin(origin)) return null;
+    return readCookie(client.handshake.headers.cookie, ACCESS_TOKEN_COOKIE);
   }
 
   private async verifyToken(
