@@ -12862,7 +12862,7 @@ components:
         confirmBusiness:
           type: boolean
           example: true
-          description: "Pflicht: Bestätigung, als Unternehmer, juristische Person des öffentlichen Rechts oder eingetragener Verein zu handeln und die Organisation vertreten zu dürfen (AGB Ziffer 2.4)."
+          description: "Pflicht: Bestätigung, für eine Organisation aus dem Kundenkreis nach AGB Ziffer 2.1 zu handeln (Unternehmer, juristische Person des öffentlichen Rechts, Verein – eingetragen oder nicht –, Stiftung oder sonstige Organisation), nicht als Verbraucher, und sie vertreten zu dürfen (AGB Ziffer 2.4)."
       required:
         - email
         - firstName

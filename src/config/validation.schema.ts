@@ -121,6 +121,16 @@ export const validationSchema = Joi.object({
   LEGAL_IMPRINT_VERSION: Joi.string()
     .pattern(/^\d{4}-\d{2}-\d{2}$/)
     .allow(''),
+  // Anlage 1 zu den AGB (Leistungsbeschreibung und Preisliste).
+  LEGAL_ANLAGE1_VERSION: Joi.string()
+    .pattern(/^\d{4}-\d{2}-\d{2}$/)
+    .allow(''),
+  // `true`: Admins nach einer neuen AGB-/AVV-Fassung blockierend erneut
+  // fragen. Standard aus (siehe legal.config.ts).
+  LEGAL_REACCEPTANCE_ENABLED: Joi.string()
+    .valid('true', 'false', '')
+    .insensitive()
+    .default('false'),
 
   // Hersteller auf der Herstellerbescheinigung (Adresszeilen mit |).
   OPERATOR_NAME: Joi.string().allow(''),
