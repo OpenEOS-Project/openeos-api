@@ -6,6 +6,7 @@ import { DevicesLinkController } from './devices-link.controller';
 import { DeviceApiController } from './device-api.controller';
 import { DeviceTablesController } from './device-tables.controller';
 import { DevicesService } from './devices.service';
+import { PairingCleanupService } from './pairing-cleanup.service';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
 import { GatewayModule } from '../gateway/gateway.module';
 import { PrintersModule } from '../printers/printers.module';
@@ -73,7 +74,12 @@ import { RefundsModule } from '../refunds/refunds.module';
   ],
   // PaymentsBatchService liegt bei den Zahlungen, wird aber nur von der
   // Geraete-API genutzt (PaymentsModule bleibt so unberuehrt, api #12).
-  providers: [DevicesService, DeviceAuthGuard, PaymentsBatchService],
+  providers: [
+    DevicesService,
+    DeviceAuthGuard,
+    PaymentsBatchService,
+    PairingCleanupService,
+  ],
   exports: [DevicesService, DeviceAuthGuard],
 })
 export class DevicesModule {}

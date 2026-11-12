@@ -19,6 +19,7 @@ import { SumUpService } from '../sumup/sumup.service';
 import { BatchPaymentDto } from './dto/batch-payment.dto';
 import { PaymentsBatchService } from './payments-batch.service';
 import { PaymentsService } from './payments.service';
+import { transactionManager } from './testing/transaction-manager';
 
 /**
  * Betriebsart „Nur Bons“ (`operatingMode = orders_only`):
@@ -178,6 +179,14 @@ describe('„Nur Bons“ — Kasse (DeviceApiController)', () => {
     );
 
     const none = undefined as never;
+    // Teilzahlung bucht in einer Transaktion ueber dieselben Mocks.
+    Object.assign(orderRepository, {
+      manager: transactionManager([
+        [Order, orderRepository],
+        [OrderItem, orderItemRepository],
+        [Payment, paymentRepository],
+      ]),
+    });
     const controller = new DeviceApiController(
       organizationRepository as unknown as Repository<Organization>,
       eventRepository as unknown as Repository<Event>,
