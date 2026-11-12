@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
@@ -13,48 +14,83 @@ import type { RedisClient } from '../../common/redis/redis.constants';
 import { Device } from '../../database/entities/device.entity';
 
 /**
- * Sperre nach Fehlversuchen bei der PIN-Eingabe (bedienungen-plan.md §11):
+ * Sperre nach Fehlversuchen bei der PIN-Eingabe (bedienungen-plan.md §11).
  *
- * - je Geraet: 5 Fehlversuche → 30 s, 10 → 5 min, 20 → PIN-Eingabe
- *   gesperrt, bis ein Admin sie freigibt (`settings.waiterPinLockedAt`).
- *   Ein Treffer setzt den Zaehler zurueck.
- * - je Organisation: mehr als 50 Fehlversuche in 10 min → alle
- *   PIN-Eingaben der Organisation 60 s gesperrt.
+ * Gezaehlt wird in gleitenden Zeitfenstern — jeder Fehlversuch zaehlt so
+ * lange mit, bis er aus dem Fenster faellt. Eine richtige PIN setzt die
+ * Zaehler nicht zurueck: sie sagt nichts ueber die vorherigen Eingaben aus,
+ * die ja zu anderen PINs gehoert haben koennen.
  *
+ * - je Geraet (Fenster 30 min): ab 5 Fehlversuchen sperrt jeder weitere
+ *   die Eingabe, beginnend mit 30 s und jeweils doppelt so lange (hoechstens
+ *   15 min); ab 20 Fehlversuchen bleibt die PIN-Eingabe gesperrt, bis ein
+ *   Admin sie freigibt (`settings.waiterPinLockedAt`).
+ * - je Organisation (Fenster 60 min): ab 50 Fehlversuchen auf allen Geraeten
+ *   zusammen sperrt jeder weitere alle PIN-Eingaben der Organisation,
+ *   beginnend mit 60 s und jeweils doppelt so lange (hoechstens 15 min).
+ *
+ * Nach Ablauf einer Sperre funktioniert eine richtige PIN sofort wieder.
  * Zaehler liegen in Redis (alle API-Instanzen); faellt Redis aus, zaehlt
  * die Instanz im Speicher weiter. Die Admin-Sperre steht in der Datenbank.
  */
-export const LOCK_STEPS = [
-  { failures: 20, seconds: null },
-  { failures: 10, seconds: 300 },
-  { failures: 5, seconds: 30 },
-] as const;
+export const DEVICE_WINDOW_SECONDS = 30 * 60;
+export const DEVICE_FIRST_LOCK_AT = 5;
+export const DEVICE_FIRST_LOCK_SECONDS = 30;
+export const DEVICE_ADMIN_LOCK_AT = 20;
+export const ORG_WINDOW_SECONDS = 60 * 60;
 export const ORG_FAILURE_LIMIT = 50;
-export const ORG_WINDOW_SECONDS = 600;
-export const ORG_LOCK_SECONDS = 60;
-const DEVICE_COUNTER_TTL = 3600;
+export const ORG_FIRST_LOCK_SECONDS = 60;
+export const MAX_LOCK_SECONDS = 15 * 60;
+
+/** Gleitendes Fenster: alte Eintraege entfernen, neuen zaehlen. */
+const COUNT_IN_WINDOW = `
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+redis.call('ZADD', KEYS[1], ARGV[2], ARGV[3])
+redis.call('EXPIRE', KEYS[1], ARGV[4])
+return redis.call('ZCARD', KEYS[1])
+`;
 
 export interface FailureOutcome {
+  /** Fehlversuche des Geraets im Zeitfenster. */
   failures: number;
-  /** Versuche bis zur naechsten Sperrstufe. */
+  /** Fehlversuche bis zur ersten Sperre (0 = jeder weitere sperrt). */
   remainingAttempts: number;
   /** Gerade gesperrt fuer so viele Sekunden (null = bis zur Freigabe). */
   lockedForSeconds: number | null | undefined;
 }
 
-export function remainingAttempts(failures: number): number {
-  const next = [...LOCK_STEPS]
-    .map((s) => s.failures)
-    .sort((a, b) => a - b)
-    .find((limit) => limit > failures);
-  return next === undefined ? 0 : next - failures;
+/** Doppelt so lange je Fehlversuch ab `firstAt`, gedeckelt. */
+export function backoffSeconds(
+  failures: number,
+  firstAt: number,
+  firstSeconds: number,
+): number | undefined {
+  if (failures < firstAt) return undefined;
+  const steps = Math.min(failures - firstAt, 20);
+  return Math.min(MAX_LOCK_SECONDS, firstSeconds * 2 ** steps);
 }
 
+export function remainingAttempts(failures: number): number {
+  return Math.max(0, DEVICE_FIRST_LOCK_AT - failures);
+}
+
+/** Sperre des Geraets nach so vielen Fehlversuchen (null = bis zur Freigabe). */
 export function lockFor(failures: number): number | null | undefined {
-  for (const step of LOCK_STEPS) {
-    if (failures >= step.failures) return step.seconds;
-  }
-  return undefined;
+  if (failures >= DEVICE_ADMIN_LOCK_AT) return null;
+  return backoffSeconds(
+    failures,
+    DEVICE_FIRST_LOCK_AT,
+    DEVICE_FIRST_LOCK_SECONDS,
+  );
+}
+
+/** Sperre der Organisation nach so vielen Fehlversuchen im Fenster. */
+export function orgLockFor(failures: number): number | undefined {
+  return backoffSeconds(
+    failures,
+    ORG_FAILURE_LIMIT + 1,
+    ORG_FIRST_LOCK_SECONDS,
+  );
 }
 
 export function pinLockedError(retryAfterSeconds: number): HttpException {
@@ -89,6 +125,8 @@ export class PinLockoutService {
     string,
     { value: number; expires: number }
   >();
+  /** Rueckfall ohne Redis fuer die Zeitfenster: Schluessel → Zeitstempel. */
+  private readonly memoryWindows = new Map<string, number[]>();
 
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: RedisClient,
@@ -112,33 +150,34 @@ export class PinLockoutService {
   async recordFailure(
     device: Pick<Device, 'id' | 'organizationId' | 'name'>,
   ): Promise<FailureOutcome> {
-    const failures = await this.incr(
-      `waiter-pin:fail:${device.id}`,
-      DEVICE_COUNTER_TTL,
+    const failures = await this.countFailure(
+      `waiter-pin:fails:${device.id}`,
+      DEVICE_WINDOW_SECONDS,
     );
     if (device.organizationId) {
-      const orgFailures = await this.incr(
-        `waiter-pin:orgfail:${device.organizationId}`,
+      const orgFailures = await this.countFailure(
+        `waiter-pin:orgfails:${device.organizationId}`,
         ORG_WINDOW_SECONDS,
       );
-      if (orgFailures > ORG_FAILURE_LIMIT) {
-        await this.set(
+      const orgLock = orgLockFor(orgFailures);
+      if (orgLock !== undefined) {
+        await this.extendLock(
           `waiter-pin:orglock:${device.organizationId}`,
-          ORG_LOCK_SECONDS,
+          orgLock,
         );
         this.logger.warn(
-          `PIN entry of organization ${device.organizationId} paused: ${orgFailures} failures in ${ORG_WINDOW_SECONDS / 60} min`,
+          `PIN entry of organization ${device.organizationId} paused for ${orgLock}s: ${orgFailures} failures in ${ORG_WINDOW_SECONDS / 60} min`,
         );
       }
     }
     const lock = lockFor(failures);
     if (lock === null) {
       await this.lockDevice(device);
-      await this.del(`waiter-pin:fail:${device.id}`);
+      await this.del(`waiter-pin:fails:${device.id}`);
     } else if (lock !== undefined) {
-      await this.set(`waiter-pin:lock:${device.id}`, lock);
+      await this.extendLock(`waiter-pin:lock:${device.id}`, lock);
       this.logger.warn(
-        `PIN entry on device ${device.id} locked for ${lock}s after ${failures} failures`,
+        `PIN entry on device ${device.id} locked for ${lock}s after ${failures} failures in ${DEVICE_WINDOW_SECONDS / 60} min`,
       );
     }
     return {
@@ -148,8 +187,13 @@ export class PinLockoutService {
     };
   }
 
-  async recordSuccess(device: Pick<Device, 'id'>): Promise<void> {
-    await this.del(`waiter-pin:fail:${device.id}`);
+  /**
+   * Freigabe durch einen Admin: auch eine noch laufende zeitliche Sperre
+   * und die gezaehlten Fehlversuche des Geraets entfallen.
+   */
+  async releaseDevice(deviceId: string): Promise<void> {
+    await this.del(`waiter-pin:lock:${deviceId}`);
+    await this.del(`waiter-pin:fails:${deviceId}`);
   }
 
   /** Stufe 3: PIN-Eingabe bis zur Freigabe durch einen Admin sperren. */
@@ -190,36 +234,48 @@ export class PinLockoutService {
 
   // ---------------------------------------------------------- Speicher
 
-  private async incr(key: string, ttlSeconds: number): Promise<number> {
+  /** Uhr fuer die Zeitfenster (in Tests ersetzbar). */
+  now: () => number = () => Date.now();
+
+  /**
+   * Fehlversuch im gleitenden Fenster vermerken und die Anzahl im Fenster
+   * liefern. In Redis als Sorted Set (Zeitstempel), atomar per Skript.
+   */
+  private async countFailure(
+    key: string,
+    windowSeconds: number,
+  ): Promise<number> {
+    const now = this.now();
+    const since = now - windowSeconds * 1000;
+    const member = `${now}:${randomBytes(6).toString('hex')}`;
     try {
-      const value = await this.redis.incr(key);
-      if (value === 1) await this.redis.expire(key, ttlSeconds);
-      return value;
+      const count = await this.redis.eval(COUNT_IN_WINDOW, {
+        keys: [key],
+        arguments: [String(since), String(now), member, String(windowSeconds)],
+      });
+      return Number(count);
     } catch (error) {
       this.logger.warn(
         `PIN lockout without Redis: ${(error as Error).message}`,
       );
-      const now = Date.now();
-      const entry = this.memory.get(key);
-      const value = entry && entry.expires > now ? entry.value + 1 : 1;
-      this.memory.set(key, {
-        value,
-        expires:
-          entry && entry.expires > now
-            ? entry.expires
-            : now + ttlSeconds * 1000,
-      });
-      return value;
+      const recent = (this.memoryWindows.get(key) ?? []).filter(
+        (at) => at > since,
+      );
+      recent.push(now);
+      this.memoryWindows.set(key, recent);
+      return recent.length;
     }
   }
 
-  private async set(key: string, ttlSeconds: number): Promise<void> {
+  /** Sperre setzen; eine laufende laengere Sperre bleibt bestehen. */
+  private async extendLock(key: string, ttlSeconds: number): Promise<void> {
+    if ((await this.ttl(key)) >= ttlSeconds) return;
     try {
       await this.redis.set(key, '1', { EX: ttlSeconds });
     } catch {
       this.memory.set(key, {
         value: 1,
-        expires: Date.now() + ttlSeconds * 1000,
+        expires: this.now() + ttlSeconds * 1000,
       });
     }
   }
@@ -232,15 +288,17 @@ export class PinLockoutService {
       remote = 0;
     }
     const entry = this.memory.get(key);
+    const now = this.now();
     const local =
-      entry && entry.expires > Date.now()
-        ? Math.ceil((entry.expires - Date.now()) / 1000)
+      entry && entry.expires > now
+        ? Math.ceil((entry.expires - now) / 1000)
         : 0;
     return Math.max(remote, local);
   }
 
   private async del(key: string): Promise<void> {
     this.memory.delete(key);
+    this.memoryWindows.delete(key);
     try {
       await this.redis.del(key);
     } catch {

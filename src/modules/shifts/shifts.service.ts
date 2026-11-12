@@ -663,7 +663,6 @@ export class ShiftsService {
     registrationGroupId: string,
     ops: ShiftChangeOp[],
     message: string | undefined,
-    baseUrl?: string,
   ): Promise<ShiftChangeProposal> {
     if (!ops.length) {
       throw new BadRequestException({
@@ -749,9 +748,12 @@ export class ShiftsService {
       return saved;
     }
 
-    const proposalBase = baseUrl || this.emailService.appUrl;
-    const acceptUrl = `${proposalBase}/s/proposal/${saved.token}?action=accept`;
-    const declineUrl = `${proposalBase}/s/proposal/${saved.token}?action=decline`;
+    const acceptUrl = this.helperLink(
+      `/s/proposal/${saved.token}?action=accept`,
+    );
+    const declineUrl = this.helperLink(
+      `/s/proposal/${saved.token}?action=decline`,
+    );
 
     await this.emailService.sendShiftChangeProposalEmail({
       to: anchor.email,
@@ -1186,7 +1188,6 @@ export class ShiftsService {
     shiftIds: string[],
     phone?: string,
     notes?: string,
-    baseUrl?: string,
   ): Promise<{ registrationGroupId: string; shiftsCount: number }> {
     const plan = await this.findPlanBySlug(slug);
 
@@ -1287,9 +1288,7 @@ export class ShiftsService {
 
     // Send verification email
     const shiftsSummary = this.formatShiftsSummary(fullRegistrations);
-    const verifyUrl = baseUrl
-      ? `${baseUrl}/s/verify/${verificationToken}`
-      : `https://app.openeos.de/s/verify/${verificationToken}`;
+    const verifyUrl = this.helperLink(`/s/verify/${verificationToken}`);
 
     await this.emailService.sendShiftVerificationEmail(
       email,
@@ -1422,6 +1421,14 @@ export class ShiftsService {
    * Bytes ab 252 (= 7 * 36) werden verworfen, sonst waeren die ersten Zeichen
    * des Alphabets per Modulo leicht bevorzugt.
    */
+  /**
+   * Link fuer Helfer-Mails. Immer auf der konfigurierten App-URL (APP_URL),
+   * nie aus Kopfzeilen der Anfrage abgeleitet.
+   */
+  private helperLink(path: string): string {
+    return `${this.emailService.appUrl.replace(/\/+$/, '')}${path}`;
+  }
+
   private generateToken(): string {
     const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
     let token = '';
@@ -1474,11 +1481,7 @@ export class ShiftsService {
 
   /** Issue a 24h token for the given email + plan and email a link. Always
    *  resolves successfully so callers can't enumerate registered emails. */
-  async requestHelperMagicLink(
-    slug: string,
-    email: string,
-    baseUrl?: string,
-  ): Promise<void> {
+  async requestHelperMagicLink(slug: string, email: string): Promise<void> {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail) return;
 
@@ -1513,8 +1516,7 @@ export class ShiftsService {
       }),
     );
 
-    const base = baseUrl || this.emailService.appUrl;
-    const url = `${base}/s/manage/${token}`;
+    const url = this.helperLink(`/s/manage/${token}`);
     if (reg.email) {
       await this.emailService.sendHelperMagicLinkEmail(
         reg.email,
