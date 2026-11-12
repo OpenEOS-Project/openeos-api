@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
@@ -38,6 +39,10 @@ import {
   withoutForeignEvent,
 } from '../../common/utils/organization-references';
 import { recordDeletion } from '../retention/deletion-log';
+import {
+  TARGET_LIMITS,
+  TargetLimitService,
+} from '../../common/rate-limit/target-limit.service';
 
 @Injectable()
 export class ShiftsService {
@@ -55,6 +60,9 @@ export class ShiftsService {
     @InjectRepository(HelperMagicLink)
     private readonly magicLinkRepository: Repository<HelperMagicLink>,
     private readonly emailService: EmailService,
+    /* Grenzen je Empfaenger fuer Mails (TargetLimitService). */
+    @Optional()
+    private readonly targetLimits?: TargetLimitService,
   ) {}
 
   // ============ Shift Plans ============
@@ -1230,6 +1238,14 @@ export class ShiftsService {
   ): Promise<{ registrationGroupId: string; shiftsCount: number }> {
     const plan = await this.findPlanBySlug(slug);
 
+    // Jede Anmeldung verschickt eine Bestaetigungsmail an `email`.
+    await this.targetLimits?.assert(
+      'shift-sign-up',
+      email,
+      TARGET_LIMITS.shiftSignUp,
+      'Mit dieser E-Mail-Adresse gab es gerade sehr viele Anmeldungen. Bitte versuche es später noch einmal.',
+    );
+
     // Verify all shifts belong to this plan and have available spots
     const shifts = await this.shiftRepository.find({
       where: shiftIds.map((id) => ({ id })),
@@ -1542,6 +1558,18 @@ export class ShiftsService {
       })
       .getOne();
     if (!reg) return;
+
+    // Still wie oben: die Antwort verraet nicht, ob eine Mail rausging.
+    if (
+      this.targetLimits &&
+      !(await this.targetLimits.allow(
+        'helper-magic-link',
+        cleanEmail,
+        TARGET_LIMITS.helperMagicLink,
+      ))
+    ) {
+      return;
+    }
 
     const token = this.generateToken();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);

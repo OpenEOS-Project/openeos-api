@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Delete, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { ShiftsService } from './shifts.service';
 import { PublicRegisterDto } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
@@ -91,6 +92,7 @@ export class ShiftsPublicController {
   }
 
   @Post(':slug/register')
+  @Throttle({ default: { limit: 20, ttl: 3_600_000 } })
   @ApiOperation({ summary: 'Register for shift(s)' })
   async register(@Param('slug') slug: string, @Body() dto: PublicRegisterDto) {
     // Links in the confirmation mail always point to the configured app
@@ -115,6 +117,7 @@ export class ShiftsPublicController {
   }
 
   @Post('proposal/:token')
+  @Throttle({ default: { limit: 30, ttl: 3_600_000 } })
   @ApiOperation({
     summary: 'Helper responds to a shift-move proposal (accept | decline)',
   })
@@ -145,6 +148,7 @@ export class ShiftsPublicController {
   // ============ Helper magic-link self-service ============
 
   @Post(':slug/request-magic-link')
+  @Throttle({ default: { limit: 5, ttl: 900_000 } })
   @ApiOperation({
     summary:
       'Send helper a magic link to manage their shifts (no enumeration: always 200)',
@@ -238,6 +242,7 @@ export class ShiftsPublicController {
   }
 
   @Post('manage/:token/shift')
+  @Throttle({ default: { limit: 30, ttl: 3_600_000 } })
   @ApiOperation({
     summary: 'Helper adds a shift to their signup via magic link',
   })
