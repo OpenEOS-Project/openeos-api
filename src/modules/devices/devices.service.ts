@@ -860,7 +860,15 @@ export class DevicesService {
       });
     }
 
-    if (device.verificationCode !== code) {
+    const normalized = normalizePairingCode(code);
+    if (normalized && device.verificationCode) {
+      await this.countPairingAttempt(device.verificationCode);
+    }
+    if (
+      !normalized ||
+      device.verificationCode !== normalized ||
+      !pairingCodeValid(device)
+    ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.DEVICE_VERIFICATION_CODE_INVALID,
@@ -875,6 +883,8 @@ export class DevicesService {
     device.verifiedAt = new Date();
     device.verifiedById = user.id;
     device.verificationCode = null; // Clear the code after verification
+    device.verificationCodeExpiresAt = null;
+    device.pairingIpHash = null;
     this.applyTypeDefaults(device);
 
     await this.deviceRepository.save(device);
