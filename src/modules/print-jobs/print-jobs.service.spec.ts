@@ -3,6 +3,7 @@ import {
   PrintJobStatus,
 } from '../../database/entities/print-job.entity';
 import { User } from '../../database/entities/user.entity';
+import { fakeReferenceDb } from '../../common/utils/organization-references.fake-spec';
 import { PrintJobsService } from './print-jobs.service';
 
 type AgentEvent = ReturnType<PrintJobsService['buildAgentJobEvent']>;
@@ -311,5 +312,79 @@ describe('PrintJobsService template resolution', () => {
       } as PrintJob).templateName,
     ).toBe('order_ticket');
     expect(service.buildAgentJobEvent(legacy).templateName).toBe('receipt');
+  });
+});
+
+describe('PrintJobsService.create references', () => {
+  const ORDER = '40000000-0000-4000-8000-000000000001';
+  const FOREIGN_ORDER = '40000000-0000-4000-8000-000000000002';
+  const ITEM = '50000000-0000-4000-8000-000000000001';
+  const FOREIGN_TEMPLATE = '80000000-0000-4000-8000-000000000002';
+
+  function withReferences() {
+    const context = setup();
+    Object.assign(context.printJobRepository, {
+      manager: fakeReferenceDb({
+        orders: [
+          { id: ORDER, organization_id: ORG },
+          { id: FOREIGN_ORDER, organization_id: 'org-2' },
+        ],
+        order_items: [{ id: ITEM, order_id: FOREIGN_ORDER }],
+        print_templates: [{ id: FOREIGN_TEMPLATE, organization_id: 'org-2' }],
+      }),
+    });
+    return context;
+  }
+  const payload = { type: 'receipt', data: {} };
+
+  it('accepts an order of the same organization', async () => {
+    const { service, printJobRepository } = withReferences();
+    await service.create(
+      ORG,
+      { printerId: PRINTER, orderId: ORDER, payload } as never,
+      user,
+    );
+    expect(printJobRepository.save).toHaveBeenCalled();
+  });
+
+  it('rejects an order of another organization', async () => {
+    const { service, printJobRepository } = withReferences();
+    await expect(
+      service.create(
+        ORG,
+        { printerId: PRINTER, orderId: FOREIGN_ORDER, payload } as never,
+        user,
+      ),
+    ).rejects.toMatchObject({ response: { reason: 'ORDER_NOT_FOUND' } });
+    expect(printJobRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects an order item that is not part of the given order', async () => {
+    const { service } = withReferences();
+    await expect(
+      service.create(
+        ORG,
+        {
+          printerId: PRINTER,
+          orderId: ORDER,
+          orderItemId: ITEM,
+          payload,
+        } as never,
+        user,
+      ),
+    ).rejects.toMatchObject({ response: { reason: 'ORDER_ITEM_NOT_FOUND' } });
+  });
+
+  it('rejects a template of another organization', async () => {
+    const { service } = withReferences();
+    await expect(
+      service.create(
+        ORG,
+        { printerId: PRINTER, templateId: FOREIGN_TEMPLATE, payload } as never,
+        user,
+      ),
+    ).rejects.toMatchObject({
+      response: { reason: 'PRINT_TEMPLATE_NOT_FOUND' },
+    });
   });
 });

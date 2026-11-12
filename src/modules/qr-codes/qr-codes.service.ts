@@ -12,6 +12,10 @@ import { QrCodeType } from '../../database/entities/qr-code.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import {
+  assertReferencesInOrganization,
+  withoutForeignEvent,
+} from '../../common/utils/organization-references';
+import {
   PaginationDto,
   PaginatedResult,
   createPaginatedResult,
@@ -35,6 +39,7 @@ export class QrCodesService {
     user: User,
   ): Promise<QrCode> {
     await this.checkPermission(organizationId, user.id, 'events');
+    await this.assertEvent(organizationId, createDto.eventId);
 
     const code = this.generateCode();
 
@@ -61,6 +66,7 @@ export class QrCodesService {
     user: User,
   ): Promise<QrCode[]> {
     await this.checkPermission(organizationId, user.id, 'events');
+    await this.assertEvent(organizationId, bulkDto.eventId);
 
     const qrCodes: QrCode[] = [];
     const startNum = bulkDto.startNumber || 1;
@@ -92,6 +98,18 @@ export class QrCodesService {
     return qrCodes;
   }
 
+  /** Die Veranstaltung eines QR-Codes gehoert zur selben Organisation. */
+  private async assertEvent(
+    organizationId: string,
+    eventId: string | null | undefined,
+  ): Promise<void> {
+    await assertReferencesInOrganization(
+      this.qrCodeRepository.manager,
+      { organizationId },
+      [{ kind: 'event', ids: eventId, field: 'eventId' }],
+    );
+  }
+
   async findAll(
     organizationId: string,
     user: User,
@@ -110,7 +128,12 @@ export class QrCodesService {
       order: { createdAt: 'DESC' },
     });
 
-    return createPaginatedResult(items, total, page, limit);
+    return createPaginatedResult(
+      items.map((item) => withoutForeignEvent(item)),
+      total,
+      page,
+      limit,
+    );
   }
 
   async findOne(
@@ -133,7 +156,7 @@ export class QrCodesService {
       });
     }
 
-    return qrCode;
+    return withoutForeignEvent(qrCode);
   }
 
   async findByCode(code: string): Promise<QrCode | null> {
@@ -149,7 +172,7 @@ export class QrCodesService {
       await this.qrCodeRepository.save(qrCode);
     }
 
-    return qrCode;
+    return qrCode ? withoutForeignEvent(qrCode) : null;
   }
 
   async update(

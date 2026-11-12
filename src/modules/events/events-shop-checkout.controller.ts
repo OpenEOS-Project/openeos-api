@@ -652,7 +652,7 @@ export class EventsShopCheckoutController {
 
     const productIds = checkout.items.map((i) => i.productId);
     const products = await this.productRepository.find({
-      where: { id: In(productIds) },
+      where: { id: In(productIds), eventId: checkout.eventId },
     });
     const categoryIds = Array.from(
       new Set(

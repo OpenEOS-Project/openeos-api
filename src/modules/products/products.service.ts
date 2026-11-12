@@ -31,6 +31,10 @@ import {
 import { CreateProductDto, UpdateProductDto, AdjustStockDto } from './dto';
 import { ImportProductsDto } from './dto/import-products.dto';
 import { parseProductCsv } from './product-csv';
+import {
+  assertReferencesInOrganization,
+  type ReferenceCheck,
+} from '../../common/utils/organization-references';
 import { GatewayService } from '../gateway/gateway.service';
 
 /** Ein geprueftes Paket fuer `upsertMany`. */
@@ -86,6 +90,7 @@ export class ProductsService {
       'products',
     );
     await this.assertTaxRateAllowed(event.organizationId, createDto.taxRate);
+    await this.assertReferences(event, [createDto]);
 
     const product = this.productRepository.create({
       eventId: event.id,
@@ -166,6 +171,7 @@ export class ProductsService {
       'products',
     );
     await this.assertTaxRateAllowed(event.organizationId, updateDto.taxRate);
+    await this.assertReferences(event, [updateDto]);
 
     const product = await this.findOne(eventId, productId, user);
     Object.assign(product, updateDto);
@@ -222,6 +228,15 @@ export class ProductsService {
       const allowed = await this.allowedTaxRates(event.organizationId);
       for (const rate of rates) assertTaxRateIn(allowed, rate);
     }
+    // Kategorien prueft die Transaktion (dort entstehen auch neue);
+    // Pfand-Typ und Station muessen schon vorher passen.
+    await this.assertReferences(
+      event,
+      [...batch.create, ...batch.update].map(({ dto }) => ({
+        pfandTypeId: dto.pfandTypeId,
+        productionStationId: dto.productionStationId,
+      })),
+    );
 
     const key = (name: string) => name.trim().toLocaleLowerCase('de');
     const result = await this.productRepository.manager.transaction(
@@ -305,6 +320,42 @@ export class ProductsService {
       'product-upsert',
     );
     return result;
+  }
+
+  /**
+   * Kategorie und Produktionsstandort gehoeren zur selben Veranstaltung,
+   * der Pfand-Typ zur selben Organisation.
+   */
+  private async assertReferences(
+    event: Event,
+    dtos: readonly {
+      categoryId?: string | null;
+      pfandTypeId?: string | null;
+      productionStationId?: string | null;
+    }[],
+  ): Promise<void> {
+    const collect = (pick: (dto: (typeof dtos)[number]) => unknown) =>
+      dtos
+        .map(pick)
+        .filter((id): id is string => typeof id === 'string' && id !== '');
+    const checks: ReferenceCheck[] = [
+      { kind: 'category', ids: collect((d) => d.categoryId), field: 'categoryId' },
+      {
+        kind: 'pfandType',
+        ids: collect((d) => d.pfandTypeId),
+        field: 'pfandTypeId',
+      },
+      {
+        kind: 'productionStation',
+        ids: collect((d) => d.productionStationId),
+        field: 'productionStationId',
+      },
+    ];
+    await assertReferencesInOrganization(
+      this.productRepository.manager,
+      { organizationId: event.organizationId, eventId: event.id },
+      checks,
+    );
   }
 
   async remove(eventId: string, productId: string, user: User): Promise<void> {

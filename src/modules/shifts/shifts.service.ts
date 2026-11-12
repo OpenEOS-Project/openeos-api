@@ -33,6 +33,10 @@ import {
   AdminUpdateRegistrationDto,
 } from './dto';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import {
+  assertReferencesInOrganization,
+  withoutForeignEvent,
+} from '../../common/utils/organization-references';
 import { recordDeletion } from '../retention/deletion-log';
 
 @Injectable()
@@ -59,6 +63,7 @@ export class ShiftsService {
     organizationId: string,
     dto: CreateShiftPlanDto,
   ): Promise<ShiftPlan> {
+    await this.assertPlanEvent(organizationId, dto.eventId);
     const slug = dto.publicSlug || this.generateSlug(dto.name);
 
     // Check slug uniqueness
@@ -95,12 +100,25 @@ export class ShiftsService {
     return this.shiftPlanRepository.save(plan);
   }
 
+  /** Die Veranstaltung eines Schichtplans gehoert zur selben Organisation. */
+  private async assertPlanEvent(
+    organizationId: string,
+    eventId: string | null | undefined,
+  ): Promise<void> {
+    await assertReferencesInOrganization(
+      this.shiftPlanRepository.manager,
+      { organizationId },
+      [{ kind: 'event', ids: eventId, field: 'eventId' }],
+    );
+  }
+
   async findAllPlans(organizationId: string): Promise<ShiftPlan[]> {
-    return this.shiftPlanRepository.find({
+    const plans = await this.shiftPlanRepository.find({
       where: { organizationId },
       relations: ['event', 'jobs'],
       order: { createdAt: 'DESC' },
     });
+    return plans.map((plan) => withoutForeignEvent(plan));
   }
 
   async findOnePlan(
@@ -120,7 +138,7 @@ export class ShiftsService {
       });
     }
 
-    return plan;
+    return withoutForeignEvent(plan);
   }
 
   async updatePlan(
@@ -146,7 +164,12 @@ export class ShiftsService {
 
     if (dto.name !== undefined) plan.name = dto.name;
     if (dto.description !== undefined) plan.description = dto.description;
-    if (dto.eventId !== undefined) plan.eventId = dto.eventId;
+    if (dto.eventId !== undefined) {
+      await this.assertPlanEvent(organizationId, dto.eventId);
+      plan.eventId = dto.eventId;
+      // Die geladene Relation gewaenne sonst beim Speichern.
+      delete (plan as { event?: unknown }).event;
+    }
 
     // Update settings
     if (dto.requireApproval !== undefined)
@@ -541,6 +564,22 @@ export class ShiftsService {
         reason: ErrorReasons.SHIFT_NOT_FOUND,
         message: 'Schicht nicht gefunden',
       });
+    }
+
+    // An existing helper group must belong to the same shift plan.
+    if (dto.registrationGroupId) {
+      const member = await this.registrationRepository.findOne({
+        where: { registrationGroupId: dto.registrationGroupId },
+        relations: ['shift', 'shift.job'],
+      });
+      if (!member || member.shift?.job?.shiftPlanId !== shift.job.shiftPlanId) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.SHIFT_REGISTRATION_NOT_FOUND,
+          message: 'Helfergruppe nicht gefunden',
+          params: { field: 'registrationGroupId' },
+        });
+      }
     }
 
     const reg = this.registrationRepository.create({
@@ -1178,7 +1217,7 @@ export class ShiftsService {
       });
     }
 
-    return plan;
+    return withoutForeignEvent(plan);
   }
 
   async publicRegister(
@@ -1572,7 +1611,7 @@ export class ShiftsService {
         email: first?.email ?? link.email,
         phone: first?.phone ?? null,
       },
-      plan,
+      plan: withoutForeignEvent(plan),
       registrations,
     };
   }
