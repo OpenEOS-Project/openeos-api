@@ -175,6 +175,11 @@ export class OrdersController {
   }
 
   @Patch(':orderId')
+  @ApiOperation({
+    summary: 'Bestellung ändern',
+    description:
+      'Offene, unbezahlte Bestellungen ändert jedes Mitglied. Bezahlte oder teilbezahlte Bestellungen: Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED). Gilt auch für Positionen.',
+  })
   update(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('orderId', ParseUUIDPipe) orderId: string,
@@ -186,6 +191,11 @@ export class OrdersController {
 
   @Delete(':orderId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Unbezahlte Bestellung löschen',
+    description:
+      'Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED).',
+  })
   remove(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('orderId', ParseUUIDPipe) orderId: string,
@@ -279,6 +289,11 @@ export class OrdersController {
 
   @Post(':orderId/complete')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Bestellung abschließen',
+    description:
+      'Bezahlte Bestellungen schließt jedes Mitglied ab. Ohne vollständige Zahlung (Betriebsart „Nur Bons“): Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED).',
+  })
   completeOrder(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('orderId', ParseUUIDPipe) orderId: string,

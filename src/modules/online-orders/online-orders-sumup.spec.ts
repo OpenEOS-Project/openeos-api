@@ -302,6 +302,17 @@ describe('QR order payment via SumUp Online / Google Pay / Apple Pay', () => {
     });
   });
 
+  it('returns guests only to a configured page after paying', async () => {
+    const ctx = setup();
+    await ctx.svc.initiatePayment('sess_1', {
+      paymentMethod: OnlinePaymentMethod.SUMUP_ONLINE,
+      returnUrl: 'https://elsewhere.example.net/status',
+    });
+    expect(sumup.state.created[0]).toMatchObject({
+      redirect_url: 'https://order.example.org/status',
+    });
+  });
+
   it('webhook: SumUp confirms PAID → booked, order paid, TSE-signed before kitchen ticket and receipt', async () => {
     const ctx = setup();
     const { paymentId } = await startPayment(ctx);

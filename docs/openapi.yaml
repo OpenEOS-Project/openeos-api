@@ -3639,6 +3639,7 @@ paths:
       tags: *a31
       x-api-token-scope: read
     patch:
+      description: "Offene, unbezahlte Bestellungen ändert jedes Mitglied. Bezahlte oder teilbezahlte Bestellungen: Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED). Gilt auch für Positionen."
       operationId: orders_update
       parameters:
         - name: organizationId
@@ -3663,8 +3664,10 @@ paths:
         "200":
           description: ""
       security: *a32
+      summary: Bestellung ändern
       tags: *a31
     delete:
+      description: Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED).
       operationId: orders_remove
       parameters:
         - name: organizationId
@@ -3683,6 +3686,7 @@ paths:
         "204":
           description: ""
       security: *a32
+      summary: Unbezahlte Bestellung löschen
       tags: *a31
   /api/organizations/{organizationId}/orders/{orderId}/items:
     post:
@@ -3843,6 +3847,7 @@ paths:
       tags: *a31
   /api/organizations/{organizationId}/orders/{orderId}/complete:
     post:
+      description: "Bezahlte Bestellungen schließt jedes Mitglied ab. Ohne vollständige Zahlung (Betriebsart „Nur Bons“): Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED)."
       operationId: orders_completeOrder
       parameters:
         - name: organizationId
@@ -3861,6 +3866,7 @@ paths:
         "200":
           description: ""
       security: *a32
+      summary: Bestellung abschließen
       tags: *a31
   /api/organizations/{organizationId}/orders/{orderId}/cancel:
     post:
@@ -6194,6 +6200,7 @@ paths:
       tags: *a58
   /api/organizations/{organizationId}/payments:
     post:
+      description: Erfasst eine Zahlung ohne Kasse. Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED).
       operationId: payments_create
       parameters:
         - name: organizationId
@@ -6212,6 +6219,7 @@ paths:
           description: ""
       security: &a60
         - JWT-auth: []
+      summary: Zahlung erfassen
       tags: &a61
         - Payments
     get:
@@ -6298,6 +6306,7 @@ paths:
       tags: *a61
   /api/organizations/{organizationId}/payments/split:
     post:
+      description: Erfasst eine Teilzahlung ohne Kasse. Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED).
       operationId: payments_createSplitPayment
       parameters:
         - name: organizationId
@@ -6315,6 +6324,7 @@ paths:
         "201":
           description: ""
       security: *a60
+      summary: Teilzahlung nach Positionen erfassen
       tags: *a61
   /api/organizations/{organizationId}/payments/{paymentId}:
     get:
@@ -9880,16 +9890,6 @@ paths:
           in: path
           schema:
             type: string
-        - name: origin
-          required: true
-          in: header
-          schema:
-            type: string
-        - name: referer
-          required: true
-          in: header
-          schema:
-            type: string
       responses:
         "201":
           description: ""
@@ -9917,16 +9917,6 @@ paths:
         - name: slug
           required: true
           in: path
-          schema:
-            type: string
-        - name: origin
-          required: true
-          in: header
-          schema:
-            type: string
-        - name: referer
-          required: true
-          in: header
           schema:
             type: string
       requestBody:
@@ -9961,16 +9951,6 @@ paths:
         - name: slug
           required: true
           in: path
-          schema:
-            type: string
-        - name: origin
-          required: true
-          in: header
-          schema:
-            type: string
-        - name: referer
-          required: true
-          in: header
           schema:
             type: string
       responses:

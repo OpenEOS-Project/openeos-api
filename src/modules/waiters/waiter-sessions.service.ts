@@ -113,7 +113,6 @@ export class WaiterSessionsService {
     try {
       await this.lockout.assertNotLocked(device);
       const operator = await this.identify(device, pin);
-      await this.lockout.recordSuccess(device);
       return await this.dataSource.transaction(async (manager) => {
         await this.endOpen(manager, { deviceId: device.id }, 'switch');
         const event = await this.currentEvent(manager, organizationId);
@@ -158,11 +157,15 @@ export class WaiterSessionsService {
     try {
       await this.lockout.assertNotLocked(device);
       const operator = await this.identify(device, pin);
-      await this.lockout.recordSuccess(device);
       return operator;
     } finally {
       await this.padResponse(started);
     }
+  }
+
+  /** Admin hat die PIN-Eingabe am Geraet wieder freigegeben. */
+  async releaseDeviceLock(deviceId: string): Promise<void> {
+    await this.lockout.releaseDevice(deviceId);
   }
 
   /** Person zur PIN (ohne Sitzung). Fehlversuch → 403 PIN_INVALID. */

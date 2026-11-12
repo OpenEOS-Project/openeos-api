@@ -35,7 +35,11 @@ beforeAll(() => {
  * Station mehr etwas zu tun ist) und nichts bleibt in einer
  * abgeschlossenen Bestellung auf „offen“.
  */
-function setup(orgSettings: Row, items: Row[]) {
+function setup(
+  orgSettings: Row,
+  items: Row[],
+  membership: Row = { role: 'admin', permissions: {} },
+) {
   const orders: Row[] = [];
   const orderRepository = {
     update: jest.fn((where: { id: string }, patch: Row) => {
@@ -75,7 +79,7 @@ function setup(orgSettings: Row, items: Row[]) {
     none,
   );
   const internals = service as unknown as Record<string, unknown>;
-  internals.checkMembership = jest.fn(() => Promise.resolve());
+  internals.checkMembership = jest.fn(() => Promise.resolve(membership));
   internals.shouldChargePfand = jest.fn(() => Promise.resolve(false));
   internals.addItemToOrder = jest.fn(() => Promise.resolve());
   internals.recalculateOrderTotals = jest.fn(() => Promise.resolve());
@@ -177,8 +181,8 @@ describe('OrdersService.create — „Nur Bons“', () => {
 });
 
 describe('OrdersService.completeOrder — „Nur Bons“', () => {
-  function withOrder(orgSettings: Row, items: Row[]) {
-    const t = setup(orgSettings, items);
+  function withOrder(orgSettings: Row, items: Row[], membership?: Row) {
+    const t = setup(orgSettings, items, membership);
     t.orders.push({
       id: 'order-1',
       status: OrderStatus.IN_PROGRESS,
@@ -219,5 +223,26 @@ describe('OrdersService.completeOrder — „Nur Bons“', () => {
       response: { reason: 'ORDER_ITEMS_IN_PRODUCTION' },
     });
     expect(t.orderRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('requires the orders permission to complete without payment', async () => {
+    const items = [item('i1', OrderItemStatus.PENDING)];
+    const t = withOrder(orderOnly, items, { role: 'member', permissions: {} });
+    await expect(
+      t.service.completeOrder(ORG, 'order-1', user),
+    ).rejects.toMatchObject({
+      response: { reason: 'ORDERS_PERMISSION_REQUIRED' },
+    });
+    expect(t.orderRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('members with the orders permission complete without payment', async () => {
+    const items = [item('i1', OrderItemStatus.PENDING)];
+    const t = withOrder(orderOnly, items, {
+      role: 'member',
+      permissions: { orders: true },
+    });
+    await t.service.completeOrder(ORG, 'order-1', user);
+    expect(t.orderRepository.save).toHaveBeenCalled();
   });
 });

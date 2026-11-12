@@ -11,7 +11,7 @@ import { redisUrl } from '../redis/redis.constants';
  * only reaches sockets connected to the local process.
  */
 export class RedisIoAdapter extends IoAdapter {
-  private readonly logger = new Logger(RedisIoAdapter.name);
+  private readonly redisLogger = new Logger(RedisIoAdapter.name);
   private adapterConstructor: ReturnType<typeof createAdapter>;
 
   async connectToRedis(
@@ -25,15 +25,15 @@ export class RedisIoAdapter extends IoAdapter {
     const subClient = pubClient.duplicate();
 
     pubClient.on('error', (err: Error) =>
-      this.logger.error(`Redis pub client: ${err.message}`),
+      this.redisLogger.error(`Redis pub client: ${err.message}`),
     );
     subClient.on('error', (err: Error) =>
-      this.logger.error(`Redis sub client: ${err.message}`),
+      this.redisLogger.error(`Redis sub client: ${err.message}`),
     );
 
     await Promise.all([pubClient.connect(), subClient.connect()]);
     this.adapterConstructor = createAdapter(pubClient, subClient);
-    this.logger.log(`Socket.io Redis adapter connected (${host}:${port})`);
+    this.redisLogger.log(`Socket.io Redis adapter connected (${host}:${port})`);
   }
 
   createIOServer(port: number, options?: ServerOptions): Server {

@@ -37,6 +37,7 @@ import {
   OPERATING_MODE_SELECT,
 } from '../../common/utils/operating-mode.util';
 import { closedWithoutPaymentError } from '../orders/close-without-payment';
+import { assertMayManageOrders } from '../orders/order-permissions';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { TseSigningService } from '../tse/tse-signing.service';
@@ -69,7 +70,12 @@ export class PaymentsService {
     createDto: CreatePaymentDto,
     user: User,
   ): Promise<Payment> {
-    await this.checkMembership(organizationId, user.id);
+    // Zahlungen in der Verwaltung erfassen (ohne Kasse) nur mit dem Recht
+    // „Bestellungen“ oder als Admin; an der Kasse kassiert das Geraet.
+    assertMayManageOrders(
+      user,
+      await this.checkMembership(organizationId, user.id),
+    );
     await this.assertPaymentsAllowedFor(organizationId);
 
     const order = await this.orderRepository.findOne({
@@ -178,7 +184,12 @@ export class PaymentsService {
     splitDto: SplitPaymentDto,
     user: User,
   ): Promise<Payment> {
-    await this.checkMembership(organizationId, user.id);
+    // Zahlungen in der Verwaltung erfassen (ohne Kasse) nur mit dem Recht
+    // „Bestellungen“ oder als Admin; an der Kasse kassiert das Geraet.
+    assertMayManageOrders(
+      user,
+      await this.checkMembership(organizationId, user.id),
+    );
     await this.assertPaymentsAllowedFor(organizationId);
 
     const order = await this.orderRepository.findOne({
@@ -494,7 +505,7 @@ export class PaymentsService {
   private async checkMembership(
     organizationId: string,
     userId: string,
-  ): Promise<void> {
+  ): Promise<UserOrganization> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });
@@ -506,5 +517,6 @@ export class PaymentsService {
         message: 'Kein Zugriff auf diese Organisation',
       });
     }
+    return membership;
   }
 }
