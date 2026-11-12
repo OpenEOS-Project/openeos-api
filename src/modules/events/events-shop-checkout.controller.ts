@@ -1,3 +1,4 @@
+import { priceSelectedOptions } from '../products/product-option-pricing';
 import {
   OPERATING_MODE_SELECT,
   assertCashAllowed,
@@ -281,7 +282,7 @@ export class EventsShopCheckoutController {
     const products = await this.productRepository.find({
       where: { id: In(productIds), eventId, isActive: true, isAvailable: true },
     });
-    if (products.length !== productIds.length) {
+    if (products.length !== new Set(productIds).size) {
       throw new BadRequestException({
         code: 'INVALID_ITEMS',
         message: 'Mindestens ein Artikel ist nicht mehr verfügbar',
@@ -291,13 +292,9 @@ export class EventsShopCheckoutController {
     const items: ShopCheckoutItem[] = body.items.map((line) => {
       const product = products.find((p) => p.id === line.productId)!;
       const quantity = Math.max(1, Math.floor(Number(line.quantity) || 0));
+      // Preise der Optionen aus der Produktdefinition, nie aus der Anfrage.
       const options = Array.isArray(line.options)
-        ? line.options.map((o) => ({
-            group: String(o.group ?? ''),
-            option: String(o.option ?? ''),
-            priceModifier: Number(o.priceModifier) || 0,
-            excluded: o.excluded === true ? true : undefined,
-          }))
+        ? priceSelectedOptions(product, line.options).selected
         : undefined;
       return {
         productId: product.id,

@@ -236,7 +236,7 @@ export class EmailService {
       inhalt: stapeln(
         ueberschrift(`Danke, ${options.firstName}.`) +
           absatz(
-            'Wir haben deine Registrierung erhalten. Dabei hast du die Allgemeinen Geschäftsbedingungen (AGB) und den Auftragsverarbeitungsvertrag (AVV) angenommen und bestätigt, dass du als Unternehmer, juristische Person des öffentlichen Rechts oder eingetragener Verein handelst und die Organisation vertreten darfst.',
+            'Wir haben deine Registrierung erhalten. Dabei hast du die Allgemeinen Geschäftsbedingungen (AGB) und den Auftragsverarbeitungsvertrag (AVV) angenommen und bestätigt, dass du für ein Unternehmen, eine juristische Person des öffentlichen Rechts, einen Verein (eingetragen oder nicht), eine Stiftung oder eine sonstige Organisation handelst – nicht als Verbraucher – und die Organisation vertreten darfst.',
           ),
         datenblock('Deine Annahme', zeilen),
         absatz('Hier sind genau diese Fassungen zum Nachlesen und Speichern:') +

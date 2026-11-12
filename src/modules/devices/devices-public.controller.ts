@@ -17,6 +17,7 @@ import { DevicesService } from './devices.service';
 import { RegisterDeviceDto, InitDeviceDto } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { RevealSecrets } from '../../common/decorators/reveal-secrets.decorator';
 import { normalizePairingCode } from './pairing-code';
 
 /** Neue Geraete je Adresse: grosszuegig, beim Aufbau koppeln viele Geraete
@@ -60,6 +61,8 @@ export class DevicesPublicController {
       'Until then the device has no access to anything.',
     ].join(' '),
   })
+  // Das Geraet bekommt sein Zugangstoken und den Kopplungscode genau hier.
+  @RevealSecrets('deviceToken', 'verificationCode')
   @Throttle(REGISTER_THROTTLE)
   async initDevice(@Body() initDto: InitDeviceDto, @Req() req: Request) {
     const result = await this.devicesService.initDevice(initDto, req.ip);
@@ -111,6 +114,7 @@ export class DevicesPublicController {
   @ApiOperation({
     summary: 'Register a new device (legacy - requires organization slug)',
   })
+  @RevealSecrets('deviceToken', 'verificationCode')
   @Throttle(REGISTER_THROTTLE)
   async register(@Body() registerDto: RegisterDeviceDto, @Req() req: Request) {
     const result = await this.devicesService.registerDevice(

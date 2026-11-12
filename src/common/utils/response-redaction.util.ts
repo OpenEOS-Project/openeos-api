@@ -19,10 +19,22 @@ import { StreamableFile } from '@nestjs/common';
  */
 
 /**
- * Felder am Benutzer, die nie hinausgehen — auch nicht an den Benutzer
- * selbst. Wer ein Konto betreibt, braucht seinen Passwort-Hash nicht.
+ * Felder, die nie hinausgehen — egal an welchem Objekt sie haengen (Entity,
+ * Relation, von Hand gebautes Objekt). Zugangsdaten, Pruefwerte und
+ * Einmal-Codes: wer sie kennt, kann sich als Geraet, Bedienung oder
+ * Benutzer ausgeben. Wer ein Konto betreibt, braucht seinen Passwort-Hash
+ * nicht, und wer ein Geraet verwaltet, nicht dessen Zugangstoken.
+ *
+ * Die wenigen Antworten, die ein solches Feld einmalig liefern muessen
+ * (Kopplung eines Geraets, neu vergebene PIN), geben es mit
+ * `@RevealSecrets(...)` frei — siehe reveal-secrets.decorator.ts.
+ *
+ * Neue Spalten mit verdaechtigem Namen faellt `response-redaction.entities.spec.ts`
+ * auf: sie muessen hier (oder in ENTITY_SECRET_FIELDS) eingetragen oder dort
+ * ausdruecklich als unbedenklich gefuehrt werden.
  */
-const USER_SECRET_FIELDS = new Set([
+export const SECRET_FIELDS: ReadonlySet<string> = new Set([
+  // Benutzer
   'passwordHash',
   'passwordResetToken',
   'passwordResetExpiresAt',
@@ -30,8 +42,69 @@ const USER_SECRET_FIELDS = new Set([
   'twoFactorSecretEncrypted',
   'twoFactorBackupCodesHash',
   'pendingEmailToken',
+  // Pruefwerte gespeicherter Token und Codes (API-Token, Refresh-Token,
+  // Anmelde-Links, Bedienungs-Sitzungen, Belege, E-Mail-Codes)
   'tokenHash',
+  'codeHash',
+  // Geraete: Zugangstoken und Kopplungscode
+  'deviceToken',
+  'verificationCode',
+  // Pruefwert der Adresse, von der aus gekoppelt wurde
+  'pairingIpHash',
+  // PINs: Mitglieder (Altbestand), gemeinsamer PIN-Raum, Support
+  'pin',
+  'pinLookup',
+  'supportPin',
+  // Bestellsitzung (QR) und Bestaetigungslinks der Helferschichten
+  'sessionToken',
+  'verificationToken',
+  // Verschluesselt abgelegte Geheimnisse (Webhooks, Cloud-TSE)
+  'secretEncrypted',
+  'previousSecretEncrypted',
+  'accessTokenEnc',
 ]);
+
+/**
+ * Mehrdeutige Feldnamen, die nur an bestimmten Entities geheim sind:
+ * `token` ist bei einer Einladung oder einem Helfer-Link der Schluessel
+ * selbst, in anderen Antworten (neu angelegter API-Token, Bedienungs-
+ * Sitzung) dagegen gerade das, was der Aufrufer bekommen soll.
+ */
+export const ENTITY_SECRET_FIELDS: Readonly<Record<string, readonly string[]>> =
+  {
+    Invitation: ['token'],
+    HelperMagicLink: ['token'],
+    ShiftChangeProposal: ['token'],
+  };
+
+function snakeCase(name: string): string {
+  return name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+}
+
+/**
+ * Rohe Abfrageergebnisse (`getRawMany`) tragen Spaltennamen statt
+ * Eigenschaften: `device_device_token`, `u_password_hash`. Geschwaerzt
+ * wird jeder Schluessel, der so heisst oder auf `_<spalte>` endet.
+ */
+const SECRET_COLUMN_NAMES: readonly string[] = [...SECRET_FIELDS].map(
+  snakeCase,
+);
+
+function entitySecretFields(value: object): readonly string[] {
+  const name = (value.constructor as { name?: unknown } | undefined)?.name;
+  return typeof name === 'string' && Object.hasOwn(ENTITY_SECRET_FIELDS, name)
+    ? ENTITY_SECRET_FIELDS[name]
+    : [];
+}
+
+function isSecretKey(key: string, reveal: ReadonlySet<string>): boolean {
+  if (reveal.has(key)) return false;
+  if (SECRET_FIELDS.has(key)) return true;
+  for (const column of SECRET_COLUMN_NAMES) {
+    if (key === column || key.endsWith(`_${column}`)) return true;
+  }
+  return false;
+}
 
 /**
  * Zahlungs-Zugangsdaten in den Organisationseinstellungen. Sie werden
@@ -70,11 +143,15 @@ function isOpaque(value: object): boolean {
  * genau eine solche Mutation hatte zuvor maskierte Werte in die Datenbank
  * geschrieben.
  */
-export function redactResponse<T>(value: T): T {
-  return walk(value, new WeakMap()) as T;
+export function redactResponse<T>(value: T, reveal: Iterable<string> = []): T {
+  return walk(value, new WeakMap(), new Set(reveal)) as T;
 }
 
-function walk(value: unknown, seen: WeakMap<object, unknown>): unknown {
+function walk(
+  value: unknown,
+  seen: WeakMap<object, unknown>,
+  reveal: ReadonlySet<string>,
+): unknown {
   if (value === null || typeof value !== 'object') return value;
   if (isOpaque(value)) return value;
 
@@ -85,18 +162,20 @@ function walk(value: unknown, seen: WeakMap<object, unknown>): unknown {
   if (Array.isArray(value)) {
     const copy: unknown[] = [];
     seen.set(value, copy);
-    for (const item of value) copy.push(walk(item, seen));
+    for (const item of value) copy.push(walk(item, seen, reveal));
     return copy;
   }
 
   const copy: Record<string, unknown> = {};
   seen.set(value, copy);
+  const entitySecrets = entitySecretFields(value);
   for (const [key, entry] of Object.entries(value)) {
-    if (USER_SECRET_FIELDS.has(key)) continue;
+    if (isSecretKey(key, reveal)) continue;
+    if (entitySecrets.includes(key)) continue;
 
     const maskedKeys = MASKED_CREDENTIALS[key];
     if (maskedKeys && entry !== null && typeof entry === 'object') {
-      const credentials = walk(entry, seen) as Record<string, unknown>;
+      const credentials = walk(entry, seen, reveal) as Record<string, unknown>;
       const masked: Record<string, unknown> = { ...credentials };
       for (const field of maskedKeys) {
         const secret = masked[field];
@@ -108,7 +187,7 @@ function walk(value: unknown, seen: WeakMap<object, unknown>): unknown {
       continue;
     }
 
-    copy[key] = walk(entry, seen);
+    copy[key] = walk(entry, seen, reveal);
   }
   return copy;
 }

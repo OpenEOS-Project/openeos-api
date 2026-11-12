@@ -9,6 +9,7 @@ import {
   isNoChange,
   isPreview,
 } from './agent-tool.types';
+import { redactResponse } from '../../common/utils/response-redaction.util';
 
 /**
  * Alle Werkzeuge an einer Stelle: wer sie sieht (Scope), was sie
@@ -107,7 +108,9 @@ export class AgentToolsRegistry {
         started,
         applied ? 'ok (applied)' : confirmed ? 'ok (no change)' : 'ok',
       );
-      return result;
+      /* Dieselbe Schwaerzung wie bei HTTP-Antworten: Werkzeugergebnisse
+         gehen an MCP-Clients und an den Assistenten. */
+      return redactResponse(result);
     } catch (error) {
       this.log(tool, ctx, started, `error ${describe(error)}`);
       throw error;
