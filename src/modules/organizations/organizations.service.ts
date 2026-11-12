@@ -58,6 +58,7 @@ import { restoreMaskedCredentials } from '../../common/utils/response-redaction.
 import { isKnownIntegration } from '../integrations/integration-catalog';
 import { recordDeletion } from '../retention/deletion-log';
 import { restoreOrganization } from '../retention/organization-restore';
+import { memberView, type MemberView } from './member-view';
 
 const INVITATION_EXPIRY_DAYS = 7;
 const BCRYPT_ROUNDS = 12;
@@ -642,8 +643,10 @@ export class OrganizationsService {
     organizationId: string,
     user: User,
     pagination: PaginationDto,
-  ): Promise<PaginatedResult<UserOrganization>> {
-    await this.checkMembership(organizationId, user);
+  ): Promise<PaginatedResult<MemberView>> {
+    // Die Mitgliederliste (Namen, E-Mail-Adressen, Rechte) sehen nur, die
+    // Mitglieder verwalten: Admins und das Mitgliederrecht.
+    await this.checkPermission(organizationId, user, 'members');
 
     const { page = 1, limit = 20 } = pagination;
     const skip = (page - 1) * limit;
@@ -665,10 +668,9 @@ export class OrganizationsService {
         )
       : [];
     const withCredential = new Set(credentials.map((row) => row.owner_id));
-    const mappedItems = items.map(({ pin, ...rest }) => ({
-      ...rest,
-      hasPin: !!pin || withCredential.has(rest.id),
-    })) as unknown as UserOrganization[];
+    const mappedItems = items.map((member) =>
+      memberView(member, !!member.pin || withCredential.has(member.id)),
+    );
 
     return createPaginatedResult(mappedItems, total, page, limit);
   }

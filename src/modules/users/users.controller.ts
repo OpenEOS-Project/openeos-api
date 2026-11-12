@@ -143,6 +143,7 @@ export class UsersController {
   }
 
   @Post('me/email/change')
+  @Throttle({ default: { limit: 5, ttl: 3_600_000 } })
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary: 'Request email change',

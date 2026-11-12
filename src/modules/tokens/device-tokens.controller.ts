@@ -12,6 +12,9 @@ import { ApiHeader, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CurrentDevice } from '../../common/decorators';
 import { Public } from '../../common/decorators/public.decorator';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
+import { DeviceCapabilityGuard } from '../../common/guards/device-capability.guard';
+import { DeviceCapability } from '../../common/decorators/device-capability.decorator';
+import { DeviceCapabilityName } from '../../common/constants/device-capabilities';
 import type { Device } from '../../database/entities/device.entity';
 import { requireOrganization } from '../devices/device-api.controller';
 import { CurrentOperator, WithOperator } from '../waiters/waiter-session.guard';
@@ -33,13 +36,14 @@ import { TokenTypesService } from './token-types.service';
 })
 @Controller('device-api')
 @Public()
-@UseGuards(DeviceAuthGuard)
+@UseGuards(DeviceAuthGuard, DeviceCapabilityGuard)
 export class DeviceTokensController {
   constructor(
     private readonly tokenTypesService: TokenTypesService,
     private readonly tokenTransactionsService: TokenTransactionsService,
   ) {}
 
+  @DeviceCapability(DeviceCapabilityName.CATALOG)
   @Get('token-types')
   @ApiOperation({
     summary: 'Markentypen (Wertmarken) für die Kasse',
@@ -60,6 +64,7 @@ export class DeviceTokensController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('tokens/sales')
   @WithOperator()
   @ApiOperation({
@@ -86,6 +91,7 @@ export class DeviceTokensController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('tokens/buybacks')
   @WithOperator()
   @ApiOperation({
@@ -113,6 +119,7 @@ export class DeviceTokensController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('tokens/transactions/:tokenTransactionId/print')
   @ApiOperation({
     summary: 'Beleg eines Markenverkaufs/Rücktauschs drucken',

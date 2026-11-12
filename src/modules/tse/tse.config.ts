@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { join } from 'path';
+import {
+  PRIVATE_TSE_EXPORT_DIR,
+  UPLOAD_FALLBACK_DIR,
+  absolutePath,
+  isInsideDir,
+  privateStorageFromEnv,
+} from '../../common/storage/private-storage';
 
 export type TseProviderName = 'none' | 'swissbit';
 /**
@@ -67,8 +74,16 @@ export interface TseSettings {
     creditClientSecret: string;
     productType: string;
   };
-  /** Absoluter Pfad fuer TAR-Exporte (nicht oeffentlich). */
+  /**
+   * Absoluter Pfad fuer TAR-Exporte und das DSFinV-K-Archiv (nicht
+   * oeffentlich): `TSE_EXPORT_DIR` oder `<PRIVATE_STORAGE_DIR>/tse-exports`.
+   */
   exportDir: string;
+  /**
+   * Fruehere Ablageorte im Upload-Verzeichnis. Was dort noch liegt, zieht
+   * `PrivateStorageMigrationService` beim Start nach `exportDir` um.
+   */
+  legacyExportDirs: string[];
   timeouts: {
     transactionMs: number;
     signBudgetMs: number;
@@ -104,9 +119,28 @@ export function tseSettingsFromEnv(
   const provider =
     value(env, 'TSE_PROVIDER') === 'swissbit' ? 'swissbit' : 'none';
   const lifecycle = parseTseLifecycle(value(env, 'TSE_LIFECYCLE'));
-  const uploadDir = value(env, 'UPLOAD_DIR') || './uploads';
+  const storage = privateStorageFromEnv(env);
+  const privateDefault = join(storage.root, PRIVATE_TSE_EXPORT_DIR);
+  const configured = value(env, 'TSE_EXPORT_DIR')
+    ? absolutePath(value(env, 'TSE_EXPORT_DIR'))
+    : null;
+  /* Ein TSE_EXPORT_DIR im Upload-Verzeichnis wird nicht mehr verwendet:
+     die Dateien gehoeren in die private Ablage. */
+  const configuredIsPublic =
+    !!configured && isInsideDir(configured, storage.uploadRoot);
   const exportDir =
-    value(env, 'TSE_EXPORT_DIR') || join(uploadDir, 'tse-exports');
+    configured && !configuredIsPublic ? configured : privateDefault;
+  const legacyExportDirs = [
+    join(storage.uploadRoot, PRIVATE_TSE_EXPORT_DIR),
+    join(storage.uploadRoot, UPLOAD_FALLBACK_DIR, PRIVATE_TSE_EXPORT_DIR),
+    ...(configured && configuredIsPublic ? [configured] : []),
+  ].filter(
+    (dir, index, all) =>
+      dir !== exportDir &&
+      dir !== storage.uploadRoot &&
+      !isInsideDir(exportDir, dir) &&
+      all.indexOf(dir) === index,
+  );
   return {
     provider,
     lifecycle,
@@ -118,10 +152,8 @@ export function tseSettingsFromEnv(
       creditClientSecret: value(env, 'SWISSBIT_CREDIT_CLIENT_SECRET'),
       productType: value(env, 'SWISSBIT_PRODUCT_TYPE'),
     },
-    exportDir: join(
-      exportDir.startsWith('/') ? '' : process.cwd(),
-      exportDir.replace(/^\.\//, ''),
-    ),
+    exportDir,
+    legacyExportDirs,
     timeouts: {
       transactionMs: intValue(env, 'TSE_TX_TIMEOUT_MS', 5_000),
       signBudgetMs: intValue(env, 'TSE_SIGN_BUDGET_MS', 8_000),
@@ -156,6 +188,7 @@ export class TseConfig {
       'SWISSBIT_PRODUCT_TYPE',
       'TSE_EXPORT_DIR',
       'UPLOAD_DIR',
+      'PRIVATE_STORAGE_DIR',
       'TSE_TX_TIMEOUT_MS',
       'TSE_SIGN_BUDGET_MS',
       'TSE_ADMIN_TIMEOUT_MS',

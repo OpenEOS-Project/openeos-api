@@ -40,12 +40,13 @@ export class RegisterDeviceDto {
 
 export class VerifyDeviceDto {
   @ApiProperty({
-    description: '6-stelliger Verifizierungscode',
-    example: '123456',
+    description:
+      'Kopplungscode des Geräts (acht Ziffern, ältere Geräte sechs); Leerzeichen und Bindestriche sind erlaubt',
+    example: '12345678',
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(6)
+  @MaxLength(16)
   code: string;
 
   @ApiPropertyOptional({
@@ -91,12 +92,13 @@ export class InitDeviceDto {
 // DTO for linking a device to an organization
 export class LinkDeviceDto {
   @ApiProperty({
-    description: '6-stelliger Verifizierungscode',
-    example: '123456',
+    description:
+      'Kopplungscode des Geräts (acht Ziffern, ältere Geräte sechs); Leerzeichen und Bindestriche sind erlaubt',
+    example: '12345678',
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(6)
+  @MaxLength(16)
   code: string;
 
   @ApiProperty({
@@ -129,11 +131,12 @@ export class LinkDeviceDto {
 // DTO for finding device by code (public lookup)
 export class FindDeviceByCodeDto {
   @ApiProperty({
-    description: '6-stelliger Verifizierungscode',
-    example: '123456',
+    description:
+      'Kopplungscode des Geräts (acht Ziffern, ältere Geräte sechs); Leerzeichen und Bindestriche sind erlaubt',
+    example: '12345678',
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(6)
+  @MaxLength(16)
   code: string;
 }

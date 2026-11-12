@@ -1,13 +1,18 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
 import { QueryInvoicesDto } from './dto';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { CurrentOrganization } from '../../common/decorators/current-organization.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { OrganizationGuard } from '../../common/guards/organization.guard';
 import { Role } from '../../common/constants/roles.enum';
-import type { Organization } from '../../database/entities';
 import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 
 @ApiTags('Invoices')
@@ -21,13 +26,10 @@ export class InvoicesController {
   @Get()
   @Roles(Role.ADMIN)
   async findAll(
-    @CurrentOrganization() organization: Organization,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Query() queryDto: QueryInvoicesDto,
   ) {
-    const result = await this.invoicesService.findAll(
-      organization.id,
-      queryDto,
-    );
+    const result = await this.invoicesService.findAll(organizationId, queryDto);
     return {
       data: result.data,
       meta: {
@@ -42,10 +44,10 @@ export class InvoicesController {
   @Get(':id')
   @Roles(Role.ADMIN)
   async findOne(
-    @CurrentOrganization() organization: Organization,
-    @Param('id') id: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
-    const invoice = await this.invoicesService.findOne(organization.id, id);
+    const invoice = await this.invoicesService.findOne(organizationId, id);
     return {
       data: invoice,
     };
@@ -54,11 +56,11 @@ export class InvoicesController {
   @Get(':id/pdf')
   @Roles(Role.ADMIN)
   async getPdfUrl(
-    @CurrentOrganization() organization: Organization,
-    @Param('id') id: string,
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     const pdfUrl = await this.invoicesService.generatePdfUrl(
-      organization.id,
+      organizationId,
       id,
     );
     return {
