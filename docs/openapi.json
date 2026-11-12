@@ -3944,6 +3944,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceSplitPaymentDto"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": ""
@@ -4014,6 +4024,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceSumupCheckoutDto"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": ""
@@ -23357,6 +23377,89 @@
           "paymentMethod"
         ]
       },
+      "DeviceSplitPaymentItemDto": {
+        "type": "object",
+        "properties": {
+          "orderItemId": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "description": "ID der Bestellposition"
+          },
+          "quantity": {
+            "type": "number",
+            "example": 2,
+            "description": "Zu bezahlende Stückzahl"
+          }
+        },
+        "required": [
+          "orderItemId",
+          "quantity"
+        ]
+      },
+      "DeviceSplitPaymentDto": {
+        "type": "object",
+        "properties": {
+          "orderId": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "amount": {
+            "type": "number",
+            "example": 7.5,
+            "description": "Zahlungsbetrag in Euro, gleich der Summe der Positionen; höchstens der offene Betrag"
+          },
+          "paymentMethod": {
+            "type": "string",
+            "enum": [
+              "cash",
+              "card",
+              "sumup_terminal",
+              "sumup_online",
+              "paypal",
+              "google_pay",
+              "apple_pay",
+              "tokens"
+            ],
+            "example": "cash",
+            "description": "Zahlart. Wertmarken (`tokens`) nimmt die Kasse beim Kassieren an, nicht beim Aufteilen (400 TOKEN_LINES_INVALID)."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceSplitPaymentItemDto"
+            }
+          },
+          "amountReceived": {
+            "type": "number",
+            "example": 10,
+            "description": "Bei Barzahlung: erhaltener Betrag in Euro (Rückgeld auf dem Bon)"
+          }
+        },
+        "required": [
+          "orderId",
+          "amount",
+          "paymentMethod",
+          "items"
+        ]
+      },
+      "DeviceSumupCheckoutDto": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "example": 12.5,
+            "description": "Betrag in Euro, größer als 0"
+          },
+          "currency": {
+            "type": "string",
+            "example": "EUR",
+            "description": "ISO-4217-Code"
+          }
+        },
+        "required": [
+          "amount"
+        ]
+      },
       "CancelOrderWithActorDto": {
         "type": "object",
         "properties": {
@@ -25539,7 +25642,7 @@
           "amount": {
             "type": "number",
             "example": 15,
-            "description": "Zahlungsbetrag in Euro"
+            "description": "Zahlungsbetrag in Euro, gleich der Summe der Positionen; höchstens der offene Betrag"
           },
           "paymentMethod": {
             "type": "string",
