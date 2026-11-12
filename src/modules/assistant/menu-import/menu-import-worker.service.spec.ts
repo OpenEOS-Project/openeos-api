@@ -137,7 +137,10 @@ function setup(options: {
     new IconSuggestionService(provider, quota),
     gateway,
     cronLock,
-    { get: () => uploadDir } as unknown as ConfigService,
+    {
+      get: (key: string) =>
+        key === 'UPLOAD_DIR' ? join(uploadDir, 'public') : uploadDir,
+    } as unknown as ConfigService,
     inputFiles,
   );
   const add = (entry: Partial<MenuImport>): Stored => {

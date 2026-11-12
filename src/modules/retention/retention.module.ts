@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { privateStorageFromConfig } from '../../common/storage/private-storage';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EncryptionService } from '../../common/services/encryption.service';
@@ -65,6 +66,7 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
         const uploadDir = config.get<string>('UPLOAD_DIR') || './uploads';
         const options = {
           uploadDir,
+          privateDir: privateStorageFromConfig(config).root,
           fiscalExportDir: tseSettingsFromEnv(process.env).exportDir,
           contactEmail:
             config.get<string>('RETENTION_CONTACT_EMAIL') ||

@@ -1,17 +1,22 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { AiImageMediaType } from '../../ai/ai-provider.interface';
-import { resolveUploadDir } from '../../uploads/upload-dir';
+import {
+  PRIVATE_MENU_IMPORT_DIR,
+  absolutePath,
+} from '../../../common/storage/private-storage';
 
 /**
- * Ablage der hochgeladenen Speisekarten: `<UPLOAD_DIR>/menu-imports/<id>/`.
- *
- * Das Upload-Verzeichnis wird statisch ausgeliefert; `main.ts` sperrt den
- * Pfad `/uploads/menu-imports` ausdruecklich, damit die Karten nicht
- * oeffentlich abrufbar sind. Dateien leben nur bis zum Anwenden,
+ * Ablage der hochgeladenen Speisekarten: `<PRIVATE_STORAGE_DIR>/menu-imports/<id>/`
+ * (siehe common/storage/private-storage.ts) — nicht im oeffentlich
+ * ausgelieferten Upload-Verzeichnis. Dateien leben nur bis zum Anwenden,
  * Verwerfen oder 24 h (Worker).
+ *
+ * `storageDir` ist ueberall die Wurzel der privaten Ablage; die in
+ * `menu_imports.files` gespeicherten Pfade sind relativ dazu
+ * (`menu-imports/<id>/page-01.png`).
  */
-export const MENU_IMPORT_DIR = 'menu-imports';
+export const MENU_IMPORT_DIR = PRIVATE_MENU_IMPORT_DIR;
 
 export type MenuFileMediaType = AiImageMediaType | 'application/pdf';
 
@@ -47,26 +52,24 @@ const EXTENSIONS: Record<MenuFileMediaType, string> = {
   'application/pdf': 'pdf',
 };
 
-export { resolveUploadDir };
-
-export function importDir(uploadDir: string, importId: string): string {
-  return path.join(resolveUploadDir(uploadDir), MENU_IMPORT_DIR, importId);
+export function importDir(storageDir: string, importId: string): string {
+  return path.join(absolutePath(storageDir), MENU_IMPORT_DIR, importId);
 }
 
 export interface StoredMenuFile {
-  /** Relativer Pfad unter dem Upload-Verzeichnis. */
+  /** Relativer Pfad unter der privaten Ablage. */
   relativePath: string;
   mediaType: MenuFileMediaType;
 }
 
 /** Schreibt die Dateien in Seitenreihenfolge und gibt die relativen Pfade zurueck. */
 export async function storeFiles(
-  uploadDir: string,
+  storageDir: string,
   importId: string,
   files: { buffer: Buffer; mediaType: MenuFileMediaType }[],
 ): Promise<StoredMenuFile[]> {
-  const dir = importDir(uploadDir, importId);
-  await fs.mkdir(dir, { recursive: true });
+  const dir = importDir(storageDir, importId);
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
   const stored: StoredMenuFile[] = [];
   for (const [index, file] of files.entries()) {
     const filename = `page-${String(index + 1).padStart(2, '0')}.${EXTENSIONS[file.mediaType]}`;
@@ -80,10 +83,10 @@ export async function storeFiles(
 }
 
 export async function readFiles(
-  uploadDir: string,
+  storageDir: string,
   relativePaths: string[],
 ): Promise<{ buffer: Buffer; mediaType: MenuFileMediaType }[]> {
-  const root = resolveUploadDir(uploadDir);
+  const root = absolutePath(storageDir);
   const files: { buffer: Buffer; mediaType: MenuFileMediaType }[] = [];
   for (const relativePath of relativePaths) {
     const full = path.resolve(root, relativePath);
@@ -99,8 +102,11 @@ export async function readFiles(
 }
 
 export async function deleteFiles(
-  uploadDir: string,
+  storageDir: string,
   importId: string,
 ): Promise<void> {
-  await fs.rm(importDir(uploadDir, importId), { recursive: true, force: true });
+  await fs.rm(importDir(storageDir, importId), {
+    recursive: true,
+    force: true,
+  });
 }
