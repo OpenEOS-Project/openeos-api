@@ -21,7 +21,7 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { CurrentUser } from '../../common/decorators';
+import { CurrentUser, RevealSecrets } from '../../common/decorators';
 import { User } from '../../database/entities';
 import {
   BulkCreateWaitersDto,
@@ -86,6 +86,7 @@ export class WaitersController {
     description:
       'Ohne `pin` erzeugt das System eine eindeutige PIN (Länge laut `settings.waiters.pinLength`, Standard 4). Die Antwort enthält die PIN **einmalig**; gespeichert wird nur ein Prüfwert. Eigene PIN: einfache Folgen und vergebene PINs → 400 PIN_NOT_AVAILABLE. Obergrenze: 400 WAITER_LIMIT_REACHED.',
   })
+  @RevealSecrets('pin')
   async create(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateWaiterDto,
@@ -101,6 +102,7 @@ export class WaitersController {
     description:
       'Namensliste je Veranstaltung (`eventId`) oder organisationsweit. Alle bekommen eine erzeugte PIN; die Antwort enthält sie **einmalig** (PIN-Zettel). Alles oder nichts.',
   })
+  @RevealSecrets('pin')
   async bulk(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: BulkCreateWaitersDto,
@@ -145,6 +147,7 @@ export class WaitersController {
     description:
       'Erzeugt eine neue PIN (oder setzt die gewählte) und beendet offene Sitzungen. Die Antwort enthält die PIN **einmalig**.',
   })
+  @RevealSecrets('pin')
   async resetPin(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('waiterId', ParseUUIDPipe) waiterId: string,
