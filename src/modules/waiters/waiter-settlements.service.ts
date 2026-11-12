@@ -10,6 +10,7 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, type EntityManager } from 'typeorm';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { assertReferencesInOrganization } from '../../common/utils/organization-references';
 import {
   getOperatingMode,
   OPERATING_MODE_SELECT,
@@ -432,6 +433,9 @@ export class WaiterSettlementsService {
     actor: SettlementActor,
     options: SettleOptions = {},
   ): Promise<{ settlement: SettlementView; printed: boolean }> {
+    await assertReferencesInOrganization(this.dataSource, { organizationId }, [
+      { kind: 'event', ids: options.eventId, field: 'eventId' },
+    ]);
     const note = options.note?.trim() || null;
     const countedCash =
       options.countedCash === undefined || options.countedCash === null
