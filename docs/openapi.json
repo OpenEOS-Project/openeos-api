@@ -23066,7 +23066,7 @@
           "priceModifier": {
             "type": "number",
             "example": 1.5,
-            "description": "Preismodifikator"
+            "description": "Wird ignoriert: der Aufpreis kommt aus der Optionsdefinition des Produkts."
           },
           "excluded": {
             "type": "boolean",
@@ -23076,8 +23076,7 @@
         },
         "required": [
           "group",
-          "option",
-          "priceModifier"
+          "option"
         ]
       },
       "CreateOrderItemDto": {
@@ -25784,13 +25783,12 @@
           "priceModifier": {
             "type": "number",
             "example": 1.5,
-            "description": "Preismodifikator in Euro"
+            "description": "Wird ignoriert: der Aufpreis kommt aus der Optionsdefinition des Produkts."
           }
         },
         "required": [
           "group",
-          "option",
-          "priceModifier"
+          "option"
         ]
       },
       "AddCartItemDto": {
