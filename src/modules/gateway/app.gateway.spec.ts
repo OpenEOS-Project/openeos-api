@@ -31,6 +31,8 @@ function setup(remainingSockets = 0) {
     printerAgentsService as never,
     printJobsService as never,
     none,
+    none,
+    none,
   );
   gateway.server = server as never;
   return { gateway, server, printerAgentsService, printJobsService };
