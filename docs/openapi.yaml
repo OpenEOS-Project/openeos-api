@@ -10617,6 +10617,98 @@ paths:
       security: *a94
       summary: Mark an enquiry as dealt with (toggles)
       tags: *a95
+  /api/public/content-reports:
+    post:
+      description: Meldung eines rechtswidrigen Inhalts in einem Vereins-Shop oder auf einer Helferseite (Melde- und Abhilfeverfahren nach Art. 16 DSA). Nicht authentifiziert; Honeypot, Mindest-Ausfüllzeit, höchstens 5 Meldungen je Stunde und IP-Adresse. Der Meldende erhält eine Eingangsbestätigung per E-Mail.
+      operationId: contentReports_submit
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContentReportDto"
+      responses:
+        "200":
+          description: ""
+      summary: Report illegal content on a public page (Art. 16 DSA)
+      tags:
+        - Content reports (Public)
+  /api/admin/content-reports:
+    get:
+      operationId: contentReportsAdmin_list
+      parameters:
+        - name: status
+          required: true
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: &a96
+        - JWT-auth: []
+      summary: List content reports (DSA), newest first
+      tags: &a97
+        - Admin — Inhaltsmeldungen
+  /api/admin/content-reports/{id}:
+    get:
+      operationId: contentReportsAdmin_get
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a96
+      summary: Get one content report
+      tags: *a97
+    patch:
+      description: Status (open/in_review/closed), Maßnahme (none/hide_content/disable_shop), Entscheidung, Sachverhalt, Grundlage und Rechtsbehelfe. `disable_shop` schaltet den Shop der Veranstaltung ab bzw. nimmt die Helferseite aus der Veröffentlichung (einmalig).
+      operationId: contentReportsAdmin_update
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateContentReportDto"
+      responses:
+        "200":
+          description: ""
+      security: *a96
+      summary: Update status, decision and statement of reasons
+      tags: *a97
+  /api/admin/content-reports/{id}/notify:
+    post:
+      description: "`reporter`: Mitteilung der Entscheidung an den Meldenden (Art. 16 Abs. 5 DSA). `organization`: Begründung an die Admins des Vereins (Art. 17 DSA) mit Maßnahme, Sachverhalt, Grundlage und Rechtsbehelfen."
+      operationId: contentReportsAdmin_notify
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotifyContentReportDto"
+      responses:
+        "200":
+          description: ""
+      security: *a96
+      summary: Send the decision to the reporter or the statement of reasons to the club
+      tags: *a97
   /api/internal/deploy-guard:
     get:
       description: busy = an active event took a non-test order within the window (default 30 min). Lists those events with their last order time.
@@ -10652,11 +10744,11 @@ paths:
       responses:
         "200":
           description: "{ data: { enabled, available, pdfSupported, quotas } }"
-      security: &a96
-        - &a98
+      security: &a98
+        - &a100
           JWT-auth: []
       summary: Status der Assistent-Funktionen
-      tags: &a97
+      tags: &a99
         - Assistant
     patch:
       operationId: assistant_setEnabled
@@ -10675,9 +10767,9 @@ paths:
       responses:
         "200":
           description: "{ data: { enabled, available, pdfSupported, quotas } }"
-      security: *a96
+      security: *a98
       summary: Assistent-Funktionen ein- oder ausschalten (Admin, protokolliert)
-      tags: *a97
+      tags: *a99
   /api/organizations/{organizationId}/assistant/icon-suggestions:
     post:
       description: "Schlägt zu Produktnamen passende Icons aus @openeos/pos-icons vor: Stufe 1 ohne Modell (Namen und Suchbegriffe der Icons), Stufe 2 fragt bei unklaren Namen das Klassifikationsmodell. `icon` ist die Referenz `pos-icon:<id>`. Scope `read`; `404 AI_DISABLED` ohne Anbieter, `403 ASSISTANT_DISABLED` ohne Opt-in der Organisation."
@@ -10700,10 +10792,10 @@ paths:
         "201":
           description: "{ data: [{ name, suggestions: [{ icon, score, source: lexical|model }] }] } — leeres Array, wenn kein Icon passt"
       security:
-        - *a98
+        - *a100
         - API-token: []
       summary: Icon-Vorschläge für Produktnamen
-      tags: *a97
+      tags: *a99
       x-api-token-scope: read
   /api/organizations/{organizationId}/events/{eventId}/menu-imports:
     post:
@@ -10739,10 +10831,10 @@ paths:
       responses:
         "202":
           description: "{ data: { id, status: 'queued' } }"
-      security: &a99
+      security: &a101
         - JWT-auth: []
       summary: Speisekarte zur Auswertung einreichen
-      tags: &a100
+      tags: &a102
         - Assistant
     get:
       operationId: menuImport_list
@@ -10760,9 +10852,9 @@ paths:
       responses:
         "200":
           description: "{ data: [{ id, status, source, error?, createdAt, finishedAt?, appliedAt?, usage? }] }"
-      security: *a99
+      security: *a101
       summary: Die letzten 20 Importe der Veranstaltung (ohne Vorschlag)
-      tags: *a100
+      tags: *a102
   /api/organizations/{organizationId}/events/{eventId}/menu-imports/{id}:
     get:
       description: "status: queued | processing | done | failed | applied. Bei done enthält `suggestion` { categories[{ key, name, existingCategoryId? }], products[{ key, categoryKey, name, description?, price, taxRate, pfand?, variants?, existingProductId?, iconSuggestions?, confidence, note? }], warnings[] }. Erkennt das Modell kein Produkt, ist der Import trotzdem done mit leerem `products` und einem Hinweis in `warnings`. Bei failed steht in `error` ein kurzer Hinweis für Nutzer:innen; die Rohmeldung des Anbieters bleibt im Server-Log."
@@ -10786,9 +10878,9 @@ paths:
       responses:
         "200":
           description: "{ data: { id, status, source, error?, createdAt, finishedAt?, appliedAt?, suggestion?, usage? } }"
-      security: *a99
+      security: *a101
       summary: Status und Vorschlag eines Imports
-      tags: *a100
+      tags: *a102
     delete:
       operationId: menuImport_remove
       parameters:
@@ -10810,9 +10902,9 @@ paths:
       responses:
         "200":
           description: "{ data: { success: true } }"
-      security: *a99
+      security: *a101
       summary: Import verwerfen (löscht Dateien und Vorschlag)
-      tags: *a100
+      tags: *a102
   /api/organizations/{organizationId}/events/{eventId}/menu-imports/{id}/apply:
     post:
       description: Legt Kategorien (neu oder vorhanden) und Produkte an bzw. aktualisiert sie (action create | update | skip). Varianten werden options.groups[0] (single). Danach status applied; Audit-Eintrag menu_import_applied.
@@ -10842,9 +10934,9 @@ paths:
       responses:
         "201":
           description: "{ data: { createdCategories, createdProducts, updatedProducts } }"
-      security: *a99
+      security: *a101
       summary: Ausgewählte Kategorien und Produkte anlegen
-      tags: *a100
+      tags: *a102
   /api/organizations/{id}/dsfinvk:
     get:
       description: "Export nach DSFinV-K 2.4 für Kassen-Nachschau (§ 146b AO) und Außenprüfung: 20 CSV-Dateien, `index.xml` und `gdpdu-01-09-2004.dtd` als ZIP. Zeitraum nach Geschäftstagen (`from`/`to`, 6–6 Uhr) oder Z-Nummern (`zFrom`/`zTo`). Enthält nur abgeschlossene Tage — für den laufenden Tag vorher `POST …/dsfinvk/closings`. Header `X-Checksum-SHA256`. Fehler: 400 DSFINVK_RANGE_INVALID, 404 DSFINVK_NO_CLOSINGS."
@@ -10886,10 +10978,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a101
+      security: &a103
         - JWT-auth: []
       summary: DSFinV-K export as ZIP (admins)
-      tags: &a102
+      tags: &a104
         - DSFinV-K
   /api/organizations/{id}/dsfinvk/closings:
     get:
@@ -10923,9 +11015,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a101
+      security: *a103
       summary: Cash point closings (admins)
-      tags: *a102
+      tags: *a104
     post:
       description: "Schließt alle offenen Vorgänge bis jetzt ab (je Geschäftstag ein Abschluss, fortlaufende Z-Nr.). Abschlüsse sind unveränderlich. Fehler: 409 DSFINVK_NOTHING_TO_CLOSE, 409 DSFINVK_PENDING_TRANSACTIONS."
       operationId: dsfinvk_createClosing
@@ -10938,9 +11030,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a101
+      security: *a103
       summary: Create a cash point closing now (admins)
-      tags: *a102
+      tags: *a104
   /api/organizations/{id}/vat-status:
     post:
       description: "Kleinunternehmer (`vatExempt: true`) ↔ umsatzsteuerpflichtig (`vatExempt: false`), z. B. „ab sofort umsatzsteuerpflichtig“ beim Überschreiten der Grenzen des § 19 UStG. Schließt vorher alle offenen Vorgänge ab (Kassenabschluss, DSFinV-K Tz. 3), dann Stammdatenwechsel, Protokoll `vat_status_changed`, Verlauf `settings.vatStatusHistory`. Fehler: 409 DSFINVK_PENDING_TRANSACTIONS."
@@ -10960,9 +11052,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a101
+      security: *a103
       summary: Change the VAT status after a cash point closing (admins)
-      tags: *a102
+      tags: *a104
   /api/organizations/{id}/dsfinvk/closings/{closingId}/download:
     get:
       description: ZIP des Abschlusses aus dem Archiv (`TSE_EXPORT_DIR/<org>/dsfinvk/`), Header `X-Checksum-SHA256`.
@@ -10981,9 +11073,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a101
+      security: *a103
       summary: Download the DSFinV-K export of one closing (admins)
-      tags: *a102
+      tags: *a104
   /api/organizations/{id}/cashbook:
     get:
       description: "Kassenbuch eines Geschäftstags (6–6 Uhr): Buchungen (Anfangsbestand, Einlage, Entnahme, Kassensturz) und Soll-Bestand gesamt und je Gerät (Kassenbuch + Barzahlungen − Bar-Erstattungen − Pfand-Auszahlungen)."
@@ -11010,9 +11102,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a101
+      security: *a103
       summary: Cash book of a business day (admins)
-      tags: *a102
+      tags: *a104
     post:
       description: Wie an der Kasse, aber für die ganze Kasse (ohne Gerät). Jede Bargeldbewegung ist ein eigener TSE-gesicherter Beleg. Nur wenn Bargeld erlaubt ist (sonst 403 wie bei Barzahlungen).
       operationId: dsfinvk_createCashbookEntry
@@ -11031,15 +11123,15 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a101
+      security: *a103
       summary: Book a cash book entry for the whole register (admins)
-      tags: *a102
+      tags: *a104
   /api/device-api/cashbook:
     get:
       description: "Heutiger Geschäftstag (6–6 Uhr): Buchungen dieses Geräts und Soll-Bestand seiner Schublade; `cashAllowed` = Bargeld erlaubt (sonst kein Kassenbuch)."
       operationId: deviceCashbook_today
       parameters:
-        - &a103
+        - &a105
           name: X-Device-Token
           in: header
           description: Device authentication token
@@ -11050,13 +11142,13 @@ paths:
         "200":
           description: ""
       summary: Cash book of today for this device
-      tags: &a104
+      tags: &a106
         - Device API
     post:
       description: Anfangsbestand (Wechselgeld), Einlage, Entnahme/Abschöpfung (Geldtransit) oder Kassensturz (gezählter Bestand → Differenz Soll/Ist). Jede Bargeldbewegung ist ein eigener TSE-gesicherter Beleg (Kassenbeleg-V1, `tse` in der Antwort). Nur wenn Bargeld erlaubt ist.
       operationId: deviceCashbook_create
       parameters:
-        - *a103
+        - *a105
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -11073,7 +11165,7 @@ paths:
         "201":
           description: ""
       summary: Book a cash book entry at the till
-      tags: *a104
+      tags: *a106
   /api/admin/retention/config:
     get:
       operationId: retentionAdmin_config
@@ -11081,10 +11173,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a105
+      security: &a107
         - JWT-auth: []
       summary: Effective retention periods and run mode
-      tags: &a106
+      tags: &a108
         - Admin — Aufbewahrung und Löschung
   /api/admin/retention/runs:
     get:
@@ -11103,6 +11195,7 @@ paths:
               - audit_logs
               - support_messages
               - contact_requests
+              - content_reports
               - assistant_imports
               - webhook_deliveries
               - receipt_links
@@ -11149,9 +11242,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a105
+      security: *a107
       summary: Protocol of deletion runs, newest first
-      tags: *a106
+      tags: *a108
     post:
       operationId: retentionAdmin_start
       parameters: []
@@ -11164,9 +11257,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a105
+      security: *a107
       summary: Run the deletion jobs now (dry run unless dryRun=false or RETENTION_DRY_RUN=false)
-      tags: *a106
+      tags: *a108
   /api/admin/retention/notices:
     get:
       operationId: retentionAdmin_notices
@@ -11188,9 +11281,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a105
+      security: *a107
       summary: Announced closures and deletions of organizations and accounts
-      tags: *a106
+      tags: *a108
   /api/admin/retention/organizations/{organizationId}/keep:
     post:
       operationId: retentionAdmin_keepOrganization
@@ -11203,9 +11296,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a105
+      security: *a107
       summary: Cancel an announced closure for inactivity (counts as activity, period restarts)
-      tags: *a106
+      tags: *a108
   /api/admin/retention/users/{userId}/keep:
     post:
       operationId: retentionAdmin_keepUser
@@ -11218,9 +11311,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a105
+      security: *a107
       summary: Cancel an announced account deletion for inactivity (period restarts)
-      tags: *a106
+      tags: *a108
   /api/admin/retention/organizations/{organizationId}/erasures:
     post:
       operationId: retentionAdmin_erase
@@ -11239,9 +11332,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a105
+      security: *a107
       summary: Erase a specific guest or helper record on the customer’s instruction (logged with reason and executing admin)
-      tags: *a106
+      tags: *a108
   /api/admin/retention/organizations/{organizationId}/purge:
     post:
       operationId: retentionAdmin_purgeOrganization
@@ -11260,9 +11353,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a105
+      security: *a107
       summary: Finally delete an organization now, on the customer’s request (AVV 10.2, AGB 20.5). Requires the exact organization name and a reason; fiscal archive stays; logged as instruction
-      tags: *a106
+      tags: *a108
   /api/users/me/deletion:
     get:
       operationId: accountDeletion_status
@@ -11270,10 +11363,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a107
+      security: &a109
         - JWT-auth: []
       summary: What deleting the own account would do (blocking organizations, organizations closed with it, confirmation method)
-      tags: &a108
+      tags: &a110
         - Users
     post:
       operationId: accountDeletion_delete
@@ -11287,9 +11380,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a107
+      security: *a109
       summary: Delete (anonymise) the own account after confirming with password or e-mail code; logs out
-      tags: *a108
+      tags: *a110
   /api/users/me/deletion/code:
     post:
       operationId: accountDeletion_sendCode
@@ -11297,9 +11390,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a107
+      security: *a109
       summary: Send a confirmation code by e-mail
-      tags: *a108
+      tags: *a110
   /api/users/me/deletion/cancel:
     post:
       operationId: accountDeletion_cancel
@@ -11307,9 +11400,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a107
+      security: *a109
       summary: Cancel a scheduled account deletion (restores the account and the organizations deleted with it, until the final deletion)
-      tags: *a108
+      tags: *a110
   /api/organizations/{organizationId}/webhooks/info:
     get:
       description: Ob Webhooks auf diesem Server eingeschaltet sind, Grenzen (Endpunkte je Organisation, Versuche, Aufbewahrung des Protokolls), die aktuelle `apiVersion` der Nutzlast und alle abonnierbaren Ereignisse mit Beschreibung. Scope `webhooks:read`.
@@ -11325,11 +11418,11 @@ paths:
         "200":
           description: ""
       security:
-        - &a109
+        - &a111
           JWT-auth: []
         - API-token: []
       summary: Webhook-Einstellungen des Servers
-      tags: &a110
+      tags: &a112
         - Webhooks
       x-api-token-scope: webhooks:read
   /api/organizations/{organizationId}/webhooks:
@@ -11377,10 +11470,10 @@ paths:
                     createdAt: 2026-11-10T17:55:02.000Z
                     updatedAt: 2026-11-10T18:04:13.511Z
       security:
-        - *a109
+        - *a111
         - API-token: []
       summary: Webhooks auflisten
-      tags: *a110
+      tags: *a112
       x-api-token-scope: webhooks:read
     post:
       description: Legt einen Endpunkt an. Die Adresse muss mit `https://` beginnen und auf öffentliche Adressen zeigen (`400 WEBHOOK_URL_INVALID`, `params.reason`). Das Signatur-Geheimnis (`data.secret`, `whsec_…`) kommt genau einmal in dieser Antwort. Höchstens 10 Endpunkte je Organisation (`409 WEBHOOK_LIMIT_REACHED`). Scope `webhooks:write`.
@@ -11439,10 +11532,10 @@ paths:
         "503":
           description: WEBHOOKS_DISABLED
       security:
-        - *a109
+        - *a111
         - API-token: []
       summary: Webhook anlegen
-      tags: *a110
+      tags: *a112
       x-api-token-scope: webhooks:write
   /api/organizations/{organizationId}/webhooks/{webhookId}:
     get:
@@ -11467,10 +11560,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a109
+        - *a111
         - API-token: []
       summary: Webhook abrufen
-      tags: *a110
+      tags: *a112
       x-api-token-scope: webhooks:read
     patch:
       description: "Ändert Adresse, Beschreibung, Ereignisse oder Schalter. `active: true` schaltet einen automatisch abgeschalteten Endpunkt wieder ein und setzt die Fehlerserie zurück; `active: false` beendet offene Zustellungen. Scope `webhooks:write`."
@@ -11500,10 +11593,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a109
+        - *a111
         - API-token: []
       summary: Webhook ändern
-      tags: *a110
+      tags: *a112
       x-api-token-scope: webhooks:write
     delete:
       description: Löscht den Endpunkt samt Zustellprotokoll. Nur mit Anmeldung (JWT) als Administrator — nicht per Token.
@@ -11527,9 +11620,9 @@ paths:
         "200":
           description: ""
       security:
-        - *a109
+        - *a111
       summary: Webhook löschen
-      tags: *a110
+      tags: *a112
   /api/organizations/{organizationId}/webhooks/{webhookId}/rotate-secret:
     post:
       description: Erzeugt ein neues Geheimnis (`data.secret`, genau einmal). Das alte signiert noch 24 Stunden mit (zweites `v1=` in `OpenEOS-Signature`, bis `previousSecretExpiresAt`), damit du den Empfänger ohne Ausfall umstellen kannst. Scope `webhooks:write`.
@@ -11553,10 +11646,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a109
+        - *a111
         - API-token: []
       summary: Signatur-Geheimnis erneuern
-      tags: *a110
+      tags: *a112
       x-api-token-scope: webhooks:write
   /api/organizations/{organizationId}/webhooks/{webhookId}/test:
     post:
@@ -11600,10 +11693,10 @@ paths:
                   redeliveryOf: null
                   createdAt: 2026-11-10T18:04:13.250Z
       security:
-        - *a109
+        - *a111
         - API-token: []
       summary: Test senden
-      tags: *a110
+      tags: *a112
       x-api-token-scope: webhooks:write
   /api/organizations/{organizationId}/webhooks/{webhookId}/deliveries:
     get:
@@ -11689,10 +11782,10 @@ paths:
                   hasNext: false
                   hasPrev: false
       security:
-        - *a109
+        - *a111
         - API-token: []
       summary: Zustellprotokoll
-      tags: *a110
+      tags: *a112
       x-api-token-scope: webhooks:read
   /api/organizations/{organizationId}/webhooks/{webhookId}/deliveries/{deliveryId}:
     get:
@@ -11724,10 +11817,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a109
+        - *a111
         - API-token: []
       summary: Zustellung abrufen
-      tags: *a110
+      tags: *a112
       x-api-token-scope: webhooks:read
   /api/organizations/{organizationId}/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver:
     post:
@@ -11759,10 +11852,10 @@ paths:
         "202":
           description: ""
       security:
-        - *a109
+        - *a111
         - API-token: []
       summary: Erneut senden
-      tags: *a110
+      tags: *a112
       x-api-token-scope: webhooks:write
   /api/organizations/{id}/waiters:
     get:
@@ -11790,10 +11883,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a111
+      security: &a113
         - JWT-auth: []
       summary: Bedienungen der Organisation (ohne PIN)
-      tags: &a112
+      tags: &a114
         - Waiters
     post:
       description: "Ohne `pin` erzeugt das System eine eindeutige PIN (Länge laut `settings.waiters.pinLength`, Standard 4). Die Antwort enthält die PIN **einmalig**; gespeichert wird nur ein Prüfwert. Eigene PIN: einfache Folgen und vergebene PINs → 400 PIN_NOT_AVAILABLE. Obergrenze: 400 WAITER_LIMIT_REACHED."
@@ -11813,9 +11906,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a111
+      security: *a113
       summary: Bedienung anlegen
-      tags: *a112
+      tags: *a114
   /api/organizations/{id}/waiters/bulk:
     post:
       description: Namensliste je Veranstaltung (`eventId`) oder organisationsweit. Alle bekommen eine erzeugte PIN; die Antwort enthält sie **einmalig** (PIN-Zettel). Alles oder nichts.
@@ -11835,9 +11928,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a111
+      security: *a113
       summary: Bedienungen in einem Schritt anlegen (bis 200)
-      tags: *a112
+      tags: *a114
   /api/organizations/{id}/waiters/{waiterId}:
     get:
       operationId: waiters_findOne
@@ -11855,9 +11948,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a111
+      security: *a113
       summary: Eine Bedienung (ohne PIN)
-      tags: *a112
+      tags: *a114
     patch:
       description: Name, Kurzname, Farbe, Rolle, Rechte, Veranstaltung, aktiv. Deaktivieren löscht die PIN und beendet offene Sitzungen (Kasse sperrt).
       operationId: waiters_update
@@ -11881,9 +11974,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a111
+      security: *a113
       summary: Bedienung ändern
-      tags: *a112
+      tags: *a114
     delete:
       description: "Ohne Buchungen wird sie gelöscht (`deleted: true`). Mit Buchungen wird sie deaktiviert und anonymisiert (`anonymized: true`, Name „Bedienung N“); das Steuerarchiv behält den Namen beim Signieren."
       operationId: waiters_remove
@@ -11901,9 +11994,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a111
+      security: *a113
       summary: Bedienung löschen
-      tags: *a112
+      tags: *a114
   /api/organizations/{id}/waiters/{waiterId}/pin:
     post:
       description: Erzeugt eine neue PIN (oder setzt die gewählte) und beendet offene Sitzungen. Die Antwort enthält die PIN **einmalig**.
@@ -11928,9 +12021,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a111
+      security: *a113
       summary: Neue PIN vergeben
-      tags: *a112
+      tags: *a114
   /api/organizations/{id}/waiters/{waiterId}/summary:
     get:
       description: "Zahlen seit der letzten Abrechnung dieser Bedienung in der Veranstaltung (sonst ab Beginn): kassiert je Zahlart mit Trinkgeld, Storno/Erstattungen, Pfand-Auszahlungen, aufgenommen, Soll bar (informativ, Schublade je Gerät), offene Tische, Training getrennt. In „Nur Bons“ nur Mengen. `eventId` ohne Angabe: Veranstaltung der Bedienung bzw. die laufende."
@@ -11954,9 +12047,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a111
+      security: *a113
       summary: Zwischenstand einer Bedienung
-      tags: *a112
+      tags: *a114
   /api/organizations/{id}/waiters/{waiterId}/settlements:
     post:
       description: "Schließt den Zeitraum seit der letzten Abrechnung ab (unveränderlich, fortlaufende Nummer je Organisation; nur Testbuchungen → Training ohne Nummer). Offene Tische: 409 WAITER_OPEN_TABLES (`params.openTables`) — übergeben oder mit `force` + `note` trotzdem abrechnen. Nichts abzurechnen: 400 WAITER_SETTLEMENT_EMPTY. Mit `printerId` wird der Abrechnungsbon gedruckt."
@@ -11981,9 +12074,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a111
+      security: *a113
       summary: Bedienung abrechnen
-      tags: *a112
+      tags: *a114
   /api/organizations/{id}/waiters/{waiterId}/tip-payouts:
     get:
       description: Arbeitnehmer (Lohnkonto)? Offenes Kartentrinkgeld (unbare Zahlungen dieser Bedienung abzüglich Erstattungen und Auszahlungen) und bisherige Auszahlungen mit TSE-Beleg.
@@ -12002,9 +12095,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a111
+      security: *a113
       summary: Kartentrinkgeld einer Bedienung
-      tags: *a112
+      tags: *a114
     post:
       description: "Nur für Bedienungen mit „Arbeitnehmer (Lohnkonto)“ (sonst 409 TIP_PAYOUT_NOT_EMPLOYEE: bei Ehrenamtlichen gehört das Trinkgeld dem Verein). Eigener Kassenbeleg TrinkgeldAN −x / Bar −x (Cloud-TSE), Empfänger, Quittung mit Unterschrift; mindert den Soll-Bestand. Bargeld muss erlaubt sein. Betrag höchstens das offene Kartentrinkgeld (400 TIP_PAYOUT_AMOUNT_INVALID)."
       operationId: waiters_payOutTips
@@ -12028,9 +12121,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a111
+      security: *a113
       summary: Kartentrinkgeld bar auszahlen
-      tags: *a112
+      tags: *a114
   /api/organizations/{id}/waiters/{waiterId}/transfer-tables:
     post:
       description: Alle offenen Bestellungen der Bedienung (optional nur einer Veranstaltung) bekommen eine neue verantwortliche Bedienung. Jede Übergabe steht im Bestellverlauf; die Kassen bekommen `orderTransferred`.
@@ -12055,9 +12148,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a111
+      security: *a113
       summary: Offene Tische einer Bedienung übergeben
-      tags: *a112
+      tags: *a114
   /api/organizations/{id}/waiters/{waiterId}/export:
     get:
       description: Stammdaten (ohne PIN), Anmeldungen an Geräten, Abrechnungen und Anzahl der zugeordneten Buchungen. `format=csv` (Standard) oder `json`.
@@ -12084,9 +12177,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a111
+      security: *a113
       summary: Auskunft über eine Bedienung (Art. 15 DSGVO)
-      tags: *a112
+      tags: *a114
   /api/organizations/{id}/waiter-settlements/live:
     get:
       description: "Für eine Kassen-Nachschau (§ 146b AO): je Bedienung bzw. Mitglied mit Buchungen seit der letzten Abrechnung in der Veranstaltung (ohne Angabe: die laufende) das Soll bar, wo das Bargeld liegt (Schublade je Gerät), kassiert je Zahlart, Trinkgeld, Erstattungen, Pfand-Auszahlungen, offene Tische und bei Arbeitnehmern das offene Kartentrinkgeld. Zeitpunkt `generatedAt`."
@@ -12105,10 +12198,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a113
+      security: &a115
         - JWT-auth: []
       summary: Live-Kassensturz je Bedienung
-      tags: &a114
+      tags: &a116
         - Waiters
   /api/organizations/{id}/waiter-settlements:
     get:
@@ -12133,9 +12226,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a113
+      security: *a115
       summary: Kellnerabrechnungen
-      tags: *a114
+      tags: *a116
   /api/organizations/{id}/waiter-settlements/{settlementId}:
     get:
       operationId: waiterSettlements_findOne
@@ -12153,9 +12246,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a113
+      security: *a115
       summary: Eine Kellnerabrechnung
-      tags: *a114
+      tags: *a116
   /api/organizations/{id}/waiter-settlements/{settlementId}/reprint:
     post:
       description: "Druckt den Bon „ABRECHNUNG Nr. N“ mit Vermerk „Nachdruck“ auf dem gewählten Drucker (sonst dem Bondrucker des Geräts der Abrechnung). `printed: false`, wenn kein Drucker erreichbar ist."
@@ -12180,15 +12273,15 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a113
+      security: *a115
       summary: Abrechnungsbon nachdrucken
-      tags: *a114
+      tags: *a116
   /api/device-api/waiter-session:
     post:
       description: "Die PIN allein identifiziert die Bedienung bzw. das Mitglied. Antwort: `token` (Header `X-Waiter-Session` bei jeder Buchung, nur im Speicher halten), `expiresAt`, `kind` (`waiter`|`member`), `waiter` (id, name, shortName, color, role, permissions). Eine vorige Sitzung an diesem Gerät endet (Wechsel). Fehler: 403 PIN_INVALID (`params.remainingAttempts`), 429 PIN_LOCKED (`params.retryAfterSeconds`), 429 PIN_DEVICE_LOCKED (Freigabe durch Admin), 403 WAITER_NOT_FOR_EVENT."
       operationId: deviceWaiters_login
       parameters:
-        - &a115
+        - &a117
           name: X-Device-Token
           in: header
           description: Device authentication token
@@ -12205,23 +12298,23 @@ paths:
         "200":
           description: ""
       summary: Bedienung per PIN anmelden („Wer bedient?“)
-      tags: &a116
+      tags: &a118
         - Device API
     get:
       description: "`data: null` ohne gültige Sitzung (dann PIN-Bildschirm). Bei fester Bedienung (`personal`) die Bedienung des Geräts. `mode`: Gerätemodus."
       operationId: deviceWaiters_current
       parameters:
-        - *a115
+        - *a117
       responses:
         "200":
           description: ""
       summary: Aktuelle Bedienungs-Sitzung
-      tags: *a116
+      tags: *a118
     delete:
       description: "Beendet die Sitzung des Tokens (`reason`: lock, switch, timeout, logout). Ohne gültiges Token passiert nichts."
       operationId: deviceWaiters_end
       parameters:
-        - *a115
+        - *a117
       requestBody:
         required: true
         content:
@@ -12232,24 +12325,24 @@ paths:
         "200":
           description: ""
       summary: Sperren bzw. abmelden
-      tags: *a116
+      tags: *a118
   /api/device-api/waiters:
     get:
       description: "Aktive Bedienungen der laufenden Veranstaltung plus organisationsweite: nur `id`, `shortName` (sonst Vorname) und `color`."
       operationId: deviceWaiters_list
       parameters:
-        - *a115
+        - *a117
       responses:
         "200":
           description: ""
       summary: Kurzliste der Bedienungen (Kacheln, Tischfarben)
-      tags: *a116
+      tags: *a118
   /api/device-api/waiter/summary:
     get:
       description: "Zahlen der angemeldeten Bedienung (bzw. des Mitglieds) seit ihrer letzten Abrechnung in der laufenden Veranstaltung: kassiert je Zahlart mit Trinkgeld, Storno/Erstattungen, Pfand, aufgenommen, Soll bar (informativ, Schublade je Gerät), offene Tische. `waiterId`: andere Bedienung (nur Schichtleitung/Admin). `meta.canSettle`: darf abrechnen; `meta.canForce`: darf trotz offener Tische abrechnen."
       operationId: deviceWaiters_summary
       parameters:
-        - *a115
+        - *a117
         - name: waiterId
           required: true
           in: query
@@ -12265,13 +12358,13 @@ paths:
         "200":
           description: ""
       summary: Mein Zwischenstand
-      tags: *a116
+      tags: *a118
   /api/device-api/waiter/summary/print:
     post:
       description: "Druckt den unverbindlichen Zwischenstand auf dem Bondrucker des Geräts (`printed: false`, wenn keiner eingerichtet ist)."
       operationId: deviceWaiters_printSummary
       parameters:
-        - *a115
+        - *a117
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12288,13 +12381,13 @@ paths:
         "200":
           description: ""
       summary: Zwischenstand drucken
-      tags: *a116
+      tags: *a118
   /api/device-api/waiter/settlements:
     post:
       description: "Schichtleitung bzw. Admin-Mitglied rechnet eine Bedienung ab (`waiterId`, sonst sich selbst). Sich selbst abrechnen darf eine Bedienung nur mit der Organisations-Einstellung `selfSettlement`; sonst 403 WAITER_NOT_PERMITTED. Offene Tische: 409 WAITER_OPEN_TABLES, außer `force` + `note` (Schichtleitung). Der Bon geht an den Bondrucker des Geräts (`print: false` unterdrückt ihn)."
       operationId: deviceWaiters_settle
       parameters:
-        - *a115
+        - *a117
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12311,13 +12404,13 @@ paths:
         "201":
           description: ""
       summary: Abrechnen an der Kasse
-      tags: *a116
+      tags: *a118
   /api/device-api/waiter/live-cash-audit:
     get:
       description: Soll bar jeder Bedienung seit ihrer letzten Abrechnung in der laufenden Veranstaltung, für eine Kassen-Nachschau. Nur Schichtleitung bzw. Admin-Mitglied (sonst 403 WAITER_NOT_PERMITTED).
       operationId: deviceWaiters_liveCashAudit
       parameters:
-        - *a115
+        - *a117
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12328,13 +12421,13 @@ paths:
         "200":
           description: ""
       summary: Live-Kassensturz (Schichtleitung)
-      tags: *a116
+      tags: *a118
   /api/device-api/waiter/tip-payouts:
     post:
       description: "Wie die Verwaltung: nur für Bedienungen mit „Arbeitnehmer (Lohnkonto)“, eigener TSE-Beleg TrinkgeldAN −x / Bar −x, Quittung auf dem Bondrucker des Geräts. Nur Schichtleitung bzw. Admin-Mitglied."
       operationId: deviceWaiters_payOutTips
       parameters:
-        - *a115
+        - *a117
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12351,13 +12444,13 @@ paths:
         "201":
           description: ""
       summary: Kartentrinkgeld bar auszahlen (Schichtleitung)
-      tags: *a116
+      tags: *a118
   /api/device-api/orders/{orderId}/transfer:
     post:
       description: Neue verantwortliche Bedienung für eine offene Bestellung; mit `wholeTable` (Standard) alle offenen Bestellungen desselben Tisches dieser Bedienung. Eigene Tische übergibt jede Bedienung, fremde nur Schichtleitung/Admin (403 WAITER_NOT_PERMITTED). Eintrag im Bestellverlauf, Echtzeit `orderTransferred`.
       operationId: deviceWaiters_transfer
       parameters:
-        - *a115
+        - *a117
         - name: orderId
           required: true
           in: path
@@ -12379,13 +12472,13 @@ paths:
         "200":
           description: ""
       summary: Tisch bzw. Bestellung übergeben
-      tags: *a116
+      tags: *a118
   /api/device-api/receipts/link:
     post:
       description: Erzeugt einen Link auf den Kassenbeleg der Bestellungen (gleicher Inhalt wie der gedruckte Bon, ohne Gästeangaben). Der Link enthält ein zufälliges 128-Bit-Token, gespeichert wird nur dessen SHA-256. Gültig `RECEIPT_LINK_DAYS` Tage (Standard 90). 409 `RECEIPT_NOT_AVAILABLE` in der Betriebsart „Nur Bons“ oder ohne Zahlung.
       operationId: receiptsDevice_link
       parameters:
-        - &a117
+        - &a119
           name: X-Device-Token
           in: header
           description: Device authentication token
@@ -12408,14 +12501,14 @@ paths:
         "200":
           description: ""
       summary: Digitalen Beleg als Link (QR-Code) ausgeben
-      tags: &a118
+      tags: &a120
         - Device API
   /api/device-api/receipts/email:
     post:
       description: "Schickt den Kassenbeleg als HTML mit PDF-Anhang. Absendername ist der Verein, Antworten gehen an seine Kontaktadresse. Die Adresse wird nicht gespeichert und nicht protokolliert; im Verlauf der Bestellung steht nur „Beleg per E-Mail“. Grenzen: `RECEIPT_EMAIL_DEVICE_LIMIT_PER_HOUR` je Gerät (Standard 30) und `RECEIPT_EMAIL_ORDER_LIMIT` je Bestellung (Standard 5), sonst 429 `RECEIPT_EMAIL_RATE_LIMITED`."
       operationId: receiptsDevice_email
       parameters:
-        - *a117
+        - *a119
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12432,7 +12525,7 @@ paths:
         "200":
           description: ""
       summary: Digitalen Beleg per E-Mail schicken
-      tags: *a118
+      tags: *a120
   /api/public/receipts/{token}:
     get:
       description: Beleg-Bausteine (wie gedruckter Bon) und die rechtlichen Angaben des Vereins. 404 `RECEIPT_LINK_NOT_FOUND`, wenn der Link abgelaufen oder unbekannt ist.
@@ -12447,7 +12540,7 @@ paths:
         "200":
           description: ""
       summary: Digitalen Beleg anzeigen
-      tags: &a119
+      tags: &a121
         - Public Receipts
   /api/public/receipts/{token}/pdf:
     get:
@@ -12462,13 +12555,13 @@ paths:
         "200":
           description: ""
       summary: Digitalen Beleg als PDF herunterladen
-      tags: *a119
+      tags: *a121
   /api/device-api/hospitality-receipts/check:
     get:
       description: Vorhandener Beleg zu den Bestellungen, Betrag, ob der Name des Bewirtenden Pflicht ist (über 250 €), fehlende Stammdaten des Vereins, Sammelbezeichnungen unter den Artikeln und der erlaubte Tag der Bewirtung.
       operationId: hospitalityDevice_check
       parameters:
-        - &a120
+        - &a122
           name: X-Device-Token
           in: header
           description: Device authentication token
@@ -12485,14 +12578,14 @@ paths:
         "200":
           description: ""
       summary: Bewirtungsbeleg vorbereiten
-      tags: &a121
+      tags: &a123
         - Device API
   /api/device-api/hospitality-receipts:
     post:
       description: "Vergibt die nächste Nummer (B-JJJJ-NNNN, lückenlos je Organisation und Jahr) und speichert den Beleg unveränderlich. 409 `HOSPITALITY_MASTER_DATA_REQUIRED` (`params.missing`), 409 `HOSPITALITY_ITEMS_NOT_SPECIFIC`, 400 `HOSPITALITY_RECIPIENT_REQUIRED` über 250 €, 409 `HOSPITALITY_RECEIPT_EXISTS`. Gibt es für genau diese Bestellungen schon einen Beleg, kommt er zurück (`existing: true`)."
       operationId: hospitalityDevice_issue
       parameters:
-        - *a120
+        - *a122
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12509,13 +12602,13 @@ paths:
         "200":
           description: ""
       summary: Bewirtungsbeleg ausstellen
-      tags: *a121
+      tags: *a123
   /api/device-api/hospitality-receipts/{id}/print:
     post:
       description: "Bon-Drucker dieser Kasse (sonst der Organisation). Ab der zweiten Ausgabe mit „KOPIE“. `printed: false`, wenn kein Drucker gefunden wurde."
       operationId: hospitalityDevice_print
       parameters:
-        - *a120
+        - *a122
         - name: id
           required: true
           in: path
@@ -12531,12 +12624,12 @@ paths:
         "200":
           description: ""
       summary: Bewirtungsbeleg drucken
-      tags: *a121
+      tags: *a123
   /api/device-api/hospitality-receipts/{id}/link:
     post:
       operationId: hospitalityDevice_link
       parameters:
-        - *a120
+        - *a122
         - name: id
           required: true
           in: path
@@ -12552,13 +12645,13 @@ paths:
         "200":
           description: ""
       summary: Bewirtungsbeleg als Link (QR-Code)
-      tags: *a121
+      tags: *a123
   /api/device-api/hospitality-receipts/{id}/email:
     post:
       description: HTML + PDF. Die Adresse wird nicht gespeichert; gleiche Grenzen wie beim Kassenbeleg.
       operationId: hospitalityDevice_email
       parameters:
-        - *a120
+        - *a122
         - name: id
           required: true
           in: path
@@ -12580,7 +12673,7 @@ paths:
         "200":
           description: ""
       summary: Bewirtungsbeleg per E-Mail
-      tags: *a121
+      tags: *a123
 info:
   title: OpenEOS API
   description: |-
@@ -13922,7 +14015,7 @@ components:
           description: "Sind die Marken mehr wert als offen ist, wird der Rest als Trinkgeld gebucht (der Gast verzichtet auf Wechselgeld). Ohne diese Bestätigung: 400 TOKEN_OVERPAYMENT."
         paymentMethod:
           type: string
-          enum: &a123
+          enum: &a125
             - cash
             - card
             - sumup_terminal
@@ -13993,7 +14086,7 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: &a124
+          enum: &a126
             - normal
             - high
             - rush
@@ -14001,7 +14094,7 @@ components:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: &a125
+          enum: &a127
             - pos
             - online
             - qr_order
@@ -14009,7 +14102,7 @@ components:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: &a126
+          enum: &a128
             - table_service
             - counter_pickup
         items:
@@ -14048,7 +14141,7 @@ components:
           type: string
           example: cash
           description: "Zahlungsmethode (Wertmarken nur über die Kasse: `POST /device-api/payments/batch` bzw. Bestellung mit Zahlung)"
-          enum: &a130
+          enum: &a132
             - cash
             - card
             - sumup_terminal
@@ -14088,7 +14181,7 @@ components:
           type: string
         reasonCode:
           type: string
-          enum: &a122
+          enum: &a124
             - wrong_order
             - quality
             - not_delivered
@@ -14125,7 +14218,7 @@ components:
             $ref: "#/components/schemas/RefundItemSelectionDto"
         reasonCode:
           type: string
-          enum: *a122
+          enum: *a124
         reasonText:
           type: string
           example: Gast hat es sich anders überlegt
@@ -14170,7 +14263,7 @@ components:
           description: "Zahlung, über die erstattet wird. Ohne: von der jüngsten Zahlung rückwärts."
         reasonCode:
           type: string
-          enum: *a122
+          enum: *a124
         reasonText:
           type: string
           example: Burger kalt
@@ -14252,7 +14345,7 @@ components:
             type: string
         paymentMethod:
           type: string
-          enum: *a123
+          enum: *a125
           example: cash
         amountReceived:
           type: number
@@ -14482,17 +14575,17 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: *a124
+          enum: *a126
         source:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: *a125
+          enum: *a127
         fulfillmentType:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: *a126
+          enum: *a128
         items:
           description: Liste der Bestellpositionen
           type: array
@@ -14652,7 +14745,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: &a127
+          enum: &a129
             - fixed
             - manual
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
@@ -14689,7 +14782,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: *a127
+          enum: *a129
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
         amount:
           type: number
@@ -14721,7 +14814,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: &a128
+          enum: &a130
             - 19
             - 7
             - 0
@@ -14752,7 +14845,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: *a128
+          enum: *a130
           default: 19
           description: "Umsatzsteuersatz des Pfands in Prozent: der Satz der Getränke/Waren, für die dieses Pfand gilt (meist 19). Pfand gehört zum Entgelt; die Rückgabe mindert Umsatz und Umsatzsteuer zum selben Satz. Steuerbefreite Organisationen (Kleinunternehmer) weisen trotzdem keine MwSt aus."
         isActive:
@@ -14950,7 +15043,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: &a129
+          enum: &a131
             - rect
             - round
         x:
@@ -15034,7 +15127,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: *a129
+          enum: *a131
         x:
           type: number
         y:
@@ -15672,7 +15765,7 @@ components:
           type: string
           example: card
           description: "Zahlungsmethode (Wertmarken nur über die Kasse: `POST /device-api/payments/batch` bzw. Bestellung mit Zahlung)"
-          enum: *a130
+          enum: *a132
         items:
           description: Liste der zu bezahlenden Positionen
           type: array
@@ -16609,7 +16702,7 @@ components:
           description: Nennwert in Euro (Verkaufspreis = Einlösewert)
         kind:
           type: string
-          enum: &a131
+          enum: &a133
             - multi_purpose
             - single_purpose
           default: multi_purpose
@@ -16659,7 +16752,7 @@ components:
           description: Nennwert in Euro (Verkaufspreis = Einlösewert)
         kind:
           type: string
-          enum: *a131
+          enum: *a133
           default: multi_purpose
           description: "`multi_purpose` = Mehrzweckgutschein (Standard, § 3 Abs. 15 UStG: Steuer bei Einlösung); `single_purpose` = Einzweckgutschein (§ 3 Abs. 14 UStG: nur für Artikel mit genau einem Steuersatz, Steuer beim Verkauf)."
         vatRate:
@@ -16808,6 +16901,97 @@ components:
         - email
         - message
         - startedAt
+    CreateContentReportDto:
+      type: object
+      properties:
+        url:
+          type: string
+          example: https://shop.openeos.de/3f1c…
+          description: Fundstelle (Adresse der gemeldeten Seite)
+          maxLength: 1000
+        reason:
+          type: string
+          enum:
+            - illegal
+            - intellectual_property
+            - personal_rights
+            - consumer_protection
+            - youth_protection
+            - fraud
+            - other
+          example: illegal
+        description:
+          type: string
+          description: "Begründung: warum der Inhalt rechtswidrig ist"
+          minLength: 20
+          maxLength: 5000
+        name:
+          type: string
+          example: Max Mustermann
+          minLength: 2
+          maxLength: 200
+        email:
+          type: string
+          example: max@example.com
+        goodFaith:
+          type: boolean
+          description: Bestätigung, dass die Angaben in gutem Glauben richtig und vollständig sind (Art. 16 Abs. 2 lit. d DSA)
+          example: true
+        website:
+          type: string
+          description: Honeypot-Feld — muss leer bleiben
+        startedAt:
+          type: number
+          example: 1735689600000
+          description: Zeitpunkt (epoch ms), zu dem das Formular geladen wurde
+      required:
+        - url
+        - reason
+        - description
+        - name
+        - email
+        - goodFaith
+        - startedAt
+    UpdateContentReportDto:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - open
+            - in_review
+            - closed
+        action:
+          type: string
+          enum:
+            - none
+            - hide_content
+            - disable_shop
+          description: "`disable_shop` schaltet den Shop der Veranstaltung ab bzw. nimmt die Helferseite aus der Veröffentlichung (einmalig beim Speichern). `hide_content` hält eine von Hand ausgeführte Entfernung fest."
+        decision:
+          type: string
+          maxLength: 2000
+        facts:
+          type: string
+          maxLength: 5000
+        ground:
+          type: string
+          maxLength: 2000
+        redress:
+          type: string
+          maxLength: 2000
+          description: Leer = Standardtext zu den Rechtsbehelfen
+    NotifyContentReportDto:
+      type: object
+      properties:
+        target:
+          type: string
+          enum:
+            - reporter
+            - organization
+          description: "`reporter` = Mitteilung der Entscheidung an den Meldenden (Art. 16 Abs. 5 DSA), `organization` = Begründung an den Verein (Art. 17 DSA)"
+      required:
+        - target
     UpdateAssistantDto:
       type: object
       properties:
@@ -16976,6 +17160,7 @@ components:
               - audit_logs
               - support_messages
               - contact_requests
+              - content_reports
               - assistant_imports
               - webhook_deliveries
               - receipt_links
@@ -17065,7 +17250,7 @@ components:
           description: Abonnierte Ereignisse (mindestens eines)
           items:
             type: string
-            enum: &a132
+            enum: &a134
               - order.created
               - order.paid
               - order.completed
@@ -17106,7 +17291,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a132
+            enum: *a134
         active:
           type: boolean
           description: Ein- oder ausschalten. Einschalten setzt eine automatische Abschaltung und die Fehlerserie zurück.
@@ -17132,7 +17317,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: &a133
+          enum: &a135
             - service
             - lead
           default: service
@@ -17166,7 +17351,7 @@ components:
           example: Ben
         role:
           type: string
-          enum: *a133
+          enum: *a135
       required:
         - name
     BulkCreateWaitersDto:
@@ -17178,7 +17363,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: *a133
+          enum: *a135
           default: service
         items:
           maxItems: 200
@@ -17202,7 +17387,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: *a133
+          enum: *a135
         permissions:
           type: object
         eventId:

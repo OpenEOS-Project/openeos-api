@@ -28,6 +28,7 @@ import { AssistantImportsJob } from './jobs/assistant-imports.job';
 import { AuditLogsJob } from './jobs/audit-logs.job';
 import { AuthRecordsJob } from './jobs/auth-records.job';
 import { ContactRequestsJob } from './jobs/contact-requests.job';
+import { ContentReportsJob } from './jobs/content-reports.job';
 import { FiscalArchiveJob } from './jobs/fiscal-archive.job';
 import { GuestDataJob } from './jobs/guest-data.job';
 import { HelperDataJob } from './jobs/helper-data.job';
@@ -141,6 +142,7 @@ describeWithDb('Retention jobs against Postgres', () => {
       new AuditLogsJob(),
       new SupportMessagesJob(),
       new ContactRequestsJob(),
+      new ContentReportsJob(),
       new AssistantImportsJob({
         cleanupNow,
       } as unknown as MenuImportWorkerService),
@@ -733,6 +735,34 @@ describeWithDb('Retention jobs against Postgres', () => {
         )
       ).map((r) => r.id);
       expect(left.sort()).toEqual([recentHandled, unhandled].sort());
+    });
+
+    it('deletes content reports 12 months after they were closed', async () => {
+      const insert = async (status: string, closedAt: Date | null) => {
+        const [row] = await sql(
+          `INSERT INTO content_reports (url, reason, description, reporter_name, reporter_email, good_faith, target_type, status, closed_at, created_at)
+           VALUES ('https://shop.example/x', 'illegal', 'Beschreibung', 'Melder', 'm@example.test', true, 'unknown', $1, $2, $3) RETURNING id`,
+          [status, closedAt, ago(500)],
+        );
+        return row.id;
+      };
+      const oldClosed = await insert('closed', ago(400));
+      const recentClosed = await insert('closed', ago(100));
+      const open = await insert('open', null);
+      try {
+        await run('content_reports');
+        const left = (
+          await sql(
+            `SELECT id FROM content_reports WHERE id = ANY($1::uuid[])`,
+            [[oldClosed, recentClosed, open]],
+          )
+        ).map((r) => r.id);
+        expect(left.sort()).toEqual([recentClosed, open].sort());
+      } finally {
+        await sql(`DELETE FROM content_reports WHERE id = ANY($1::uuid[])`, [
+          [oldClosed, recentClosed, open],
+        ]);
+      }
     });
   });
 

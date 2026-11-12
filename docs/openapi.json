@@ -18012,6 +18012,168 @@
         ]
       }
     },
+    "/api/public/content-reports": {
+      "post": {
+        "description": "Meldung eines rechtswidrigen Inhalts in einem Vereins-Shop oder auf einer Helferseite (Melde- und Abhilfeverfahren nach Art. 16 DSA). Nicht authentifiziert; Honeypot, Mindest-Ausfüllzeit, höchstens 5 Meldungen je Stunde und IP-Adresse. Der Meldende erhält eine Eingangsbestätigung per E-Mail.",
+        "operationId": "contentReports_submit",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateContentReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Report illegal content on a public page (Art. 16 DSA)",
+        "tags": [
+          "Content reports (Public)"
+        ]
+      }
+    },
+    "/api/admin/content-reports": {
+      "get": {
+        "operationId": "contentReportsAdmin_list",
+        "parameters": [
+          {
+            "name": "status",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "List content reports (DSA), newest first",
+        "tags": [
+          "Admin — Inhaltsmeldungen"
+        ]
+      }
+    },
+    "/api/admin/content-reports/{id}": {
+      "get": {
+        "operationId": "contentReportsAdmin_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get one content report",
+        "tags": [
+          "Admin — Inhaltsmeldungen"
+        ]
+      },
+      "patch": {
+        "description": "Status (open/in_review/closed), Maßnahme (none/hide_content/disable_shop), Entscheidung, Sachverhalt, Grundlage und Rechtsbehelfe. `disable_shop` schaltet den Shop der Veranstaltung ab bzw. nimmt die Helferseite aus der Veröffentlichung (einmalig).",
+        "operationId": "contentReportsAdmin_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateContentReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Update status, decision and statement of reasons",
+        "tags": [
+          "Admin — Inhaltsmeldungen"
+        ]
+      }
+    },
+    "/api/admin/content-reports/{id}/notify": {
+      "post": {
+        "description": "`reporter`: Mitteilung der Entscheidung an den Meldenden (Art. 16 Abs. 5 DSA). `organization`: Begründung an die Admins des Vereins (Art. 17 DSA) mit Maßnahme, Sachverhalt, Grundlage und Rechtsbehelfen.",
+        "operationId": "contentReportsAdmin_notify",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotifyContentReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Send the decision to the reporter or the statement of reasons to the club",
+        "tags": [
+          "Admin — Inhaltsmeldungen"
+        ]
+      }
+    },
     "/api/internal/deploy-guard": {
       "get": {
         "description": "busy = an active event took a non-test order within the window (default 30 min). Lists those events with their last order time.",
@@ -18829,6 +18991,7 @@
                 "audit_logs",
                 "support_messages",
                 "contact_requests",
+                "content_reports",
                 "assistant_imports",
                 "webhook_deliveries",
                 "receipt_links",
@@ -27078,6 +27241,124 @@
           "startedAt"
         ]
       },
+      "CreateContentReportDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "example": "https://shop.openeos.de/3f1c…",
+            "description": "Fundstelle (Adresse der gemeldeten Seite)",
+            "maxLength": 1000
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "illegal",
+              "intellectual_property",
+              "personal_rights",
+              "consumer_protection",
+              "youth_protection",
+              "fraud",
+              "other"
+            ],
+            "example": "illegal"
+          },
+          "description": {
+            "type": "string",
+            "description": "Begründung: warum der Inhalt rechtswidrig ist",
+            "minLength": 20,
+            "maxLength": 5000
+          },
+          "name": {
+            "type": "string",
+            "example": "Max Mustermann",
+            "minLength": 2,
+            "maxLength": 200
+          },
+          "email": {
+            "type": "string",
+            "example": "max@example.com"
+          },
+          "goodFaith": {
+            "type": "boolean",
+            "description": "Bestätigung, dass die Angaben in gutem Glauben richtig und vollständig sind (Art. 16 Abs. 2 lit. d DSA)",
+            "example": true
+          },
+          "website": {
+            "type": "string",
+            "description": "Honeypot-Feld — muss leer bleiben"
+          },
+          "startedAt": {
+            "type": "number",
+            "example": 1735689600000,
+            "description": "Zeitpunkt (epoch ms), zu dem das Formular geladen wurde"
+          }
+        },
+        "required": [
+          "url",
+          "reason",
+          "description",
+          "name",
+          "email",
+          "goodFaith",
+          "startedAt"
+        ]
+      },
+      "UpdateContentReportDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in_review",
+              "closed"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "none",
+              "hide_content",
+              "disable_shop"
+            ],
+            "description": "`disable_shop` schaltet den Shop der Veranstaltung ab bzw. nimmt die Helferseite aus der Veröffentlichung (einmalig beim Speichern). `hide_content` hält eine von Hand ausgeführte Entfernung fest."
+          },
+          "decision": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "facts": {
+            "type": "string",
+            "maxLength": 5000
+          },
+          "ground": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "redress": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Leer = Standardtext zu den Rechtsbehelfen"
+          }
+        }
+      },
+      "NotifyContentReportDto": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "reporter",
+              "organization"
+            ],
+            "description": "`reporter` = Mitteilung der Entscheidung an den Meldenden (Art. 16 Abs. 5 DSA), `organization` = Begründung an den Verein (Art. 17 DSA)"
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
       "UpdateAssistantDto": {
         "type": "object",
         "properties": {
@@ -27304,6 +27585,7 @@
                 "audit_logs",
                 "support_messages",
                 "contact_requests",
+                "content_reports",
                 "assistant_imports",
                 "webhook_deliveries",
                 "receipt_links",

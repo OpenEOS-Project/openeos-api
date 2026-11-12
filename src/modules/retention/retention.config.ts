@@ -40,6 +40,8 @@ export interface RetentionConfig {
   supportMonths: number;
   /** Website-Anfragen: Monate nach Abschluss der Bearbeitung. */
   contactMonths: number;
+  /** Inhaltsmeldungen (DSA): Monate nach dem Abschluss der Pruefung. */
+  contentReportMonths: number;
   /** Organisationen ohne Buchung: Monate bis zur Ankuendigung. */
   inactiveOrganizationMonths: number;
   /** Benutzerkonten ohne Organisation und ohne Anmeldung. */
@@ -124,6 +126,7 @@ export function loadRetentionConfig(env: Env = process.env): RetentionConfig {
     staleCredentialDays: int(env, 'RETENTION_STALE_CREDENTIAL_DAYS', 90),
     supportMonths: int(env, 'RETENTION_SUPPORT_MONTHS', 12),
     contactMonths: int(env, 'RETENTION_CONTACT_MONTHS', 6),
+    contentReportMonths: int(env, 'RETENTION_CONTENT_REPORT_MONTHS', 12),
     inactiveOrganizationMonths: int(env, 'RETENTION_INACTIVE_ORG_MONTHS', 24),
     inactiveUserMonths: int(env, 'RETENTION_INACTIVE_USER_MONTHS', 24),
     noticeDays: int(
