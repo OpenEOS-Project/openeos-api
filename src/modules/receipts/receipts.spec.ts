@@ -261,6 +261,7 @@ describe('ReceiptsService', () => {
       perOrder?: { orderId: string; n: number }[];
       sendOk?: boolean;
       targetLimits?: TargetLimitService;
+      orders?: unknown[];
     } = {},
   ) {
     const saved: unknown[] = [];
@@ -302,7 +303,9 @@ describe('ReceiptsService', () => {
     };
     const service = new ReceiptsService(
       links as never,
-      { find: jest.fn(() => Promise.resolve([ORDER])) } as never,
+      {
+        find: jest.fn(() => Promise.resolve(options.orders ?? [ORDER])),
+      } as never,
       {
         findOne: jest.fn(() =>
           Promise.resolve(
@@ -390,6 +393,15 @@ describe('ReceiptsService', () => {
     const stored = JSON.stringify(saved);
     expect(stored).toContain('"status":"failed"');
     expect(stored).not.toContain('gast@example.org');
+  });
+
+  it('loads the orders of the own organization before counting e-mails', async () => {
+    const { service, actor, email, events } = setup({ orders: [] });
+    await expect(
+      service.sendEmail(actor, ['o-foreign'], 'gast@example.org'),
+    ).rejects.toBeInstanceOf(HttpException);
+    expect(events.count).not.toHaveBeenCalled();
+    expect(email.sendEmail).not.toHaveBeenCalled();
   });
 
   it('limits e-mails per device and per order', async () => {
