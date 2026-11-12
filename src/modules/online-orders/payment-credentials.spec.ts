@@ -21,7 +21,7 @@ import { organizationSettingsTransformer } from '../../database/transformers/org
 import { IntegrationCredentialsBackfillService } from '../organizations/integration-credentials-backfill.service';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { SumUpService } from '../sumup/sumup.service';
-import { RemovePayPalSettings1842900000000 } from '../../database/migrations/1842900000000-RemovePayPalSettings';
+import { RemovePayPalSettings1843900000000 } from '../../database/migrations/1843900000000-RemovePayPalSettings';
 
 /**
  * SumUp bekommt die Zugangsdaten im Klartext, obwohl sie
@@ -348,7 +348,7 @@ describeWithDb('payment credentials against Postgres', () => {
         JSON.stringify({ currency: 'EUR', integrations: 'kaputt' }),
       ],
     );
-    const migration = new RemovePayPalSettings1842900000000();
+    const migration = new RemovePayPalSettings1843900000000();
     const runner = ds.createQueryRunner();
     try {
       await migration.up(runner);

@@ -16,8 +16,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * down() leer: geloeschte Zugangsdaten lassen sich nicht wiederherstellen,
  * und ohne PayPal-Anbindung braucht sie niemand.
  */
-export class RemovePayPalSettings1842900000000 implements MigrationInterface {
-  name = 'RemovePayPalSettings1842900000000';
+export class RemovePayPalSettings1843900000000 implements MigrationInterface {
+  name = 'RemovePayPalSettings1843900000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
