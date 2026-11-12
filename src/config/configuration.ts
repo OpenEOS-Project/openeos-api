@@ -112,6 +112,22 @@ export default () => ({
       (IS_SELF_HOSTED
         ? ''
         : `${legalConfigFromEnv(process.env, false).siteUrl}/datenschutz`),
+    // Zentrale Kontaktstelle nach Art. 11/12 DSA (Formular „Inhalt melden“,
+    // Begruendungen). Gehostet hello@openeos.de; eigenstaendig betrieben
+    // ohne Vorgabe — dort ist der Betreiber selbst Ansprechpartner.
+    contactEmail:
+      process.env.PLATFORM_CONTACT_EMAIL ??
+      (IS_SELF_HOSTED ? '' : 'hello@openeos.de'),
+    // Formular „Inhalt melden“ (Melde- und Abhilfeverfahren, Art. 16 DSA)
+    // in der Verwaltung; der Shop verlinkt es mit der Fundstelle. Leer =
+    // kein Link.
+    reportUrl:
+      process.env.PLATFORM_REPORT_URL ??
+      (process.env.APP_URL
+        ? `${process.env.APP_URL.replace(/\/+$/, '')}/report`
+        : IS_SELF_HOSTED
+          ? ''
+          : 'https://app.openeos.de/report'),
   },
 
   // AGB, AVV, Datenschutzerklaerung und Impressum von LUXCODE: aktuelle

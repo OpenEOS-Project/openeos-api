@@ -149,7 +149,7 @@ describe('toPublicLegalInfo', () => {
       privacyText: 'Datenschutz',
       contactEmail: 'ds@tsv.example',
       complete: true,
-      platform,
+      platform: { ...platform, contactEmail: null, reportUrl: null },
     });
     expect(JSON.stringify(info)).not.toContain('sup_sk_live_secret');
   });
