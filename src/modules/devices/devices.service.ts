@@ -23,7 +23,12 @@ import {
 import {
   DeviceStatus,
   DeviceType,
+  type DeviceSettings,
 } from '../../database/entities/device.entity';
+import {
+  assertReferencesInOrganization,
+  referenceNotFound,
+} from '../../common/utils/organization-references';
 import { PaymentTransactionStatus } from '../../database/entities/payment.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
@@ -82,6 +87,8 @@ export class DevicesService {
   ): Promise<Device> {
     await this.checkPermission(organizationId, user.id, 'devices');
     assertDeviceSettings(createDto.settings);
+    await this.assertWaiterOfOrganization(organizationId, createDto.settings);
+    await this.assertSettingsReferences(organizationId, null, createDto.settings);
 
     // Generate unique device token
     const deviceToken = this.generateDeviceToken();
@@ -200,6 +207,7 @@ export class DevicesService {
     }
 
     await this.assertWaiterOfOrganization(organizationId, device.settings);
+    await this.assertSettingsReferences(organizationId, device.id, neueSettings);
     await this.deviceRepository.save(device);
 
     this.logger.log(`Device updated: ${device.name} (${device.id})`);
@@ -948,6 +956,42 @@ export class DevicesService {
   }
 
   /** Feste Bedienung muss zur Organisation gehoeren. */
+  /**
+   * Drucker, Standardbereich und gespiegelte Kasse in den Einstellungen
+   * gehoeren zur selben Organisation. Geprueft werden nur die mitgeschickten
+   * Werte; eine Anzeige spiegelt nie sich selbst.
+   */
+  private async assertSettingsReferences(
+    organizationId: string,
+    deviceId: string | null,
+    settings: Partial<DeviceSettings> | null | undefined,
+  ): Promise<void> {
+    if (!settings) return;
+    const values = settings as Record<string, unknown>;
+    const id = (key: string): string | null =>
+      typeof values[key] === 'string' && values[key] !== ''
+        ? (values[key] as string)
+        : null;
+    if (deviceId && id('posDeviceId') === deviceId) {
+      throw referenceNotFound('device', 'posDeviceId');
+    }
+    await assertReferencesInOrganization(
+      this.deviceRepository.manager,
+      { organizationId },
+      [
+        {
+          kind: 'printer',
+          ids: [id('defaultPrinterId'), id('cashDrawerPrinterId')].filter(
+            (value): value is string => !!value,
+          ),
+          field: 'settings',
+        },
+        { kind: 'tableArea', ids: id('tableAreaId'), field: 'settings' },
+        { kind: 'device', ids: id('posDeviceId'), field: 'settings' },
+      ],
+    );
+  }
+
   private async assertWaiterOfOrganization(
     organizationId: string,
     settings: Device['settings'] | null | undefined,

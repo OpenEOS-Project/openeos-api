@@ -28,7 +28,9 @@ export type ReferenceKind =
   | 'order'
   | 'orderItem'
   | 'tokenType'
-  | 'waiter';
+  | 'waiter'
+  | 'device'
+  | 'tableArea';
 
 interface ReferenceSpec {
   table: string;
@@ -112,6 +114,18 @@ const REFERENCES: Record<ReferenceKind, ReferenceSpec> = {
     scope: 'organization',
     reason: ErrorReasons.WAITER_NOT_FOUND,
     message: 'Bedienung nicht gefunden',
+  },
+  device: {
+    table: 'devices',
+    scope: 'organization',
+    reason: ErrorReasons.DEVICE_NOT_FOUND,
+    message: 'Gerät nicht gefunden',
+  },
+  tableArea: {
+    table: 'table_areas',
+    scope: 'organization',
+    reason: ErrorReasons.TABLE_AREA_NOT_FOUND,
+    message: 'Bereich nicht gefunden',
   },
 };
 
