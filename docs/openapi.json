@@ -11782,6 +11782,14 @@
         "operationId": "invoices_findAll",
         "parameters": [
           {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "status",
             "required": false,
             "in": "query",
@@ -11860,6 +11868,14 @@
         "operationId": "invoices_findOne",
         "parameters": [
           {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "id",
             "required": true,
             "in": "path",
@@ -11887,6 +11903,14 @@
       "get": {
         "operationId": "invoices_getPdfUrl",
         "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "name": "id",
             "required": true,
