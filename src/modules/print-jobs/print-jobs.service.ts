@@ -24,6 +24,7 @@ import {
   createPaginatedResult,
 } from '../../common/dto/pagination.dto';
 import { CreatePrintJobDto, QueryPrintJobsDto } from './dto';
+import { assertReferencesInOrganization } from '../../common/utils/organization-references';
 import {
   OPERATING_MODE_SELECT,
   isOrdersOnly,
@@ -86,6 +87,22 @@ export class PrintJobsService {
         message: 'Drucker ist deaktiviert',
       });
     }
+
+    // Vorlage, Bestellung und Position aus derselben Organisation (die
+    // Position zudem aus der angegebenen Bestellung).
+    await assertReferencesInOrganization(
+      this.printJobRepository.manager,
+      { organizationId, orderId: createDto.orderId || null },
+      [
+        {
+          kind: 'printTemplate',
+          ids: createDto.templateId,
+          field: 'templateId',
+        },
+        { kind: 'order', ids: createDto.orderId, field: 'orderId' },
+        { kind: 'orderItem', ids: createDto.orderItemId, field: 'orderItemId' },
+      ],
+    );
 
     const templateName = await this.resolveTemplateName(
       organizationId,
