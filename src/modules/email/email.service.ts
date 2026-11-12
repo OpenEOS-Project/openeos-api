@@ -11,6 +11,7 @@ import {
   rahmen,
   stapeln,
   ueberschrift,
+  fussnote,
 } from './email-template';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
@@ -1555,6 +1556,123 @@ export class EmailService {
     return this.sendEmail({ to: email, subject, html });
   }
 
+  // ============ Widerruf von Shop-Bestellungen (§ 356a BGB) ============
+
+  /** Inhalt und Eingang des Widerrufs als Datenblock. */
+  private widerrufZeilen(options: {
+    organizationName: string;
+    eventName: string;
+    name: string;
+    email: string;
+    orderReference: string;
+    message: string | null;
+    receivedAt: Date;
+    reference: string;
+  }): [string, string][] {
+    const eingang = `${new Intl.DateTimeFormat('de-DE', {
+      dateStyle: 'long',
+      timeStyle: 'medium',
+      timeZone: 'Europe/Berlin',
+    }).format(options.receivedAt)} Uhr`;
+    const zeilen: [string, string][] = [
+      ['Eingegangen am', eingang],
+      ['Verkäufer', options.organizationName],
+      ['Veranstaltung', options.eventName],
+      ['Bestellnummer', options.orderReference],
+      ['Name', options.name],
+      ['E-Mail', options.email],
+    ];
+    if (options.message) zeilen.push(['Weitere Angaben', options.message]);
+    zeilen.push(['Kennung', options.reference]);
+    return zeilen;
+  }
+
+  /** Eingangsbestaetigung an den Gast, sofort und mit Inhalt und Zeitpunkt. */
+  async sendShopWithdrawalConfirmation(options: {
+    to: string;
+    organizationName: string;
+    eventName: string;
+    name: string;
+    email: string;
+    orderReference: string;
+    message: string | null;
+    receivedAt: Date;
+    reference: string;
+    replyTo: string | null;
+  }): Promise<boolean> {
+    const subject = `Eingangsbestätigung deines Widerrufs – ${options.organizationName}`;
+    const intro = `Hallo ${options.name}, dein Widerruf der Bestellung ${options.orderReference} bei ${options.organizationName} ist eingegangen. Wir haben ihn an ${options.organizationName} weitergeleitet; dort wird er bearbeitet, auch die Erstattung.`;
+    const html = rahmen({
+      kontext: 'Widerruf',
+      titel: subject,
+      preheader: intro,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Dein Widerruf ist eingegangen'),
+        absatz(intro),
+        datenblock('Inhalt deines Widerrufs', this.widerrufZeilen(options)),
+        fussnote(
+          `Fragen zur Erstattung beantwortet ${options.organizationName}${options.replyTo ? ` (${options.replyTo})` : ''}. OpenEOS stellt nur die Software für den Shop bereit.`,
+        ),
+      ),
+    });
+    return this.sendEmail({
+      to: options.to,
+      subject,
+      html,
+      fromName: options.organizationName,
+      replyTo: options.replyTo ?? undefined,
+      redactRecipient: true,
+    });
+  }
+
+  /** Der Widerruf an den Verein (Vertragspartner des Gastes). */
+  async sendShopWithdrawalToClub(options: {
+    to: string;
+    organizationName: string;
+    eventName: string;
+    name: string;
+    email: string;
+    orderReference: string;
+    message: string | null;
+    receivedAt: Date;
+    reference: string;
+    orderFound: boolean;
+  }): Promise<boolean> {
+    const subject = `Widerruf einer Shop-Bestellung: ${options.orderReference}`;
+    const intro = `Über die Widerrufsfunktion eures Shops (${options.eventName}) hat ${options.name} den Vertrag über die Bestellung ${options.orderReference} widerrufen. Der Gast hat eine Eingangsbestätigung mit diesem Inhalt bekommen.`;
+    const html = rahmen({
+      kontext: 'Widerruf',
+      titel: `OpenEOS — ${subject}`,
+      preheader: intro,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Widerruf eingegangen'),
+        absatz(intro),
+        datenblock('Widerruf', this.widerrufZeilen(options)),
+        hinweis(
+          options.orderFound
+            ? 'Bestellung gefunden'
+            : 'Bestellung nicht eindeutig zugeordnet',
+          options.orderFound
+            ? 'Bestellnummer und E-Mail-Adresse passen zu einer Bestellung in eurem Shop. Prüft den Widerruf und erstattet den Betrag innerhalb von 14 Tagen über die Bestellübersicht (Stornieren mit Erstattung).'
+            : 'Zu Bestellnummer und E-Mail-Adresse haben wir keine Bestellung in eurem Shop gefunden. Prüft die Angaben und meldet euch beim Gast, bevor ihr erstattet.',
+        ),
+        fussnote(
+          'Ihr habt in den rechtlichen Angaben eingestellt, dass für eure Bestellungen ein Widerrufsrecht besteht. Die Bearbeitung des Widerrufs liegt bei euch als Verkäufer.',
+        ),
+      ),
+    });
+    return this.sendEmail({
+      to: options.to,
+      subject,
+      html,
+      replyTo: options.email,
+    });
+  }
+
   async sendShopOrderConfirmationEmail(options: {
     to: string;
     name: string;
@@ -1564,6 +1682,8 @@ export class EmailService {
     tableNumber?: string | null;
     itemsHtml: string;
     totalFormatted: string;
+    /** Widerrufsfunktion (§ 356a BGB), nur wenn der Verein sie anbietet. */
+    withdrawalUrl?: string | null;
   }): Promise<boolean> {
     const subject = `Bestellbestätigung ${options.orderNumber} – ${options.eventName}`;
     const html = this.getBaseTemplate(`
@@ -1584,6 +1704,11 @@ export class EmailService {
       <p style="color: #666; font-size: 14px;">
         Diese E-Mail ist deine Bestellbestätigung und gilt als Zahlungsbeleg.
       </p>
+      ${
+        options.withdrawalUrl
+          ? `<p style="color: #666; font-size: 14px;">Du möchtest deine Bestellung widerrufen? <a href="${escapeHtml(options.withdrawalUrl)}" style="color: #2563eb;">Vertrag widerrufen</a></p>`
+          : ''
+      }
     `);
 
     return this.sendEmail({ to: options.to, subject, html });

@@ -40,6 +40,14 @@ describe('normalizeLegalSettings', () => {
     });
   });
 
+  it('stores the withdrawal right only as true, rejects non-booleans', () => {
+    expect(normalizeLegalSettings({ withdrawalRight: true })).toEqual({
+      withdrawalRight: true,
+    });
+    expect(normalizeLegalSettings({ withdrawalRight: false })).toEqual({});
+    expect(() => normalizeLegalSettings({ withdrawalRight: 'ja' })).toThrow();
+  });
+
   it('returns an empty object for null or an all-empty form', () => {
     expect(normalizeLegalSettings(null)).toEqual({});
     expect(
@@ -149,6 +157,7 @@ describe('toPublicLegalInfo', () => {
       privacyText: 'Datenschutz',
       contactEmail: 'ds@tsv.example',
       complete: true,
+      withdrawalRight: false,
       platform,
     });
     expect(JSON.stringify(info)).not.toContain('sup_sk_live_secret');

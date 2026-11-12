@@ -129,6 +129,7 @@ describe('EventsShopPublicController.getShop — legal information', () => {
       privacyText: 'Datenschutzhinweis',
       contactEmail: null,
       complete: true,
+      withdrawalRight: false,
       platform: {
         imprintUrl: 'https://openeos.de/imprint',
         privacyUrl: 'https://openeos.de/privacy',

@@ -16,6 +16,7 @@ import { ReceiptLinksJob } from './jobs/receipt-links.job';
 import { AuditLogsJob } from './jobs/audit-logs.job';
 import { AuthRecordsJob } from './jobs/auth-records.job';
 import { ContactRequestsJob } from './jobs/contact-requests.job';
+import { ShopWithdrawalsJob } from './jobs/shop-withdrawals.job';
 import { DeletionRemindersJob } from './jobs/deletion-reminders.job';
 import { FiscalArchiveJob } from './jobs/fiscal-archive.job';
 import { GuestDataJob } from './jobs/guest-data.job';
@@ -81,6 +82,7 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
           new AuditLogsJob(),
           new SupportMessagesJob(),
           new ContactRequestsJob(),
+          new ShopWithdrawalsJob(),
           new AssistantImportsJob(menuImports),
           new WebhookDeliveriesJob(webhookDeliveries),
           new ReceiptLinksJob(),

@@ -70,6 +70,7 @@ import { assertTestEventOrderLimitNotReached } from '../../common/utils/test-eve
 import { assertLegalInfoComplete } from '../organizations/legal/legal-settings.util';
 import { TseSigningService } from '../tse/tse-signing.service';
 import type { TseReceiptView } from '../tse/tse-view';
+import { withdrawalUrl } from './shop-withdrawal.service';
 
 interface CreateCheckoutBody {
   email: string;
@@ -622,6 +623,14 @@ export class EventsShopCheckoutController {
         tableNumber: checkout.tableNumber,
         itemsHtml: `<table style="width: 100%; border-collapse: collapse; font-size: 14px;">${rows}${feeRow}</table>`,
         totalFormatted: formatAmount(Number(checkout.totalAmount)),
+        // Widerrufsfunktion (§ 356a BGB) nur, wenn der Verein sie anbietet.
+        withdrawalUrl:
+          organization?.settings?.legal?.withdrawalRight === true
+            ? withdrawalUrl(
+                process.env.SHOP_RETURN_URL_BASE || 'https://shop.openeos.de',
+                checkout.eventId,
+              )
+            : null,
       });
       this.logger.log(
         `Order confirmation sent for ${order.orderNumber} to ${checkout.email}`,

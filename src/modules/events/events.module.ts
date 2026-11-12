@@ -34,7 +34,11 @@ import {
   TableArea,
   EventBillingCancellation,
   AdminAuditLog,
+  ShopWithdrawal,
 } from '../../database/entities';
+
+import { EventsShopWithdrawalController } from './events-shop-withdrawal.controller';
+import { ShopWithdrawalService } from './shop-withdrawal.service';
 
 @Module({
   imports: [
@@ -51,6 +55,7 @@ import {
       TableArea,
       EventBillingCancellation,
       AdminAuditLog,
+      ShopWithdrawal,
     ]),
     forwardRef(() => GatewayModule),
     SumUpModule,
@@ -66,6 +71,7 @@ import {
     EventsController,
     EventsShopPublicController,
     EventsShopCheckoutController,
+    EventsShopWithdrawalController,
     EventBillingController,
     StripeWebhookController,
   ],
@@ -79,6 +85,7 @@ import {
     EventCheckoutLifecycleService,
     StripeDisputeService,
     StripeInvoiceService,
+    ShopWithdrawalService,
   ],
   exports: [
     EventsService,

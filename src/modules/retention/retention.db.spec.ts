@@ -28,6 +28,7 @@ import { AssistantImportsJob } from './jobs/assistant-imports.job';
 import { AuditLogsJob } from './jobs/audit-logs.job';
 import { AuthRecordsJob } from './jobs/auth-records.job';
 import { ContactRequestsJob } from './jobs/contact-requests.job';
+import { ShopWithdrawalsJob } from './jobs/shop-withdrawals.job';
 import { FiscalArchiveJob } from './jobs/fiscal-archive.job';
 import { GuestDataJob } from './jobs/guest-data.job';
 import { HelperDataJob } from './jobs/helper-data.job';
@@ -142,6 +143,7 @@ describeWithDb('Retention jobs against Postgres', () => {
       new AuditLogsJob(),
       new SupportMessagesJob(),
       new ContactRequestsJob(),
+      new ShopWithdrawalsJob(),
       new AssistantImportsJob({
         cleanupNow,
       } as unknown as MenuImportWorkerService),
