@@ -21926,7 +21926,7 @@
           "confirmBusiness": {
             "type": "boolean",
             "example": true,
-            "description": "Pflicht: Bestätigung, als Unternehmer, juristische Person des öffentlichen Rechts oder eingetragener Verein zu handeln und die Organisation vertreten zu dürfen (AGB Ziffer 2.4)."
+            "description": "Pflicht: Bestätigung, für eine Organisation aus dem Kundenkreis nach AGB Ziffer 2.1 zu handeln (Unternehmer, juristische Person des öffentlichen Rechts, Verein – eingetragen oder nicht –, Stiftung oder sonstige Organisation), nicht als Verbraucher, und sie vertreten zu dürfen (AGB Ziffer 2.4)."
           }
         },
         "required": [
@@ -23259,7 +23259,7 @@
           "priceModifier": {
             "type": "number",
             "example": 1.5,
-            "description": "Preismodifikator"
+            "description": "Wird ignoriert: der Aufpreis kommt aus der Optionsdefinition des Produkts."
           },
           "excluded": {
             "type": "boolean",
@@ -23269,8 +23269,7 @@
         },
         "required": [
           "group",
-          "option",
-          "priceModifier"
+          "option"
         ]
       },
       "CreateOrderItemDto": {
@@ -26060,13 +26059,12 @@
           "priceModifier": {
             "type": "number",
             "example": 1.5,
-            "description": "Preismodifikator in Euro"
+            "description": "Wird ignoriert: der Aufpreis kommt aus der Optionsdefinition des Produkts."
           }
         },
         "required": [
           "group",
-          "option",
-          "priceModifier"
+          "option"
         ]
       },
       "AddCartItemDto": {
