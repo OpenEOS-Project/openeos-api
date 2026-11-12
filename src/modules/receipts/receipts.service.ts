@@ -650,9 +650,10 @@ export class ReceiptsService {
   private async publicHospitalityView(
     link: ReceiptLink,
   ): Promise<PublicReceiptView> {
+    if (!link.hospitalityReceiptId) throw this.linkGone();
     const receipt = await this.hospitalityRepository.findOne({
       where: {
-        id: link.hospitalityReceiptId!,
+        id: link.hospitalityReceiptId,
         organizationId: link.organizationId,
       },
     });

@@ -1,3 +1,4 @@
+import { INVALID_WHERE_VALUES_BEHAVIOR } from '../../../config/where-values';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { DataSource } from 'typeorm';
@@ -30,6 +31,7 @@ const describeWithDb = TEST_DB ? describe : describe.skip;
 
 function dataSource(url: string): DataSource {
   return new DataSource({
+    invalidWhereValuesBehavior: INVALID_WHERE_VALUES_BEHAVIOR,
     type: 'postgres',
     url,
     entities: [path.join(__dirname, '../../../database/entities/*.entity.ts')],

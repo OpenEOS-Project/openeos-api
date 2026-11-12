@@ -443,6 +443,9 @@ export class WaiterSessionsService {
     },
     reason: WaiterSessionEndReason,
   ): Promise<number> {
+    /* Nie ohne Einschraenkung: ein fehlender Wert beendete sonst die
+       Sitzungen aller Geraete. */
+    if (!Object.values(where).some((value) => !!value)) return 0;
     const result = await manager
       .getRepository(WaiterSession)
       .update(

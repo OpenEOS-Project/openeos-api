@@ -1,3 +1,4 @@
+import { INVALID_WHERE_VALUES_BEHAVIOR } from './where-values';
 import { registerAs } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 
@@ -66,6 +67,7 @@ export default registerAs(
     synchronize: process.env.DATABASE_SYNCHRONIZE === 'true',
     logging: process.env.DATABASE_LOGGING === 'true',
     migrationsRun: process.env.DATABASE_MIGRATIONS_RUN === 'true',
+    invalidWhereValuesBehavior: INVALID_WHERE_VALUES_BEHAVIOR,
     /* Passed unchanged to the pg pool. `max` lives only here, not also as
        TypeORM `poolSize` — `extra` would win anyway. */
     extra: poolOptions(),
