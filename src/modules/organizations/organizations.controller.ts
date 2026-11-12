@@ -114,7 +114,7 @@ export class OrganizationsController {
     operationId: 'updateOrganization',
     summary: 'Organisation ändern',
     description:
-      'Ändert Name, Kontaktdaten oder Einstellungen. Die Betriebsart und das Land ändern sich nur über ihre eigenen Endpunkte. Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen.',
+      'Ändert Name, Kontaktdaten oder Einstellungen. In `settings` sind nur diese Abschnitte änderbar: `currency`, `timezone`, `locale`, `description`, `taxId`, `legalName`, `taxNumber`, `vatId`, `vatExempt`, `address`, `contact`, `receipt`, `legal`, `pos`, `pfand`, `onlineOrdering`, `orderFlow`, `sumup`, `paypal`, `waiters`, `eventReminders`. Unverändert mitgeschickte andere Abschnitte werden ignoriert; Änderungen daran (z. B. `assistant`, `integrations`, Betriebsart) → 400 ORGANIZATION_SETTING_NOT_UPDATABLE, dafür gibt es eigene Endpunkte. Drucker und Vorlagen in `orderFlow` müssen zur Organisation gehören (400 ORGANIZATION_SETTINGS_INVALID). Die Betriebsart und das Land ändern sich nur über ihre eigenen Endpunkte. Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen.',
   })
   @ApiParam({ name: 'id', description: 'ID der Organisation', format: 'uuid' })
   async update(
