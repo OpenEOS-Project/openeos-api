@@ -362,7 +362,7 @@ paths:
       tags: *a5
   /api/auth/change-password:
     patch:
-      description: Change password for authenticated user
+      description: Change password for authenticated user. Ends all other sessions of the user; the current session stays signed in.
       operationId: auth_changePassword
       parameters: []
       requestBody:
