@@ -7,3 +7,4 @@ export * from './allow-pending-two-factor.decorator';
 export * from './requires-scope.decorator';
 export * from './saas-only.decorator';
 export * from './api-token-access.decorator';
+export * from './requires-organization-permission.decorator';

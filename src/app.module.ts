@@ -18,6 +18,7 @@ import {
 import type { PoolOptions } from './config/database.config';
 import {
   JwtAuthGuard,
+  OrganizationScopeGuard,
   DeploymentModeGuard,
   ApiTokenThrottlerGuard,
 } from './common/guards';
@@ -243,6 +244,11 @@ import { WaiterCoreModule, WaitersModule } from './modules/waiters';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    // Pfad-Organisation und Header/Query/Rumpf muessen uebereinstimmen
+    {
+      provide: APP_GUARD,
+      useClass: OrganizationScopeGuard,
     },
     // Global Rate Limiting Guard
     {
