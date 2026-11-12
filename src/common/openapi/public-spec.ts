@@ -1,9 +1,9 @@
-import type { OpenAPIObject } from '@nestjs/swagger';
 import type {
+  OpenAPIObject,
   OperationObject,
   PathItemObject,
   TagObject,
-} from '@nestjs/swagger/dist/interfaces/open-api-spec.interface';
+} from '@nestjs/swagger';
 
 import { ORGANIZATION_TOKEN_SCOPES } from '../../modules/api-tokens/api-scopes';
 
