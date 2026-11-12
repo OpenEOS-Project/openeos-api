@@ -9036,14 +9036,6 @@ paths:
         "200":
           description: ""
       tags: *a78
-  /api/health/detailed:
-    get:
-      operationId: health_detailed
-      parameters: []
-      responses:
-        "200":
-          description: ""
-      tags: *a78
   /api/setup/status:
     get:
       operationId: setup_getSetupStatus
