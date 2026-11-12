@@ -1,5 +1,4 @@
-import type { ApiResponseOptions } from '@nestjs/swagger';
-import type { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface';
+import type { ApiResponseOptions, SchemaObject } from '@nestjs/swagger';
 
 /** Schema der `meta`-Angaben einer seitenweisen Antwort (PaginationMeta). */
 export const PAGINATION_META_SCHEMA: SchemaObject = {

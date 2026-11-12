@@ -69,6 +69,7 @@ import { GatewayService } from '../gateway/gateway.service';
 import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 import { saveOrderWithNumbers } from './order-numbering';
 import { workflowDoneForClose } from './close-without-payment';
+import { assertMayManageOrders } from './order-permissions';
 import {
   OPERATING_MODE_SELECT,
   assertOrderOnlyCompletable,
@@ -477,9 +478,10 @@ export class OrdersService {
     updateDto: UpdateOrderDto,
     user: User,
   ): Promise<Order> {
-    await this.checkMembership(organizationId, user.id);
+    const membership = await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
+    this.assertMayEditOrder(user, membership, order);
 
     if (
       order.status === OrderStatus.COMPLETED ||
@@ -519,7 +521,8 @@ export class OrdersService {
     orderId: string,
     user: User,
   ): Promise<void> {
-    await this.checkMembership(organizationId, user.id);
+    const membership = await this.checkMembership(organizationId, user.id);
+    assertMayManageOrders(user, membership);
 
     const order = await this.findOne(organizationId, orderId, user);
 
@@ -548,9 +551,10 @@ export class OrdersService {
     itemDto: AddOrderItemDto,
     user: User,
   ): Promise<Order> {
-    await this.checkMembership(organizationId, user.id);
+    const membership = await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
+    this.assertMayEditOrder(user, membership, order);
 
     if (
       order.status === OrderStatus.COMPLETED ||
@@ -596,9 +600,10 @@ export class OrdersService {
     updateDto: UpdateOrderItemDto,
     user: User,
   ): Promise<Order> {
-    await this.checkMembership(organizationId, user.id);
+    const membership = await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
+    this.assertMayEditOrder(user, membership, order);
 
     if (
       order.status === OrderStatus.COMPLETED ||
@@ -727,9 +732,10 @@ export class OrdersService {
     itemId: string,
     user: User,
   ): Promise<Order> {
-    await this.checkMembership(organizationId, user.id);
+    const membership = await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
+    this.assertMayEditOrder(user, membership, order);
 
     if (
       order.status === OrderStatus.COMPLETED ||
@@ -1267,7 +1273,7 @@ export class OrdersService {
     orderId: string,
     user: User,
   ): Promise<Order> {
-    await this.checkMembership(organizationId, user.id);
+    const membership = await this.checkMembership(organizationId, user.id);
 
     const order = await this.findOne(organizationId, orderId, user);
 
@@ -1285,6 +1291,13 @@ export class OrdersService {
         reason: ErrorReasons.ORDER_CANCELLED_CANNOT_COMPLETE,
         message: 'Stornierte Bestellung kann nicht abgeschlossen werden',
       });
+    }
+
+    // Ohne vollstaendige Zahlung abschliessen (Betriebsart „Nur Bons“)
+    // darf in der Verwaltung nur, wer Bestellungen verwalten darf; an der
+    // Kasse geht das ueber POST /device-api/orders/complete.
+    if (order.paymentStatus !== PaymentStatus.PAID) {
+      assertMayManageOrders(user, membership);
     }
 
     // „Nur Bons“: abschliessen ohne Zahlung, aber nicht, solange eine
@@ -1324,7 +1337,8 @@ export class OrdersService {
     cancelDto: CancelOrderDto,
     user: User,
   ): Promise<Order> {
-    await this.checkMembership(organizationId, user.id);
+    const membership = await this.checkMembership(organizationId, user.id);
+    assertMayManageOrders(user, membership);
 
     const order = await this.findOne(organizationId, orderId, user);
 
@@ -1854,7 +1868,7 @@ export class OrdersService {
   private async checkMembership(
     organizationId: string,
     userId: string,
-  ): Promise<void> {
+  ): Promise<UserOrganization> {
     const membership = await this.userOrganizationRepository.findOne({
       where: { organizationId, userId },
     });
@@ -1865,6 +1879,24 @@ export class OrdersService {
         reason: ErrorReasons.ORGANIZATION_ACCESS_DENIED,
         message: 'Kein Zugriff auf diese Organisation',
       });
+    }
+    return membership;
+  }
+
+  /**
+   * Bezahlte oder teilbezahlte Bestellungen (und solche, die ohne Zahlung
+   * abgeschlossen wurden) aendert nur, wer Bestellungen verwalten darf.
+   */
+  private assertMayEditOrder(
+    user: User,
+    membership: UserOrganization,
+    order: Order,
+  ): void {
+    if (
+      order.paymentStatus !== PaymentStatus.UNPAID ||
+      order.closedWithoutPaymentAt
+    ) {
+      assertMayManageOrders(user, membership);
     }
   }
 }

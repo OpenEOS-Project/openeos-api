@@ -9,7 +9,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { BadRequestException } from '@nestjs/common';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { RefundsService, type RefundWithTse } from '../refunds/refunds.service';
@@ -28,6 +28,11 @@ export class PaymentsController {
   ) {}
 
   @Post()
+  @ApiOperation({
+    summary: 'Zahlung erfassen',
+    description:
+      'Erfasst eine Zahlung ohne Kasse. Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED).',
+  })
   create(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() createDto: CreatePaymentDto,
@@ -37,6 +42,11 @@ export class PaymentsController {
   }
 
   @Post('split')
+  @ApiOperation({
+    summary: 'Teilzahlung nach Positionen erfassen',
+    description:
+      'Erfasst eine Teilzahlung ohne Kasse. Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED).',
+  })
   createSplitPayment(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() splitDto: SplitPaymentDto,
