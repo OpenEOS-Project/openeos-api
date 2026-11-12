@@ -115,7 +115,6 @@ function isSecretKey(key: string, reveal: ReadonlySet<string>): boolean {
  */
 export const MASKED_CREDENTIALS: Record<string, readonly string[]> = {
   sumup: ['apiKey', 'affiliateKey'],
-  paypal: ['clientSecret'],
 };
 
 export const MASK_PREFIX = '****';

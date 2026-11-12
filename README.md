@@ -480,9 +480,8 @@ Siehe `.env.example` für alle verfügbaren Variablen.
 
 ### Zugangsdaten der Zahlungsanbieter
 
-Die SumUp- und PayPal-Zugangsdaten der Vereine (`sumup.apiKey`,
-`sumup.affiliateKey`, `paypal.clientSecret` in `organizations.settings`)
-liegen verschlüsselt in der Datenbank (AES-256-GCM, Präfix `enc:v1:`). Die
+Die SumUp-Zugangsdaten der Vereine (`sumup.apiKey`, `sumup.affiliateKey` in
+`organizations.settings`) liegen verschlüsselt in der Datenbank (AES-256-GCM, Präfix `enc:v1:`). Die
 API entschlüsselt sie beim Laden und gibt sie nach außen weiterhin nur
 maskiert heraus (`****1234`).
 
@@ -501,8 +500,14 @@ maskiert heraus (`****1234`).
   — Werte, die sich mit keinem Schlüssel öffnen lassen, bleiben stehen
   (Fehler im Log), die Vereine müssen sie dann neu eingeben.
 - **Zurück auf eine ältere Version** (vor der Verschlüsselung): die liest die
-  verschlüsselten Werte nicht. SumUp und PayPal funktionieren dann erst
-  wieder, wenn die Zugangsdaten neu eingegeben werden.
+  verschlüsselten Werte nicht. SumUp funktioniert dann erst wieder, wenn die
+  Zugangsdaten neu eingegeben werden.
+- **PayPal** ist seit 1.8 entfernt. Die Migration `RemovePayPalSettings`
+  löscht gespeicherte PayPal-Zugangsdaten (`settings.paypal`,
+  `settings.integrations.paypal`), der Abgleich beim Start räumt Reste nach.
+  Frühere Zahlungen mit der Zahlart `paypal` bleiben lesbar und exportierbar
+  (Berichte, CSV, DSFinV-K, Nachdruck); erstattet werden sie nur noch als
+  „manuell erstattet“.
 
 ### Stripe-Webhook (SaaS)
 
@@ -600,7 +605,7 @@ Integration `tse` wie SumUp (Plan und API-Vertrag:
   Zahlung (`Kassenbeleg-V1`), jede Erstattung (negativ, mit Verweis),
   jede Pfand-Auszahlung, Tischbestellungen (`Bestellung-V1`). Testmodus
   mit aktiver TSE = Trainingsbuchung (`AVTraining`). Online-Vorkasse
-  (Shop, QR mit PayPal) wird nicht signiert.
+  (Shop, QR-Bestellung mit SumUp Online) siehe `src/modules/dsfinvk/README.md`.
 - **Ausfall**: Der Verkauf läuft immer weiter. Der Vorgang wird `failed`,
   der Bon trägt „TSE ausgefallen“, ein Ausfall wird protokolliert
   (`tse_outages`) und die Admins bekommen eine Mail. Kein Nachsignieren;

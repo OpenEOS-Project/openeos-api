@@ -1157,7 +1157,8 @@ export class RefundsService {
       };
     }
     if (!isSumUpTerminal(payment)) {
-      // Fremdes Kartengeraet, PayPal, Online: ausserhalb erstatten.
+      // Fremdes Kartengeraet, Online, fruehere PayPal-Zahlungen (Anbindung
+      // seit 1.8 entfernt): ausserhalb erstatten, hier nur gebucht.
       return {
         status: 'manual',
         providerReference: reference,

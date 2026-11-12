@@ -1,4 +1,8 @@
-import { ForbiddenException, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import type { Repository } from 'typeorm';
 
 import { OnlineOrderSession } from '../../database/entities/online-order-session.entity';
@@ -11,9 +15,10 @@ import { OnlinePaymentMethod } from './dto';
 import { OnlineOrdersService } from './online-orders.service';
 
 /*
- * QR-Bestellung am Tisch mit PayPal (Steuerberater 2026-11-10, Frage 20):
- * mit aktiver Cloud-TSE wird die erfasste Zahlung nach dem Speichern als
- * Kassenbeleg signiert — vor Kuechen- und Kassenbon, genau einmal.
+ * QR-Bestellung am Tisch: Positivliste „Bargeldlos“ und die entfernte
+ * PayPal-Anbindung. Das Signieren der erfassten Zahlung mit Cloud-TSE
+ * (Steuerberater 2026-11-10, Frage 20) pruefen die SumUp-Tests
+ * (online-orders-sumup.spec.ts).
  */
 
 jest.mock('uuid', () => ({
@@ -103,15 +108,13 @@ function setup(options: { tse?: boolean; operatingMode?: string } = {}) {
         id: ORG_ID,
         country: 'DE',
         operatingMode: options.operatingMode ?? 'full',
-        settings: { paypal: { clientId: 'id', clientSecret: 'secret' } },
+        settings: {},
       }),
     ),
   };
-  const paypal = {
-    captureOrder: jest.fn(() => Promise.resolve({ status: 'COMPLETED' })),
-    createOrder: jest.fn(() =>
-      Promise.resolve({ id: 'PAYPAL-ORDER-2', links: [] }),
-    ),
+  const sumUp = {
+    createOnlineCheckout: jest.fn(),
+    getCheckoutStatus: jest.fn(),
   };
   const print = {
     handleOrderCreated: jest.fn(() => {
@@ -140,87 +143,31 @@ function setup(options: { tse?: boolean; operatingMode?: string } = {}) {
     none,
     organizationRepository as never,
     paymentRepository as never,
-    paypal as never,
-    none,
+    sumUp as never,
     { get: jest.fn(() => '') } as never,
     print as never,
     none,
     undefined,
     tseSigning as never,
   );
-  return { svc, calls, print, tseSigning, paypal, paymentRepository };
+  return { svc, calls, print, tseSigning, sumUp, paymentRepository };
 }
 
-describe('QR order payment (PayPal) with Cloud-TSE', () => {
-  it('signs the captured payment after saving and before kitchen ticket and receipt', async () => {
-    const { svc, calls, print, tseSigning } = setup();
+describe('QR order payment: payment methods', () => {
+  it('legacy pending PayPal payment: no provider call, marked failed, nothing booked or signed', async () => {
+    const { svc, calls, print, tseSigning, sumUp } = setup();
 
-    const result = await svc.confirmPayment(
-      'sess_1',
-      'pay-1',
-      'PAYPAL-ORDER-1',
-    );
+    const result = await svc.confirmPayment('sess_1', 'pay-1');
 
-    expect(result.data.status).toBe(PaymentTransactionStatus.CAPTURED);
-    expect(tseSigning.signPayment).toHaveBeenCalledWith('pay-1');
-    expect(calls).toEqual([
-      'payment.capture',
-      'order.save',
-      'tse.signPayment',
-      'print.kitchen',
-      'print.receipt',
-    ]);
-    expect(print.handlePaymentReceived).toHaveBeenCalledWith(
-      ORG_ID,
-      expect.objectContaining({
-        paymentId: 'pay-1',
-        paymentMethod: 'online',
-        isFullyPaid: true,
-        tse: SIGNED,
-      }),
-    );
-  });
-
-  it('a second confirmation (return page reloaded) does not sign again', async () => {
-    const { svc, tseSigning, print, paymentRepository } = setup();
-
-    await svc.confirmPayment('sess_1', 'pay-1', 'PAYPAL-ORDER-1');
-    // Zweiter Aufruf mit dem alten Stand (gleichzeitig gelesen): der
-    // Wechsel auf CAPTURED ist schon vergeben.
-    paymentRepository.findOne.mockImplementation(() =>
-      Promise.resolve({
-        id: 'pay-1',
-        status: PaymentTransactionStatus.PENDING,
-        paymentProvider: PaymentProvider.PAYPAL,
-        amount: 12,
-        order: { id: 'order-1', onlineSessionId: 'session-1' },
-      } as never),
-    );
-    const second = await svc.confirmPayment(
-      'sess_1',
-      'pay-1',
-      'PAYPAL-ORDER-1',
-    );
-
-    expect(second.data.status).toBe('already_captured');
-    expect(tseSigning.signPayment).toHaveBeenCalledTimes(1);
-    expect(print.handlePaymentReceived).toHaveBeenCalledTimes(1);
-  });
-
-  it('organisation without active TSE: no signing, receipt without TSE block', async () => {
-    const { svc, tseSigning, print } = setup({ tse: false });
-
-    await svc.confirmPayment('sess_1', 'pay-1', 'PAYPAL-ORDER-1');
-
+    expect(result.data.status).toBe(PaymentTransactionStatus.FAILED);
+    expect(calls).toEqual(['payment.capture']);
     expect(tseSigning.signPayment).not.toHaveBeenCalled();
-    expect(print.handlePaymentReceived).toHaveBeenCalledWith(
-      ORG_ID,
-      expect.objectContaining({ tse: null }),
-    );
+    expect(print.handlePaymentReceived).not.toHaveBeenCalled();
+    expect(sumUp.getCheckoutStatus).not.toHaveBeenCalled();
   });
 
   it('cashless: a payment method outside the positive list is rejected before anything is created', async () => {
-    const { svc, paypal } = setup({ operatingMode: 'cashless' });
+    const { svc, sumUp } = setup({ operatingMode: 'cashless' });
 
     const call = svc.initiatePayment('sess_1', {
       paymentMethod: 'voucher' as OnlinePaymentMethod,
@@ -229,15 +176,22 @@ describe('QR order payment (PayPal) with Cloud-TSE', () => {
     await expect(call).rejects.toMatchObject({
       response: { reason: 'PAYMENT_METHOD_NOT_ALLOWED_CASHLESS' },
     });
-    expect(paypal.createOrder).not.toHaveBeenCalled();
+    expect(sumUp.createOnlineCheckout).not.toHaveBeenCalled();
   });
 
-  it('cashless: PayPal (on the list) still starts', async () => {
-    const { svc, paypal } = setup({ operatingMode: 'cashless' });
+  it('PayPal is no longer offered: rejected before anything is created', async () => {
+    for (const operatingMode of ['full', 'cashless']) {
+      const { svc, sumUp, paymentRepository } = setup({ operatingMode });
 
-    await svc.initiatePayment('sess_1', {
-      paymentMethod: OnlinePaymentMethod.PAYPAL,
-    });
-    expect(paypal.createOrder).toHaveBeenCalledTimes(1);
+      const call = svc.initiatePayment('sess_1', {
+        paymentMethod: 'paypal' as OnlinePaymentMethod,
+      });
+      await expect(call).rejects.toBeInstanceOf(BadRequestException);
+      await expect(call).rejects.toMatchObject({
+        response: { reason: 'PAYMENT_METHOD_UNSUPPORTED' },
+      });
+      expect(sumUp.createOnlineCheckout).not.toHaveBeenCalled();
+      expect(paymentRepository.save).not.toHaveBeenCalled();
+    }
   });
 });

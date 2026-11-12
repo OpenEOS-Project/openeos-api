@@ -268,7 +268,10 @@ export function assertPaymentsAllowed(
  * Positivliste der Zahlarten in der Betriebsart „Bargeldlos“ (Steuerberater
  * 2026-11-10, Frage 12; AEAO zu § 146a Nr. 1.2): nur Karte (fremdes
  * Kartengeraet, SumUp-Terminal) und Online-Zahlung ueber einen
- * Zahlungsdienstleister (SumUp Online, PayPal, Google Pay, Apple Pay).
+ * Zahlungsdienstleister (SumUp Online, Google Pay, Apple Pay). PayPal steht
+ * nur fuer Altdaten in der Liste (Anbindung seit 1.8 entfernt): fruehere
+ * PayPal-Zahlungen zaehlen weiter als unbar (Erstattung, Abrechnung); neu
+ * buchen laesst sich PayPal nirgends (DTOs, Online-Zahlung).
  * Bargeld und alles, was „an Geldes statt“ angenommen wird (Wertmarken,
  * Gutscheine, Guthabenkarten, Kundenkonten), ist dort ausgeschlossen —
  * auch jede kuenftige Zahlart, solange sie hier nicht ausdruecklich steht.
@@ -387,6 +390,7 @@ export function isOnlinePrepaymentMethod(
   method: PaymentMethod | string | null | undefined,
 ): boolean {
   return (
+    // PayPal: nur Altdaten (Anbindung seit 1.8 entfernt).
     method === PaymentMethod.PAYPAL ||
     method === PaymentMethod.SUMUP_ONLINE ||
     // Google Pay / Apple Pay laufen ueber den SumUp-Online-Checkout.

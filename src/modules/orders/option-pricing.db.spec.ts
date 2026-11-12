@@ -196,7 +196,6 @@ describeWithDb('Option prices against Postgres', () => {
       ds.getRepository(Organization),
       ds.getRepository(Payment),
       {} as never,
-      {} as never,
       config as never,
       print as never,
       gateway as never,

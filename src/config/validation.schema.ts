@@ -56,7 +56,7 @@ export const validationSchema = Joi.object({
     then: Joi.required(),
     otherwise: Joi.string().allow('').default(''),
   }),
-  // Zugangsdaten der Zahlungsanbieter (SumUp, PayPal) in den
+  // Zugangsdaten der Zahlungsanbieter (SumUp) in den
   // Organisationseinstellungen. Leer: TWO_FACTOR_ENCRYPTION_KEY.
   INTEGRATION_ENCRYPTION_KEY: Joi.string().allow(''),
   // Pepper fuer die PIN-Pruefwerte der Kasse (Mitglieder und Bedienungen,

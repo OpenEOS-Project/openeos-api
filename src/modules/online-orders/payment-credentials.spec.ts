@@ -12,26 +12,19 @@ import {
 } from '../../common/services/integration-credentials.crypto';
 import { redactResponse } from '../../common/utils/response-redaction.util';
 import { Event } from '../../database/entities/event.entity';
-import { OnlineOrderSession } from '../../database/entities/online-order-session.entity';
-import { Order } from '../../database/entities/order.entity';
 import {
   Organization,
   OrganizationSettings,
 } from '../../database/entities/organization.entity';
-import { Payment } from '../../database/entities/payment.entity';
 import { UserOrganization } from '../../database/entities/user-organization.entity';
 import { organizationSettingsTransformer } from '../../database/transformers/organization-settings.transformer';
-import { GatewayService } from '../gateway/gateway.service';
 import { IntegrationCredentialsBackfillService } from '../organizations/integration-credentials-backfill.service';
-import { PayPalService } from '../payments/providers/paypal.service';
-import { OrderPrintService } from '../print-jobs/order-print.service';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { SumUpService } from '../sumup/sumup.service';
-import { CreateOnlinePaymentDto, OnlinePaymentMethod } from './dto';
-import { OnlineOrdersService } from './online-orders.service';
+import { RemovePayPalSettings1843900000000 } from '../../database/migrations/1843900000000-RemovePayPalSettings';
 
 /**
- * SumUp und PayPal bekommen die Zugangsdaten im Klartext, obwohl sie
+ * SumUp bekommt die Zugangsdaten im Klartext, obwohl sie
  * verschluesselt in der Datenbank liegen. HTTP ist gemockt (global fetch);
  * geprueft wird, was beim Anbieter ankaeme.
  *
@@ -46,8 +39,9 @@ import { OnlineOrdersService } from './online-orders.service';
 
 const KEY = 'payment-credentials-test-key-0123456789abcdef';
 const SUMUP_KEY = 'sup_sk_REALSECRET1234';
-const PAYPAL_ID = 'pp_client_id';
-const PAYPAL_SECRET = 'PAYPAL_SECRET_XYZ';
+// Fruehere PayPal-Zugangsdaten (Anbindung seit 1.8 entfernt): werden beim
+// Laden und Speichern verworfen und vom Abgleich geloescht.
+const LEGACY_PAYPAL = { clientId: 'pp_client_id', clientSecret: 'SECRET_XYZ' };
 
 function plainSettings(): OrganizationSettings {
   return {
@@ -55,9 +49,16 @@ function plainSettings(): OrganizationSettings {
     timezone: 'Europe/Berlin',
     locale: 'de',
     sumup: { apiKey: SUMUP_KEY, merchantCode: 'MC123' },
-    paypal: { clientId: PAYPAL_ID, clientSecret: PAYPAL_SECRET },
     integrations: { sumup: { enabled: true } },
   } as OrganizationSettings;
+}
+
+function legacySettings(): Record<string, unknown> {
+  return {
+    ...plainSettings(),
+    paypal: LEGACY_PAYPAL,
+    integrations: { sumup: { enabled: true }, paypal: { enabled: true } },
+  };
 }
 
 function jsonResponse(body: unknown): Response {
@@ -76,18 +77,6 @@ function urlOf(input: unknown): string {
 function mockFetch() {
   return jest.spyOn(global, 'fetch').mockImplementation((input) => {
     const url = urlOf(input);
-    if (url.endsWith('/v1/oauth2/token')) {
-      return Promise.resolve(jsonResponse({ access_token: 'pp-access' }));
-    }
-    if (url.endsWith('/v2/checkout/orders')) {
-      return Promise.resolve(
-        jsonResponse({
-          id: 'PP-ORDER-1',
-          status: 'CREATED',
-          links: [{ rel: 'approve', href: 'https://paypal/approve' }],
-        }),
-      );
-    }
     if (url === 'https://api.sumup.com/v0.1/checkouts') {
       return Promise.resolve(
         jsonResponse({ id: 'chk-1', hosted_checkout_url: 'https://pay/chk-1' }),
@@ -118,39 +107,6 @@ function sumUpService(orgRepo: Repository<Organization>): SumUpService {
   );
 }
 
-function onlineOrdersService(
-  orgRepo: Repository<Organization>,
-  organizationId: string,
-): OnlineOrdersService {
-  const session = {
-    id: 'session-1',
-    organizationId,
-    organization: { id: organizationId },
-    isExpired: () => false,
-  } as unknown as OnlineOrderSession;
-  const order = { id: 'order-1', total: 12.5, dailyNumber: 7 } as Order;
-  // Nur die Methoden, die initiatePayment() braucht.
-  const repo = (impl: object) => impl as never;
-  return new OnlineOrdersService(
-    repo({ findOne: jest.fn(() => Promise.resolve(session)) }),
-    repo({}),
-    repo({}),
-    repo({}),
-    repo({ findOne: jest.fn(() => Promise.resolve(order)) }),
-    repo({}),
-    orgRepo,
-    repo({
-      create: jest.fn((p: Partial<Payment>) => ({ id: 'payment-1', ...p })),
-      save: jest.fn((p: Payment) => Promise.resolve(p)),
-    }),
-    new PayPalService(config),
-    sumUpService(orgRepo),
-    config,
-    {} as OrderPrintService,
-    {} as GatewayService,
-  );
-}
-
 async function expectDecryptedAtProviders(
   orgRepo: Repository<Organization>,
   organizationId: string,
@@ -174,26 +130,6 @@ async function expectDecryptedAtProviders(
       ([url]) => urlOf(url) === 'https://api.sumup.com/v0.1/checkouts',
     );
     expect(headerOf(sumupCall!, 'Authorization')).toBe(`Bearer ${SUMUP_KEY}`);
-
-    // PayPal: Zahlung der Online-Bestellung.
-    const dto: CreateOnlinePaymentDto = {
-      paymentMethod: OnlinePaymentMethod.PAYPAL,
-    } as CreateOnlinePaymentDto;
-    const result = await onlineOrdersService(
-      orgRepo,
-      organizationId,
-    ).initiatePayment('token', dto);
-    expect(result.data).toMatchObject({
-      provider: 'paypal',
-      paypalOrderId: 'PP-ORDER-1',
-      approveUrl: 'https://paypal/approve',
-    });
-    const tokenCall = fetchMock.mock.calls.find(([url]) =>
-      urlOf(url).endsWith('/v1/oauth2/token'),
-    );
-    expect(headerOf(tokenCall!, 'Authorization')).toBe(
-      `Basic ${Buffer.from(`${PAYPAL_ID}:${PAYPAL_SECRET}`).toString('base64')}`,
-    );
 
     for (const call of fetchMock.mock.calls) {
       expect(JSON.stringify(call)).not.toContain(ENCRYPTED_CREDENTIAL_PREFIX);
@@ -234,10 +170,8 @@ describe('payment providers receive decrypted credentials', () => {
   it('with encrypted credentials in the database', async () => {
     const stored = organizationSettingsTransformer.to(plainSettings()) as {
       sumup: { apiKey: string };
-      paypal: { clientSecret: string };
     };
     expect(isEncryptedCredential(stored.sumup.apiKey)).toBe(true);
-    expect(isEncryptedCredential(stored.paypal.clientSecret)).toBe(true);
 
     await expectDecryptedAtProviders(repositoryReturning(stored), 'org-1');
   });
@@ -247,6 +181,23 @@ describe('payment providers receive decrypted credentials', () => {
       repositoryReturning(plainSettings()),
       'org-1',
     );
+  });
+});
+
+describe('removed PayPal settings', () => {
+  it('are dropped when loading and never written', () => {
+    const loaded = organizationSettingsTransformer.from(
+      legacySettings(),
+    ) as Record<string, unknown>;
+    expect(loaded).not.toHaveProperty('paypal');
+    expect(loaded.integrations).toEqual({ sumup: { enabled: true } });
+
+    const written = organizationSettingsTransformer.to(
+      legacySettings(),
+    ) as Record<string, unknown>;
+    expect(written).not.toHaveProperty('paypal');
+    expect(written.integrations).toEqual({ sumup: { enabled: true } });
+    expect(JSON.stringify(written)).not.toContain('SECRET_XYZ');
   });
 });
 
@@ -311,13 +262,11 @@ describeWithDb('payment credentials against Postgres', () => {
 
     const raw = await rawSettings(id);
     expect(isEncryptedCredential(raw.sumup!.apiKey)).toBe(true);
-    expect(isEncryptedCredential(raw.paypal!.clientSecret)).toBe(true);
     expect(raw.sumup!.merchantCode).toBe('MC123');
-    expect(JSON.stringify(raw)).not.toMatch(/REALSECRET|SECRET_XYZ/);
+    expect(JSON.stringify(raw)).not.toMatch(/REALSECRET/);
 
     const loaded = await orgRepo.findOneByOrFail({ id });
     expect(loaded.settings.sumup?.apiKey).toBe(SUMUP_KEY);
-    expect(loaded.settings.paypal?.clientSecret).toBe(PAYPAL_SECRET);
     expect(redactResponse(loaded).settings.sumup?.apiKey).toBe('****1234');
 
     // Speichern ohne Aenderung an den Einstellungen schreibt sie nicht neu.
@@ -334,7 +283,6 @@ describeWithDb('payment credentials against Postgres', () => {
     const changed = await rawSettings(id);
     expect(changed.sumup!.merchantCode).toBe('MC456');
     expect(isEncryptedCredential(changed.sumup!.apiKey)).toBe(true);
-    expect(isEncryptedCredential(changed.paypal!.clientSecret)).toBe(true);
     expect(loaded.settings.sumup?.apiKey).toBe(SUMUP_KEY);
 
     await expectDecryptedAtProviders(orgRepo, id);
@@ -346,7 +294,7 @@ describeWithDb('payment credentials against Postgres', () => {
     await ds.query(
       `INSERT INTO organizations (id, name, slug, support_pin, settings)
        VALUES ($1, 'Altverein', $2, '123456', $3::jsonb)`,
-      [id, `altverein-${id}`, JSON.stringify(plainSettings())],
+      [id, `altverein-${id}`, JSON.stringify(legacySettings())],
     );
 
     expect((await orgRepo.findOneByOrFail({ id })).settings.sumup?.apiKey).toBe(
@@ -356,15 +304,65 @@ describeWithDb('payment credentials against Postgres', () => {
 
     const backfill = new IntegrationCredentialsBackfillService(ds);
     const first = await backfill.run(getIntegrationKeyring());
-    expect(first.encrypted).toBeGreaterThanOrEqual(2);
+    expect(first.encrypted).toBeGreaterThanOrEqual(1);
+    expect(first.removed).toBeGreaterThanOrEqual(1);
     const afterFirst = await rawSettings(id);
     expect(isEncryptedCredential(afterFirst.sumup!.apiKey)).toBe(true);
-    expect(isEncryptedCredential(afterFirst.paypal!.clientSecret)).toBe(true);
+    expect(afterFirst).not.toHaveProperty('paypal');
+    expect(afterFirst.integrations).toEqual({ sumup: { enabled: true } });
+    expect(JSON.stringify(afterFirst)).not.toContain('SECRET_XYZ');
 
     const second = await backfill.run(getIntegrationKeyring());
-    expect(second).toEqual({ encrypted: 0, reencrypted: 0, undecryptable: 0 });
+    expect(second).toEqual({
+      removed: 0,
+      encrypted: 0,
+      reencrypted: 0,
+      undecryptable: 0,
+    });
     expect(await rawSettings(id)).toEqual(afterFirst);
 
     await expectDecryptedAtProviders(orgRepo, id);
+  });
+
+  it('migration deletes stored PayPal settings, idempotently', async () => {
+    const id = randomUUID();
+    const other = randomUUID();
+    orgIds.push(id, other);
+    const legacy = organizationSettingsTransformer.to(
+      plainSettings(),
+    ) as Record<string, unknown>;
+    await ds.query(
+      `INSERT INTO organizations (id, name, slug, support_pin, settings)
+       VALUES ($1, 'PayPal-Verein', $2, '123456', $3::jsonb),
+              ($4, 'Ohne PayPal', $5, '123456', $6::jsonb)`,
+      [
+        id,
+        `paypal-${id}`,
+        JSON.stringify({
+          ...legacy,
+          paypal: { clientId: 'pp', clientSecret: 'enc:v1:abc' },
+          integrations: { sumup: { enabled: true }, paypal: { enabled: true } },
+        }),
+        other,
+        `ohne-${other}`,
+        JSON.stringify({ currency: 'EUR', integrations: 'kaputt' }),
+      ],
+    );
+    const migration = new RemovePayPalSettings1843900000000();
+    const runner = ds.createQueryRunner();
+    try {
+      await migration.up(runner);
+      const after = await rawSettings(id);
+      expect(after).not.toHaveProperty('paypal');
+      expect(after.integrations).toEqual({ sumup: { enabled: true } });
+      expect(after.sumup).toEqual(legacy.sumup);
+      const untouched = await rawSettings(other);
+      await migration.up(runner);
+      expect(await rawSettings(id)).toEqual(after);
+      expect(await rawSettings(other)).toEqual(untouched);
+      expect(untouched).toEqual({ currency: 'EUR', integrations: 'kaputt' });
+    } finally {
+      await runner.release();
+    }
   });
 });
