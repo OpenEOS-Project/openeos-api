@@ -9338,6 +9338,64 @@
         ]
       }
     },
+    "/api/public/shop/{eventId}/withdrawal": {
+      "get": {
+        "description": "Veranstaltung, Verein und rechtliche Angaben für die Seite „Vertrag widerrufen“. 404 `WITHDRAWAL_NOT_AVAILABLE`, wenn der Verein kein Widerrufsrecht eingeschaltet hat. Auch nach dem Ende der Veranstaltung erreichbar.",
+        "operationId": "eventsShopWithdrawal_info",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Withdrawal function of a shop (§ 356a BGB)",
+        "tags": [
+          "Shop (Public)"
+        ]
+      },
+      "post": {
+        "description": "Name, E-Mail-Adresse und Bestellnummer (Pflicht), weitere Angaben freiwillig. Speichert den Widerruf mit Eingangszeitpunkt, schickt ihn an den Verein und dem Gast sofort eine Eingangsbestätigung mit Inhalt, Datum und Uhrzeit. Höchstens 10 je Stunde und IP-Adresse.",
+        "operationId": "eventsShopWithdrawal_submit",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShopWithdrawalDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Declare the withdrawal from a shop order (§ 356a BGB)",
+        "tags": [
+          "Shop (Public)"
+        ]
+      }
+    },
     "/api/organizations/{organizationId}/event-price-preview": {
       "get": {
         "description": "Same calculation as the real price, so the preview cannot disagree with the invoice. Dates as YYYY-MM-DD; end defaults to start.",
@@ -18829,6 +18887,7 @@
                 "audit_logs",
                 "support_messages",
                 "contact_requests",
+                "shop_withdrawals",
                 "assistant_imports",
                 "webhook_deliveries",
                 "receipt_links",
@@ -25023,6 +25082,45 @@
           }
         }
       },
+      "CreateShopWithdrawalDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Erika Muster",
+            "minLength": 2,
+            "maxLength": 200
+          },
+          "email": {
+            "type": "string",
+            "example": "erika@example.com",
+            "description": "Adresse für die Eingangsbestätigung"
+          },
+          "orderNumber": {
+            "type": "string",
+            "example": "W-20261115-0042",
+            "description": "Bestellnummer aus der Bestellbestätigung"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Freiwillig: welche Positionen bzw. weitere Angaben"
+          },
+          "website": {
+            "type": "string",
+            "description": "Honeypot-Feld — muss leer bleiben"
+          },
+          "startedAt": {
+            "type": "number",
+            "description": "Zeitpunkt (epoch ms), zu dem das Formular geladen wurde"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "orderNumber"
+        ]
+      },
       "PurchaseMasterDataDto": {
         "type": "object",
         "properties": {
@@ -27304,6 +27402,7 @@
                 "audit_logs",
                 "support_messages",
                 "contact_requests",
+                "shop_withdrawals",
                 "assistant_imports",
                 "webhook_deliveries",
                 "receipt_links",

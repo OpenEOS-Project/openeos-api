@@ -107,6 +107,7 @@ describe('QR order — legal information of the club', () => {
       privacyText: 'Verantwortlich ist der TSV Musterstadt e.V.',
       contactEmail: null,
       complete: true,
+      withdrawalRight: false,
       platform: deployment.platformLegal,
     });
   });

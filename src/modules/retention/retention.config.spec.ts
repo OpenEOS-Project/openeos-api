@@ -29,6 +29,7 @@ describe('loadRetentionConfig', () => {
       staleCredentialDays: 90,
       supportMonths: 12,
       contactMonths: 6,
+      withdrawalMonths: 36,
       inactiveOrganizationMonths: 24,
       inactiveUserMonths: 24,
       noticeDays: 30,

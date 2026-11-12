@@ -109,7 +109,12 @@ export function normalizeLegalSettings(
   }
   const raw = input as Record<string, unknown>;
 
-  const allowed: LegalField[] = [...URL_FIELDS, ...TEXT_FIELDS, 'contactEmail'];
+  const allowed: LegalField[] = [
+    ...URL_FIELDS,
+    ...TEXT_FIELDS,
+    'contactEmail',
+    'withdrawalRight',
+  ];
   for (const key of Object.keys(raw)) {
     if (!allowed.includes(key as LegalField)) {
       invalid(
@@ -196,6 +201,20 @@ export function normalizeLegalSettings(
     result.contactEmail = email;
   }
 
+  /* Widerrufsrecht fuer Shop-Bestellungen (§ 356a BGB): nur ein echtes
+     true wird gespeichert, alles andere heisst „besteht nicht“. */
+  const withdrawal = raw.withdrawalRight;
+  if (withdrawal !== undefined && withdrawal !== null) {
+    if (typeof withdrawal !== 'boolean') {
+      invalid(
+        'withdrawalRight',
+        'type',
+        'withdrawalRight muss true oder false sein.',
+      );
+    }
+    if (withdrawal) result.withdrawalRight = true;
+  }
+
   return result;
 }
 
@@ -216,6 +235,11 @@ export interface PublicLegalInfo {
   contactEmail: string | null;
   /** Hat der Verein Impressum und Datenschutzhinweis hinterlegt? */
   complete: boolean;
+  /**
+   * Besteht fuer Shop-Bestellungen ein Widerrufsrecht? Dann zeigt der Shop
+   * die Widerrufsfunktion nach § 356a BGB („Vertrag widerrufen“).
+   */
+  withdrawalRight: boolean;
   platform: PlatformLegalLinks;
 }
 
@@ -250,6 +274,7 @@ export function toPublicLegalInfo(
     contactEmail: text(legal.contactEmail),
     complete:
       Boolean(imprintUrl || imprintText) && Boolean(privacyUrl || privacyText),
+    withdrawalRight: legal.withdrawalRight === true,
     platform: {
       imprintUrl: platform.imprintUrl || null,
       privacyUrl: platform.privacyUrl || null,
