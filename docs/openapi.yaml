@@ -13874,7 +13874,7 @@ components:
         priceModifier:
           type: number
           example: 1.5
-          description: Preismodifikator
+          description: "Wird ignoriert: der Aufpreis kommt aus der Optionsdefinition des Produkts."
         excluded:
           type: boolean
           example: true
@@ -13882,7 +13882,6 @@ components:
       required:
         - group
         - option
-        - priceModifier
     CreateOrderItemDto:
       type: object
       properties:
@@ -15929,11 +15928,10 @@ components:
         priceModifier:
           type: number
           example: 1.5
-          description: Preismodifikator in Euro
+          description: "Wird ignoriert: der Aufpreis kommt aus der Optionsdefinition des Produkts."
       required:
         - group
         - option
-        - priceModifier
     AddCartItemDto:
       type: object
       properties:
