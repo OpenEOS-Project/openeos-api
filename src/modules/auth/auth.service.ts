@@ -50,6 +50,10 @@ import {
   LegalService,
 } from '../legal/legal.service';
 import { assertCurrentPassword } from './current-password';
+import {
+  TARGET_LIMITS,
+  TargetLimitService,
+} from '../../common/rate-limit/target-limit.service';
 
 /** Woher eine Anmeldung kam — fuer die Sitzungsliste. */
 export interface SessionClient {
@@ -112,7 +116,23 @@ export class AuthService {
     /* Optional, damit Tests ohne Rechtstexte-Modul auskommen. */
     @Optional()
     private readonly legalService?: LegalService,
+    /* Grenzen je Empfaenger fuer Mails (TargetLimitService). */
+    @Optional()
+    private readonly targetLimits?: TargetLimitService,
   ) {}
+
+  /** Liegt ein Mailvorgang fuer diese Adresse noch in der Grenze? */
+  private async mailAllowed(
+    scope: keyof typeof TARGET_LIMITS,
+    email: string,
+  ): Promise<boolean> {
+    if (!this.targetLimits) return true;
+    return this.targetLimits.allow(
+      `auth:${scope}`,
+      email,
+      TARGET_LIMITS[scope],
+    );
+  }
 
   async getPendingInvitations(userId: string): Promise<Invitation[]> {
     const user = await this.userRepository.findOneOrFail({
@@ -419,6 +439,8 @@ export class AuthService {
       this.logger.log(`Verification resend requested for ${email} (no-op)`);
       return;
     }
+    // Still wie oben: die Antwort verraet nicht, ob eine Mail rausging.
+    if (!(await this.mailAllowed('verificationResend', user.email))) return;
 
     await this.issueVerificationEmail(user);
 
@@ -683,6 +705,9 @@ export class AuthService {
       return;
     }
 
+    // Still wie oben: die Antwort verraet nicht, ob eine Mail rausging.
+    if (!(await this.mailAllowed('passwordReset', user.email))) return;
+
     // Generate reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
     const resetTokenHash = crypto
@@ -836,6 +861,8 @@ export class AuthService {
        demselben Grund wie oben: die Sperre selbst ist eine Auskunft. */
     if (!user || !user.isActive) return;
     if (user.lockedUntil && user.lockedUntil > new Date()) return;
+
+    if (!(await this.mailAllowed('loginMagicLink', user.email))) return;
 
     /* Aeltere offene Links dieses Kontos entwerten. Sonst sammeln sich mit
        jedem Klick auf "nochmal senden" weitere gueltige Schluessel an. */
