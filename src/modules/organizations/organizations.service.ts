@@ -55,12 +55,19 @@ import {
 import { DeploymentService } from '../../common/services/deployment.service';
 import { OrganizationLimitsService } from '../../common/services/organization-limits.service';
 import { restoreMaskedCredentials } from '../../common/utils/response-redaction.util';
+import {
+  filterOrganizationSettingsUpdate,
+  orderFlowReferences,
+} from './settings/organization-settings-update';
+
 import { isKnownIntegration } from '../integrations/integration-catalog';
 import { recordDeletion } from '../retention/deletion-log';
 import { restoreOrganization } from '../retention/organization-restore';
 import { memberView, type MemberView } from './member-view';
 
 const INVITATION_EXPIRY_DAYS = 7;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BCRYPT_ROUNDS = 12;
 
 @Injectable()
@@ -351,6 +358,42 @@ export class OrganizationsService {
     }
   }
 
+  /**
+   * Drucker und Vorlagen im Bestellablauf muessen zur Organisation gehoeren.
+   * Unbekannte und fremde IDs fuehren zur selben Antwort.
+   */
+  private async assertOrderFlowReferences(
+    organizationId: string,
+    incoming: Record<string, unknown> | null | undefined,
+  ): Promise<void> {
+    if (!incoming || !('orderFlow' in incoming)) return;
+    const { printerIds, templateIds } = orderFlowReferences(incoming.orderFlow);
+    const checks: Array<[string, string[], string]> = [
+      ['printers', printerIds, 'printerId'],
+      ['print_templates', templateIds, 'templateId'],
+    ];
+    for (const [table, ids, field] of checks) {
+      if (ids.length === 0) continue;
+      const valid = ids.every((value) => UUID_PATTERN.test(value));
+      const rows: { id: string }[] = valid
+        ? await this.organizationRepository.manager.query(
+            `SELECT id FROM ${table} WHERE organization_id = $1 AND id = ANY($2::uuid[])`,
+            [organizationId, ids],
+          )
+        : [];
+      if (!valid || rows.length !== ids.length) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.ORGANIZATION_SETTINGS_INVALID,
+          message:
+            'Der Bestellablauf verweist auf einen unbekannten Drucker oder eine unbekannte Vorlage.',
+          params: { key: 'orderFlow' },
+          details: [{ field: `settings.orderFlow.${field}`, code: 'notFound' }],
+        });
+      }
+    }
+  }
+
   async update(
     id: string,
     updateDto: UpdateOrganizationDto,
@@ -380,8 +423,15 @@ export class OrganizationsService {
        ausserdem bedeutet, dass zwei gleichzeitig geoeffnete Reiter einander
        ueberschreiben. Zusammengefuehrt wird eine Ebene tief; wer `pos`
        schickt, ersetzt `pos` als Ganzes, und das ist auch gemeint. */
-    const { settings: incomingSettings, ...rest } = updateDto;
+    const { settings: requestedSettings, ...rest } = updateDto;
+    // Nur die Abschnitte, die hierher gehoeren; Assistent, Integrationen,
+    // Betriebsart, Steuerstatus-Verlauf usw. haben eigene Endpunkte.
+    const incomingSettings = filterOrganizationSettingsUpdate(
+      requestedSettings,
+      organization.settings as unknown as Record<string, unknown>,
+    );
     await this.assertVatStatusChangeAllowed(organization, incomingSettings);
+    await this.assertOrderFlowReferences(organization.id, incomingSettings);
     /* Nur Felder uebernehmen, die wirklich mitgeschickt wurden. Das DTO
        kommt als Klasseninstanz an (ES2023-Klassenfelder): nicht gesendete
        Felder stehen darin als eigene Schluessel mit `undefined`. Ein

@@ -450,11 +450,13 @@ export class ReceiptsService {
         message: 'Bitte gib eine gültige E-Mail-Adresse ein.',
       });
     }
-    await this.assertMailAllowed(actor, orderIds, address);
+    // Erst die Bestellungen der eigenen Organisation laden: fremde oder
+    // unbekannte IDs enden hier, bevor irgendetwas gezaehlt wird.
     const { timeZone, documents } = await this.documents(
       actor.organizationId,
       orderIds,
     );
+    await this.assertMailAllowed(actor, orderIds, address);
     await this.sendBlocksByEmail(actor, orderIds, address, {
       label: 'Kassenbeleg',
       filename: `Beleg-${documents[0].orderNumber}.pdf`,
