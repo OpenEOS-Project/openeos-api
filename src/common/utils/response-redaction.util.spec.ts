@@ -40,7 +40,6 @@ describe('redactResponse', () => {
         affiliateKey: 'aff_5678',
         merchantCode: 'M1',
       },
-      paypal: { clientId: 'pp_id', clientSecret: 'PAYPAL_SECRET_XYZ' },
     };
 
     const out = redactResponse({ settings }).settings;
@@ -51,7 +50,6 @@ describe('redactResponse', () => {
       affiliateKey: '****5678',
       merchantCode: 'M1',
     });
-    expect(out.paypal).toEqual({ clientId: 'pp_id', clientSecret: '****_XYZ' });
   });
 
   it('veraendert das Original nicht', () => {
@@ -89,7 +87,6 @@ describe('redactResponse', () => {
 describe('restoreMaskedCredentials', () => {
   const stored = {
     sumup: { apiKey: 'sup_sk_REALSECRET1234', affiliateKey: 'aff_5678' },
-    paypal: { clientId: 'pp_id', clientSecret: 'PAYPAL_SECRET_XYZ' },
   };
 
   it('setzt maskierte Werte auf den gespeicherten Schluessel zurueck', () => {
@@ -99,7 +96,6 @@ describe('restoreMaskedCredentials', () => {
         affiliateKey: '****5678',
         merchantCode: 'M2',
       },
-      paypal: { clientId: 'pp_id', clientSecret: '****_XYZ' },
     };
 
     restoreMaskedCredentials(incoming, stored);
@@ -107,7 +103,6 @@ describe('restoreMaskedCredentials', () => {
     expect(incoming.sumup.apiKey).toBe('sup_sk_REALSECRET1234');
     expect(incoming.sumup.affiliateKey).toBe('aff_5678');
     expect(incoming.sumup.merchantCode).toBe('M2');
-    expect(incoming.paypal.clientSecret).toBe('PAYPAL_SECRET_XYZ');
   });
 
   it('uebernimmt neu eingegebene Schluessel', () => {
@@ -117,10 +112,10 @@ describe('restoreMaskedCredentials', () => {
   });
 
   it('speichert nie eine Maske, wenn nichts hinterlegt ist', () => {
-    const incoming: { paypal: Record<string, unknown> } = {
-      paypal: { clientSecret: '****abcd' },
+    const incoming: { sumup: Record<string, unknown> } = {
+      sumup: { apiKey: '****abcd' },
     };
     restoreMaskedCredentials(incoming, {});
-    expect(incoming.paypal).not.toHaveProperty('clientSecret');
+    expect(incoming.sumup).not.toHaveProperty('apiKey');
   });
 });

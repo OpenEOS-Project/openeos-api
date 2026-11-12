@@ -98,10 +98,6 @@ export interface OrganizationSettings {
     affiliateKey?: string;
     appId?: string;
   };
-  paypal?: {
-    clientId: string;
-    clientSecret: string;
-  };
   /**
    * Schalter je Integration (Schluessel aus INTEGRATION_IDS). Getrennt von
    * den Zugangsdaten (`sumup` oben): Ausschalten laesst die hinterlegten

@@ -233,7 +233,6 @@ describe('Betriebsart „Bargeldlos“ — Kasse (DeviceApiController)', () => {
   });
 
   it.each([
-    [PaymentMethod.PAYPAL],
     [PaymentMethod.SUMUP_ONLINE],
     [PaymentMethod.GOOGLE_PAY],
     [PaymentMethod.APPLE_PAY],

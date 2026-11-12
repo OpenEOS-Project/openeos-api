@@ -42,7 +42,6 @@ const USER_SECRET_FIELDS = new Set([
  */
 export const MASKED_CREDENTIALS: Record<string, readonly string[]> = {
   sumup: ['apiKey', 'affiliateKey'],
-  paypal: ['clientSecret'],
 };
 
 export const MASK_PREFIX = '****';

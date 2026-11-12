@@ -594,7 +594,6 @@ describeWithDb('Online prepayment with Cloud-TSE against Postgres', () => {
       ds.getRepository(OrderItem),
       ds.getRepository(Organization),
       ds.getRepository(Payment),
-      {} as never,
       new SumUpService(
         ds.getRepository(Organization),
         {} as never,

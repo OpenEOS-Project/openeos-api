@@ -424,12 +424,28 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'Tidier settings, encrypted credentials',
     },
     kurz: {
-      de: 'Alle Karten in den Einstellungen sehen gleich aus, und die Zugangsdaten für SumUp und PayPal liegen verschlüsselt.',
-      en: 'All cards in the settings look the same, and the credentials for SumUp and PayPal are stored encrypted.',
+      de: 'Alle Karten in den Einstellungen sehen gleich aus, und die Zugangsdaten für SumUp liegen verschlüsselt.',
+      en: 'All cards in the settings look the same, and the credentials for SumUp are stored encrypted.',
     },
     text: {
-      de: 'Jede Karte in den Einstellungen hat jetzt denselben Kopf mit Symbol, Titel und einer kurzen Erklärung, in den persönlichen Einstellungen wie in der Organisation, am Handy wie am PC. So findest du schneller, was du suchst. Unsichtbar, aber wichtig: Die Zugangsdaten deiner Zahlungsanbieter SumUp und PayPal speichert OpenEOS jetzt verschlüsselt. In der Oberfläche siehst du wie bisher nur die letzten vier Zeichen, und an deinen Einstellungen musst du nichts ändern.',
-      en: 'Every card in the settings now has the same header with an icon, a title and a short explanation, in your personal settings as well as in the organization, on the phone as on the PC. That way you find what you are looking for faster. Invisible but important: OpenEOS now stores the credentials of your payment providers SumUp and PayPal encrypted. The interface still only shows the last four characters, and you do not need to change anything in your settings.',
+      de: 'Jede Karte in den Einstellungen hat jetzt denselben Kopf mit Symbol, Titel und einer kurzen Erklärung, in den persönlichen Einstellungen wie in der Organisation, am Handy wie am PC. So findest du schneller, was du suchst. Unsichtbar, aber wichtig: Die Zugangsdaten für SumUp speichert OpenEOS jetzt verschlüsselt. In der Oberfläche siehst du wie bisher nur die letzten vier Zeichen, und an deinen Einstellungen musst du nichts ändern.',
+      en: 'Every card in the settings now has the same header with an icon, a title and a short explanation, in your personal settings as well as in the organization, on the phone as on the PC. That way you find what you are looking for faster. Invisible but important: OpenEOS now stores your SumUp credentials encrypted. The interface still only shows the last four characters, and you do not need to change anything in your settings.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'verbessert',
+    titel: {
+      de: 'PayPal-Anbindung entfernt',
+      en: 'PayPal connection removed',
+    },
+    kurz: {
+      de: 'PayPal-Anbindung entfernt – Online-Zahlungen laufen über SumUp Online.',
+      en: 'PayPal connection removed – online payments run via SumUp Online.',
+    },
+    text: {
+      de: 'PayPal-Anbindung entfernt – Online-Zahlungen laufen über SumUp Online. Im Online-Shop und bei der Bestellung per QR-Code am Tisch bezahlen deine Gäste mit Karte, Google Pay oder Apple Pay über SumUp. Gespeicherte PayPal-Zugangsdaten hat OpenEOS gelöscht. Frühere PayPal-Zahlungen bleiben in Bestellungen, Berichten, Exporten und im DSFinV-K-Export unverändert erhalten; erstattest du eine davon, erstattest du sie selbst bei PayPal und buchst sie in OpenEOS als „manuell erstattet“.',
+      en: 'PayPal connection removed – online payments run via SumUp Online. In the online shop and when ordering via the QR code at the table, your guests pay by card, Google Pay or Apple Pay via SumUp. OpenEOS has deleted stored PayPal credentials. Earlier PayPal payments stay unchanged in orders, reports, exports and the DSFinV-K export; if you refund one of them, you refund it yourself at PayPal and record it in OpenEOS as "refunded manually".',
     },
   },
   {
@@ -476,8 +492,8 @@ export const CHANGELOG: ChangelogEintrag[] = [
       en: 'When guests pay their QR order by card, Google Pay or Apple Pay, the payment is now booked and secured, and the order goes to the kitchen.',
     },
     text: {
-      de: 'Bei Bestellungen über den QR-Code am Tisch blieb eine Zahlung mit Karte (SumUp), Google Pay oder Apple Pay auf „offen“ hängen: Das Geld war beim Gast abgebucht, aber die Bestellung wurde nicht als bezahlt markiert, nicht von der TSE abgesichert, und Küchen- und Kassenbon kamen nicht. Jetzt fragt OpenEOS bei SumUp nach, sobald SumUp die Zahlung meldet, der Gast zurückkommt oder seine Bestellung ansieht – spätestens nach wenigen Minuten. Bestätigt SumUp die Zahlung, wird sie genau einmal gebucht: Bestellung bezahlt, Kassenbeleg mit TSE-Signatur, dann Küchen- und Kassenbon. Mit PayPal lief es schon vorher.',
-      en: 'For orders via the QR code at the table, a payment by card (SumUp), Google Pay or Apple Pay got stuck on "pending": the guest had been charged, but the order was not marked as paid, not secured by the TSE, and neither kitchen ticket nor receipt came. Now OpenEOS checks with SumUp as soon as SumUp reports the payment, the guest returns or looks at the order – within a few minutes at the latest. Once SumUp confirms the payment it is booked exactly once: order paid, receipt with TSE signature, then kitchen ticket and receipt. PayPal already worked.',
+      de: 'Bei Bestellungen über den QR-Code am Tisch blieb eine Zahlung mit Karte (SumUp), Google Pay oder Apple Pay auf „offen“ hängen: Das Geld war beim Gast abgebucht, aber die Bestellung wurde nicht als bezahlt markiert, nicht von der TSE abgesichert, und Küchen- und Kassenbon kamen nicht. Jetzt fragt OpenEOS bei SumUp nach, sobald SumUp die Zahlung meldet, der Gast zurückkommt oder seine Bestellung ansieht – spätestens nach wenigen Minuten. Bestätigt SumUp die Zahlung, wird sie genau einmal gebucht: Bestellung bezahlt, Kassenbeleg mit TSE-Signatur, dann Küchen- und Kassenbon.',
+      en: 'For orders via the QR code at the table, a payment by card (SumUp), Google Pay or Apple Pay got stuck on "pending": the guest had been charged, but the order was not marked as paid, not secured by the TSE, and neither kitchen ticket nor receipt came. Now OpenEOS checks with SumUp as soon as SumUp reports the payment, the guest returns or looks at the order – within a few minutes at the latest. Once SumUp confirms the payment it is booked exactly once: order paid, receipt with TSE signature, then kitchen ticket and receipt.',
     },
   },
   {

@@ -86,6 +86,7 @@ const PAYMENT_LABEL: Record<string, string> = {
   card: 'Karte',
   sumup_terminal: 'SumUp',
   sumup_online: 'SumUp online',
+  // PayPal: nur fruehere Zahlungen (Anbindung seit 1.8 entfernt).
   paypal: 'PayPal',
   google_pay: 'Google Pay',
   apple_pay: 'Apple Pay',
@@ -241,8 +242,8 @@ export const ORDER_COLUMNS: ReadonlyArray<CsvColumn<OrderExportRow>> = [
   { header: 'Artikel', value: (r) => csvNumber(r.item_count) },
   { header: 'Zahlart', money: true, value: (r) => csvText(paymentLabel(r)) },
   /* Zahlungsanbieter und Referenz (GoBD, Abgleich mit der Abrechnung von
-     SumUp/PayPal): Transaktions-ID der Zahlung, sonst PayPal-Order bzw.
-     SumUp-Checkout aus den Metadaten. Mehrere mit „, “. */
+     SumUp bzw. frueher PayPal): Transaktions-ID der Zahlung, sonst
+     SumUp-Checkout bzw. PayPal-Order (Altdaten) aus den Metadaten. Mehrere mit „, “. */
   {
     header: 'Zahlungsanbieter',
     money: true,

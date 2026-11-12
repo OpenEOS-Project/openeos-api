@@ -14053,7 +14053,6 @@ components:
             - card
             - sumup_terminal
             - sumup_online
-            - paypal
             - google_pay
             - apple_pay
         providerTransactionId:

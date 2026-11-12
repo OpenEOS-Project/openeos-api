@@ -203,22 +203,20 @@ export class OnlineOrdersController {
   }
 
   /**
-   * Rueckkehr nach dem Bezahlen. PayPal: erfasst die Zahlung. SumUp (Karte,
-   * Google Pay, Apple Pay): sieht bei SumUp nach und bucht bei „bezahlt“.
-   * `providerOrderId` ist nur noch zur Kontrolle (PayPal); gebucht wird
-   * immer die Anbieter-Referenz, die zur Zahlung gespeichert ist.
+   * Rueckkehr nach dem Bezahlen (SumUp Online: Karte, Google Pay, Apple
+   * Pay): sieht bei SumUp nach und bucht bei „bezahlt“. Gebucht wird immer
+   * die Anbieter-Referenz, die zur Zahlung gespeichert ist.
    * Antwort `status`: captured | already_captured | pending | failed.
    */
   @Post('pay/confirm')
   async confirmPayment(
     @Headers() headers: Record<string, string>,
-    @Body() body: { paymentId: string; providerOrderId?: string },
+    @Body() body: { paymentId: string },
   ) {
     const sessionToken = this.getSessionToken(headers);
     return this.onlineOrdersService.confirmPayment(
       sessionToken,
       body.paymentId,
-      body.providerOrderId,
     );
   }
 
