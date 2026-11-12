@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { privateStorageFromConfig } from '../../../common/storage/private-storage';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThan, Repository } from 'typeorm';
@@ -53,7 +54,8 @@ const IMPORT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 @Injectable()
 export class MenuImportWorkerService {
   private readonly logger = new Logger(MenuImportWorkerService.name);
-  private readonly uploadDir: string;
+  /** Wurzel der privaten Ablage (Speisekarten liegen unter menu-imports/). */
+  private readonly storageDir: string;
   private readonly maxPages: number;
 
   constructor(
@@ -73,7 +75,7 @@ export class MenuImportWorkerService {
     configService: ConfigService,
     private readonly inputFiles: AiInputFilesService,
   ) {
-    this.uploadDir = configService.get<string>('UPLOAD_DIR') || './uploads';
+    this.storageDir = privateStorageFromConfig(configService).root;
     this.maxPages = readAiConfig(configService).menuPagesPerImport;
   }
 
@@ -151,7 +153,7 @@ export class MenuImportWorkerService {
   private async extract(menuImport: MenuImport): Promise<MenuSuggestion> {
     const uploaded: AiInputFile[] =
       menuImport.files.length > 0
-        ? (await readFiles(this.uploadDir, menuImport.files)).map((file) => ({
+        ? (await readFiles(this.storageDir, menuImport.files)).map((file) => ({
             mediaType: file.mediaType,
             data: file.buffer,
           }))
@@ -422,7 +424,7 @@ export class MenuImportWorkerService {
       take: 200,
     });
     for (const menuImport of expired) {
-      await deleteFiles(this.uploadDir, menuImport.id);
+      await deleteFiles(this.storageDir, menuImport.id);
       await this.importRepository.update(
         { id: menuImport.id },
         { filesDeletedAt: now },
@@ -437,7 +439,7 @@ export class MenuImportWorkerService {
       take: 200,
     });
     for (const menuImport of old) {
-      await deleteFiles(this.uploadDir, menuImport.id);
+      await deleteFiles(this.storageDir, menuImport.id);
       await this.importRepository.delete({ id: menuImport.id });
     }
 

@@ -422,6 +422,7 @@ Die vollständige, kommentierte Liste steht in `.env.example` (Entwicklung) und 
 | `CORS_ORIGINS` | Erlaubte Origins | http://localhost:3001 |
 | `TRUST_PROXY` | Vertrauenswürdige Reverse-Proxys für X-Forwarded-For (Hop-Anzahl, IPs/CIDRs oder `false`) | loopback, linklocal, uniquelocal |
 | `UPLOAD_DIR` | Upload-Verzeichnis — muss dem Container-Nutzer (uid 1001) gehören, siehe „Uploads“ | ./uploads |
+| `PRIVATE_STORAGE_DIR` | Private Ablage (Speisekarten-Importe, TSE-Exporte, DSFinV-K-Archiv), nie ausgeliefert, nicht im Upload-Verzeichnis; im Container eigenes Volume, uid 1001 — siehe „Private Ablage“ | Nachbar von `UPLOAD_DIR` (`./private`) |
 | `REDIS_PASSWORD` | Redis-Passwort (optional) | – |
 | `PIN_PEPPER` | Pepper der Kassen-PINs (Mitglieder und Bedienungen); leer: abgeleitet aus `TWO_FACTOR_ENCRYPTION_KEY`. Vor der ersten PIN setzen, ein Wechsel macht alle PINs ungültig | – |
 | `WAITERS_PER_ORGANIZATION_LIMIT` | Höchstzahl Bedienungen je Organisation; 0 = unbegrenzt | 200 |
@@ -471,7 +472,7 @@ Die vollständige, kommentierte Liste steht in `.env.example` (Entwicklung) und 
 | `SWISSBIT_CREDIT_CLIENT_ID` / `SWISSBIT_CREDIT_CLIENT_SECRET` | Credit Token der Plattform, legt TSEs an (`pnpm tse:create-credit-token`) | – |
 | `SWISSBIT_PRODUCT_TYPE` | Produkttyp aus `validProductTypes` des Credit Tokens (z. B. 850007 = M) | – |
 | `TSE_ENCRYPTION_KEY` | Schlüssel für die Access Tokens der TSEs (leer: `TWO_FACTOR_ENCRYPTION_KEY`) — sichern! | – |
-| `TSE_EXPORT_DIR` | Ablage der TAR-Exporte (nicht öffentlich) | `UPLOAD_DIR/tse-exports` |
+| `TSE_EXPORT_DIR` | Ablage der TAR-Exporte und des DSFinV-K-Archivs (nicht öffentlich, nie im Upload-Verzeichnis) | `PRIVATE_STORAGE_DIR/tse-exports` |
 | `TSE_TX_TIMEOUT_MS` / `TSE_SIGN_BUDGET_MS` / `TSE_ADMIN_TIMEOUT_MS` | Zeitlimit je Transaktionsaufruf / Gesamtbudget je Vorgang / Verwaltung | 5000 / 8000 / 15000 |
 | `TSE_OUTAGE_ORDER_BUDGET_MS` | Budget fürs Absichern einer Bestellung vor dem Küchenbon, solange ein TSE-Ausfall offen ist (danach Küchenbon mit Ausfallvermerk; nach der ersten erfolgreichen Signatur wieder `TSE_SIGN_BUDGET_MS`) | 1500 |
 
@@ -580,7 +581,7 @@ Bricht ein Reasoning-Modell mit `finish=length` ab (das Nachdenken hat das Token
 
 **Kontingente und Protokoll.** Jeder Modellaufruf steht in `ai_usage` (Organisation, Funktion, Modell, Tokens, Dauer, Status). Daraus zählt `AiQuotaService` je Organisation und Kalendertag (Europe/Berlin): `AI_MENU_IMPORTS_PER_DAY` Importe, `AI_CLASSIFY_PER_DAY` Klassifikationen. Aufrufe, die beim Anbieter scheitern, kosten kein Kontingent. Bei Überschreitung antwortet die API mit `429 AI_QUOTA_EXCEEDED` und `params.resetAt`.
 
-**Speisekarten-Import.** `POST /api/organizations/:orgId/events/:eventId/menu-imports` (multipart `files[]` oder Feld `text`) legt einen Job an (`202 { id, status: 'queued' }`); die Auswertung läuft im Hintergrund auf der Instanz, die den Upload bekam, liegengebliebene Jobs holt ein Minuten-Cron nach (Redis-Sperre, bedingtes UPDATE als Lock — kein BullMQ). Status per `GET …/menu-imports/:id` (alle 2 s pollen) oder Socket-Event `menuImportUpdated { id, eventId, status }` im Organisations-Raum. `POST …/:id/apply` legt die bestätigten Zeilen an, `DELETE` verwirft. Hochgeladene Dateien liegen unter `<UPLOAD_DIR>/menu-imports/<id>/`, sind **nicht** öffentlich (der Pfad `/uploads/menu-imports` ist in `main.ts` gesperrt) und werden beim Anwenden, Verwerfen oder nach 24 h gelöscht; der Vorschlag selbst nach 30 Tagen.
+**Speisekarten-Import.** `POST /api/organizations/:orgId/events/:eventId/menu-imports` (multipart `files[]` oder Feld `text`) legt einen Job an (`202 { id, status: 'queued' }`); die Auswertung läuft im Hintergrund auf der Instanz, die den Upload bekam, liegengebliebene Jobs holt ein Minuten-Cron nach (Redis-Sperre, bedingtes UPDATE als Lock — kein BullMQ). Status per `GET …/menu-imports/:id` (alle 2 s pollen) oder Socket-Event `menuImportUpdated { id, eventId, status }` im Organisations-Raum. `POST …/:id/apply` legt die bestätigten Zeilen an, `DELETE` verwirft. Hochgeladene Dateien liegen unter `<PRIVATE_STORAGE_DIR>/menu-imports/<id>/`, sind **nicht** öffentlich (siehe „Private Ablage“) und werden beim Anwenden, Verwerfen oder nach 24 h gelöscht; der Vorschlag selbst nach 30 Tagen.
 
 **Sicherheit.** Speisekarten sind fremder Inhalt: Das Modell liefert ausschließlich strukturierte Ausgabe gegen ein festes Schema, Text wird als `<untrusted>`-Daten übergeben, die Antwort wird vor dem Speichern Zeile für Zeile mit class-validator geprüft und nur als Vorschlag gespeichert — angelegt wird erst, was ein Mensch in der Vorschau bestätigt. Dateiinhalte und Schlüssel erscheinen nie im Log.
 
@@ -645,9 +646,9 @@ Integration `tse` wie SumUp (Plan und API-Vertrag:
   ohne bezahlte Veranstaltung → Mail.
 - **Exporte**: Täglich 06:15 (Berlin) holt der Server alle Exporte (auch
   Swissbits automatische Nachtexporte) als TAR mit SHA-256 nach
-  `TSE_EXPORT_DIR/<org>/<seriennummer>/<zeitraum>.tar` und löscht sie erst
+  `TSE_EXPORT_DIR/<org>/<seriennummer>/<zeitraum>_<zufall>.tar` und löscht sie erst
   danach bei Swissbit (sonst nimmt Swissbit keine neuen Exporte an).
-  Der Ordner wird nicht unter `/uploads` ausgeliefert. **Aufbewahrung 10
+  Der Ordner liegt in der privaten Ablage und wird nie ausgeliefert. **Aufbewahrung 10
   Jahre** — den Ordner ins Backup aufnehmen.
 
 Einrichtung:
@@ -1016,6 +1017,31 @@ docker-compose down
 # Mit Volumes löschen
 docker-compose down -v
 ```
+
+## Private Ablage
+
+Speisekarten-Importe, TSE-Exporte und das DSFinV-K-Archiv liegen **nicht**
+im Upload-Verzeichnis, sondern in `PRIVATE_STORAGE_DIR` (Standard: neben
+`UPLOAD_DIR`, im Container `/app/private`). Abrufbar sind sie nur über die
+angemeldeten Download-Endpunkte; neue Dateien bekommen einen zufälligen
+Namensteil.
+
+- **Volume**: `/app/private` als eigenes Volume einhängen (Vorlage
+  `docker-compose.prod.yml`: `private_storage`). Ein Bind-Mount vom Host muss
+  uid 1001 gehören (`chown -R 1001 <dir>`, `chmod 700`). Ins Backup nehmen —
+  TSE-Exporte und DSFinV-K-Archiv sind 10 Jahre aufzubewahren.
+- **Ohne Volume** (im Container nicht eingehängt) weicht die API auf
+  `<UPLOAD_DIR>/.private` aus, damit nichts beim nächsten Deploy verloren
+  geht, und schreibt eine Warnung ins Log. Nach dem Einhängen zieht der
+  nächste Start die Dateien um.
+- **Umzug beim Start**: Was noch unter `<UPLOAD_DIR>/menu-imports`,
+  `<UPLOAD_DIR>/tse-exports` oder `<UPLOAD_DIR>/.private` liegt, verschiebt
+  eine Instanz (Postgres-Advisory-Lock) in die private Ablage; absolute
+  Pfade in `tse_exports`, `cash_point_closings` und `menu_imports` werden
+  angepasst. Mehrfaches Ausführen ist gefahrlos.
+- **Ausgeliefert** wird unter `/uploads/` nur `/<uuid>/<kategorie>/<datei>`
+  (Bilder der Organisationen und Benutzer); alles andere beantwortet die API
+  nach Dekodieren und Normalisieren des Pfads mit 404.
 
 ## Datenbank-Änderungen: abwärtskompatibel (expand/contract)
 
