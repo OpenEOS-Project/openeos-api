@@ -1,5 +1,6 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { DevicesService } from './devices.service';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
@@ -13,6 +14,7 @@ export class DevicesLinkController {
 
   @Post('link')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 20, ttl: 15 * 60 * 1000 } })
   @ApiOperation({
     summary: 'Step 3 — adopt a waiting device into an organisation',
     description: [
@@ -20,6 +22,7 @@ export class DevicesLinkController {
       'caller must be signed in and hold the devices permission in the target',
       'organisation — the device itself never chooses where it belongs.',
       '',
+      'Codes are valid for 15 minutes and accept a limited number of tries.',
       'On success the device becomes verified, its code is cleared, and its',
       'next status poll tells it where to go. Type defaults are applied here,',
       'so a display arrives already set to the customer view.',
