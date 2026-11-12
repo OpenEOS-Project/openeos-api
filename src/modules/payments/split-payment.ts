@@ -39,13 +39,13 @@ const AMOUNT_TOLERANCE = 0.01;
 const cents = (value: number): number => Math.round(value * 100) / 100;
 
 function invalid(
-  reason: string,
+  why: string,
   message: string,
   params?: Record<string, unknown>,
 ): BadRequestException {
   return new BadRequestException({
     code: ErrorCodes.VALIDATION_ERROR,
-    reason,
+    reason: why,
     message,
     ...(params ? { params } : {}),
   });
