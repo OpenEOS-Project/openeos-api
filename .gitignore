@@ -42,6 +42,8 @@ Thumbs.db
 
 # User uploads (runtime data, volume-mounted in prod)
 /uploads/
+# Private Ablage (PRIVATE_STORAGE_DIR, Standard ./private)
+/private/
 
 # Test coverage
 coverage/
