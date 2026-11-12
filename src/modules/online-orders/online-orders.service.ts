@@ -647,7 +647,8 @@ export class OnlineOrdersService {
     assertCashAllowed(organization, payDto.paymentMethod);
 
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || '';
-    const returnUrl = payDto.returnUrl || `${frontendUrl}/status`;
+    const returnUrl =
+      this.allowedReturnUrl(payDto.returnUrl) || `${frontendUrl}/status`;
     const cancelUrl = `${frontendUrl}/checkout`;
     const description = `OpenEOS Bestellung #${order.dailyNumber}`;
 
@@ -1090,6 +1091,41 @@ export class OnlineOrdersService {
           `Online order ${order.id} receipt print failed: ${(err as Error)?.message}`,
         ),
       );
+  }
+
+  /**
+   * Rueckkehr-Adresse nach dem Bezahlen nur auf einer der konfigurierten
+   * Oberflaechen (FRONTEND_URL, ONLINE_ORDER_BASE_URL, APP_URL,
+   * SHOP_RETURN_URL_BASE); alles andere faellt auf die Standardseite zurueck.
+   */
+  private allowedReturnUrl(candidate: string | undefined): string | null {
+    if (!candidate) return null;
+    let origin: string;
+    try {
+      const url = new URL(candidate);
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+      origin = url.origin;
+    } catch {
+      return null;
+    }
+    const configured = [
+      this.configService.get<string>('FRONTEND_URL'),
+      this.configService.get<string>('ONLINE_ORDER_BASE_URL') ||
+        'https://order.openeos.de',
+      this.configService.get<string>('APP_URL'),
+      this.configService.get<string>('SHOP_RETURN_URL_BASE'),
+    ];
+    const allowed = new Set(
+      configured.flatMap((value) => {
+        if (!value) return [];
+        try {
+          return [new URL(value).origin];
+        } catch {
+          return [];
+        }
+      }),
+    );
+    return allowed.has(origin) ? candidate : null;
   }
 
   /** Oeffentliche Adresse dieser API (ohne /api) fuer SumUp-Webhooks. */
