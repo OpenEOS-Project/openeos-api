@@ -45,6 +45,10 @@ import {
 } from './receipt-document';
 import { receiptMail } from './receipt-mail';
 import { renderReceiptPdf } from './receipt-pdf';
+import {
+  TARGET_LIMITS,
+  TargetLimitService,
+} from '../../common/rate-limit/target-limit.service';
 
 /** Wer den Beleg an der Kasse ausgibt (fuer Verlauf und Versandgrenze). */
 export interface ReceiptActor {
@@ -165,6 +169,7 @@ export class ReceiptsService {
     private readonly deployment: DeploymentService,
     config: ConfigService,
     @Optional() private readonly tseSigning?: TseSigningService,
+    @Optional() private readonly targetLimits?: TargetLimitService,
   ) {
     this.linkDays = intEnv(config, 'RECEIPT_LINK_DAYS', 90, 1, 365);
     this.deviceMailsPerHour = intEnv(
@@ -363,10 +368,14 @@ export class ReceiptsService {
     );
   }
 
-  /** Versandgrenzen: je Geraet und Stunde, je Bestellung insgesamt. */
+  /**
+   * Versandgrenzen: je Geraet und Stunde, je Bestellung insgesamt und je
+   * Empfaengeradresse und Stunde (ueber alle Kassen und Vereine).
+   */
   async assertMailAllowed(
     actor: ReceiptActor,
     orderIds: string[],
+    address?: string,
   ): Promise<void> {
     if (actor.deviceId) {
       const recent = await this.orderEventRepository.count({
@@ -395,6 +404,20 @@ export class ReceiptsService {
       throw this.rateLimited(
         'Zu dieser Bestellung wurde der Beleg schon oft per E-Mail verschickt.',
         { limit: this.mailsPerOrder },
+      );
+    }
+    if (
+      address &&
+      this.targetLimits &&
+      !(await this.targetLimits.allow(
+        'receipt-email',
+        address,
+        TARGET_LIMITS.receiptEmail,
+      ))
+    ) {
+      throw this.rateLimited(
+        'An diese Adresse wurden in der letzten Stunde zu viele Belege verschickt.',
+        { limit: TARGET_LIMITS.receiptEmail.limit },
       );
     }
   }
@@ -427,7 +450,7 @@ export class ReceiptsService {
         message: 'Bitte gib eine gültige E-Mail-Adresse ein.',
       });
     }
-    await this.assertMailAllowed(actor, orderIds);
+    await this.assertMailAllowed(actor, orderIds, address);
     const { timeZone, documents } = await this.documents(
       actor.organizationId,
       orderIds,
@@ -469,7 +492,7 @@ export class ReceiptsService {
           message: 'Bitte gib eine gültige E-Mail-Adresse ein.',
         });
       }
-      await this.assertMailAllowed(actor, orderIds);
+      await this.assertMailAllowed(actor, orderIds, address);
     }
     const organization = await this.organization(actor.organizationId);
     const timeZone = resolveOrderTimeZone(organization.settings?.timezone);

@@ -15,6 +15,8 @@ import {
   newReceiptToken,
   receiptTokenHash,
 } from './receipts.service';
+import { ThrottlerStorageService } from '@nestjs/throttler';
+import { TargetLimitService } from '../../common/rate-limit/target-limit.service';
 
 const TSE: TsePrintBlock = {
   status: 'signed',
@@ -258,6 +260,7 @@ describe('ReceiptsService', () => {
       recentMails?: number;
       perOrder?: { orderId: string; n: number }[];
       sendOk?: boolean;
+      targetLimits?: TargetLimitService;
     } = {},
   ) {
     const saved: unknown[] = [];
@@ -318,6 +321,7 @@ describe('ReceiptsService', () => {
       { platformLegal: { imprintUrl: null, privacyUrl: null } } as never,
       new ConfigService({ APP_URL: 'https://app.example/' }),
       { forPayment: jest.fn(() => Promise.resolve(null)) } as never,
+      options.targetLimits,
     );
     const actor = { organizationId: 'org-1', deviceId: 'dev-1', userId: null };
     return { service, links, events, email, print, saved, actor };
@@ -403,6 +407,29 @@ describe('ReceiptsService', () => {
     ).rejects.toMatchObject({
       response: { code: 'RECEIPT_EMAIL_RATE_LIMITED' },
     });
+  });
+
+  it('limits e-mails per recipient address across tills', async () => {
+    const storage = new ThrottlerStorageService();
+    const targetLimits = new TargetLimitService(storage);
+    const { service, actor, email } = setup({ targetLimits });
+    for (let i = 0; i < 10; i += 1) {
+      await service.assertMailAllowed(
+        { ...actor, deviceId: `dev-${i}` },
+        ['o-1'],
+        'gast@example.org',
+      );
+    }
+    const err = await service
+      .sendEmail(actor, ['o-1'], 'Gast@example.org')
+      .catch((e: HttpException) => e);
+    storage.onApplicationShutdown();
+
+    expect((err as HttpException).getStatus()).toBe(429);
+    expect(err).toMatchObject({
+      response: { code: 'RECEIPT_EMAIL_RATE_LIMITED' },
+    });
+    expect(email.sendEmail).not.toHaveBeenCalled();
   });
 
   it('rejects invalid addresses before anything else', async () => {
