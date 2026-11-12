@@ -1,3 +1,4 @@
+import { priceSelectedOptions } from '../products/product-option-pricing';
 import {
   assertCashAllowed,
   assertPaymentsAllowed,
@@ -12,7 +13,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { v4 as uuidv4 } from 'uuid';
@@ -294,11 +295,14 @@ export class OnlineOrdersService {
       });
     }
 
+    // Optionen mit den Preisen aus der Produktdefinition.
+    const { selected: options } = priceSelectedOptions(product, addDto.options);
+
     // Find existing item in cart
     const existingIndex = session.cart.items.findIndex(
       (item) =>
         item.productId === addDto.productId &&
-        JSON.stringify(item.options) === JSON.stringify(addDto.options || []),
+        JSON.stringify(item.options) === JSON.stringify(options),
     );
 
     if (existingIndex >= 0) {
@@ -314,7 +318,7 @@ export class OnlineOrdersService {
         productName: product.name,
         quantity: addDto.quantity,
         unitPrice: Number(product.price),
-        options: addDto.options || [],
+        options,
         notes: addDto.notes,
       });
     }
@@ -456,17 +460,24 @@ export class OnlineOrdersService {
     const createdItems: OrderItem[] = [];
 
     for (const cartItem of session.cart.items) {
+      if (!session.eventId) continue;
       const product = await this.productRepository.findOne({
-        where: { id: cartItem.productId, eventId: session.eventId ?? IsNull() },
+        where: {
+          id: cartItem.productId,
+          eventId: session.eventId,
+          event: { organizationId: session.organizationId },
+        },
         relations: ['category'],
       });
 
       if (!product) continue;
 
-      let optionsPrice = 0;
-      for (const opt of cartItem.options) {
-        optionsPrice += opt.priceModifier;
-      }
+      // Erneut aus der Produktdefinition: der Warenkorb liegt in der
+      // Sitzung, der Preis gilt erst beim Absenden.
+      const { selected: options, optionsPrice } = priceSelectedOptions(
+        product,
+        cartItem.options,
+      );
 
       const totalPrice =
         (cartItem.unitPrice + optionsPrice) * cartItem.quantity;
@@ -490,7 +501,7 @@ export class OnlineOrdersService {
         // Satz des Produkts festhalten; daraus rechnen Bon und taxTotal.
         taxRate: Number(product.taxRate) || 0,
         totalPrice,
-        options: { selected: cartItem.options },
+        options: { selected: options },
         notes: cartItem.notes || null,
         status: OrderItemStatus.PENDING,
         sortOrder,

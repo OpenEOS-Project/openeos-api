@@ -15,10 +15,12 @@
  * Admins die erneute Annahme aus.
  */
 export const DEFAULT_LEGAL_VERSIONS = {
-  agb: '2026-11-04',
-  avv: '2026-11-04',
-  privacy: '2026-11-04',
-  imprint: '2026-11-04',
+  agb: '2026-11-12',
+  avv: '2026-11-12',
+  privacy: '2026-11-12',
+  imprint: '2026-11-12',
+  /** Anlage 1 zu den AGB: Leistungsbeschreibung und Preisliste. */
+  anlage1: '2026-11-12',
 } as const;
 
 export type LegalDocumentKey = keyof typeof DEFAULT_LEGAL_VERSIONS;
@@ -29,6 +31,7 @@ export const LEGAL_PATHS: Record<LegalDocumentKey, string> = {
   avv: 'avv',
   privacy: 'datenschutz',
   imprint: 'impressum',
+  anlage1: 'leistungsbeschreibung',
 };
 
 export interface LegalConfig {
@@ -37,6 +40,14 @@ export interface LegalConfig {
   /** Basis der Website ohne Schraegstrich am Ende, z. B. https://openeos.de */
   siteUrl: string;
   versions: Record<LegalDocumentKey, string>;
+  /**
+   * Bestehende Admins nach einer neuen Fassung von AGB/AVV erneut fragen
+   * (blockierender Dialog)? Standard aus (`LEGAL_REACCEPTANCE_ENABLED`):
+   * Die Fassung vom 12.11.2026 sind die ersten AGB fuer echte Kunden, es
+   * gibt keine Bestandskunden zu fragen. Angenommen wird weiter bei der
+   * Registrierung und bei jeder kostenpflichtigen Buchung.
+   */
+  reacceptanceEnabled: boolean;
 }
 
 export interface LegalDocumentLinks {
@@ -84,11 +95,14 @@ export function legalConfigFromEnv(
   return {
     enabled: !selfHosted,
     siteUrl,
+    reacceptanceEnabled:
+      env.LEGAL_REACCEPTANCE_ENABLED?.trim().toLowerCase() === 'true',
     versions: {
       agb: version('LEGAL_AGB_VERSION', DEFAULT_LEGAL_VERSIONS.agb),
       avv: version('LEGAL_AVV_VERSION', DEFAULT_LEGAL_VERSIONS.avv),
       privacy: version('LEGAL_PRIVACY_VERSION', DEFAULT_LEGAL_VERSIONS.privacy),
       imprint: version('LEGAL_IMPRINT_VERSION', DEFAULT_LEGAL_VERSIONS.imprint),
+      anlage1: version('LEGAL_ANLAGE1_VERSION', DEFAULT_LEGAL_VERSIONS.anlage1),
     },
   };
 }
@@ -117,5 +131,6 @@ export function currentLegalLinks(
     avv: legalLinks(config, 'avv', config.versions.avv),
     privacy: legalLinks(config, 'privacy', config.versions.privacy),
     imprint: legalLinks(config, 'imprint', config.versions.imprint),
+    anlage1: legalLinks(config, 'anlage1', config.versions.anlage1),
   };
 }
