@@ -455,8 +455,9 @@ export class PrintersService {
     deviceId: string,
     organizationId: string,
   ): Promise<void> {
+    // Geraete anderer Organisationen gelten als nicht vorhanden.
     const device = await this.deviceRepository.findOne({
-      where: { id: deviceId },
+      where: { id: deviceId, organizationId },
     });
 
     if (!device) {
@@ -472,14 +473,6 @@ export class PrintersService {
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.DEVICE_NOT_PRINTER_AGENT,
         message: 'Gerät ist kein Drucker-Agent',
-      });
-    }
-
-    if (device.organizationId !== organizationId) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.DEVICE_WRONG_ORGANIZATION,
-        message: 'Gerät gehört nicht zu dieser Organisation',
       });
     }
   }
