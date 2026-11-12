@@ -3056,7 +3056,7 @@
     },
     "/api/devices/init": {
       "post": {
-        "description": "Start here for any client that cannot ask for credentials: a TV, a tablet, an app. No organisation is needed and none is assigned yet.  Returns a deviceToken (keep it, it is the long-lived credential) and a six-digit verificationCode. Show the code to the user and poll GET /devices/status with the token until it reports \"verified\".  Someone signed in then links the code — see POST /devices/link. Until then the device has no access to anything.",
+        "description": "Start here for any client that cannot ask for credentials: a TV, a tablet, an app. No organisation is needed and none is assigned yet.  Returns a deviceToken (keep it, it is the long-lived credential) and an eight-digit verificationCode valid until verificationCodeExpiresAt (15 minutes). Show the code to the user and poll GET /devices/status with the token until it reports \"verified\". Once the code has expired the status poll answers 401 (PAIRING_CODE_EXPIRED): register again to get a new code.  Someone signed in then links the code — see POST /devices/link. Until then the device has no access to anything.",
         "operationId": "devicesPublic_initDevice",
         "parameters": [],
         "requestBody": {
@@ -3082,14 +3082,14 @@
     },
     "/api/devices/lookup": {
       "get": {
-        "description": "Public on purpose: it only reveals the suggested name and user agent of a device that is already waiting, which whoever holds the code can read off its screen anyway. Codes are unique among pending devices.",
+        "description": "Public on purpose: it only reveals the suggested name and user agent of a device that is already waiting, which whoever holds the code can read off its screen anyway. Codes are unique among pending devices, valid for 15 minutes and accept a limited number of tries.",
         "operationId": "devicesPublic_lookupByCode",
         "parameters": [
           {
             "name": "code",
             "required": true,
             "in": "query",
-            "description": "6-digit verification code",
+            "description": "Pairing code (eight digits, older devices six)",
             "schema": {
               "type": "string"
             }
@@ -3208,7 +3208,7 @@
     },
     "/api/devices/link": {
       "post": {
-        "description": "Finishes the pairing a device started with POST /devices/init. The caller must be signed in and hold the devices permission in the target organisation — the device itself never chooses where it belongs.  On success the device becomes verified, its code is cleared, and its next status poll tells it where to go. Type defaults are applied here, so a display arrives already set to the customer view.",
+        "description": "Finishes the pairing a device started with POST /devices/init. The caller must be signed in and hold the devices permission in the target organisation — the device itself never chooses where it belongs.  Codes are valid for 15 minutes and accept a limited number of tries. On success the device becomes verified, its code is cleared, and its next status poll tells it where to go. Type defaults are applied here, so a display arrives already set to the customer view.",
         "operationId": "devicesLink_linkDevice",
         "parameters": [],
         "requestBody": {
@@ -22757,8 +22757,8 @@
         "properties": {
           "code": {
             "type": "string",
-            "description": "6-stelliger Verifizierungscode",
-            "example": "123456"
+            "description": "Kopplungscode des Geräts (acht Ziffern, ältere Geräte sechs); Leerzeichen und Bindestriche sind erlaubt",
+            "example": "12345678"
           },
           "type": {
             "type": "string",
@@ -22831,8 +22831,8 @@
         "properties": {
           "code": {
             "type": "string",
-            "description": "6-stelliger Verifizierungscode",
-            "example": "123456"
+            "description": "Kopplungscode des Geräts (acht Ziffern, ältere Geräte sechs); Leerzeichen und Bindestriche sind erlaubt",
+            "example": "12345678"
           },
           "organizationId": {
             "type": "string",
