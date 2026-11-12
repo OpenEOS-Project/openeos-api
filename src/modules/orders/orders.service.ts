@@ -1,4 +1,8 @@
 import {
+  orderProductWhere,
+  priceSelectedOptions,
+} from '../products/product-option-pricing';
+import {
   Injectable,
   NotFoundException,
   ForbiddenException,
@@ -1472,7 +1476,7 @@ export class OrdersService {
     chargePfand = true,
   ): Promise<OrderItem> {
     const product = await this.productRepository.findOne({
-      where: { id: itemDto.productId, eventId: order.eventId! },
+      where: orderProductWhere(order, itemDto.productId),
       relations: ['category', 'pfandType'],
     });
 
@@ -1503,12 +1507,11 @@ export class OrdersService {
       });
     }
 
-    // Calculate options price
-    let optionsPrice = 0;
-    const selectedOptions = itemDto.selectedOptions || [];
-    for (const opt of selectedOptions) {
-      optionsPrice += opt.priceModifier || 0;
-    }
+    // Optionspreise aus der Produktdefinition, nie aus der Anfrage.
+    const { selected: selectedOptions, optionsPrice } = priceSelectedOptions(
+      product,
+      itemDto.selectedOptions,
+    );
 
     const unitPrice = Number(product.price);
     const totalPrice = (unitPrice + optionsPrice) * itemDto.quantity;

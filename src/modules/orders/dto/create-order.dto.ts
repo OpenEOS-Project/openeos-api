@@ -28,9 +28,14 @@ export class SelectedOptionDto {
   @IsString()
   option: string;
 
-  @ApiProperty({ example: 1.5, description: 'Preismodifikator' })
+  @ApiPropertyOptional({
+    example: 1.5,
+    description:
+      'Wird ignoriert: der Aufpreis kommt aus der Optionsdefinition des Produkts.',
+  })
+  @IsOptional()
   @IsNumber()
-  priceModifier: number;
+  priceModifier?: number;
 
   @ApiPropertyOptional({
     example: true,
