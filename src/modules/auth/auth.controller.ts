@@ -26,7 +26,10 @@ import { OrganizationLimitsService } from '../../common/services/organization-li
 import { OrganizationViewService } from '../organizations/organization-view.service';
 import { AuthService, SessionClient } from './auth.service';
 import { LegalService } from '../legal/legal.service';
-import { TwoFactorService } from './two-factor.service';
+import {
+  TwoFactorService,
+  isWellFormedTrustedDeviceToken,
+} from './two-factor.service';
 import {
   RegisterDto,
   LoginDto,
@@ -58,6 +61,7 @@ import {
   CurrentUser,
   AllowPendingTwoFactor,
 } from '../../common/decorators';
+import type { RequestUser } from '../../common/decorators/current-user.decorator';
 import { User } from '../../database/entities';
 import { TwoFactorMethod } from '../../database/entities/user.entity';
 
@@ -82,6 +86,11 @@ function parseDurationToMs(duration: string): number {
 
 /** cookie-parser typt die Cookies als Record<string, any>. */
 type Cookies = Record<string, string | undefined>;
+
+/** Cookie mit den Geheimnissen vertrauter Geraete (siehe TwoFactorService). */
+export const TRUSTED_DEVICE_COOKIE = 'trustedDevice';
+const MAX_TRUSTED_DEVICE_COOKIE_ENTRIES = 5;
+const TRUSTED_DEVICE_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -201,9 +210,12 @@ export class AuthController {
        Login sofort volle Token und die Code-Abfrage kam obendrauf — wer
        die API direkt ansprach, war mit dem Passwort allein drin. */
     if (
-      await this.authService.needsTwoFactor(user, loginDto.deviceFingerprint)
+      await this.authService.needsTwoFactor(
+        user,
+        this.readTrustedDeviceTokens(request),
+      )
     ) {
-      const twoFactorToken = this.authService.issueTwoFactorToken(user);
+      const twoFactorToken = await this.authService.issueTwoFactorToken(user);
 
       // Beim Mail-Verfahren muss der Code erst unterwegs sein, bevor
       // jemand danach gefragt wird.
@@ -398,7 +410,7 @@ export class AuthController {
 
     // Ein Link ersetzt das Passwort, nicht den zweiten Faktor.
     if (await this.authService.needsTwoFactor(user)) {
-      const twoFactorToken = this.authService.issueTwoFactorToken(user);
+      const twoFactorToken = await this.authService.issueTwoFactorToken(user);
       if (user.twoFactorMethod === TwoFactorMethod.EMAIL) {
         await this.twoFactorService.sendLoginOtp(user.id);
       }
@@ -649,17 +661,20 @@ export class AuthController {
   })
   @ApiResponse({ status: 401, description: 'Invalid code' })
   async verify2FA(
-    @CurrentUser() user: User,
+    @CurrentUser() user: RequestUser,
     @Body() dto: Verify2FADto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
     const ip = request.ip || request.socket.remoteAddress;
-    await this.twoFactorService.verify2FA(
+    /* Nur der Ausweis aus Schritt eins traegt eine offene Anmeldung
+       (`twoFactorChallengeId`); ein voller Zugangstoken hat keine und
+       wird hier abgewiesen. */
+    const { trustedDeviceToken } = await this.twoFactorService.verify2FA(
       user.id,
+      user.pending2fa ? user.twoFactorChallengeId : null,
       dto.code,
       dto.trustDevice,
-      dto.deviceFingerprint,
       {
         name: dto.deviceName,
         browser: dto.browser,
@@ -667,11 +682,14 @@ export class AuthController {
         ip,
       },
     );
+    if (trustedDeviceToken) {
+      this.setTrustedDeviceCookie(request, response, trustedDeviceToken);
+    }
 
     /* Erst hier entsteht die Sitzung. Der Ausweis aus Schritt eins taugte
        nur fuer diesen Aufruf und ist mit der Antwort erledigt. */
     const result = await this.authService.login(
-      user,
+      user as User,
       this.getClientInfo(request),
     );
     this.setRefreshTokenCookie(response, result.refreshToken);
@@ -788,7 +806,13 @@ export class AuthController {
   })
   @ApiResponse({ status: 400, description: 'Email 2FA not enabled' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  async sendLoginOtp(@CurrentUser() user: User): Promise<{ message: string }> {
+  async sendLoginOtp(
+    @CurrentUser() user: RequestUser,
+  ): Promise<{ message: string }> {
+    await this.twoFactorService.assertChallengeOpen(
+      user.id,
+      user.pending2fa ? user.twoFactorChallengeId : null,
+    );
     await this.twoFactorService.sendLoginOtp(user.id);
     return { message: 'Verifizierungscode wurde per E-Mail gesendet' };
   }
@@ -800,6 +824,55 @@ export class AuthController {
       ip: request.ip || request.socket?.remoteAddress,
       userAgent: typeof userAgent === 'string' ? userAgent : undefined,
     };
+  }
+
+  /**
+   * Geheimnisse vertrauter Geraete aus dem Cookie `trustedDevice`.
+   * Ein Browser kann fuer mehrere Konten vertraut sein (Vereinslaptop);
+   * die Geheimnisse stehen dann durch Punkte getrennt hintereinander.
+   */
+  private readTrustedDeviceTokens(request: Request): string[] {
+    const raw = (request.cookies as Cookies | undefined)?.[
+      TRUSTED_DEVICE_COOKIE
+    ];
+    if (!raw) return [];
+    return raw
+      .split('.')
+      .filter(isWellFormedTrustedDeviceToken)
+      .slice(0, MAX_TRUSTED_DEVICE_COOKIE_ENTRIES);
+  }
+
+  /**
+   * Setzt das Geheimnis eines neu vertrauten Geraets — httpOnly, nur an
+   * die Anmelde-Endpunkte, SameSite=Strict, in Produktion nur ueber HTTPS.
+   * Laeuft mit dem Eintrag in `trusted_devices` ab.
+   */
+  private setTrustedDeviceCookie(
+    request: Request,
+    response: Response,
+    token: string,
+  ): void {
+    const isProduction = this.configService.get('nodeEnv') === 'production';
+    const value = [
+      token,
+      ...this.readTrustedDeviceTokens(request).filter((t) => t !== token),
+    ]
+      .slice(0, MAX_TRUSTED_DEVICE_COOKIE_ENTRIES)
+      .join('.');
+    response.cookie(TRUSTED_DEVICE_COOKIE, value, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'strict',
+      path: this.authCookiePath(),
+      maxAge: TRUSTED_DEVICE_COOKIE_MAX_AGE_MS,
+    });
+  }
+
+  private authCookiePath(): string {
+    const prefix = (
+      this.configService.get<string>('apiPrefix') || 'api'
+    ).replace(/^\/+|\/+$/g, '');
+    return prefix ? `/${prefix}/auth` : '/auth';
   }
 
   private setRefreshTokenCookie(response: Response, token: string): void {

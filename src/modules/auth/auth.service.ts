@@ -32,6 +32,10 @@ import { initialOperatingMode } from '../../common/utils/operating-mode.util';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { TwoFactorService } from './two-factor.service';
 import {
+  ACCESS_TOKEN_TYPE,
+  TWO_FACTOR_PENDING_TOKEN_TYPE,
+} from './token-types';
+import {
   RegisterDto,
   ForgotPasswordDto,
   ResetPasswordDto,
@@ -77,7 +81,7 @@ const EMAIL_VERIFICATION_EXPIRY_HOURS = 24;
 const MAGIC_LINK_EXPIRY_MINUTES = 15;
 /* Nur die Spanne zwischen Passwort und Code — wer laenger braucht, meldet
    sich neu an. */
-const TWO_FACTOR_PENDING_EXPIRY = '10m';
+const TWO_FACTOR_PENDING_EXPIRY_MINUTES = 10;
 
 @Injectable()
 export class AuthService {
@@ -756,6 +760,8 @@ export class AuthService {
       .set({ revokedAt: new Date() })
       .where('userId = :userId AND revokedAt IS NULL', { userId: user.id })
       .execute();
+    // Vertraute Geraete gelten nach einem neuen Passwort nicht mehr.
+    await this.twoFactorService.revokeTrustedDevices(user.id);
 
     this.logger.log(`Password reset for user: ${user.email}`);
   }
@@ -786,6 +792,7 @@ export class AuthService {
     // Update password
     user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await this.userRepository.save(user);
+    await this.twoFactorService.revokeTrustedDevices(user.id);
 
     this.logger.log(`Password changed for user: ${user.email}`);
   }
@@ -927,39 +934,50 @@ export class AuthService {
   /**
    * Ausweis fuer den zweiten Anmeldeschritt.
    *
-   * Traegt `pending2fa` und wird deshalb ueberall abgewiesen ausser bei
-   * den 2FA-Endpunkten. Kurz gueltig, weil er nur eine Code-Eingabe
-   * ueberbruecken muss.
+   * Traegt `typ: '2fa_pending'` (und fuer aeltere Pruefstellen weiterhin
+   * `pending2fa`) und wird deshalb ueberall abgewiesen ausser bei den
+   * 2FA-Endpunkten. Kurz gueltig, weil er nur eine Code-Eingabe
+   * ueberbruecken muss. Seine Kennung (`jti`) ist ein offener Schritt in
+   * `two_factor_challenges`: dort zaehlen die Fehlversuche, und nach
+   * Erfolg ist der Ausweis verbraucht.
    */
-  issueTwoFactorToken(user: User): string {
+  async issueTwoFactorToken(user: User): Promise<string> {
+    const challenge = await this.twoFactorService.createChallenge(
+      user.id,
+      TWO_FACTOR_PENDING_EXPIRY_MINUTES,
+    );
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,
       isSuperAdmin: user.isSuperAdmin,
+      typ: TWO_FACTOR_PENDING_TOKEN_TYPE,
       pending2fa: true,
+      jti: challenge.id,
     };
 
     return this.jwtService.sign(payload, {
-      expiresIn: TWO_FACTOR_PENDING_EXPIRY,
+      expiresIn: TWO_FACTOR_PENDING_EXPIRY_MINUTES * 60,
     });
   }
 
   /**
    * Braucht dieser Benutzer jetzt einen zweiten Faktor?
    *
-   * Ein als vertrauenswuerdig markiertes Geraet ueberspringt ihn — dafuer
-   * ist die Markierung da.
+   * Ein vertrautes Geraet ueberspringt ihn — erkannt allein an einem vom
+   * Server ausgegebenen Geheimnis (Cookie `trustedDevice`), das zu genau
+   * diesem Benutzer gehoert und nicht abgelaufen ist. Passt keins, gilt
+   * der zweite Faktor.
    */
   async needsTwoFactor(
     user: User,
-    deviceFingerprint?: string,
+    trustedDeviceTokens: string[] = [],
   ): Promise<boolean> {
     if (!user.twoFactorEnabled) return false;
-    if (!deviceFingerprint) return true;
+    if (trustedDeviceTokens.length === 0) return true;
 
-    return !(await this.twoFactorService.isDeviceTrusted(
+    return !(await this.twoFactorService.isTrustedDevice(
       user.id,
-      deviceFingerprint,
+      trustedDeviceTokens,
     ));
   }
 
@@ -1022,6 +1040,7 @@ export class AuthService {
          Daran erkennt die Sitzungsliste "dieses Geraet", und "alle anderen
          abmelden" laesst genau diese Sitzung stehen. */
       sid: sessionId,
+      typ: ACCESS_TOKEN_TYPE,
     };
     return this.jwtService.sign(payload);
   }

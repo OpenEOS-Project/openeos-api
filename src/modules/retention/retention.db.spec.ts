@@ -595,8 +595,12 @@ describeWithDb('Retention jobs against Postgres', () => {
         [userId, randomUUID(), ago(2)],
       );
       await sql(
-        `INSERT INTO trusted_devices (user_id, device_fingerprint, expires_at) VALUES ($1, 'fp', $2)`,
-        [userId, ago(1)],
+        `INSERT INTO trusted_devices (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+        [userId, randomUUID(), ago(1)],
+      );
+      await sql(
+        `INSERT INTO two_factor_challenges (user_id, expires_at) VALUES ($1, $2)`,
+        [userId, ago(2)],
       );
       await sql(
         `INSERT INTO api_tokens (name, token_hash, token_prefix, user_id, organization_id, revoked_at) VALUES
@@ -618,6 +622,7 @@ describeWithDb('Retention jobs against Postgres', () => {
         'email_otps',
         'login_magic_links',
         'trusted_devices',
+        'two_factor_challenges',
       ]) {
         expect(
           await sql(`SELECT 1 FROM ${table} WHERE user_id = $1`, [userId]),

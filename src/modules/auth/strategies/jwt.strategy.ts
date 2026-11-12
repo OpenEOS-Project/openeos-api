@@ -9,6 +9,11 @@ import { Repository } from 'typeorm';
 import { User } from '../../../database/entities';
 import { gesperrterTokenSchluessel } from '../token-blocklist';
 import {
+  isFullAccessToken,
+  isTwoFactorPendingToken,
+  type TokenType,
+} from '../token-types';
+import {
   ErrorCodes,
   ErrorReasons,
 } from '../../../common/constants/error-codes';
@@ -25,6 +30,8 @@ function extractFromCookie(req: Request): string | null {
 export interface JwtPayload {
   /** Eindeutig je ausgegebenem Token — trennt zwei gleichzeitige Sitzungen. */
   jti?: string;
+  /** Art des Tokens (siehe token-types.ts). */
+  typ?: TokenType;
   /** Gesetzt zwischen Passwort und zweitem Faktor — kein voller Zugang. */
   pending2fa?: boolean;
   /** Kennung der Sitzung (refresh_tokens.id). Fehlt in aelteren Token. */
@@ -68,10 +75,25 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     payload: JwtPayload,
   ): Promise<
     User & {
+      pending2fa: boolean;
+      twoFactorChallengeId: string | null;
       sessionId: string | null;
       organizations: { id: string; role: string }[];
     }
   > {
+    /* Nur zwei Arten gelten: voller Zugang oder der Ausweis fuer den
+       zweiten Anmeldeschritt. Was keins von beiden ist, ist keine
+       Anmeldung. Den Ausweis lassen erst JwtAuthGuard und die mit
+       @AllowPendingTwoFactor markierten Endpunkte durch. */
+    const pending = isTwoFactorPendingToken(payload);
+    if (!pending && !isFullAccessToken(payload)) {
+      throw new UnauthorizedException({
+        code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.NOT_AUTHENTICATED,
+        message: 'Nicht authentifiziert',
+      });
+    }
+
     /* Abgemeldete Token abweisen. Ohne diese Pruefung blieb ein Token nach
        dem Abmelden bis zum Ablauf gueltig — die Sperre wurde zwar
        geschrieben, aber nirgends gelesen. */
@@ -129,8 +151,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
        setzte — der API-Token-Pfad tat das nie. Jetzt lesen alle Guards
        dasselbe Feld, und der Alias entfaellt. */
     return Object.assign(user, {
-      pending2fa: payload.pending2fa === true,
-      sessionId: payload.sid ?? null,
+      pending2fa: pending,
+      twoFactorChallengeId: pending ? (payload.jti ?? null) : null,
+      sessionId: pending ? null : (payload.sid ?? null),
       organizations,
     });
   }

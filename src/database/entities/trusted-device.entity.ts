@@ -2,15 +2,26 @@ import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { User } from './user.entity';
 
+/**
+ * Ein Browser, der nach bestaetigtem zweiten Faktor eine Weile ohne Code
+ * anmelden darf.
+ *
+ * Erkannt wird er an einem zufaelligen Geheimnis, das der Server bei der
+ * Bestaetigung ausgibt und als httpOnly-Cookie setzt. Gespeichert ist nur
+ * der SHA-256-Hash (`tokenHash`); das Geheimnis selbst kennt allein der
+ * Browser. Gebunden an das Konto: ein Geheimnis gilt nur zusammen mit dem
+ * Benutzer, fuer den es ausgegeben wurde.
+ */
 @Entity('trusted_devices')
-@Index(['userId', 'deviceFingerprint'], { unique: true })
-@Index(['expiresAt'])
+@Index('IDX_trusted_devices_token_hash', ['tokenHash'], { unique: true })
+@Index('IDX_trusted_devices_expires_at', ['expiresAt'])
 export class TrustedDevice extends BaseEntity {
   @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
-  @Column({ name: 'device_fingerprint', type: 'varchar', length: 255 })
-  deviceFingerprint: string;
+  /** SHA-256 (hex) des ausgegebenen Geheimnisses. Nie herausgeben. */
+  @Column({ name: 'token_hash', type: 'varchar', length: 64, select: false })
+  tokenHash: string;
 
   @Column({ name: 'device_name', type: 'varchar', length: 255, nullable: true })
   deviceName: string | null;
