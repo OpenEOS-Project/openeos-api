@@ -131,6 +131,7 @@ describeWithDb('Retention jobs against Postgres', () => {
     const notices = new RetentionNoticeService(email);
     const options = {
       uploadDir,
+      privateDir: path.join(uploadDir, 'private'),
       fiscalExportDir: path.join(uploadDir, 'tse-exports'),
       contactEmail: 'export@example.test',
     };

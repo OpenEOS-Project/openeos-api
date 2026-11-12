@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { LoginBackoffService } from './login-backoff.service';
 import { TwoFactorService } from './two-factor.service';
 import { JwtStrategy, LocalStrategy } from './strategies';
 import { EncryptionService } from '../../common/services/encryption.service';
@@ -57,6 +58,7 @@ import {
     EncryptionService,
     JwtStrategy,
     LocalStrategy,
+    LoginBackoffService,
   ],
   exports: [AuthService, TwoFactorService, JwtModule],
 })

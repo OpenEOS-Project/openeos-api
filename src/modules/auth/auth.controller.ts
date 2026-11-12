@@ -466,7 +466,8 @@ export class AuthController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary: 'Change password',
-    description: 'Change password for authenticated user',
+    description:
+      'Change password for authenticated user. Ends all other sessions of the user; the current session stays signed in.',
   })
   @ApiResponse({
     status: 200,
@@ -478,8 +479,13 @@ export class AuthController {
   async changePassword(
     @CurrentUser() user: User,
     @Body() changePasswordDto: ChangePasswordDto,
+    @CurrentUser('sessionId') sessionId?: string | null,
   ) {
-    await this.authService.changePassword(user.id, changePasswordDto);
+    await this.authService.changePassword(
+      user.id,
+      changePasswordDto,
+      sessionId,
+    );
 
     return {
       message: 'Passwort wurde erfolgreich geändert',

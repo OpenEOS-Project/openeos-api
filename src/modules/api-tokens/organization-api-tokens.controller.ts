@@ -23,6 +23,7 @@ import { CreateOrganizationApiTokenDto } from './dto';
 import { CurrentUser, Roles } from '../../common/decorators';
 import { OrganizationGuard, RolesGuard } from '../../common/guards';
 import { Role } from '../../common/constants/roles.enum';
+import { assertOrganizationRole } from '../../common/utils/organization-access.util';
 import { User } from '../../database/entities';
 
 /**
@@ -51,7 +52,11 @@ export class OrganizationApiTokensController {
     description:
       'Alle Tokens der Organisation, auch widerrufene und abgelaufene, neueste zuerst. Vom Geheimnis bleibt nur `tokenPrefix` sichtbar. Nur mit Anmeldung (JWT) als Administrator — nicht per Token.',
   })
-  async list(@Param('organizationId', ParseUUIDPipe) organizationId: string) {
+  async list(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @CurrentUser() user: User,
+  ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     const data = await this.apiTokensService.listeOrganisation(organizationId);
     return { data };
   }
@@ -74,6 +79,7 @@ export class OrganizationApiTokensController {
     @Body() dto: CreateOrganizationApiTokenDto,
     @Req() request: Request,
   ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     const { token, eintrag } = await this.apiTokensService.erstelle({
       userId: user.id,
       organizationId,
@@ -104,6 +110,7 @@ export class OrganizationApiTokensController {
     @CurrentUser() user: User,
     @Req() request: Request,
   ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     const data = await this.apiTokensService.widerrufeOrganisation(
       organizationId,
       id,

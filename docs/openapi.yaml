@@ -362,7 +362,7 @@ paths:
       tags: *a5
   /api/auth/change-password:
     patch:
-      description: Change password for authenticated user
+      description: Change password for authenticated user. Ends all other sessions of the user; the current session stays signed in.
       operationId: auth_changePassword
       parameters: []
       requestBody:
@@ -1064,7 +1064,7 @@ paths:
       tags: *a12
       x-api-token-scope: read
     patch:
-      description: Ändert Name, Kontaktdaten oder Einstellungen. Die Betriebsart und das Land ändern sich nur über ihre eigenen Endpunkte. Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen.
+      description: "Ändert Name, Kontaktdaten oder Einstellungen. In `settings` sind nur diese Abschnitte änderbar: `currency`, `timezone`, `locale`, `description`, `taxId`, `legalName`, `taxNumber`, `vatId`, `vatExempt`, `address`, `contact`, `receipt`, `legal`, `pos`, `pfand`, `onlineOrdering`, `orderFlow`, `sumup`, `paypal`, `waiters`, `eventReminders`. Unverändert mitgeschickte andere Abschnitte werden ignoriert; Änderungen daran (z. B. `assistant`, `integrations`, Betriebsart) → 400 ORGANIZATION_SETTING_NOT_UPDATABLE, dafür gibt es eigene Endpunkte. Drucker und Vorlagen in `orderFlow` müssen zur Organisation gehören (400 ORGANIZATION_SETTINGS_INVALID). Die Betriebsart und das Land ändern sich nur über ihre eigenen Endpunkte. Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen."
       operationId: updateOrganization
       parameters:
         - name: id
@@ -1771,7 +1771,7 @@ paths:
       x-api-token-scope: read
   /api/devices/init:
     post:
-      description: 'Start here for any client that cannot ask for credentials: a TV, a tablet, an app. No organisation is needed and none is assigned yet.  Returns a deviceToken (keep it, it is the long-lived credential) and a six-digit verificationCode. Show the code to the user and poll GET /devices/status with the token until it reports "verified".  Someone signed in then links the code — see POST /devices/link. Until then the device has no access to anything.'
+      description: 'Start here for any client that cannot ask for credentials: a TV, a tablet, an app. No organisation is needed and none is assigned yet.  Returns a deviceToken (keep it, it is the long-lived credential) and an eight-digit verificationCode valid until verificationCodeExpiresAt (15 minutes). Show the code to the user and poll GET /devices/status with the token until it reports "verified". Once the code has expired the status poll answers 401 (PAIRING_CODE_EXPIRED): register again to get a new code.  Someone signed in then links the code — see POST /devices/link. Until then the device has no access to anything.'
       operationId: devicesPublic_initDevice
       parameters: []
       requestBody:
@@ -1788,13 +1788,13 @@ paths:
         - Devices
   /api/devices/lookup:
     get:
-      description: "Public on purpose: it only reveals the suggested name and user agent of a device that is already waiting, which whoever holds the code can read off its screen anyway. Codes are unique among pending devices."
+      description: "Public on purpose: it only reveals the suggested name and user agent of a device that is already waiting, which whoever holds the code can read off its screen anyway. Codes are unique among pending devices, valid for 15 minutes and accept a limited number of tries."
       operationId: devicesPublic_lookupByCode
       parameters:
         - name: code
           required: true
           in: query
-          description: 6-digit verification code
+          description: Pairing code (eight digits, older devices six)
           schema:
             type: string
       responses:
@@ -1864,7 +1864,7 @@ paths:
       tags: *a18
   /api/devices/link:
     post:
-      description: Finishes the pairing a device started with POST /devices/init. The caller must be signed in and hold the devices permission in the target organisation — the device itself never chooses where it belongs.  On success the device becomes verified, its code is cleared, and its next status poll tells it where to go. Type defaults are applied here, so a display arrives already set to the customer view.
+      description: Finishes the pairing a device started with POST /devices/init. The caller must be signed in and hold the devices permission in the target organisation — the device itself never chooses where it belongs.  Codes are valid for 15 minutes and accept a limited number of tries. On success the device becomes verified, its code is cleared, and its next status poll tells it where to go. Type defaults are applied here, so a display arrives already set to the customer view.
       operationId: devicesLink_linkDevice
       parameters: []
       requestBody:
@@ -2232,6 +2232,12 @@ paths:
           required: false
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceSplitPaymentDto"
       responses:
         "201":
           description: ""
@@ -2266,6 +2272,12 @@ paths:
           required: false
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceSumupCheckoutDto"
       responses:
         "201":
           description: ""
@@ -6878,6 +6890,11 @@ paths:
     get:
       operationId: invoices_findAll
       parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
         - name: status
           required: false
           in: query
@@ -6931,6 +6948,11 @@ paths:
     get:
       operationId: invoices_findOne
       parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
         - name: id
           required: true
           in: path
@@ -6945,6 +6967,11 @@ paths:
     get:
       operationId: invoices_getPdfUrl
       parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
         - name: id
           required: true
           in: path
@@ -9004,14 +9031,6 @@ paths:
   /api/health/live:
     get:
       operationId: health_liveness
-      parameters: []
-      responses:
-        "200":
-          description: ""
-      tags: *a78
-  /api/health/detailed:
-    get:
-      operationId: health_detailed
       parameters: []
       responses:
         "200":
@@ -12862,7 +12881,7 @@ components:
         confirmBusiness:
           type: boolean
           example: true
-          description: "Pflicht: Bestätigung, als Unternehmer, juristische Person des öffentlichen Rechts oder eingetragener Verein zu handeln und die Organisation vertreten zu dürfen (AGB Ziffer 2.4)."
+          description: "Pflicht: Bestätigung, für eine Organisation aus dem Kundenkreis nach AGB Ziffer 2.1 zu handeln (Unternehmer, juristische Person des öffentlichen Rechts, Verein – eingetragen oder nicht –, Stiftung oder sonstige Organisation), nicht als Verbraucher, und sie vertreten zu dürfen (AGB Ziffer 2.4)."
       required:
         - email
         - firstName
@@ -13628,8 +13647,8 @@ components:
       properties:
         code:
           type: string
-          description: 6-stelliger Verifizierungscode
-          example: "123456"
+          description: Kopplungscode des Geräts (acht Ziffern, ältere Geräte sechs); Leerzeichen und Bindestriche sind erlaubt
+          example: "12345678"
         type:
           type: string
           description: Gerätetyp, der bei der Verifizierung festgelegt wird
@@ -13684,8 +13703,8 @@ components:
       properties:
         code:
           type: string
-          description: 6-stelliger Verifizierungscode
-          example: "123456"
+          description: Kopplungscode des Geräts (acht Ziffern, ältere Geräte sechs); Leerzeichen und Bindestriche sind erlaubt
+          example: "12345678"
         organizationId:
           type: string
           description: Organisation-ID
@@ -13856,7 +13875,7 @@ components:
         priceModifier:
           type: number
           example: 1.5
-          description: Preismodifikator
+          description: "Wird ignoriert: der Aufpreis kommt aus der Optionsdefinition des Produkts."
         excluded:
           type: boolean
           example: true
@@ -13864,7 +13883,6 @@ components:
       required:
         - group
         - option
-        - priceModifier
     CreateOrderItemDto:
       type: object
       properties:
@@ -14075,6 +14093,69 @@ components:
         - orderId
         - amount
         - paymentMethod
+    DeviceSplitPaymentItemDto:
+      type: object
+      properties:
+        orderItemId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID der Bestellposition
+        quantity:
+          type: number
+          example: 2
+          description: Zu bezahlende Stückzahl
+      required:
+        - orderItemId
+        - quantity
+    DeviceSplitPaymentDto:
+      type: object
+      properties:
+        orderId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        amount:
+          type: number
+          example: 7.5
+          description: Zahlungsbetrag in Euro, gleich der Summe der Positionen; höchstens der offene Betrag
+        paymentMethod:
+          type: string
+          enum:
+            - cash
+            - card
+            - sumup_terminal
+            - sumup_online
+            - paypal
+            - google_pay
+            - apple_pay
+            - tokens
+          example: cash
+          description: Zahlart. Wertmarken (`tokens`) nimmt die Kasse beim Kassieren an, nicht beim Aufteilen (400 TOKEN_LINES_INVALID).
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceSplitPaymentItemDto"
+        amountReceived:
+          type: number
+          example: 10
+          description: "Bei Barzahlung: erhaltener Betrag in Euro (Rückgeld auf dem Bon)"
+      required:
+        - orderId
+        - amount
+        - paymentMethod
+        - items
+    DeviceSumupCheckoutDto:
+      type: object
+      properties:
+        amount:
+          type: number
+          example: 12.5
+          description: Betrag in Euro, größer als 0
+        currency:
+          type: string
+          example: EUR
+          description: ISO-4217-Code
+      required:
+        - amount
     CancelOrderWithActorDto:
       type: object
       properties:
@@ -15668,7 +15749,7 @@ components:
         amount:
           type: number
           example: 15
-          description: Zahlungsbetrag in Euro
+          description: Zahlungsbetrag in Euro, gleich der Summe der Positionen; höchstens der offene Betrag
         paymentMethod:
           type: string
           example: card
@@ -15848,11 +15929,10 @@ components:
         priceModifier:
           type: number
           example: 1.5
-          description: Preismodifikator in Euro
+          description: "Wird ignoriert: der Aufpreis kommt aus der Optionsdefinition des Produkts."
       required:
         - group
         - option
-        - priceModifier
     AddCartItemDto:
       type: object
       properties:

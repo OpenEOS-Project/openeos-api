@@ -54,6 +54,7 @@ import {
   TARGET_LIMITS,
   TargetLimitService,
 } from '../../common/rate-limit/target-limit.service';
+import { LoginBackoffService } from './login-backoff.service';
 
 /** Woher eine Anmeldung kam — fuer die Sitzungsliste. */
 export interface SessionClient {
@@ -74,8 +75,12 @@ function sessionColumns(client?: SessionClient): {
   };
 }
 
-const MAX_LOGIN_ATTEMPTS = 5;
+/* Sperre des ganzen Kontos fuer Passwort-Anmeldungen: erst nach vielen
+   Fehlversuchen von verschiedenen Adressen. Gegen Raten von einer Adresse
+   aus bremst LoginBackoffService schon viel frueher. */
+export const ACCOUNT_LOCK_THRESHOLD = 20;
 const LOCK_DURATION_MINUTES = 15;
+
 const BCRYPT_ROUNDS = 12;
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 const PASSWORD_RESET_EXPIRY_HOURS = 1;
@@ -119,6 +124,9 @@ export class AuthService {
     /* Grenzen je Empfaenger fuer Mails (TargetLimitService). */
     @Optional()
     private readonly targetLimits?: TargetLimitService,
+    /* Bremse je Konto und Adresse fuer Passwort-Anmeldungen. */
+    @Optional()
+    private readonly loginBackoff?: LoginBackoffService,
   ) {}
 
   /** Liegt ein Mailvorgang fuer diese Adresse noch in der Grenze? */
@@ -447,7 +455,16 @@ export class AuthService {
     this.logger.log(`Verification email resent to: ${user.email}`);
   }
 
-  async validateUser(email: string, password: string): Promise<User | null> {
+  /**
+   * Passwort-Anmeldung pruefen. Sperren (je Adresse und fuer das ganze
+   * Konto) betreffen nur diesen Weg: laufende Sitzungen bleiben, und der
+   * Anmeldelink per E-Mail funktioniert weiter.
+   */
+  async validateUser(
+    email: string,
+    password: string,
+    ip?: string | null,
+  ): Promise<User | null> {
     const user = await this.userRepository.findOne({
       where: { email: email.toLowerCase() },
       relations: ['userOrganizations', 'userOrganizations.organization'],
@@ -457,14 +474,15 @@ export class AuthService {
       return null;
     }
 
-    // Check if account is locked
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
-      const remainingMinutes = Math.ceil(
-        (user.lockedUntil.getTime() - Date.now()) / 60000,
-      );
+    const waitMs = Math.max(
+      user.lockedUntil ? user.lockedUntil.getTime() - Date.now() : 0,
+      (await this.loginBackoff?.remainingMs(user.id, ip)) ?? 0,
+    );
+    if (waitMs > 0) {
+      const remainingMinutes = Math.ceil(waitMs / 60000);
       throw new UnauthorizedException({
         code: ErrorCodes.ACCOUNT_LOCKED,
-        message: `Konto ist für ${remainingMinutes} Minuten gesperrt`,
+        message: `Zu viele Fehlversuche: Die Anmeldung mit Passwort ist für ${remainingMinutes} Minuten gesperrt. Mit dem Anmeldelink per E-Mail kommst du weiterhin rein.`,
         params: { minutes: remainingMinutes },
       });
     }
@@ -493,7 +511,7 @@ export class AuthService {
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
 
     if (!isPasswordValid) {
-      await this.handleFailedLogin(user);
+      await this.handleFailedLogin(user, ip);
       return null;
     }
 
@@ -507,6 +525,7 @@ export class AuthService {
     }
 
     // Reset failed login attempts on successful login
+    await this.loginBackoff?.clear(user.id, ip);
     if (user.failedLoginAttempts > 0) {
       user.failedLoginAttempts = 0;
       user.lockedUntil = null;
@@ -520,17 +539,57 @@ export class AuthService {
     return user;
   }
 
-  private async handleFailedLogin(user: User): Promise<void> {
-    user.failedLoginAttempts += 1;
+  private async handleFailedLogin(
+    user: User,
+    ip?: string | null,
+  ): Promise<void> {
+    const backoffMs =
+      (await this.loginBackoff?.recordFailure(user.id, ip)) ?? 0;
 
-    if (user.failedLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
+    user.failedLoginAttempts += 1;
+    let accountLocked = false;
+    if (user.failedLoginAttempts >= ACCOUNT_LOCK_THRESHOLD) {
       user.lockedUntil = new Date(
         Date.now() + LOCK_DURATION_MINUTES * 60 * 1000,
       );
-      this.logger.warn(`Account locked for user: ${user.email}`);
+      // Neue Runde nach Ablauf der Sperre, nicht sofort wieder gesperrt.
+      user.failedLoginAttempts = 0;
+      accountLocked = true;
+      this.logger.warn(`Password login locked for user ${user.id}`);
     }
 
     await this.userRepository.save(user);
+
+    if (accountLocked || backoffMs > 0) {
+      const minutes = accountLocked
+        ? LOCK_DURATION_MINUTES
+        : Math.ceil(backoffMs / 60000);
+      await this.notifyLoginLocked(user, minutes);
+    }
+  }
+
+  /**
+   * Hinweis an das Konto, dass die Passwort-Anmeldung wegen Fehlversuchen
+   * pausiert. Hoechstens alle sechs Stunden eine Mail, Fehler beim Senden
+   * halten die Anmeldung nicht auf.
+   */
+  private async notifyLoginLocked(user: User, minutes: number): Promise<void> {
+    try {
+      if (!(await this.mailAllowed('loginLockNotice', user.email))) return;
+      const appUrl =
+        this.configService.get<string>('APP_URL') || 'http://localhost:3000';
+      await this.emailService.sendLoginLockedEmail({
+        to: user.email,
+        firstName: user.firstName,
+        minutes,
+        loginUrl: `${appUrl}/login`,
+        resetUrl: `${appUrl}/forgot-password`,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Login lock notice failed for user ${user.id}: ${(error as Error).message}`,
+      );
+    }
   }
 
   async login(
@@ -791,9 +850,16 @@ export class AuthService {
     this.logger.log(`Password reset for user: ${user.email}`);
   }
 
+  /**
+   * Neues Passwort fuer den angemeldeten Benutzer. Danach gelten nur noch
+   * die aktuelle Sitzung und neue Anmeldungen: alle anderen Sitzungen
+   * (Refresh-Tokens) werden beendet. Ohne bekannte Sitzung — Token von vor
+   * der Sitzungskennung — enden alle.
+   */
   async changePassword(
     userId: string,
     changePasswordDto: ChangePasswordDto,
+    currentSessionId?: string | null,
   ): Promise<void> {
     const { currentPassword, newPassword } = changePasswordDto;
 
@@ -818,6 +884,16 @@ export class AuthService {
     user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await this.userRepository.save(user);
     await this.twoFactorService.revokeTrustedDevices(user.id);
+
+    const others = this.refreshTokenRepository
+      .createQueryBuilder()
+      .update()
+      .set({ revokedAt: new Date() })
+      .where('userId = :userId AND revokedAt IS NULL', { userId: user.id });
+    if (currentSessionId) {
+      others.andWhere('id != :currentSessionId', { currentSessionId });
+    }
+    await others.execute();
 
     this.logger.log(`Password changed for user: ${user.email}`);
   }
@@ -857,10 +933,11 @@ export class AuthService {
       where: { email: cleanEmail },
     });
 
-    /* Deaktivierte und gesperrte Konten bekommen keinen Link. Still, aus
-       demselben Grund wie oben: die Sperre selbst ist eine Auskunft. */
+    /* Deaktivierte Konten bekommen keinen Link. Still, aus demselben
+       Grund wie oben. Eine Sperre nach falschen Passwoertern gilt nur fuer
+       die Passwort-Anmeldung — der Link kommt trotzdem, er ist der Weg
+       hinein, waehrend jemand anderes am Passwort raet. */
     if (!user || !user.isActive) return;
-    if (user.lockedUntil && user.lockedUntil > new Date()) return;
 
     if (!(await this.mailAllowed('loginMagicLink', user.email))) return;
 
@@ -933,16 +1010,6 @@ export class AuthService {
     });
 
     if (!user || !user.isActive) throw ungueltig();
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
-      const remainingMinutes = Math.ceil(
-        (user.lockedUntil.getTime() - Date.now()) / 60000,
-      );
-      throw new UnauthorizedException({
-        code: ErrorCodes.ACCOUNT_LOCKED,
-        message: `Konto ist für ${remainingMinutes} Minuten gesperrt`,
-        params: { minutes: remainingMinutes },
-      });
-    }
 
     /* Wer den Link aus dem Postfach geholt hat, hat die Adresse belegt —
        genau das, was die Bestaetigungsmail sonst prueft. Ein zweiter

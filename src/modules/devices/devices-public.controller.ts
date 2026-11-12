@@ -5,15 +5,25 @@ import {
   Body,
   Headers,
   Query,
+  Req,
   BadRequestException,
   UnauthorizedException,
   NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import type { Request } from 'express';
 import { DevicesService } from './devices.service';
 import { RegisterDeviceDto, InitDeviceDto } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { RevealSecrets } from '../../common/decorators/reveal-secrets.decorator';
+import { normalizePairingCode } from './pairing-code';
+
+/** Neue Geraete je Adresse: grosszuegig, beim Aufbau koppeln viele Geraete
+ *  hinter demselben WLAN, und jedes wartende Geraet holt sich alle 15
+ *  Minuten einen neuen Code. */
+const REGISTER_THROTTLE = { default: { limit: 120, ttl: 60 * 60 * 1000 } };
 
 @ApiTags('Devices')
 @Controller('devices')
@@ -41,15 +51,21 @@ export class DevicesPublicController {
       'tablet, an app. No organisation is needed and none is assigned yet.',
       '',
       'Returns a deviceToken (keep it, it is the long-lived credential) and',
-      'a six-digit verificationCode. Show the code to the user and poll',
-      'GET /devices/status with the token until it reports "verified".',
+      'an eight-digit verificationCode valid until verificationCodeExpiresAt',
+      '(15 minutes). Show the code to the user and poll GET /devices/status',
+      'with the token until it reports "verified". Once the code has expired',
+      'the status poll answers 401 (PAIRING_CODE_EXPIRED): register again to',
+      'get a new code.',
       '',
       'Someone signed in then links the code — see POST /devices/link.',
       'Until then the device has no access to anything.',
     ].join(' '),
   })
-  async initDevice(@Body() initDto: InitDeviceDto) {
-    const result = await this.devicesService.initDevice(initDto);
+  // Das Geraet bekommt sein Zugangstoken und den Kopplungscode genau hier.
+  @RevealSecrets('deviceToken', 'verificationCode')
+  @Throttle(REGISTER_THROTTLE)
+  async initDevice(@Body() initDto: InitDeviceDto, @Req() req: Request) {
+    const result = await this.devicesService.initDevice(initDto, req.ip);
     return {
       data: result,
     };
@@ -61,15 +77,18 @@ export class DevicesPublicController {
     description:
       'Public on purpose: it only reveals the suggested name and user agent ' +
       'of a device that is already waiting, which whoever holds the code can ' +
-      'read off its screen anyway. Codes are unique among pending devices.',
+      'read off its screen anyway. Codes are unique among pending devices, ' +
+      'valid for 15 minutes and accept a limited number of tries.',
   })
   @ApiQuery({
     name: 'code',
-    description: '6-digit verification code',
+    description: 'Pairing code (eight digits, older devices six)',
     required: true,
   })
-  async lookupByCode(@Query('code') code: string) {
-    if (!code || code.length !== 6) {
+  @Throttle({ default: { limit: 20, ttl: 15 * 60 * 1000 } })
+  async lookupByCode(@Query('code') rawCode: string) {
+    const code = normalizePairingCode(rawCode);
+    if (!code) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.DEVICE_VERIFICATION_CODE_INVALID,
@@ -95,8 +114,13 @@ export class DevicesPublicController {
   @ApiOperation({
     summary: 'Register a new device (legacy - requires organization slug)',
   })
-  async register(@Body() registerDto: RegisterDeviceDto) {
-    const result = await this.devicesService.registerDevice(registerDto);
+  @RevealSecrets('deviceToken', 'verificationCode')
+  @Throttle(REGISTER_THROTTLE)
+  async register(@Body() registerDto: RegisterDeviceDto, @Req() req: Request) {
+    const result = await this.devicesService.registerDevice(
+      registerDto,
+      req.ip,
+    );
     return {
       data: result,
     };

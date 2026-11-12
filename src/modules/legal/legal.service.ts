@@ -45,6 +45,10 @@ export const LEGAL_LABELS: Record<LegalDocument, string> = {
   avv: 'Auftragsverarbeitungsvertrag (AVV)',
 };
 
+/** Anlage 1 ist Teil der AGB (Ziffer 4.2, 8.1) und steht in den Mails mit. */
+export const ANLAGE1_LABEL =
+  'Anlage 1 zu den AGB – Leistungsbeschreibung und Preisliste';
+
 /** Die Zeilen, die eine Annahme schreibt (eine je Dokument). */
 export function acceptanceRows(input: {
   config: LegalConfig;
@@ -103,7 +107,7 @@ export class LegalService {
     enabled: boolean;
     siteUrl: string;
     documents: Record<
-      'agb' | 'avv' | 'privacy' | 'imprint',
+      'agb' | 'avv' | 'privacy' | 'imprint' | 'anlage1',
       LegalDocumentLinks
     >;
   } {
@@ -168,15 +172,18 @@ export class LegalService {
         acceptedPdfUrl: links?.pdfUrl ?? null,
       };
     }
+    /* Erneut gefragt wird nur mit LEGAL_REACCEPTANCE_ENABLED=true — die
+       Annahme bei Registrierung und Buchung bleibt davon unberuehrt. */
     const required =
       config.enabled &&
+      config.reacceptanceEnabled &&
       admin.length > 0 &&
       LEGAL_DOCUMENTS.some((d) => !documents[d].upToDate);
     return { required, documents };
   }
 
   async isReacceptanceRequired(userId: string): Promise<boolean> {
-    if (!this.config.enabled) return false;
+    if (!this.config.enabled || !this.config.reacceptanceEnabled) return false;
     try {
       return (await this.status(userId)).required;
     } catch (error) {
@@ -248,7 +255,7 @@ export class LegalService {
     versions?: Partial<Record<LegalDocument, string>>,
   ): LegalEmailDocument[] {
     const config = this.config;
-    return LEGAL_DOCUMENTS.map((document) => {
+    const documents = LEGAL_DOCUMENTS.map((document) => {
       const links = legalLinks(
         config,
         document,
@@ -261,6 +268,16 @@ export class LegalService {
         pdfUrl: links.pdfUrl,
       };
     });
+    /* Anlage 1 gehoert zu den AGB (Leistungsumfang, Preise) und wird nicht
+       eigens angenommen — die Mail nennt die bei Annahme geltende Fassung. */
+    const anlage1 = legalLinks(config, 'anlage1', config.versions.anlage1);
+    documents.push({
+      label: ANLAGE1_LABEL,
+      version: anlage1.version,
+      versionUrl: anlage1.versionUrl,
+      pdfUrl: anlage1.pdfUrl,
+    });
+    return documents;
   }
 
   /** Bestaetigung nach der Registrierung (best effort). */

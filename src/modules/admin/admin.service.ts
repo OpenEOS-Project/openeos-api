@@ -595,6 +595,7 @@ export class AdminService {
       await this.printerAgentsService.removeAgentDevice(device);
     } else {
       await this.deviceRepository.delete({ id: deviceId });
+      this.gatewayService.disconnectDevice(deviceId);
     }
     this.logger.log(`Admin deleted device ${deviceId}`);
   }
