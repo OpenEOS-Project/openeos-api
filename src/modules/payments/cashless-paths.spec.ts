@@ -5,6 +5,7 @@ import { Device } from '../../database/entities/device.entity';
 import { Event, EventStatus } from '../../database/entities/event.entity';
 import { Order } from '../../database/entities/order.entity';
 import { OrderItem } from '../../database/entities/order-item.entity';
+import { OrderItemPayment } from '../../database/entities/order-item-payment.entity';
 import { Organization } from '../../database/entities/organization.entity';
 import { Payment, PaymentMethod } from '../../database/entities/payment.entity';
 import { PfandReturn } from '../../database/entities/pfand-return.entity';
@@ -18,6 +19,7 @@ import { getMetadataStorage } from 'class-validator';
 import { CreateRefundDto } from '../refunds/dto/refund.dto';
 import { allocateRefundFor } from '../refunds/refund-calc';
 import { PaymentsService } from './payments.service';
+import { transactionManager } from './testing/transaction-manager';
 
 /**
  * Betriebsart „Bargeldlos“ (`operatingMode = cashless`): jeder Einstieg, der
@@ -164,6 +166,14 @@ describe('Betriebsart „Bargeldlos“ — Kasse (DeviceApiController)', () => {
     );
 
     const none = undefined as never;
+    // Teilzahlung bucht in einer Transaktion ueber dieselben Mocks.
+    Object.assign(orderRepository, {
+      manager: transactionManager([
+        [Order, orderRepository],
+        [OrderItem, orderItemRepository],
+        [Payment, paymentRepository],
+      ]),
+    });
     const controller = new DeviceApiController(
       organizationRepository as unknown as Repository<Organization>,
       eventRepository as unknown as Repository<Event>,
@@ -401,6 +411,14 @@ describe('Betriebsart „Bargeldlos“ — Verwaltung (PaymentsService)', () => 
     const orderPrintService = {
       handlePaymentReceived: jest.fn(() => Promise.resolve()),
     };
+    Object.assign(orderRepository, {
+      manager: transactionManager([
+        [Order, orderRepository],
+        [OrderItem, orderItemRepository],
+        [OrderItemPayment, orderItemPaymentRepository],
+        [Payment, paymentRepository],
+      ]),
+    });
     const service = new PaymentsService(
       paymentRepository as never,
       orderRepository as never,

@@ -1,4 +1,4 @@
-import { randomInt } from 'crypto';
+import { createHmac } from 'crypto';
 import {
   Injectable,
   NotFoundException,
@@ -8,9 +8,23 @@ import {
   Logger,
   Inject,
   forwardRef,
+  HttpException,
+  HttpStatus,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, MoreThan, Not, Repository } from 'typeorm';
+import { TargetLimitService } from '../../common/rate-limit/target-limit.service';
+import {
+  MAX_PENDING_DEVICES_PER_IP,
+  MAX_PENDING_DEVICES_PER_ORGANIZATION,
+  PAIRING_CODE_ATTEMPT_LIMIT,
+  PAIRING_CODE_TTL_MS,
+  STALE_PENDING_DEVICE_MS,
+  newPairingCode,
+  normalizePairingCode,
+  pairingCodeValid,
+} from './pairing-code';
 import { v4 as uuidv4 } from 'uuid';
 import {
   Device,
@@ -78,6 +92,10 @@ export class DevicesService {
     private readonly printerAgentsService: PrinterAgentsService,
     private readonly pins: PinCredentialsService,
     private readonly waiterSessions: WaiterSessionsService,
+    /* Versuche je Kopplungscode (TargetLimitService, gemeinsam fuer alle
+       Instanzen). Optional, damit Tests ohne Rate-Limit auskommen. */
+    @Optional()
+    private readonly targetLimits?: TargetLimitService,
   ) {}
 
   async create(
@@ -356,8 +374,7 @@ export class DevicesService {
    */
   private async generateVerificationCode(): Promise<string> {
     for (let versuch = 0; versuch < 10; versuch++) {
-      // Sechsstellig wie bisher (100000–999999), aber aus crypto.
-      const code = randomInt(100000, 1000000).toString();
+      const code = newPairingCode();
 
       const vergeben = await this.deviceRepository.findOne({
         where: { verificationCode: code, status: DeviceStatus.PENDING },
@@ -375,6 +392,130 @@ export class DevicesService {
     });
   }
 
+  /** Ablaufzeit fuer einen jetzt vergebenen Kopplungscode. */
+  private pairingCodeExpiry(): Date {
+    return new Date(Date.now() + PAIRING_CODE_TTL_MS);
+  }
+
+  /**
+   * Herkunftsadresse eines wartenden Geraets, nur als HMAC gespeichert:
+   * reicht zum Zaehlen, verraet aber die Adresse nicht.
+   */
+  private pairingIpHash(ip: string | null | undefined): string | null {
+    if (!ip) return null;
+    return createHmac('sha256', process.env.JWT_SECRET || 'openeos-pairing')
+      .update(`pairing:${ip}`)
+      .digest('hex');
+  }
+
+  /** Obergrenze wartender Geraete je Adresse (und je Organisation). */
+  private async assertPendingCapacity(
+    ipHash: string | null,
+    organizationId: string | null,
+  ): Promise<void> {
+    const voll = () =>
+      new HttpException(
+        {
+          code: ErrorCodes.RATE_LIMITED,
+          reason: ErrorReasons.PENDING_DEVICE_LIMIT_REACHED,
+          message:
+            'Gerade warten zu viele Geräte auf die Kopplung. Verknüpfe zuerst die wartenden Geräte oder versuche es später noch einmal.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    if (ipHash) {
+      const proAdresse = await this.deviceRepository.count({
+        where: {
+          pairingIpHash: ipHash,
+          status: DeviceStatus.PENDING,
+          verificationCodeExpiresAt: MoreThan(new Date()),
+        },
+      });
+      if (proAdresse >= MAX_PENDING_DEVICES_PER_IP) throw voll();
+    }
+    if (organizationId) {
+      const proOrganisation = await this.deviceRepository.count({
+        where: {
+          organizationId,
+          status: DeviceStatus.PENDING,
+          verificationCode: Not(IsNull()),
+          verificationCodeExpiresAt: MoreThan(new Date()),
+        },
+      });
+      if (proOrganisation >= MAX_PENDING_DEVICES_PER_ORGANIZATION) {
+        throw voll();
+      }
+    }
+  }
+
+  /**
+   * Zaehlt einen Versuch mit diesem Code (Suche oder Verknuepfen). Nach zu
+   * vielen Versuchen mit demselben Code wird er bis zum Ende des Fensters
+   * nicht mehr angenommen — das Geraet bekommt bis dahin ohnehin einen
+   * neuen.
+   */
+  private async countPairingAttempt(code: string): Promise<void> {
+    if (!this.targetLimits) return;
+    const erlaubt = await this.targetLimits.allow(
+      'pairing-code',
+      code,
+      PAIRING_CODE_ATTEMPT_LIMIT,
+    );
+    if (!erlaubt) {
+      throw new HttpException(
+        {
+          code: ErrorCodes.RATE_LIMITED,
+          reason: ErrorReasons.PAIRING_CODE_ATTEMPTS_EXCEEDED,
+          message:
+            'Mit diesem Code gab es zu viele Versuche. Warte, bis das Gerät einen neuen Code anzeigt.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  /** Wartendes Geraet zu einem gueltigen Code, sonst `null`. */
+  private async pendingDeviceByCode(
+    rawCode: string | null | undefined,
+  ): Promise<Device | null> {
+    const code = normalizePairingCode(rawCode);
+    if (!code) return null;
+    await this.countPairingAttempt(code);
+    const device = await this.deviceRepository.findOne({
+      where: { verificationCode: code, status: DeviceStatus.PENDING },
+    });
+    if (!device || !pairingCodeValid(device)) return null;
+    return device;
+  }
+
+  /**
+   * Entfernt selbst angemeldete, wartende Geraete, deren Code seit
+   * STALE_PENDING_DEVICE_MS abgelaufen ist. Ein Geraet, das noch laeuft,
+   * meldet sich vorher neu an (getDeviceStatus). Von Hand angelegte Geraete
+   * (ohne Code) bleiben stehen. Laeuft stuendlich (PairingCleanupService).
+   */
+  async removeStalePendingDevices(now = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - STALE_PENDING_DEVICE_MS);
+    const result = await this.deviceRepository
+      .createQueryBuilder()
+      .delete()
+      .from(Device)
+      .where('status = :status', { status: DeviceStatus.PENDING })
+      .andWhere('verification_code IS NOT NULL')
+      .andWhere(
+        'COALESCE(verification_code_expires_at, created_at) < :cutoff',
+        {
+          cutoff,
+        },
+      )
+      .execute();
+    const removed = result.affected ?? 0;
+    if (removed > 0) {
+      this.logger.log(`Removed ${removed} stale pending device(s)`);
+    }
+    return removed;
+  }
+
   // ============================================
   // Public Device Registration Methods
   // ============================================
@@ -384,14 +525,22 @@ export class DevicesService {
    * The device will be created with status PENDING and no organization.
    * An admin must link it to an organization using the verification code.
    */
-  async initDevice(initDto: InitDeviceDto): Promise<{
+  async initDevice(
+    initDto: InitDeviceDto,
+    ip?: string | null,
+  ): Promise<{
     deviceId: string;
     deviceToken: string;
     verificationCode: string;
+    verificationCodeExpiresAt: Date;
   }> {
+    const pairingIpHash = this.pairingIpHash(ip);
+    await this.assertPendingCapacity(pairingIpHash, null);
+
     // Generate tokens
     const deviceToken = this.generateDeviceToken();
     const verificationCode = await this.generateVerificationCode();
+    const verificationCodeExpiresAt = this.pairingCodeExpiry();
 
     // Create pending device without organization
     const device = this.deviceRepository.create({
@@ -401,6 +550,8 @@ export class DevicesService {
       type: initDto.deviceType || DeviceType.POS,
       deviceToken,
       verificationCode,
+      verificationCodeExpiresAt,
+      pairingIpHash,
       userAgent: initDto.userAgent || null,
       status: DeviceStatus.PENDING,
       isActive: true,
@@ -415,6 +566,7 @@ export class DevicesService {
       deviceId: device.id,
       deviceToken,
       verificationCode,
+      verificationCodeExpiresAt,
     };
   }
 
@@ -428,12 +580,7 @@ export class DevicesService {
     deviceType: DeviceType;
     createdAt: Date;
   } | null> {
-    const device = await this.deviceRepository.findOne({
-      where: {
-        verificationCode: code,
-        status: DeviceStatus.PENDING,
-      },
-    });
+    const device = await this.pendingDeviceByCode(code);
 
     if (!device) {
       return null;
@@ -455,13 +602,8 @@ export class DevicesService {
     // Check user has admin role in the target organization
     await this.checkPermission(linkDto.organizationId, user.id, 'devices');
 
-    // Find device by verification code
-    const device = await this.deviceRepository.findOne({
-      where: {
-        verificationCode: linkDto.code,
-        status: DeviceStatus.PENDING,
-      },
-    });
+    // Find device by verification code (only while the code is valid)
+    const device = await this.pendingDeviceByCode(linkDto.code);
 
     if (!device) {
       throw new BadRequestException({
@@ -479,6 +621,8 @@ export class DevicesService {
     device.verifiedAt = new Date();
     device.verifiedById = user.id;
     device.verificationCode = null; // Clear the code after linking
+    device.verificationCodeExpiresAt = null;
+    device.pairingIpHash = null;
     this.applyTypeDefaults(device);
 
     await this.deviceRepository.save(device);
@@ -490,10 +634,14 @@ export class DevicesService {
   }
 
   // Legacy method - register with organization slug
-  async registerDevice(registerDto: RegisterDeviceDto): Promise<{
+  async registerDevice(
+    registerDto: RegisterDeviceDto,
+    ip?: string | null,
+  ): Promise<{
     deviceId: string;
     deviceToken: string;
     verificationCode: string;
+    verificationCodeExpiresAt: Date;
     organizationName: string;
   }> {
     // Find organization by slug
@@ -509,9 +657,13 @@ export class DevicesService {
       });
     }
 
+    const pairingIpHash = this.pairingIpHash(ip);
+    await this.assertPendingCapacity(pairingIpHash, organization.id);
+
     // Generate tokens
     const deviceToken = this.generateDeviceToken();
     const verificationCode = await this.generateVerificationCode();
+    const verificationCodeExpiresAt = this.pairingCodeExpiry();
 
     // Create pending device
     const device = this.deviceRepository.create({
@@ -520,6 +672,8 @@ export class DevicesService {
       type: DeviceType.POS, // Default type, will be set during verification
       deviceToken,
       verificationCode,
+      verificationCodeExpiresAt,
+      pairingIpHash,
       userAgent: registerDto.userAgent || null,
       status: DeviceStatus.PENDING,
       isActive: true,
@@ -534,6 +688,7 @@ export class DevicesService {
       deviceId: device.id,
       deviceToken,
       verificationCode,
+      verificationCodeExpiresAt,
       organizationName: organization.name,
     };
   }
@@ -547,6 +702,8 @@ export class DevicesService {
     organizationName?: string;
     deviceClass?: string;
     settings?: Record<string, unknown>;
+    /** Nur solange das Geraet wartet: bis wann sein Code gilt. */
+    verificationCodeExpiresAt?: Date;
   }> {
     const device = await this.deviceRepository.findOne({
       where: { deviceToken },
@@ -558,6 +715,26 @@ export class DevicesService {
         code: ErrorCodes.UNAUTHORIZED,
         reason: ErrorReasons.DEVICE_TOKEN_INVALID,
         message: 'Ungültiger Device-Token',
+      });
+    }
+
+    /* Selbst angemeldetes Geraet mit abgelaufenem Code: Es wird entfernt
+       und meldet sich neu an — Kassen-/Anzeigeseite und Drucker-Agent tun
+       das bei 401 von selbst und zeigen dann einen neuen Code. */
+    if (
+      device.status === DeviceStatus.PENDING &&
+      device.verificationCode &&
+      !pairingCodeValid(device)
+    ) {
+      await this.deviceRepository.delete({
+        id: device.id,
+        status: DeviceStatus.PENDING,
+      });
+      throw new UnauthorizedException({
+        code: ErrorCodes.UNAUTHORIZED,
+        reason: ErrorReasons.PAIRING_CODE_EXPIRED,
+        message:
+          'Der Kopplungscode ist abgelaufen. Das Gerät bekommt einen neuen.',
       });
     }
 
@@ -584,6 +761,10 @@ export class DevicesService {
         device.status === DeviceStatus.VERIFIED ? device.type : undefined,
       settings:
         device.status === DeviceStatus.VERIFIED ? device.settings : undefined,
+      verificationCodeExpiresAt:
+        device.status === DeviceStatus.PENDING
+          ? (device.verificationCodeExpiresAt ?? undefined)
+          : undefined,
     };
   }
 
@@ -700,7 +881,15 @@ export class DevicesService {
       });
     }
 
-    if (device.verificationCode !== code) {
+    const normalized = normalizePairingCode(code);
+    if (normalized && device.verificationCode) {
+      await this.countPairingAttempt(device.verificationCode);
+    }
+    if (
+      !normalized ||
+      device.verificationCode !== normalized ||
+      !pairingCodeValid(device)
+    ) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.DEVICE_VERIFICATION_CODE_INVALID,
@@ -715,6 +904,8 @@ export class DevicesService {
     device.verifiedAt = new Date();
     device.verifiedById = user.id;
     device.verificationCode = null; // Clear the code after verification
+    device.verificationCodeExpiresAt = null;
+    device.pairingIpHash = null;
     this.applyTypeDefaults(device);
 
     await this.deviceRepository.save(device);
