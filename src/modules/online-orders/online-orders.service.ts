@@ -43,6 +43,7 @@ import {
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { withoutForeignEvent } from '../../common/utils/organization-references';
 import { EventPhaseService } from '../events/event-phase.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { findTableIdByLabel } from '../tables/table-lookup';
@@ -150,7 +151,9 @@ export class OnlineOrdersService {
     }
 
     const organizationId = qrCode.organizationId;
-    const eventId = qrCode.eventId;
+    // Nur eine Veranstaltung derselben Organisation gilt.
+    const ownEvent = withoutForeignEvent(qrCode).event ?? null;
+    const eventId = ownEvent?.id ?? null;
     const qrCodeId = qrCode.id;
     const tableNumber = qrCode.tableNumber || startDto.tableNumber || null;
 
@@ -181,7 +184,7 @@ export class OnlineOrdersService {
     // Fuer die Antwort (eventName, organizationName) — erst nach dem
     // Speichern, damit nichts ueber die Relationen mitgeschrieben wird.
     session.organization = qrCode.organization;
-    session.event = qrCode.event ?? null;
+    session.event = ownEvent;
 
     return { sessionToken, session };
   }

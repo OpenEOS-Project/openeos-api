@@ -599,7 +599,7 @@ export class InventoryService {
     userId: string,
   ): Promise<void> {
     const product = await this.productRepository.findOne({
-      where: { id: productId },
+      where: { id: productId, eventId },
     });
 
     if (!product) return;

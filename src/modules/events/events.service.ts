@@ -771,8 +771,10 @@ export class EventsService {
 
     const targetEvent = await this.findOne(organizationId, targetEventId, user);
 
+    // Nur innerhalb der Organisation: Karte, Preise und Pfand-Typen
+    // passen nur dort zueinander.
     const sourceEvent = await this.eventRepository.findOne({
-      where: { id: sourceEventId },
+      where: { id: sourceEventId, organizationId },
     });
 
     if (!sourceEvent) {

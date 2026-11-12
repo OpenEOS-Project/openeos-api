@@ -7,6 +7,7 @@ import {
   OnApplicationBootstrap,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { privateStorageFromConfig } from '../../../common/storage/private-storage';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import {
@@ -83,7 +84,8 @@ const LIST_LIMIT = 20;
 @Injectable()
 export class MenuImportService implements OnApplicationBootstrap {
   private readonly logger = new Logger(MenuImportService.name);
-  private readonly uploadDir: string;
+  /** Wurzel der privaten Ablage (Speisekarten liegen unter menu-imports/). */
+  private readonly storageDir: string;
   private readonly maxUploadBytes: number;
   private readonly maxPages: number;
 
@@ -107,7 +109,7 @@ export class MenuImportService implements OnApplicationBootstrap {
     configService: ConfigService,
   ) {
     const ai = readAiConfig(configService);
-    this.uploadDir = configService.get<string>('UPLOAD_DIR') || './uploads';
+    this.storageDir = privateStorageFromConfig(configService).root;
     this.maxUploadBytes = ai.maxUploadMb * 1024 * 1024;
     this.maxPages = ai.menuPagesPerImport;
   }
@@ -115,7 +117,7 @@ export class MenuImportService implements OnApplicationBootstrap {
   /** Siehe UploadsService: ein root-eigener Bind-Mount faellt sonst erst beim ersten Foto auf. */
   async onApplicationBootstrap(): Promise<void> {
     await checkUploadDirWritable(
-      `${this.uploadDir.replace(/\/$/, '')}/${MENU_IMPORT_DIR}`,
+      `${this.storageDir.replace(/\/$/, '')}/${MENU_IMPORT_DIR}`,
       this.logger,
     );
   }
@@ -161,7 +163,7 @@ export class MenuImportService implements OnApplicationBootstrap {
     if (prepared.files.length > 0) {
       try {
         const stored = await storeFiles(
-          this.uploadDir,
+          this.storageDir,
           menuImport.id,
           prepared.files,
         );
@@ -173,11 +175,13 @@ export class MenuImportService implements OnApplicationBootstrap {
       } catch (error) {
         await this.quota.settle(usage.id, { status: 'error' });
         await this.importRepository.delete({ id: menuImport.id });
-        await deleteFiles(this.uploadDir, menuImport.id).catch(() => undefined);
+        await deleteFiles(this.storageDir, menuImport.id).catch(
+          () => undefined,
+        );
         if (isUploadDirError(error)) {
           // Betreiber-Problem (Issue #86): 503 mit klarem Code statt 500,
           // damit die Web-App nicht nur „Interner Serverfehler“ zeigt.
-          throw uploadDirNotWritable(this.logger, error, this.uploadDir);
+          throw uploadDirNotWritable(this.logger, error, this.storageDir);
         }
         throw error;
       }
@@ -246,7 +250,7 @@ export class MenuImportService implements OnApplicationBootstrap {
       true,
     );
     await this.importRepository.delete({ id: menuImport.id });
-    await deleteFiles(this.uploadDir, menuImport.id);
+    await deleteFiles(this.storageDir, menuImport.id);
     this.logger.log(`Speisekarten-Import ${menuImport.id} verworfen`);
   }
 
@@ -396,7 +400,7 @@ export class MenuImportService implements OnApplicationBootstrap {
       return counts;
     });
 
-    await deleteFiles(this.uploadDir, menuImport.id);
+    await deleteFiles(this.storageDir, menuImport.id);
     await this.importRepository.update(
       { id: menuImport.id },
       { filesDeletedAt: new Date() },

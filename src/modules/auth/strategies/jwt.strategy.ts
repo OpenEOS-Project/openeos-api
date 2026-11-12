@@ -109,13 +109,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       });
     }
 
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
-      throw new UnauthorizedException({
-        code: ErrorCodes.UNAUTHORIZED,
-        reason: ErrorReasons.ACCOUNT_TEMPORARILY_LOCKED,
-        message: 'Konto ist vorübergehend gesperrt',
-      });
-    }
+    /* Eine Sperre nach falschen Passwoertern (lockedUntil) betrifft nur
+       neue Anmeldungen mit Passwort; laufende Sitzungen bleiben. Wer ein
+       Konto sperren will, deaktiviert es (isActive) oder beendet seine
+       Sitzungen. */
 
     // Hydrate the shape the OrganizationGuard / RolesGuard expect.
     const organizations = (user.userOrganizations ?? []).map((uo) => ({

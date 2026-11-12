@@ -42,6 +42,8 @@ export const validationSchema = Joi.object({
 
   // JWT
   JWT_SECRET: Joi.string().required(),
+  // Optional: internal token for GET /health/detailed (header X-Health-Token).
+  HEALTH_DETAILS_TOKEN: Joi.string().min(24).allow('').optional(),
   JWT_ACCESS_TOKEN_EXPIRATION: Joi.string().default('30m'),
   JWT_REFRESH_TOKEN_EXPIRATION: Joi.string().default('7d'),
 
@@ -213,6 +215,9 @@ export const validationSchema = Joi.object({
   SWISSBIT_PRODUCT_TYPE: Joi.string().allow(''),
   TSE_ENCRYPTION_KEY: Joi.string().allow(''),
   TSE_EXPORT_DIR: Joi.string().allow(''),
+  // Private Ablage (Speisekarten-Importe, TSE-Exporte, DSFinV-K-Archiv);
+  // leer: <UPLOAD_DIR>/../private
+  PRIVATE_STORAGE_DIR: Joi.string().allow(''),
   TSE_TX_TIMEOUT_MS: Joi.number().integer().min(500).max(60000).empty(''),
   TSE_SIGN_BUDGET_MS: Joi.number().integer().min(500).max(120000).empty(''),
   TSE_ADMIN_TIMEOUT_MS: Joi.number().integer().min(1000).max(300000).empty(''),
