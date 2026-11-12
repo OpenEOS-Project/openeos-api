@@ -3,6 +3,7 @@ import { MulterModule } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { UploadsController } from './uploads.controller';
 import { UploadsService } from './uploads.service';
+import { PrivateStorageMigrationService } from './private-storage-migration.service';
 
 @Module({
   imports: [
@@ -14,7 +15,7 @@ import { UploadsService } from './uploads.service';
     }),
   ],
   controllers: [UploadsController],
-  providers: [UploadsService],
+  providers: [UploadsService, PrivateStorageMigrationService],
   exports: [UploadsService],
 })
 export class UploadsModule {}

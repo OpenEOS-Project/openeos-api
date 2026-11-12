@@ -108,4 +108,6 @@ export const TARGET_LIMITS = {
   invitation: { limit: 5, windowMs: 24 * 60 * 60 * 1000 },
   /** Einladung erneut senden: je Einladung. */
   invitationResend: { limit: 3, windowMs: 60 * 60 * 1000 },
+  /** Hinweis auf eine Anmeldesperre nach Fehlversuchen: je Konto. */
+  loginLockNotice: { limit: 1, windowMs: 6 * 60 * 60 * 1000 },
 } as const satisfies Record<string, TargetLimit>;

@@ -10,6 +10,7 @@ import { createReadStream, existsSync } from 'fs';
 import { mkdir, open, readFile, stat } from 'fs/promises';
 import { createHash } from 'crypto';
 import { join, relative, resolve } from 'path';
+import { unguessableSuffix } from '../../common/storage/private-storage';
 import { IsNull, Not, Repository } from 'typeorm';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -321,13 +322,12 @@ export class TseExportService {
       unit.serialNumber ?? unit.id,
     );
     await mkdir(dir, { recursive: true, mode: 0o700 });
-    let target = join(dir, `${compact(periodFrom)}_${compact(periodTo)}.tar`);
-    if (existsSync(target)) {
-      target = target.replace(
-        /\.tar$/,
-        `-${status.id.replace(/[^A-Za-z0-9-]/g, '')}.tar`,
-      );
-    }
+    /* Zufaelliger Namensteil: der Pfad steht in der Zeile, erraten laesst
+       er sich nicht (und zwei Exporte desselben Zeitraums kollidieren nicht). */
+    const target = join(
+      dir,
+      `${compact(periodFrom)}_${compact(periodTo)}_${unguessableSuffix()}.tar`,
+    );
 
     try {
       const result = await this.swissbit.client.downloadExport(
