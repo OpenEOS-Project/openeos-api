@@ -1,6 +1,7 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { scaledLimit } from '../../common/rate-limit/scaled-limit';
 import { DevicesService } from './devices.service';
 import { CurrentUser } from '../../common/decorators';
 import { User } from '../../database/entities';
@@ -14,7 +15,7 @@ export class DevicesLinkController {
 
   @Post('link')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 20, ttl: 15 * 60 * 1000 } })
+  @Throttle({ default: { limit: scaledLimit(20), ttl: 15 * 60 * 1000 } })
   @ApiOperation({
     summary: 'Step 3 — adopt a waiting device into an organisation',
     description: [

@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { scaledLimit } from '../../common/rate-limit/scaled-limit';
 import type { Request } from 'express';
 import { DevicesService } from './devices.service';
 import { RegisterDeviceDto, InitDeviceDto } from './dto';
@@ -23,7 +24,9 @@ import { normalizePairingCode } from './pairing-code';
 /** Neue Geraete je Adresse: grosszuegig, beim Aufbau koppeln viele Geraete
  *  hinter demselben WLAN, und jedes wartende Geraet holt sich alle 15
  *  Minuten einen neuen Code. */
-const REGISTER_THROTTLE = { default: { limit: 120, ttl: 60 * 60 * 1000 } };
+const REGISTER_THROTTLE = {
+  default: { limit: scaledLimit(120), ttl: 60 * 60 * 1000 },
+};
 
 @ApiTags('Devices')
 @Controller('devices')
@@ -85,7 +88,7 @@ export class DevicesPublicController {
     description: 'Pairing code (eight digits, older devices six)',
     required: true,
   })
-  @Throttle({ default: { limit: 20, ttl: 15 * 60 * 1000 } })
+  @Throttle({ default: { limit: scaledLimit(20), ttl: 15 * 60 * 1000 } })
   async lookupByCode(@Query('code') rawCode: string) {
     const code = normalizePairingCode(rawCode);
     if (!code) {
