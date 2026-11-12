@@ -13,7 +13,9 @@ import {
   Req,
   Res,
   StreamableFile,
+  Optional,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import {
   ApiBearerAuth,
@@ -46,6 +48,10 @@ import { OperatingModeService } from './operating-mode/operating-mode.service';
 import { CountryService } from './country/country.service';
 import { OrganizationViewService } from './organization-view.service';
 import { ClosedOrganizationAccess } from '../../common/organization-closure/organization-closure.guard';
+import {
+  TARGET_LIMITS,
+  TargetLimitService,
+} from '../../common/rate-limit/target-limit.service';
 
 @ApiTags('Organizations')
 @ApiBearerAuth('JWT-auth')
@@ -58,6 +64,7 @@ export class OrganizationsController {
     private readonly operatingModeService: OperatingModeService,
     private readonly countryService: CountryService,
     private readonly organizationView: OrganizationViewService,
+    @Optional() private readonly targetLimits?: TargetLimitService,
   ) {}
 
   @Post()
@@ -344,11 +351,18 @@ export class OrganizationsController {
   }
 
   @Post(':id/invitations')
+  @Throttle({ default: { limit: 30, ttl: 3_600_000 } })
   async createInvitation(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() createDto: CreateInvitationDto,
     @CurrentUser() user: User,
   ) {
+    await this.targetLimits?.assert(
+      'invitation',
+      createDto.email,
+      TARGET_LIMITS.invitation,
+      'An diese Adresse wurden heute schon mehrere Einladungen geschickt.',
+    );
     const invitation = await this.organizationsService.createInvitation(
       id,
       createDto,
@@ -358,11 +372,18 @@ export class OrganizationsController {
   }
 
   @Post(':id/invitations/:invitationId/resend')
+  @Throttle({ default: { limit: 10, ttl: 3_600_000 } })
   async resendInvitation(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('invitationId', ParseUUIDPipe) invitationId: string,
     @CurrentUser() user: User,
   ) {
+    await this.targetLimits?.assert(
+      'invitation-resend',
+      invitationId,
+      TARGET_LIMITS.invitationResend,
+      'Diese Einladung wurde gerade erst verschickt. Bitte versuche es später noch einmal.',
+    );
     await this.organizationsService.resendInvitation(id, invitationId, user);
     return { message: 'Einladung erneut gesendet' };
   }
