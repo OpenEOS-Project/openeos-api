@@ -3,10 +3,12 @@ import {
   Get,
   Post,
   Body,
+  Headers,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiHeader } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators/public.decorator';
 import { SetupService, SetupResult, SetupStatus } from './setup.service';
 import { SetupDto } from './dto';
@@ -29,6 +31,7 @@ export class SetupController {
       properties: {
         required: { type: 'boolean' },
         reason: { type: 'string' },
+        tokenRequired: { type: 'boolean' },
       },
     },
   })
@@ -38,7 +41,14 @@ export class SetupController {
 
   @Public()
   @Post()
+  @Throttle({ default: { limit: 10, ttl: 900_000 } })
   @HttpCode(HttpStatus.CREATED)
+  @ApiHeader({
+    name: 'X-Setup-Token',
+    required: true,
+    description:
+      'Einrichtungscode: Wert aus `SETUP_TOKEN` oder, ohne diese Variable, der Code, den die API beim ersten Start ins Protokoll schreibt. Falsch oder fehlend → 403 SETUP_TOKEN_INVALID.',
+  })
   @ApiOperation({
     summary: 'Führt die erstmalige Einrichtung durch',
     description:
@@ -50,16 +60,23 @@ export class SetupController {
   })
   @ApiResponse({ status: 400, description: 'Validierungsfehler' })
   @ApiResponse({
+    status: 403,
+    description: 'Einrichtungscode fehlt oder ist falsch',
+  })
+  @ApiResponse({
     status: 409,
     description: 'Einrichtung bereits abgeschlossen',
   })
-  async performSetup(@Body() setupDto: SetupDto): Promise<{
+  async performSetup(
+    @Body() setupDto: SetupDto,
+    @Headers('x-setup-token') setupToken?: string,
+  ): Promise<{
     message: string;
     mode: string;
     user: SetupResult['user'];
     organization?: SetupResult['organization'];
   }> {
-    const result = await this.setupService.performSetup(setupDto);
+    const result = await this.setupService.performSetup(setupDto, setupToken);
 
     return {
       message: 'Einrichtung erfolgreich abgeschlossen',

@@ -4,8 +4,11 @@ import {
   Injectable,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
   Logger,
+  OnApplicationBootstrap,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -15,13 +18,25 @@ import { SetupDto, SetupMode } from './dto';
 import { DeploymentService } from '../../common/services/deployment.service';
 import { OrganizationLimitsService } from '../../common/services/organization-limits.service';
 import type { DeploymentMode } from '../../config/configuration';
-import { ErrorReasons } from '../../common/constants/error-codes';
+import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { generateSetupToken, setupTokenMatches } from './setup-token';
+
+/** Schluessel in platform_settings. */
+const SETUP_TOKEN_KEY = 'setup.token';
+const SETUP_COMPLETED_KEY = 'setup.completedAt';
+/** Hält parallele Einrichtungen (mehrere Instanzen) auseinander. */
+const SETUP_LOCK = 7_301_202_611;
 
 const BCRYPT_ROUNDS = 12;
 
 export interface SetupStatus {
   required: boolean;
   reason?: string;
+  /**
+   * Die Einrichtung verlangt den Einrichtungscode (`X-Setup-Token`): aus
+   * `SETUP_TOKEN` oder beim Start ins Protokoll der API geschrieben.
+   */
+  tokenRequired?: boolean;
   /** Betriebsart dieser Installation — steuert, was die Oberflaeche zeigt. */
   deployment: {
     mode: DeploymentMode;
@@ -53,7 +68,7 @@ export interface SetupResult {
 }
 
 @Injectable()
-export class SetupService {
+export class SetupService implements OnApplicationBootstrap {
   private readonly logger = new Logger(SetupService.name);
 
   constructor(
@@ -66,7 +81,117 @@ export class SetupService {
     private readonly dataSource: DataSource,
     private readonly deployment: DeploymentService,
     private readonly limits: OrganizationLimitsService,
+    private readonly config?: ConfigService,
   ) {}
+
+  /**
+   * Beim Start: Ist die Einrichtung noch offen, steht der Einrichtungscode
+   * im Protokoll — wer die API betreibt, sieht ihn; wer nur die Adresse
+   * kennt, nicht. Bestehende Installationen bekommen die Markierung
+   * „eingerichtet“, damit die Einrichtung nie wieder aufgeht.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    try {
+      if (!(await this.isOpen())) return;
+      const fromEnv = this.envToken();
+      if (fromEnv) {
+        this.logger.warn(
+          'Ersteinrichtung offen: Einrichtungscode aus SETUP_TOKEN verwenden.',
+        );
+        return;
+      }
+      const token = await this.storedToken();
+      this.logger.warn(
+        `Ersteinrichtung offen. Einrichtungscode: ${token} (gilt bis zur Einrichtung)`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Einrichtungsstatus beim Start nicht lesbar: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  private envToken(): string | null {
+    const value = this.config?.get<string>('SETUP_TOKEN')?.trim();
+    return value ? value : null;
+  }
+
+  /** Gemeinsamer Code aller Instanzen, einmal erzeugt. */
+  private async storedToken(): Promise<string> {
+    await this.dataSource.query(
+      `INSERT INTO platform_settings (key, value) VALUES ($1, $2::jsonb)
+       ON CONFLICT (key) DO NOTHING`,
+      [SETUP_TOKEN_KEY, JSON.stringify({ value: generateSetupToken() })],
+    );
+    const rows: { value: { value?: string } }[] = await this.dataSource.query(
+      `SELECT value FROM platform_settings WHERE key = $1`,
+      [SETUP_TOKEN_KEY],
+    );
+    const token = rows[0]?.value?.value;
+    if (!token) throw new Error('Einrichtungscode fehlt');
+    return token;
+  }
+
+  /**
+   * Offen nur, solange es keine Benutzer gibt und die Einrichtung nie
+   * abgeschlossen wurde. Gibt es Benutzer, wird die Markierung nachgetragen.
+   */
+  private async isOpen(manager?: EntityManager): Promise<boolean> {
+    const db = manager ?? this.dataSource.manager;
+    const done: unknown[] = await db.query(
+      `SELECT 1 FROM platform_settings WHERE key = $1`,
+      [SETUP_COMPLETED_KEY],
+    );
+    if (done.length > 0) return false;
+    const [{ count }]: { count: string }[] = await db.query(
+      `SELECT count(*)::text AS count FROM users`,
+    );
+    if (Number(count) === 0) return true;
+    await this.markCompleted(db);
+    return false;
+  }
+
+  private async markCompleted(manager: EntityManager): Promise<void> {
+    await manager.query(
+      `INSERT INTO platform_settings (key, value) VALUES ($1, $2::jsonb)
+       ON CONFLICT (key) DO NOTHING`,
+      [
+        SETUP_COMPLETED_KEY,
+        JSON.stringify({ value: new Date().toISOString() }),
+      ],
+    );
+    await manager.query(`DELETE FROM platform_settings WHERE key = $1`, [
+      SETUP_TOKEN_KEY,
+    ]);
+  }
+
+  private async assertSetupToken(given: string | null | undefined) {
+    const expected = this.envToken() ?? (await this.storedToken());
+    if (!setupTokenMatches(given, expected)) {
+      throw new ForbiddenException({
+        code: ErrorCodes.FORBIDDEN,
+        reason: ErrorReasons.SETUP_TOKEN_INVALID,
+        message:
+          'Der Einrichtungscode stimmt nicht. Du findest ihn im Protokoll der API oder in SETUP_TOKEN.',
+      });
+    }
+  }
+
+  /**
+   * In der Transaktion der Einrichtung: sperren und erneut pruefen, damit
+   * von zwei gleichzeitigen Einrichtungen nur eine durchkommt; danach als
+   * abgeschlossen markieren.
+   */
+  private async claimSetup(manager: EntityManager): Promise<void> {
+    await manager.query(`SELECT pg_advisory_xact_lock($1)`, [SETUP_LOCK]);
+    if (!(await this.isOpen(manager))) {
+      throw new ConflictException({
+        code: 'SETUP_ALREADY_COMPLETE',
+        message: 'Die Einrichtung wurde bereits durchgeführt',
+      });
+    }
+    await this.markCompleted(manager);
+  }
 
   async isSetupRequired(): Promise<SetupStatus> {
     /* Die Betriebsart haengt mit an dieser Antwort, weil sie die erste
@@ -85,13 +210,12 @@ export class SetupService {
       },
     };
 
-    const userCount = await this.userRepository.count();
-
-    if (userCount === 0) {
+    if (await this.isOpen()) {
       return {
         required: true,
         reason:
           'Keine Benutzer vorhanden. Erstmalige Einrichtung erforderlich.',
+        tokenRequired: true,
         deployment,
       };
     }
@@ -99,15 +223,18 @@ export class SetupService {
     return { required: false, deployment };
   }
 
-  async performSetup(setupDto: SetupDto): Promise<SetupResult> {
+  async performSetup(
+    setupDto: SetupDto,
+    setupToken?: string | null,
+  ): Promise<SetupResult> {
     // Check if setup is still required
-    const setupStatus = await this.isSetupRequired();
-    if (!setupStatus.required) {
+    if (!(await this.isOpen())) {
       throw new ConflictException({
         code: 'SETUP_ALREADY_COMPLETE',
         message: 'Die Einrichtung wurde bereits durchgeführt',
       });
     }
+    await this.assertSetupToken(setupToken);
 
     /* Eine eigenstaendige Installation kennt nur den Einzelbetrieb. Die Wahl
        im Assistenten zu belassen hiesse, jemandem einen Multi-Mandanten-
@@ -144,6 +271,8 @@ export class SetupService {
     await queryRunner.startTransaction();
 
     try {
+      await this.claimSetup(queryRunner.manager);
+
       /* 1. Admin anlegen.
 
          Im gehosteten Betrieb ist das bewusst KEIN Super-Admin: dort gibt es
@@ -233,6 +362,8 @@ export class SetupService {
     await queryRunner.startTransaction();
 
     try {
+      await this.claimSetup(queryRunner.manager);
+
       // 1. Create super admin user
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const user = this.userRepository.create({

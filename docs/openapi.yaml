@@ -9033,6 +9033,8 @@ paths:
                     type: boolean
                   reason:
                     type: string
+                  tokenRequired:
+                    type: boolean
       summary: Prüft ob die erstmalige Einrichtung erforderlich ist
       tags: &a79
         - Setup
@@ -9040,7 +9042,18 @@ paths:
     post:
       description: 'Zwei Modi verfügbar: "single" für Einzelbetrieb (Admin + Organisation; mit DEPLOYMENT_MODE=selfhosted ohne Abrechnung), "multi" für Multi-Mandanten/SaaS (Super-Admin ohne Organisation, Freischaltung je Veranstaltungstag)'
       operationId: setup_performSetup
-      parameters: []
+      parameters:
+        - name: x-setup-token
+          required: true
+          in: header
+          schema:
+            type: string
+        - name: X-Setup-Token
+          in: header
+          description: "Einrichtungscode: Wert aus `SETUP_TOKEN` oder, ohne diese Variable, der Code, den die API beim ersten Start ins Protokoll schreibt. Falsch oder fehlend → 403 SETUP_TOKEN_INVALID."
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -9052,6 +9065,8 @@ paths:
           description: Einrichtung erfolgreich
         "400":
           description: Validierungsfehler
+        "403":
+          description: Einrichtungscode fehlt oder ist falsch
         "409":
           description: Einrichtung bereits abgeschlossen
       summary: Führt die erstmalige Einrichtung durch

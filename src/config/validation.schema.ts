@@ -42,6 +42,9 @@ export const validationSchema = Joi.object({
 
   // JWT
   JWT_SECRET: Joi.string().required(),
+  // Optional: Einrichtungscode fuer die Ersteinrichtung (sonst erzeugt und
+  // beim Start ins Protokoll geschrieben).
+  SETUP_TOKEN: Joi.string().min(8).allow('').optional(),
   JWT_ACCESS_TOKEN_EXPIRATION: Joi.string().default('30m'),
   JWT_REFRESH_TOKEN_EXPIRATION: Joi.string().default('7d'),
 
