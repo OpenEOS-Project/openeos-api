@@ -510,6 +510,40 @@ export class EmailService {
     return this.sendEmail({ to: options.to, subject, html });
   }
 
+  /**
+   * Hinweis: Die Anmeldung mit Passwort pausiert nach mehreren falschen
+   * Passwoertern. Laufende Sitzungen und der Anmeldelink bleiben.
+   */
+  async sendLoginLockedEmail(options: {
+    to: string;
+    firstName: string;
+    minutes: number;
+    loginUrl: string;
+    resetUrl: string;
+  }): Promise<boolean> {
+    const subject = 'Mehrere falsche Passwörter bei deinem OpenEOS-Konto';
+    const html = rahmen({
+      kontext: 'Anmeldung',
+      titel: 'OpenEOS — Anmeldung mit Passwort pausiert',
+      preheader: `Nach mehreren falschen Passwörtern pausiert die Anmeldung mit Passwort für ${options.minutes} Minuten.`,
+      empfaenger: options.to,
+      appUrl: this.appUrl,
+      inhalt: stapeln(
+        ueberschrift('Mehrere falsche Passwörter.') +
+          absatz(
+            `Hallo ${options.firstName}, bei deinem Konto wurde mehrmals ein falsches Passwort eingegeben. Die Anmeldung mit Passwort pausiert deshalb für ${options.minutes} Minuten. Angemeldete Geräte bleiben angemeldet, und mit dem Anmeldelink per E-Mail kommst du jederzeit rein.`,
+          ),
+        knopf(options.loginUrl, 'Zur Anmeldung'),
+        hinweis(
+          'Das warst nicht du?',
+          `Dann ändere vorsichtshalber dein Passwort: ${options.resetUrl}`,
+        ),
+      ),
+    });
+
+    return this.sendEmail({ to: options.to, subject, html });
+  }
+
   async sendTwoFactorOtpEmail(options: {
     to: string;
     code: string;

@@ -1771,7 +1771,7 @@ paths:
       x-api-token-scope: read
   /api/devices/init:
     post:
-      description: 'Start here for any client that cannot ask for credentials: a TV, a tablet, an app. No organisation is needed and none is assigned yet.  Returns a deviceToken (keep it, it is the long-lived credential) and a six-digit verificationCode. Show the code to the user and poll GET /devices/status with the token until it reports "verified".  Someone signed in then links the code — see POST /devices/link. Until then the device has no access to anything.'
+      description: 'Start here for any client that cannot ask for credentials: a TV, a tablet, an app. No organisation is needed and none is assigned yet.  Returns a deviceToken (keep it, it is the long-lived credential) and an eight-digit verificationCode valid until verificationCodeExpiresAt (15 minutes). Show the code to the user and poll GET /devices/status with the token until it reports "verified". Once the code has expired the status poll answers 401 (PAIRING_CODE_EXPIRED): register again to get a new code.  Someone signed in then links the code — see POST /devices/link. Until then the device has no access to anything.'
       operationId: devicesPublic_initDevice
       parameters: []
       requestBody:
@@ -1788,13 +1788,13 @@ paths:
         - Devices
   /api/devices/lookup:
     get:
-      description: "Public on purpose: it only reveals the suggested name and user agent of a device that is already waiting, which whoever holds the code can read off its screen anyway. Codes are unique among pending devices."
+      description: "Public on purpose: it only reveals the suggested name and user agent of a device that is already waiting, which whoever holds the code can read off its screen anyway. Codes are unique among pending devices, valid for 15 minutes and accept a limited number of tries."
       operationId: devicesPublic_lookupByCode
       parameters:
         - name: code
           required: true
           in: query
-          description: 6-digit verification code
+          description: Pairing code (eight digits, older devices six)
           schema:
             type: string
       responses:
@@ -1864,7 +1864,7 @@ paths:
       tags: *a18
   /api/devices/link:
     post:
-      description: Finishes the pairing a device started with POST /devices/init. The caller must be signed in and hold the devices permission in the target organisation — the device itself never chooses where it belongs.  On success the device becomes verified, its code is cleared, and its next status poll tells it where to go. Type defaults are applied here, so a display arrives already set to the customer view.
+      description: Finishes the pairing a device started with POST /devices/init. The caller must be signed in and hold the devices permission in the target organisation — the device itself never chooses where it belongs.  Codes are valid for 15 minutes and accept a limited number of tries. On success the device becomes verified, its code is cleared, and its next status poll tells it where to go. Type defaults are applied here, so a display arrives already set to the customer view.
       operationId: devicesLink_linkDevice
       parameters: []
       requestBody:
@@ -2232,6 +2232,12 @@ paths:
           required: false
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceSplitPaymentDto"
       responses:
         "201":
           description: ""
@@ -2266,6 +2272,12 @@ paths:
           required: false
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceSumupCheckoutDto"
       responses:
         "201":
           description: ""
@@ -6914,6 +6926,11 @@ paths:
     get:
       operationId: invoices_findAll
       parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
         - name: status
           required: false
           in: query
@@ -6967,6 +6984,11 @@ paths:
     get:
       operationId: invoices_findOne
       parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
         - name: id
           required: true
           in: path
@@ -6981,6 +7003,11 @@ paths:
     get:
       operationId: invoices_getPdfUrl
       parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
         - name: id
           required: true
           in: path
@@ -13664,8 +13691,8 @@ components:
       properties:
         code:
           type: string
-          description: 6-stelliger Verifizierungscode
-          example: "123456"
+          description: Kopplungscode des Geräts (acht Ziffern, ältere Geräte sechs); Leerzeichen und Bindestriche sind erlaubt
+          example: "12345678"
         type:
           type: string
           description: Gerätetyp, der bei der Verifizierung festgelegt wird
@@ -13720,8 +13747,8 @@ components:
       properties:
         code:
           type: string
-          description: 6-stelliger Verifizierungscode
-          example: "123456"
+          description: Kopplungscode des Geräts (acht Ziffern, ältere Geräte sechs); Leerzeichen und Bindestriche sind erlaubt
+          example: "12345678"
         organizationId:
           type: string
           description: Organisation-ID
@@ -14111,6 +14138,69 @@ components:
         - orderId
         - amount
         - paymentMethod
+    DeviceSplitPaymentItemDto:
+      type: object
+      properties:
+        orderItemId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+          description: ID der Bestellposition
+        quantity:
+          type: number
+          example: 2
+          description: Zu bezahlende Stückzahl
+      required:
+        - orderItemId
+        - quantity
+    DeviceSplitPaymentDto:
+      type: object
+      properties:
+        orderId:
+          type: string
+          example: 550e8400-e29b-41d4-a716-446655440000
+        amount:
+          type: number
+          example: 7.5
+          description: Zahlungsbetrag in Euro, gleich der Summe der Positionen; höchstens der offene Betrag
+        paymentMethod:
+          type: string
+          enum:
+            - cash
+            - card
+            - sumup_terminal
+            - sumup_online
+            - paypal
+            - google_pay
+            - apple_pay
+            - tokens
+          example: cash
+          description: Zahlart. Wertmarken (`tokens`) nimmt die Kasse beim Kassieren an, nicht beim Aufteilen (400 TOKEN_LINES_INVALID).
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeviceSplitPaymentItemDto"
+        amountReceived:
+          type: number
+          example: 10
+          description: "Bei Barzahlung: erhaltener Betrag in Euro (Rückgeld auf dem Bon)"
+      required:
+        - orderId
+        - amount
+        - paymentMethod
+        - items
+    DeviceSumupCheckoutDto:
+      type: object
+      properties:
+        amount:
+          type: number
+          example: 12.5
+          description: Betrag in Euro, größer als 0
+        currency:
+          type: string
+          example: EUR
+          description: ISO-4217-Code
+      required:
+        - amount
     CancelOrderWithActorDto:
       type: object
       properties:
@@ -15734,7 +15824,7 @@ components:
         amount:
           type: number
           example: 15
-          description: Zahlungsbetrag in Euro
+          description: Zahlungsbetrag in Euro, gleich der Summe der Positionen; höchstens der offene Betrag
         paymentMethod:
           type: string
           example: card
