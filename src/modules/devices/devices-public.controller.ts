@@ -20,8 +20,9 @@ import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { normalizePairingCode } from './pairing-code';
 
 /** Neue Geraete je Adresse: grosszuegig, beim Aufbau koppeln viele Geraete
- *  hinter demselben WLAN. */
-const REGISTER_THROTTLE = { default: { limit: 30, ttl: 60 * 60 * 1000 } };
+ *  hinter demselben WLAN, und jedes wartende Geraet holt sich alle 15
+ *  Minuten einen neuen Code. */
+const REGISTER_THROTTLE = { default: { limit: 120, ttl: 60 * 60 * 1000 } };
 
 @ApiTags('Devices')
 @Controller('devices')

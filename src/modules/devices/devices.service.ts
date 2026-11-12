@@ -13,7 +13,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { IsNull, MoreThan, Not, Repository } from 'typeorm';
 import { TargetLimitService } from '../../common/rate-limit/target-limit.service';
 import {
   MAX_PENDING_DEVICES_PER_IP,
@@ -409,7 +409,11 @@ export class DevicesService {
       );
     if (ipHash) {
       const proAdresse = await this.deviceRepository.count({
-        where: { pairingIpHash: ipHash, status: DeviceStatus.PENDING },
+        where: {
+          pairingIpHash: ipHash,
+          status: DeviceStatus.PENDING,
+          verificationCodeExpiresAt: MoreThan(new Date()),
+        },
       });
       if (proAdresse >= MAX_PENDING_DEVICES_PER_IP) throw voll();
     }
@@ -419,6 +423,7 @@ export class DevicesService {
           organizationId,
           status: DeviceStatus.PENDING,
           verificationCode: Not(IsNull()),
+          verificationCodeExpiresAt: MoreThan(new Date()),
         },
       });
       if (proOrganisation >= MAX_PENDING_DEVICES_PER_ORGANIZATION) {
