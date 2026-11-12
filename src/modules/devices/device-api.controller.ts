@@ -28,6 +28,9 @@ import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { Repository, In, type EntityManager } from 'typeorm';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
+import { DeviceCapabilityGuard } from '../../common/guards/device-capability.guard';
+import { DeviceCapability } from '../../common/decorators/device-capability.decorator';
+import { DeviceCapabilityName } from '../../common/constants/device-capabilities';
 import { CurrentDevice } from '../../common/decorators';
 import { DevicesService } from './devices.service';
 import { CreateDeviceOrderDto, VerifyPinDto } from './dto';
@@ -158,7 +161,7 @@ export function requireOrganization(device: Device): string {
 })
 @Controller('device-api')
 @Public() // Exclude from JWT guard
-@UseGuards(DeviceAuthGuard)
+@UseGuards(DeviceAuthGuard, DeviceCapabilityGuard)
 export class DeviceApiController {
   private readonly logger = new Logger(DeviceApiController.name);
 
@@ -221,6 +224,7 @@ export class DeviceApiController {
     );
   }
 
+  @DeviceCapability(DeviceCapabilityName.ORGANIZATION)
   @Get('organization')
   @ApiOperation({ summary: 'Get organization info and settings for device' })
   async getOrganization(@CurrentDevice() device: Device) {
@@ -253,6 +257,7 @@ export class DeviceApiController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.CATALOG)
   @Get('discount-vouchers')
   @ApiOperation({
     summary:
@@ -267,6 +272,7 @@ export class DeviceApiController {
     return { data: vouchers };
   }
 
+  @DeviceCapability(DeviceCapabilityName.CATALOG)
   @Get('pfand-types')
   @ApiOperation({
     summary: 'Get active deposit (Pfand) types for the device organization',
@@ -280,6 +286,7 @@ export class DeviceApiController {
     return { data: pfandTypes };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('pfand-returns')
   @ApiOperation({
     summary:
@@ -314,6 +321,7 @@ export class DeviceApiController {
     return { data: pfandReturn };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('pfand-returns/:pfandReturnId/print')
   @ApiOperation({
     summary: 'Beleg einer Pfand-Rückgabe drucken (auf Wunsch oder Nachdruck)',
@@ -338,6 +346,7 @@ export class DeviceApiController {
     return { data: { success: true, printed: result.printed } };
   }
 
+  @DeviceCapability(DeviceCapabilityName.PRINTING)
   @Get('printers')
   @ApiOperation({
     summary: 'Übernommene Drucker dieses Agents',
@@ -364,6 +373,7 @@ export class DeviceApiController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.PRINTING)
   @Post('printers/discovered')
   @ApiOperation({
     summary: 'Gefundene Drucker melden',
@@ -390,6 +400,7 @@ export class DeviceApiController {
     return { data: { printers } };
   }
 
+  @DeviceCapability(DeviceCapabilityName.PRINTING)
   @Post('printers/sync')
   @ApiOperation({
     summary: 'Entfernt — 410 Gone',
@@ -406,6 +417,7 @@ export class DeviceApiController {
     });
   }
 
+  @DeviceCapability(DeviceCapabilityName.PRINTING)
   @Get('templates')
   @ApiOperation({ summary: 'Get print templates for this device' })
   async getTemplates(@CurrentDevice() device: Device) {
@@ -424,6 +436,7 @@ export class DeviceApiController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('verify-pin')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
@@ -444,6 +457,7 @@ export class DeviceApiController {
     return { data: result };
   }
 
+  @DeviceCapability(DeviceCapabilityName.CATALOG)
   @Get('events')
   @ApiOperation({
     summary: 'Get active or test event for device organization (at most one)',
@@ -462,6 +476,7 @@ export class DeviceApiController {
     return { data: await this.eventPhase.decorateMany(events) };
   }
 
+  @DeviceCapability(DeviceCapabilityName.CATALOG)
   @Get('events/:eventId')
   @ApiOperation({ summary: 'Get single event' })
   async getEvent(
@@ -483,6 +498,7 @@ export class DeviceApiController {
     return { data: await this.eventPhase.decorate(event) };
   }
 
+  @DeviceCapability(DeviceCapabilityName.CATALOG)
   @Get('events/:eventId/categories')
   @ApiOperation({ summary: 'Get categories for an event' })
   async getCategories(
@@ -507,6 +523,7 @@ export class DeviceApiController {
     return { data: categories };
   }
 
+  @DeviceCapability(DeviceCapabilityName.CATALOG)
   @Get('events/:eventId/products')
   @ApiOperation({ summary: 'Get products for an event' })
   async getProducts(
@@ -534,6 +551,7 @@ export class DeviceApiController {
 
   // Order endpoints
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('orders/open')
   @ApiOperation({
     summary: 'Get open (unpaid/partly paid) orders of the active/test event',
@@ -625,6 +643,7 @@ export class DeviceApiController {
     return { data: orders };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('orders')
   @ApiOperation({
     summary: 'Create a new order from device',
@@ -1103,6 +1122,7 @@ export class DeviceApiController {
     });
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('payments')
   @ApiOperation({ summary: 'Create a payment for an order from device' })
   @WithOperator()
@@ -1237,6 +1257,7 @@ export class DeviceApiController {
     return { data: Object.assign(payment, { tse }) };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('payments/split')
   @ApiOperation({
     summary: 'Create a split payment for specific items from device',
@@ -1437,6 +1458,7 @@ export class DeviceApiController {
 
   // Cash Drawer
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('cash-drawer/open')
   @WithOperator()
   @ApiOperation({
@@ -1504,6 +1526,7 @@ export class DeviceApiController {
   // Die Kasse blendet die Kartenzahlung dann zwar aus, aber eine Kasse mit
   // altem Stand oder ein direkter Aufruf soll trotzdem nichts ausloesen.
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('sumup/checkout')
   @ApiOperation({
     summary: 'Initiate SumUp checkout on linked card reader',
@@ -1559,6 +1582,7 @@ export class DeviceApiController {
     return { data: result };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('sumup/status')
   @ApiOperation({ summary: 'Get SumUp reader/checkout status' })
   async getSumupStatus(
@@ -1617,6 +1641,7 @@ export class DeviceApiController {
     return { data: result };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('sumup/terminate')
   @ApiOperation({ summary: 'Terminate running SumUp checkout' })
   async terminateSumupCheckout(@CurrentDevice() device: Device) {
@@ -1662,6 +1687,7 @@ export class DeviceApiController {
 
   // Order History & Management
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('orders')
   @ApiOperation({
     summary: 'Bestellverlauf der Kasse (Filter und Seiten serverseitig)',
@@ -1713,6 +1739,7 @@ export class DeviceApiController {
     });
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('orders/:orderId')
   @ApiOperation({
     summary:
@@ -1728,6 +1755,7 @@ export class DeviceApiController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('orders/:orderId/tse')
   @ApiOperation({
     summary: 'TSE-Daten einer Bestellung (Kasse)',
@@ -1755,6 +1783,7 @@ export class DeviceApiController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('orders/:orderId/cancel')
   @ApiOperation({
     summary: 'Ganze Bestellung stornieren (nur unbezahlt)',
@@ -1785,6 +1814,7 @@ export class DeviceApiController {
     return { data: order };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('orders/:orderId/cancel-items')
   @ApiOperation({
     summary: 'Positionen oder Teilmengen stornieren (ohne Erstattung)',
@@ -1810,6 +1840,7 @@ export class DeviceApiController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('orders/:orderId/refunds')
   @ApiOperation({
     summary:
@@ -1856,6 +1887,7 @@ export class DeviceApiController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('orders/:orderId/refunds/:refundId/reprint')
   @ApiOperation({ summary: 'Gegenbeleg einer Erstattung nachdrucken' })
   async reprintRefund(
@@ -1881,6 +1913,7 @@ export class DeviceApiController {
     return { data: { success: true, printed } };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('orders/:orderId/reprint')
   @ApiOperation({ summary: 'Reprint tickets or receipt for an order' })
   async reprintOrder(
@@ -1979,6 +2012,7 @@ export class DeviceApiController {
 
   // Station display endpoints
 
+  @DeviceCapability(DeviceCapabilityName.STATION)
   @Get('station/items')
   @ApiOperation({ summary: "Get open items for this device's station" })
   async getStationItems(@CurrentDevice() device: Device) {
@@ -2016,6 +2050,7 @@ export class DeviceApiController {
     return { data: groupStationItems(items) };
   }
 
+  @DeviceCapability(DeviceCapabilityName.STATION)
   @Post('station/items/:itemId/ready')
   @ApiOperation({ summary: 'Mark a station item as ready' })
   async markStationItemReady(

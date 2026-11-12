@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { EmailService } from '../email/email.service';
 import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -6,6 +6,10 @@ import { Repository } from 'typeorm';
 
 import { ContactRequest } from '../../database/entities';
 import { CreateContactRequestDto } from './dto';
+import {
+  TARGET_LIMITS,
+  TargetLimitService,
+} from '../../common/rate-limit/target-limit.service';
 
 // Anfragen mit weniger Zeit zwischen Formular-Laden und Absenden gelten als
 // automatisiert (Bots füllen Formulare i.d.R. sofort aus).
@@ -26,6 +30,7 @@ export class ContactService {
     private readonly contactRequestRepository: Repository<ContactRequest>,
     private readonly emailService: EmailService,
     private readonly platformSettingsService: PlatformSettingsService,
+    @Optional() private readonly targetLimits?: TargetLimitService,
   ) {}
 
   async submit(dto: CreateContactRequestDto): Promise<{ message: string }> {
@@ -71,6 +76,13 @@ export class ContactService {
       );
     }
 
+    /* Viele Zuschriften derselben Adresse (oder insgesamt) in kurzer Zeit:
+       gespeichert werden sie weiter, benachrichtigt wird nur bis zur Grenze. */
+    if (!(await this.notificationAllowed(email))) {
+      this.logger.log('Kontaktanfrage gespeichert, ohne Benachrichtigung');
+      return successResponse;
+    }
+
     try {
       const notifyEmail =
         await this.platformSettingsService.resolveNotificationTarget(
@@ -103,5 +115,21 @@ export class ContactService {
     }
 
     return successResponse;
+  }
+
+  private async notificationAllowed(email: string): Promise<boolean> {
+    if (!this.targetLimits) return true;
+    return (
+      (await this.targetLimits.allow(
+        'contact-sender',
+        email,
+        TARGET_LIMITS.contactSender,
+      )) &&
+      (await this.targetLimits.allow(
+        'contact-total',
+        'all',
+        TARGET_LIMITS.contactTotal,
+      ))
+    );
   }
 }
