@@ -8,3 +8,4 @@ export * from './requires-scope.decorator';
 export * from './saas-only.decorator';
 export * from './api-token-access.decorator';
 export * from './requires-organization-permission.decorator';
+export * from './device-capability.decorator';

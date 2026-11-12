@@ -19,6 +19,9 @@ import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { CurrentDevice } from '../../common/decorators';
 import { Public } from '../../common/decorators/public.decorator';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
+import { DeviceCapabilityGuard } from '../../common/guards/device-capability.guard';
+import { DeviceCapability } from '../../common/decorators/device-capability.decorator';
+import { DeviceCapabilityName } from '../../common/constants/device-capabilities';
 import { Event, Order, Organization, Printer } from '../../database/entities';
 import { Device, DeviceSettings } from '../../database/entities/device.entity';
 import { EventStatus } from '../../database/entities/event.entity';
@@ -102,7 +105,7 @@ export function printerStatus(
 })
 @Controller('device-api')
 @Public() // Exclude from JWT guard
-@UseGuards(DeviceAuthGuard)
+@UseGuards(DeviceAuthGuard, DeviceCapabilityGuard)
 export class DeviceTablesController {
   constructor(
     @InjectRepository(Event)
@@ -121,6 +124,7 @@ export class DeviceTablesController {
     private readonly tseStatus?: TseStatusService,
   ) {}
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('tables')
   @ApiOperation({
     summary: 'Table mode and active tables for the active/test event',
@@ -173,6 +177,7 @@ export class DeviceTablesController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('tables/status')
   @ApiOperation({
     summary: 'Status of all non-free tables of the active/test event',
@@ -190,6 +195,7 @@ export class DeviceTablesController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('tables/acknowledge')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -248,6 +254,7 @@ export class DeviceTablesController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('order-items/deliver')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -267,6 +274,7 @@ export class DeviceTablesController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('orders/complete')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -289,6 +297,7 @@ export class DeviceTablesController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('payments/batch')
   @ApiOperation({
     summary: 'Pay several open orders in one transaction',
@@ -315,6 +324,7 @@ export class DeviceTablesController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('status')
   @ApiOperation({
     summary: 'Receipt printer and TSE state for the POS status pills',

@@ -47,6 +47,7 @@ import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 import { OperatingModeService } from './operating-mode/operating-mode.service';
 import { CountryService } from './country/country.service';
 import { OrganizationViewService } from './organization-view.service';
+import { memberView, ownMembershipView } from './member-view';
 import { ClosedOrganizationAccess } from '../../common/organization-closure/organization-closure.guard';
 import {
   TARGET_LIMITS,
@@ -285,7 +286,7 @@ export class OrganizationsController {
       addMemberDto,
       user,
     );
-    return { data: member };
+    return { data: memberView(member) };
   }
 
   @Patch(':id/members/:memberId')
@@ -301,7 +302,7 @@ export class OrganizationsController {
       updateDto,
       user,
     );
-    return { data: member };
+    return { data: memberView(member) };
   }
 
   @Delete(':id/members/:memberId')
@@ -463,7 +464,7 @@ export class InvitationsController {
       token,
       user,
     );
-    return { data: membership };
+    return { data: ownMembershipView(membership) };
   }
 
   @Post(':token/decline')

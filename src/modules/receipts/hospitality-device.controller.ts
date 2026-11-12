@@ -13,6 +13,9 @@ import { ApiHeader, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CurrentDevice } from '../../common/decorators';
 import { Public } from '../../common/decorators/public.decorator';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
+import { DeviceCapabilityGuard } from '../../common/guards/device-capability.guard';
+import { DeviceCapability } from '../../common/decorators/device-capability.decorator';
+import { DeviceCapabilityName } from '../../common/constants/device-capabilities';
 import type { Device } from '../../database/entities';
 import { requireOrganization } from '../devices/device-api.controller';
 import { CurrentOperator, WithOperator } from '../waiters/waiter-session.guard';
@@ -36,7 +39,7 @@ import type { ReceiptActor } from './receipts.service';
 })
 @Controller('device-api/hospitality-receipts')
 @Public()
-@UseGuards(DeviceAuthGuard)
+@UseGuards(DeviceAuthGuard, DeviceCapabilityGuard)
 export class HospitalityDeviceController {
   constructor(private readonly hospitality: HospitalityReceiptsService) {}
 
@@ -51,6 +54,7 @@ export class HospitalityDeviceController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('check')
   @ApiOperation({
     summary: 'Bewirtungsbeleg vorbereiten',
@@ -71,6 +75,7 @@ export class HospitalityDeviceController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post()
   @HttpCode(200)
   @WithOperator()
@@ -89,6 +94,7 @@ export class HospitalityDeviceController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post(':id/print')
   @HttpCode(200)
   @WithOperator()
@@ -107,6 +113,7 @@ export class HospitalityDeviceController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post(':id/link')
   @HttpCode(200)
   @WithOperator()
@@ -121,6 +128,7 @@ export class HospitalityDeviceController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post(':id/email')
   @HttpCode(200)
   @WithOperator()

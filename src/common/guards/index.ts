@@ -7,3 +7,4 @@ export * from './organization-permission.guard';
 export * from './super-admin.guard';
 export * from './deployment-mode.guard';
 export * from './api-token-throttler.guard';
+export * from './device-capability.guard';

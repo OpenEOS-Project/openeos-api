@@ -3,6 +3,9 @@ import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentDevice } from '../../common/decorators';
 import { Public } from '../../common/decorators/public.decorator';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
+import { DeviceCapabilityGuard } from '../../common/guards/device-capability.guard';
+import { DeviceCapability } from '../../common/decorators/device-capability.decorator';
+import { DeviceCapabilityName } from '../../common/constants/device-capabilities';
 import type { Device } from '../../database/entities';
 import { requireOrganization } from '../devices/device-api.controller';
 import { CurrentOperator, WithOperator } from '../waiters/waiter-session.guard';
@@ -23,7 +26,7 @@ import { ReceiptsService, type ReceiptActor } from './receipts.service';
 })
 @Controller('device-api/receipts')
 @Public()
-@UseGuards(DeviceAuthGuard)
+@UseGuards(DeviceAuthGuard, DeviceCapabilityGuard)
 export class ReceiptsDeviceController {
   constructor(private readonly receipts: ReceiptsService) {}
 
@@ -38,6 +41,7 @@ export class ReceiptsDeviceController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('link')
   @HttpCode(200)
   @WithOperator()
@@ -59,6 +63,7 @@ export class ReceiptsDeviceController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('email')
   @HttpCode(200)
   @WithOperator()
