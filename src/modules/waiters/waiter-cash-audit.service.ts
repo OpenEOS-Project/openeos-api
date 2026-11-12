@@ -10,6 +10,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { assertReferencesInOrganization } from '../../common/utils/organization-references';
 import {
   assertCashAllowed,
   OPERATING_MODE_SELECT,
@@ -277,6 +278,9 @@ export class WaiterCashAuditService {
       });
     const waiter = await this.waiter(organizationId, waiterId);
     if (!organization || !waiter) throw this.notFound();
+    await assertReferencesInOrganization(this.dataSource, { organizationId }, [
+      { kind: 'event', ids: options.eventId, field: 'eventId' },
+    ]);
     if (!waiter.is_employee) {
       throw new ConflictException({
         code: ErrorCodes.CONFLICT,

@@ -20,6 +20,9 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { CurrentDevice, Public } from '../../common/decorators';
 import { DeviceAuthGuard } from '../../common/guards/device-auth.guard';
+import { DeviceCapabilityGuard } from '../../common/guards/device-capability.guard';
+import { DeviceCapability } from '../../common/decorators/device-capability.decorator';
+import { DeviceCapabilityName } from '../../common/constants/device-capabilities';
 import type { AppRequest } from '../../common/types/request.types';
 import { Device } from '../../database/entities/device.entity';
 import { requireOrganization } from '../devices/device-api.controller';
@@ -95,7 +98,7 @@ function tokenOf(req: AppRequest): string | undefined {
 })
 @Controller('device-api')
 @Public()
-@UseGuards(DeviceAuthGuard)
+@UseGuards(DeviceAuthGuard, DeviceCapabilityGuard)
 export class DeviceWaitersController {
   constructor(
     private readonly sessions: WaiterSessionsService,
@@ -105,6 +108,7 @@ export class DeviceWaitersController {
     private readonly cashAudit: WaiterCashAuditService,
   ) {}
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('waiter-session')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
@@ -121,6 +125,7 @@ export class DeviceWaitersController {
     return { data: await this.sessions.login(device, dto.pin) };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('waiter-session')
   @ApiOperation({
     summary: 'Aktuelle Bedienungs-Sitzung',
@@ -135,6 +140,7 @@ export class DeviceWaitersController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Delete('waiter-session')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -156,6 +162,7 @@ export class DeviceWaitersController {
     return { data: { ended } };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('waiters')
   @ApiOperation({
     summary: 'Kurzliste der Bedienungen (Kacheln, Tischfarben)',
@@ -191,6 +198,7 @@ export class DeviceWaitersController {
 
   // ------------------------------------------------------------ Abrechnung
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('waiter/summary')
   @WithOperator()
   @ApiOperation({
@@ -213,6 +221,7 @@ export class DeviceWaitersController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('waiter/summary/print')
   @HttpCode(HttpStatus.OK)
   @WithOperator()
@@ -239,6 +248,7 @@ export class DeviceWaitersController {
     return { data: { printed } };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('waiter/settlements')
   @WithOperator()
   @ApiOperation({
@@ -301,6 +311,7 @@ export class DeviceWaitersController {
     };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Get('waiter/live-cash-audit')
   @WithOperator()
   @ApiOperation({
@@ -323,6 +334,7 @@ export class DeviceWaitersController {
     return { data: await this.cashAudit.live(organizationId) };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('waiter/tip-payouts')
   @WithOperator()
   @ApiOperation({
@@ -368,6 +380,7 @@ export class DeviceWaitersController {
     return { data: result.payout, meta: { printed: result.printed } };
   }
 
+  @DeviceCapability(DeviceCapabilityName.SALES)
   @Post('orders/:orderId/transfer')
   @HttpCode(HttpStatus.OK)
   @WithOperator()

@@ -416,7 +416,7 @@ describeWithDb('DSFinV-K closings against Postgres', () => {
       .getRepository(CashPointClosing)
       .findOneByOrFail({ organizationId: w.orgId, zNr: 1 });
     expect(stored.exportFilePath).toMatch(
-      new RegExp(`^${w.orgId}/dsfinvk/Z000001_2026-10-30\\.zip$`),
+      new RegExp(`^${w.orgId}/dsfinvk/Z000001_2026-10-30_[0-9a-f]{32}\\.zip$`),
     );
     const onDisk = readFileSync(path.join(exportDir, stored.exportFilePath!));
     const again = await closings.closingFile(w.orgId, stored.id, admin);

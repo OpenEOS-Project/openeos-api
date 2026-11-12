@@ -1,3 +1,4 @@
+import { priceSelectedOptions } from '../products/product-option-pricing';
 import {
   assertCashAllowed,
   assertPaymentsAllowed,
@@ -42,6 +43,7 @@ import {
   PaymentTransactionStatus,
 } from '../../database/entities/payment.entity';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { withoutForeignEvent } from '../../common/utils/organization-references';
 import { EventPhaseService } from '../events/event-phase.service';
 import { GatewayService } from '../gateway/gateway.service';
 import { findTableIdByLabel } from '../tables/table-lookup';
@@ -149,7 +151,9 @@ export class OnlineOrdersService {
     }
 
     const organizationId = qrCode.organizationId;
-    const eventId = qrCode.eventId;
+    // Nur eine Veranstaltung derselben Organisation gilt.
+    const ownEvent = withoutForeignEvent(qrCode).event ?? null;
+    const eventId = ownEvent?.id ?? null;
     const qrCodeId = qrCode.id;
     const tableNumber = qrCode.tableNumber || startDto.tableNumber || null;
 
@@ -180,7 +184,7 @@ export class OnlineOrdersService {
     // Fuer die Antwort (eventName, organizationName) — erst nach dem
     // Speichern, damit nichts ueber die Relationen mitgeschrieben wird.
     session.organization = qrCode.organization;
-    session.event = qrCode.event ?? null;
+    session.event = ownEvent;
 
     return { sessionToken, session };
   }
@@ -293,11 +297,14 @@ export class OnlineOrdersService {
       });
     }
 
+    // Optionen mit den Preisen aus der Produktdefinition.
+    const { selected: options } = priceSelectedOptions(product, addDto.options);
+
     // Find existing item in cart
     const existingIndex = session.cart.items.findIndex(
       (item) =>
         item.productId === addDto.productId &&
-        JSON.stringify(item.options) === JSON.stringify(addDto.options || []),
+        JSON.stringify(item.options) === JSON.stringify(options),
     );
 
     if (existingIndex >= 0) {
@@ -313,7 +320,7 @@ export class OnlineOrdersService {
         productName: product.name,
         quantity: addDto.quantity,
         unitPrice: Number(product.price),
-        options: addDto.options || [],
+        options,
         notes: addDto.notes,
       });
     }
@@ -455,17 +462,24 @@ export class OnlineOrdersService {
     const createdItems: OrderItem[] = [];
 
     for (const cartItem of session.cart.items) {
+      if (!session.eventId) continue;
       const product = await this.productRepository.findOne({
-        where: { id: cartItem.productId },
+        where: {
+          id: cartItem.productId,
+          eventId: session.eventId,
+          event: { organizationId: session.organizationId },
+        },
         relations: ['category'],
       });
 
       if (!product) continue;
 
-      let optionsPrice = 0;
-      for (const opt of cartItem.options) {
-        optionsPrice += opt.priceModifier;
-      }
+      // Erneut aus der Produktdefinition: der Warenkorb liegt in der
+      // Sitzung, der Preis gilt erst beim Absenden.
+      const { selected: options, optionsPrice } = priceSelectedOptions(
+        product,
+        cartItem.options,
+      );
 
       const totalPrice =
         (cartItem.unitPrice + optionsPrice) * cartItem.quantity;
@@ -489,7 +503,7 @@ export class OnlineOrdersService {
         // Satz des Produkts festhalten; daraus rechnen Bon und taxTotal.
         taxRate: Number(product.taxRate) || 0,
         totalPrice,
-        options: { selected: cartItem.options },
+        options: { selected: options },
         notes: cartItem.notes || null,
         status: OrderItemStatus.PENDING,
         sortOrder,

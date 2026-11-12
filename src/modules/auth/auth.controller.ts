@@ -96,6 +96,7 @@ export class AuthController {
   ) {}
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 3_600_000 } })
   @Post('register')
   @ApiOperation({
     summary: 'Register a new user',
@@ -152,6 +153,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 900_000 } })
   @Post('resend-verification')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -327,6 +329,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 900_000 } })
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -451,7 +454,8 @@ export class AuthController {
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary: 'Change password',
-    description: 'Change password for authenticated user',
+    description:
+      'Change password for authenticated user. Ends all other sessions of the user; the current session stays signed in.',
   })
   @ApiResponse({
     status: 200,
@@ -463,8 +467,13 @@ export class AuthController {
   async changePassword(
     @CurrentUser() user: User,
     @Body() changePasswordDto: ChangePasswordDto,
+    @CurrentUser('sessionId') sessionId?: string | null,
   ) {
-    await this.authService.changePassword(user.id, changePasswordDto);
+    await this.authService.changePassword(
+      user.id,
+      changePasswordDto,
+      sessionId,
+    );
 
     return {
       message: 'Passwort wurde erfolgreich geändert',

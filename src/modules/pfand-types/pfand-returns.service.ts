@@ -22,6 +22,7 @@ import {
   PfandReturn,
   PfandReturnLine,
 } from '../../database/entities/pfand-return.entity';
+import { referenceNotFound } from '../../common/utils/organization-references';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { GatewayService } from '../gateway/gateway.service';
 import { TseSigningService } from '../tse/tse-signing.service';
@@ -137,9 +138,12 @@ export class PfandReturnsService {
     // bzw. zu Beginn des Verkaufsfensters mit den Testbestellungen geloescht.
     const event = context.eventId
       ? await this.pfandReturnRepository.manager.findOne(Event, {
-          where: { id: context.eventId },
+          where: { id: context.eventId, organizationId },
         })
       : null;
+    if (context.eventId && !event) {
+      throw referenceNotFound('event', 'eventId');
+    }
     const phase =
       this.eventPhaseService ??
       EventPhaseService.standalone(

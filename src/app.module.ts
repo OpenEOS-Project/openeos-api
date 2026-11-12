@@ -18,12 +18,16 @@ import {
 import type { PoolOptions } from './config/database.config';
 import {
   JwtAuthGuard,
+  OrganizationScopeGuard,
   DeploymentModeGuard,
   ApiTokenThrottlerGuard,
 } from './common/guards';
 import { CommonModule } from './common/common.module';
 import { RedisModule } from './common/redis/redis.module';
-import { redisUrl } from './common/redis/redis.constants';
+import { REDIS_CLIENT, redisUrl } from './common/redis/redis.constants';
+import type { RedisClient } from './common/redis/redis.constants';
+import { RedisThrottlerStorage } from './common/redis/redis-throttler.storage';
+import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { AuthModule } from './modules/auth';
 import { ApiTokensModule } from './modules/api-tokens/api-tokens.module';
 import { MonitoringModule } from './modules/monitoring/monitoring.module';
@@ -160,17 +164,23 @@ import { WaiterCoreModule, WaitersModule } from './modules/waiters';
       inject: [ConfigService],
     }),
 
-    // Rate Limiting
+    // Rate Limiting. Zaehler in Redis, damit die Grenzen ueber alle
+    // API-Instanzen gemeinsam gelten (RedisThrottlerStorage).
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => [
-        {
-          ttl: configService.get<number>('throttle.ttl') || 60000,
-          limit: configService.get<number>('throttle.limit') || 300,
-        },
-      ],
-      inject: [ConfigService],
+      useFactory: (configService: ConfigService, redis: RedisClient) => ({
+        throttlers: [
+          {
+            ttl: configService.get<number>('throttle.ttl') || 60000,
+            limit: configService.get<number>('throttle.limit') || 300,
+          },
+        ],
+        storage: new RedisThrottlerStorage(redis),
+      }),
+      inject: [ConfigService, REDIS_CLIENT],
     }),
+    // Grenzen je Empfaenger fuer Vorgaenge, die E-Mails ausloesen
+    RateLimitModule,
 
     // Scheduling (Cron Jobs)
     ScheduleModule.forRoot(),
@@ -243,6 +253,11 @@ import { WaiterCoreModule, WaitersModule } from './modules/waiters';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    // Pfad-Organisation und Header/Query/Rumpf muessen uebereinstimmen
+    {
+      provide: APP_GUARD,
+      useClass: OrganizationScopeGuard,
     },
     // Global Rate Limiting Guard
     {

@@ -13,7 +13,9 @@ import {
   Req,
   Res,
   StreamableFile,
+  Optional,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import {
   ApiBearerAuth,
@@ -45,7 +47,12 @@ import { SaasOnly } from '../../common/decorators/saas-only.decorator';
 import { OperatingModeService } from './operating-mode/operating-mode.service';
 import { CountryService } from './country/country.service';
 import { OrganizationViewService } from './organization-view.service';
+import { memberView, ownMembershipView } from './member-view';
 import { ClosedOrganizationAccess } from '../../common/organization-closure/organization-closure.guard';
+import {
+  TARGET_LIMITS,
+  TargetLimitService,
+} from '../../common/rate-limit/target-limit.service';
 
 @ApiTags('Organizations')
 @ApiBearerAuth('JWT-auth')
@@ -58,6 +65,7 @@ export class OrganizationsController {
     private readonly operatingModeService: OperatingModeService,
     private readonly countryService: CountryService,
     private readonly organizationView: OrganizationViewService,
+    @Optional() private readonly targetLimits?: TargetLimitService,
   ) {}
 
   @Post()
@@ -106,7 +114,7 @@ export class OrganizationsController {
     operationId: 'updateOrganization',
     summary: 'Organisation ändern',
     description:
-      'Ändert Name, Kontaktdaten oder Einstellungen. Die Betriebsart und das Land ändern sich nur über ihre eigenen Endpunkte. Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen.',
+      'Ändert Name, Kontaktdaten oder Einstellungen. In `settings` sind nur diese Abschnitte änderbar: `currency`, `timezone`, `locale`, `description`, `taxId`, `legalName`, `taxNumber`, `vatId`, `vatExempt`, `address`, `contact`, `receipt`, `legal`, `pos`, `pfand`, `onlineOrdering`, `orderFlow`, `sumup`, `paypal`, `waiters`, `eventReminders`. Unverändert mitgeschickte andere Abschnitte werden ignoriert; Änderungen daran (z. B. `assistant`, `integrations`, Betriebsart) → 400 ORGANIZATION_SETTING_NOT_UPDATABLE, dafür gibt es eigene Endpunkte. Drucker und Vorlagen in `orderFlow` müssen zur Organisation gehören (400 ORGANIZATION_SETTINGS_INVALID). Die Betriebsart und das Land ändern sich nur über ihre eigenen Endpunkte. Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen.',
   })
   @ApiParam({ name: 'id', description: 'ID der Organisation', format: 'uuid' })
   async update(
@@ -278,7 +286,7 @@ export class OrganizationsController {
       addMemberDto,
       user,
     );
-    return { data: member };
+    return { data: memberView(member) };
   }
 
   @Patch(':id/members/:memberId')
@@ -294,7 +302,7 @@ export class OrganizationsController {
       updateDto,
       user,
     );
-    return { data: member };
+    return { data: memberView(member) };
   }
 
   @Delete(':id/members/:memberId')
@@ -344,11 +352,18 @@ export class OrganizationsController {
   }
 
   @Post(':id/invitations')
+  @Throttle({ default: { limit: 30, ttl: 3_600_000 } })
   async createInvitation(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() createDto: CreateInvitationDto,
     @CurrentUser() user: User,
   ) {
+    await this.targetLimits?.assert(
+      'invitation',
+      createDto.email,
+      TARGET_LIMITS.invitation,
+      'An diese Adresse wurden heute schon mehrere Einladungen geschickt.',
+    );
     const invitation = await this.organizationsService.createInvitation(
       id,
       createDto,
@@ -358,11 +373,18 @@ export class OrganizationsController {
   }
 
   @Post(':id/invitations/:invitationId/resend')
+  @Throttle({ default: { limit: 10, ttl: 3_600_000 } })
   async resendInvitation(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('invitationId', ParseUUIDPipe) invitationId: string,
     @CurrentUser() user: User,
   ) {
+    await this.targetLimits?.assert(
+      'invitation-resend',
+      invitationId,
+      TARGET_LIMITS.invitationResend,
+      'Diese Einladung wurde gerade erst verschickt. Bitte versuche es später noch einmal.',
+    );
     await this.organizationsService.resendInvitation(id, invitationId, user);
     return { message: 'Einladung erneut gesendet' };
   }
@@ -442,7 +464,7 @@ export class InvitationsController {
       token,
       user,
     );
-    return { data: membership };
+    return { data: ownMembershipView(membership) };
   }
 
   @Post(':token/decline')
