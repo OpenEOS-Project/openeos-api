@@ -19,8 +19,17 @@ export class TrustedDevice extends BaseEntity {
   @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
-  /** SHA-256 (hex) des ausgegebenen Geheimnisses. Nie herausgeben. */
-  @Column({ name: 'token_hash', type: 'varchar', length: 64, select: false })
+  /**
+   * SHA-256 (hex) des ausgegebenen Geheimnisses. Nie herausgeben. In der
+   * Datenbank nullbar (Eintraege aelterer Fassungen), die API setzt ihn immer.
+   */
+  @Column({
+    name: 'token_hash',
+    type: 'varchar',
+    length: 64,
+    nullable: true,
+    select: false,
+  })
   tokenHash: string;
 
   @Column({ name: 'device_name', type: 'varchar', length: 255, nullable: true })

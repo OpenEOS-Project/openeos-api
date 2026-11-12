@@ -10,6 +10,9 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *   Benutzer geben beim naechsten Anmelden einmal ihren Code ein.
  *   `device_fingerprint` bleibt als nullbare Spalte stehen, damit eine
  *   aeltere API-Fassung nach einem Zuruecksetzen noch startet.
+ *   `token_hash` ist nullbar: waehrend des Austauschs schreibt eine noch
+ *   laufende aeltere Instanz Eintraege ohne Hash; die neue Fassung findet
+ *   solche Eintraege nie (Suche nur ueber den Hash).
  * - `two_factor_challenges`: ein offener zweiter Schritt je Anmeldung,
  *   mit Fehlversuchen und Ende.
  */
@@ -25,7 +28,7 @@ export class TrustedDeviceTokensAndTwoFactorChallenges1843600000000 implements M
       `ALTER TABLE "trusted_devices" ALTER COLUMN "device_fingerprint" DROP NOT NULL`,
     );
     await queryRunner.query(
-      `ALTER TABLE "trusted_devices" ADD "token_hash" varchar(64) NOT NULL`,
+      `ALTER TABLE "trusted_devices" ADD "token_hash" varchar(64)`,
     );
     await queryRunner.query(
       `CREATE UNIQUE INDEX "IDX_trusted_devices_token_hash" ON "trusted_devices" ("token_hash")`,

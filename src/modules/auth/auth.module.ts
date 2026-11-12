@@ -17,6 +17,7 @@ import {
   RefreshToken,
   Invitation,
   TrustedDevice,
+  TwoFactorChallenge,
   EmailOtp,
   LoginMagicLink,
 } from '../../database/entities';
@@ -30,6 +31,7 @@ import {
       RefreshToken,
       Invitation,
       TrustedDevice,
+      TwoFactorChallenge,
       EmailOtp,
       LoginMagicLink,
     ]),
