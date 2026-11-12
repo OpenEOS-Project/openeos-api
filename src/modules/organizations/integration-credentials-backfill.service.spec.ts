@@ -189,9 +189,7 @@ describe('IntegrationCredentialsBackfillService', () => {
     const foreign = new IntegrationKeyring({
       INTEGRATION_ENCRYPTION_KEY: 'unknown-key-0123456789abcdef',
     }).encrypt('x');
-    const rows = [
-      { id: 'o1', settings: { sumup: { apiKey: foreign } } },
-    ];
+    const rows = [{ id: 'o1', settings: { sumup: { apiKey: foreign } } }];
     const { dataSource, updates } = fakeDataSource(rows);
 
     const result = await new IntegrationCredentialsBackfillService(
@@ -200,9 +198,9 @@ describe('IntegrationCredentialsBackfillService', () => {
 
     expect(result.undecryptable).toBe(1);
     expect(updates).toEqual([]);
-    expect(
-      (rows[0].settings.sumup as Record<string, string>).apiKey,
-    ).toBe(foreign);
+    expect((rows[0].settings.sumup as Record<string, string>).apiKey).toBe(
+      foreign,
+    );
   });
 
   it('does not overwrite a key that was changed in the meantime', async () => {

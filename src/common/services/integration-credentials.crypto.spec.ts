@@ -127,9 +127,7 @@ describe('encrypt/decryptCredentialSettings', () => {
     expect(stored.sumup.merchantCode).toBe('MC123');
     expect(stored.sumup.appId).toBe('app.openeos');
     expect(stored.integrations).toBe(input.integrations);
-    expect(JSON.stringify(stored)).not.toMatch(
-      /REALSECRET|SECRET5678/,
-    );
+    expect(JSON.stringify(stored)).not.toMatch(/REALSECRET|SECRET5678/);
 
     expect(decryptCredentialSettings(stored, ring)).toEqual(plainSettings());
   });

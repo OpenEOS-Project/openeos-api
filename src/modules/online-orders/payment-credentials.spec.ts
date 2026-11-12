@@ -328,10 +328,9 @@ describeWithDb('payment credentials against Postgres', () => {
     const id = randomUUID();
     const other = randomUUID();
     orgIds.push(id, other);
-    const legacy = organizationSettingsTransformer.to(plainSettings()) as Record<
-      string,
-      unknown
-    >;
+    const legacy = organizationSettingsTransformer.to(
+      plainSettings(),
+    ) as Record<string, unknown>;
     await ds.query(
       `INSERT INTO organizations (id, name, slug, support_pin, settings)
        VALUES ($1, 'PayPal-Verein', $2, '123456', $3::jsonb),

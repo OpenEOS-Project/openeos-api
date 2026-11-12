@@ -636,7 +636,6 @@ export class OnlineOrdersService {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || '';
     const returnUrl =
       this.allowedReturnUrl(payDto.returnUrl) || `${frontendUrl}/status`;
-    const cancelUrl = `${frontendUrl}/checkout`;
     const description = `OpenEOS Bestellung #${order.dailyNumber}`;
 
     let paymentData: unknown;
