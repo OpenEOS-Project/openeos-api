@@ -42,6 +42,8 @@ export const validationSchema = Joi.object({
 
   // JWT
   JWT_SECRET: Joi.string().required(),
+  // Optional: internal token for GET /health/detailed (header X-Health-Token).
+  HEALTH_DETAILS_TOKEN: Joi.string().min(24).allow('').optional(),
   JWT_ACCESS_TOKEN_EXPIRATION: Joi.string().default('30m'),
   JWT_REFRESH_TOKEN_EXPIRATION: Joi.string().default('7d'),
 

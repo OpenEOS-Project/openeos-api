@@ -844,9 +844,16 @@ export class AuthService {
     this.logger.log(`Password reset for user: ${user.email}`);
   }
 
+  /**
+   * Neues Passwort fuer den angemeldeten Benutzer. Danach gelten nur noch
+   * die aktuelle Sitzung und neue Anmeldungen: alle anderen Sitzungen
+   * (Refresh-Tokens) werden beendet. Ohne bekannte Sitzung — Token von vor
+   * der Sitzungskennung — enden alle.
+   */
   async changePassword(
     userId: string,
     changePasswordDto: ChangePasswordDto,
+    currentSessionId?: string | null,
   ): Promise<void> {
     const { currentPassword, newPassword } = changePasswordDto;
 
@@ -870,6 +877,16 @@ export class AuthService {
     // Update password
     user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await this.userRepository.save(user);
+
+    const others = this.refreshTokenRepository
+      .createQueryBuilder()
+      .update()
+      .set({ revokedAt: new Date() })
+      .where('userId = :userId AND revokedAt IS NULL', { userId: user.id });
+    if (currentSessionId) {
+      others.andWhere('id != :currentSessionId', { currentSessionId });
+    }
+    await others.execute();
 
     this.logger.log(`Password changed for user: ${user.email}`);
   }
