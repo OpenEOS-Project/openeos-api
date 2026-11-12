@@ -29,7 +29,11 @@ import { DeviceCapability } from '../../common/decorators/device-capability.deco
 import { DeviceCapabilityName } from '../../common/constants/device-capabilities';
 import { CurrentDevice } from '../../common/decorators';
 import { DevicesService } from './devices.service';
-import { CreateDeviceOrderDto, VerifyPinDto } from './dto';
+import {
+  CreateDeviceOrderDto,
+  DeviceSumupCheckoutDto,
+  VerifyPinDto,
+} from './dto';
 import {
   Device,
   Event,
@@ -1516,7 +1520,7 @@ export class DeviceApiController {
   @WithOperator()
   async initiateSumupCheckout(
     @CurrentDevice() device: Device,
-    @Body() body: { amount: number; currency?: string },
+    @Body() body: DeviceSumupCheckoutDto,
   ) {
     const organizationId = requireOrganization(device);
     await this.assertPaymentsAllowedFor(organizationId);
