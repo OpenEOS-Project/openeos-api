@@ -24,6 +24,10 @@ import {
   ReorderCategoriesDto,
 } from './dto';
 import { GatewayService } from '../gateway/gateway.service';
+import {
+  assertReferencesInOrganization,
+  referenceNotFound,
+} from '../../common/utils/organization-references';
 
 @Injectable()
 export class CategoriesService {
@@ -53,6 +57,8 @@ export class CategoriesService {
       user.id,
       'products',
     );
+
+    await this.assertReferences(event, createDto);
 
     const category = this.categoryRepository.create({
       eventId: event.id,
@@ -119,6 +125,7 @@ export class CategoriesService {
     );
 
     const category = await this.findOne(eventId, categoryId, user);
+    await this.assertReferences(event, updateDto, category.id);
     Object.assign(category, updateDto);
     await this.categoryRepository.save(category);
 
@@ -193,6 +200,45 @@ export class CategoriesService {
       eventId,
       categoryId,
     );
+  }
+
+  /**
+   * Uebergeordnete Kategorie und Produktionsstandort muessen zur selben
+   * Veranstaltung gehoeren; eine Kategorie kann nicht unter sich selbst
+   * oder unter einer ihrer Unterkategorien haengen.
+   */
+  private async assertReferences(
+    event: Event,
+    dto: { parentId?: string | null; productionStationId?: string | null },
+    categoryId?: string,
+  ): Promise<void> {
+    await assertReferencesInOrganization(
+      this.dataSource,
+      { organizationId: event.organizationId, eventId: event.id },
+      [
+        { kind: 'category', ids: dto.parentId, field: 'parentId' },
+        {
+          kind: 'productionStation',
+          ids: dto.productionStationId,
+          field: 'productionStationId',
+        },
+      ],
+    );
+    if (!categoryId || !dto.parentId) return;
+    const rows: unknown[] = await this.dataSource.query<unknown[]>(
+      `WITH RECURSIVE ancestors(id, parent_id) AS (
+         SELECT id, parent_id FROM categories WHERE id = $1 AND event_id = $2
+         UNION
+         SELECT c.id, c.parent_id FROM categories c
+           JOIN ancestors a ON c.id = a.parent_id
+          WHERE c.event_id = $2
+       )
+       SELECT 1 FROM ancestors WHERE id = $3 LIMIT 1`,
+      [dto.parentId, event.id, categoryId],
+    );
+    if (rows.length > 0) {
+      throw referenceNotFound('category', 'parentId');
+    }
   }
 
   async reorder(

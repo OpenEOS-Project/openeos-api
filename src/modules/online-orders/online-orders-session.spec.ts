@@ -75,7 +75,11 @@ const tableQr: Partial<QrCode> = {
   isActive: true,
   scanCount: 4,
   organization: { id: ORG, name: 'TSV Musterstadt' } as QrCode['organization'],
-  event: { id: EVENT, name: 'Sommerfest' } as QrCode['event'],
+  event: {
+    id: EVENT,
+    organizationId: ORG,
+    name: 'Sommerfest',
+  } as QrCode['event'],
 };
 
 function reason(error: unknown): string | undefined {
@@ -132,6 +136,20 @@ describe('OnlineOrdersService.startSession', () => {
     });
     await service.startSession({ code: 'TISCH12', tableNumber: '7' });
     expect(saved[0].tableNumber).toBe('7');
+  });
+
+  it('ignores an event of another organization linked to the QR code', async () => {
+    const { service, saved } = setup({
+      ...tableQr,
+      event: {
+        id: EVENT,
+        organizationId: 'f0f0f0f0-4f43-4a3e-9f8e-0f2b8f3f1a99',
+        name: 'Anderes Fest',
+      } as QrCode['event'],
+    });
+    const { session } = await service.startSession({ code: 'TISCH12' });
+    expect(saved[0].eventId).toBeNull();
+    expect(session.event).toBeNull();
   });
 
   it('answers 404 QR_CODE_NOT_FOUND for an unknown or inactive code', async () => {

@@ -128,7 +128,7 @@ export class AgentToolsRegistry {
 }
 
 function hasConfirm(schema: z.ZodTypeAny): boolean {
-  const shape = (schema as z.AnyZodObject).shape as
+  const shape = (schema as z.ZodObject).shape as
     | Record<string, unknown>
     | undefined;
   return !!shape && 'confirm' in shape;

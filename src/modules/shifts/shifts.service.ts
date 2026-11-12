@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
@@ -33,7 +34,15 @@ import {
   AdminUpdateRegistrationDto,
 } from './dto';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import {
+  assertReferencesInOrganization,
+  withoutForeignEvent,
+} from '../../common/utils/organization-references';
 import { recordDeletion } from '../retention/deletion-log';
+import {
+  TARGET_LIMITS,
+  TargetLimitService,
+} from '../../common/rate-limit/target-limit.service';
 
 @Injectable()
 export class ShiftsService {
@@ -51,6 +60,9 @@ export class ShiftsService {
     @InjectRepository(HelperMagicLink)
     private readonly magicLinkRepository: Repository<HelperMagicLink>,
     private readonly emailService: EmailService,
+    /* Grenzen je Empfaenger fuer Mails (TargetLimitService). */
+    @Optional()
+    private readonly targetLimits?: TargetLimitService,
   ) {}
 
   // ============ Shift Plans ============
@@ -59,6 +71,7 @@ export class ShiftsService {
     organizationId: string,
     dto: CreateShiftPlanDto,
   ): Promise<ShiftPlan> {
+    await this.assertPlanEvent(organizationId, dto.eventId);
     const slug = dto.publicSlug || this.generateSlug(dto.name);
 
     // Check slug uniqueness
@@ -95,12 +108,25 @@ export class ShiftsService {
     return this.shiftPlanRepository.save(plan);
   }
 
+  /** Die Veranstaltung eines Schichtplans gehoert zur selben Organisation. */
+  private async assertPlanEvent(
+    organizationId: string,
+    eventId: string | null | undefined,
+  ): Promise<void> {
+    await assertReferencesInOrganization(
+      this.shiftPlanRepository.manager,
+      { organizationId },
+      [{ kind: 'event', ids: eventId, field: 'eventId' }],
+    );
+  }
+
   async findAllPlans(organizationId: string): Promise<ShiftPlan[]> {
-    return this.shiftPlanRepository.find({
+    const plans = await this.shiftPlanRepository.find({
       where: { organizationId },
       relations: ['event', 'jobs'],
       order: { createdAt: 'DESC' },
     });
+    return plans.map((plan) => withoutForeignEvent(plan));
   }
 
   async findOnePlan(
@@ -120,7 +146,7 @@ export class ShiftsService {
       });
     }
 
-    return plan;
+    return withoutForeignEvent(plan);
   }
 
   async updatePlan(
@@ -146,7 +172,12 @@ export class ShiftsService {
 
     if (dto.name !== undefined) plan.name = dto.name;
     if (dto.description !== undefined) plan.description = dto.description;
-    if (dto.eventId !== undefined) plan.eventId = dto.eventId;
+    if (dto.eventId !== undefined) {
+      await this.assertPlanEvent(organizationId, dto.eventId);
+      plan.eventId = dto.eventId;
+      // Die geladene Relation gewaenne sonst beim Speichern.
+      delete (plan as { event?: unknown }).event;
+    }
 
     // Update settings
     if (dto.requireApproval !== undefined)
@@ -541,6 +572,22 @@ export class ShiftsService {
         reason: ErrorReasons.SHIFT_NOT_FOUND,
         message: 'Schicht nicht gefunden',
       });
+    }
+
+    // An existing helper group must belong to the same shift plan.
+    if (dto.registrationGroupId) {
+      const member = await this.registrationRepository.findOne({
+        where: { registrationGroupId: dto.registrationGroupId },
+        relations: ['shift', 'shift.job'],
+      });
+      if (!member || member.shift?.job?.shiftPlanId !== shift.job.shiftPlanId) {
+        throw new BadRequestException({
+          code: ErrorCodes.VALIDATION_ERROR,
+          reason: ErrorReasons.SHIFT_REGISTRATION_NOT_FOUND,
+          message: 'Helfergruppe nicht gefunden',
+          params: { field: 'registrationGroupId' },
+        });
+      }
     }
 
     const reg = this.registrationRepository.create({
@@ -1178,7 +1225,7 @@ export class ShiftsService {
       });
     }
 
-    return plan;
+    return withoutForeignEvent(plan);
   }
 
   async publicRegister(
@@ -1190,6 +1237,14 @@ export class ShiftsService {
     notes?: string,
   ): Promise<{ registrationGroupId: string; shiftsCount: number }> {
     const plan = await this.findPlanBySlug(slug);
+
+    // Jede Anmeldung verschickt eine Bestaetigungsmail an `email`.
+    await this.targetLimits?.assert(
+      'shift-sign-up',
+      email,
+      TARGET_LIMITS.shiftSignUp,
+      'Mit dieser E-Mail-Adresse gab es gerade sehr viele Anmeldungen. Bitte versuche es später noch einmal.',
+    );
 
     // Verify all shifts belong to this plan and have available spots
     const shifts = await this.shiftRepository.find({
@@ -1504,6 +1559,18 @@ export class ShiftsService {
       .getOne();
     if (!reg) return;
 
+    // Still wie oben: die Antwort verraet nicht, ob eine Mail rausging.
+    if (
+      this.targetLimits &&
+      !(await this.targetLimits.allow(
+        'helper-magic-link',
+        cleanEmail,
+        TARGET_LIMITS.helperMagicLink,
+      ))
+    ) {
+      return;
+    }
+
     const token = this.generateToken();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await this.magicLinkRepository.save(
@@ -1572,7 +1639,7 @@ export class ShiftsService {
         email: first?.email ?? link.email,
         phone: first?.phone ?? null,
       },
-      plan,
+      plan: withoutForeignEvent(plan),
       registrations,
     };
   }

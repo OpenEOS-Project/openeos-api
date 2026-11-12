@@ -11,6 +11,7 @@ import {
 } from '../../common/organization-closure/organization-closure.service';
 import type { Organization } from '../../database/entities/organization.entity';
 import { TseStatusService, type TseSummary } from '../tse/tse-status.service';
+import { withoutHiddenOrganizationFields } from './organization-hidden-fields';
 
 /** Was die Ansicht von einer Organisation braucht. */
 export type OrganizationLike = OperatingModeOrg &
@@ -163,11 +164,15 @@ function derivedFields(
   return { ...operatingModeView(organization), tse };
 }
 
-/** Rein: Organisation plus abgeleitete Felder. */
+/** Rein: Organisation plus abgeleitete Felder, ohne die verborgenen. */
 export function organizationView<T extends OrganizationLike>(
   organization: T,
   tse: TseSummary | null,
   closure: OrganizationClosure | null = null,
 ): OrganizationView<T> {
-  return { ...organization, ...derivedFields(organization, tse), closure };
+  return {
+    ...withoutHiddenOrganizationFields(organization),
+    ...derivedFields(organization, tse),
+    closure,
+  } as OrganizationView<T>;
 }
