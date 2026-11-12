@@ -49,6 +49,8 @@ export const SECRET_FIELDS: ReadonlySet<string> = new Set([
   // Geraete: Zugangstoken und Kopplungscode
   'deviceToken',
   'verificationCode',
+  // Pruefwert der Adresse, von der aus gekoppelt wurde
+  'pairingIpHash',
   // PINs: Mitglieder (Altbestand), gemeinsamer PIN-Raum, Support
   'pin',
   'pinLookup',

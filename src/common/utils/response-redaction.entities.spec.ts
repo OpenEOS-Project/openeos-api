@@ -36,6 +36,7 @@ const REVIEWED_PUBLIC: Record<string, string> = {
   'Payment.tokenAmount': 'Wertmarken (Betrag)',
   'Payment.tokenLines': 'Wertmarken (Positionen)',
   'TseTransaction.tokenTransactionId': 'Wertmarken',
+  'Device.verificationCodeExpiresAt': 'nur ein Zeitpunkt',
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type -- Entity-Klassen jeder Signatur
@@ -128,7 +129,7 @@ describe('response redaction across all entities', () => {
         redactResponse({ data: instance, items: [{ owner: instance }] }),
       );
       for (const column of cols.filter(isRedacted)) {
-        expect(out).not.toContain(marker(column));
+        expect(out).not.toContain(`"${marker(column)}"`);
       }
 
       /* ... und als rohe Abfragezeile (`getRawMany`: `<alias>_<spalte>`).
@@ -139,7 +140,7 @@ describe('response redaction across all entities', () => {
       }
       const rawOut = JSON.stringify(redactResponse([raw]));
       for (const column of cols.filter(isGloballyRedacted)) {
-        expect(rawOut).not.toContain(marker(column));
+        expect(rawOut).not.toContain(`"${marker(column)}"`);
       }
       for (const column of cols.filter((c) => !isGloballyRedacted(c))) {
         expect(rawOut).toContain(marker(column));

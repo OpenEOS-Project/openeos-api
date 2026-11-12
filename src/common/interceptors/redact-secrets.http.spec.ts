@@ -132,7 +132,10 @@ describe('response redaction over HTTP', () => {
       .compile();
     app = moduleRef.createNestApplication();
     app.use((req: Request, _res: Response, next: NextFunction) => {
-      (req as Request & { user: unknown }).user = { id: 'u1' };
+      (req as Request & { user: unknown }).user = {
+        id: 'u1',
+        organizations: [{ id: ORG, role: 'admin' }],
+      };
       next();
     });
     // Wie in main.ts.
