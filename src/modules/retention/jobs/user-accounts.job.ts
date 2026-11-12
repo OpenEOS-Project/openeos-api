@@ -232,6 +232,7 @@ export class UserAccountsJob implements RetentionJob {
     for (const table of [
       'refresh_tokens',
       'trusted_devices',
+      'two_factor_challenges',
       'email_otps',
       'login_magic_links',
       'api_tokens',

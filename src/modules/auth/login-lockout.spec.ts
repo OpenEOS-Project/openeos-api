@@ -182,7 +182,7 @@ describe('running sessions during a password lock', () => {
     await expect(
       strategy.validate(
         { headers: { authorization: 'Bearer abc' } } as never,
-        { sub: 'u1', email: 'helga@example.org' } as never,
+        { sub: 'u1', email: 'helga@example.org', typ: 'access' } as never,
       ),
     ).resolves.toMatchObject({ id: 'u1' });
   });

@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class LoginDto {
   @ApiProperty({
@@ -18,10 +24,12 @@ export class LoginDto {
   password: string;
 
   @ApiPropertyOptional({
+    deprecated: true,
     description:
-      'Geräte-Fingerabdruck — überspringt den zweiten Faktor auf bekannten Geräten',
+      'Veraltet und ohne Wirkung. Ob der zweite Faktor entfällt, entscheidet allein das Cookie `trustedDevice` eines vertrauten Geräts.',
   })
   @IsOptional()
   @IsString()
+  @MaxLength(255)
   deviceFingerprint?: string;
 }

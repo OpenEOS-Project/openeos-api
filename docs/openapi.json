@@ -21912,7 +21912,8 @@
           },
           "deviceFingerprint": {
             "type": "string",
-            "description": "Geräte-Fingerabdruck — überspringt den zweiten Faktor auf bekannten Geräten"
+            "deprecated": true,
+            "description": "Veraltet und ohne Wirkung. Ob der zweite Faktor entfällt, entscheidet allein das Cookie `trustedDevice` eines vertrauten Geräts."
           }
         },
         "required": [
@@ -22311,8 +22312,8 @@
           },
           "deviceFingerprint": {
             "type": "string",
-            "example": "abc123...",
-            "description": "Geräte-Fingerabdruck"
+            "deprecated": true,
+            "description": "Veraltet und ohne Wirkung. Vertraute Geräte erkennt der Server am Cookie `trustedDevice`, das er nach der Bestätigung mit `trustDevice: true` setzt."
           },
           "deviceName": {
             "type": "string",

@@ -53,6 +53,14 @@ export class AuthRecordsJob implements RetentionJob {
       ),
     );
     ctx.removed(
+      'loginChallengesDeleted',
+      await affected(
+        manager,
+        `DELETE FROM two_factor_challenges WHERE expires_at < $1`,
+        [expired],
+      ),
+    );
+    ctx.removed(
       'trustedDevicesDeleted',
       await affected(
         manager,

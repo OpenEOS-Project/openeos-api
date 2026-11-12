@@ -7,6 +7,7 @@ import { EncryptionService } from '../../common/services/encryption.service';
 import {
   EmailOtp,
   TrustedDevice,
+  TwoFactorChallenge,
   TwoFactorMethod,
   User,
 } from '../../database/entities';
@@ -66,6 +67,7 @@ describe('TwoFactorService.disable2FA', () => {
       encryption,
       config,
       {} as EmailService,
+      {} as Repository<TwoFactorChallenge>,
     );
   });
 
