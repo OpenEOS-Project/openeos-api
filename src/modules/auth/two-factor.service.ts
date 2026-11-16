@@ -1,12 +1,14 @@
-import { randomInt } from 'crypto';
+import { createHash, randomBytes, randomInt } from 'crypto';
 import {
   Injectable,
   BadRequestException,
+  HttpException,
+  HttpStatus,
   UnauthorizedException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, IsNull } from 'typeorm';
+import { Repository, LessThan, IsNull, In, MoreThan } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as OTPAuth from 'otplib';
 import * as QRCode from 'qrcode';
@@ -14,6 +16,7 @@ import {
   User,
   TrustedDevice,
   EmailOtp,
+  TwoFactorChallenge,
   TwoFactorMethod,
 } from '../../database/entities';
 import { EmailOtpPurpose } from '../../database/entities/email-otp.entity';
@@ -26,6 +29,52 @@ const EMAIL_OTP_EXPIRY_MINUTES = 5;
 const EMAIL_OTP_LENGTH = 6;
 const RECOVERY_CODES_COUNT = 10;
 const TRUSTED_DEVICE_EXPIRY_DAYS = 30;
+/** Hoechstens so viele vertraute Geraete je Konto; aeltere fallen heraus. */
+const MAX_TRUSTED_DEVICES_PER_USER = 20;
+/** Fehlversuche je offenem zweiten Schritt, danach neu anmelden. */
+export const MAX_ATTEMPTS_PER_CHALLENGE = 5;
+/** Fehlversuche je Konto ueber alle offenen Schritte im Zeitfenster. */
+export const MAX_FAILED_ATTEMPTS_PER_USER = 10;
+export const TWO_FACTOR_LOCK_WINDOW_MINUTES = 15;
+/** Geheimnis eines vertrauten Geraets: 32 Zufallsbytes, base64url. */
+const TRUSTED_DEVICE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+export interface TrustedDeviceInfo {
+  name?: string;
+  browser?: string;
+  os?: string;
+  ip?: string;
+}
+
+/** SHA-256 (hex) eines Geraete-Geheimnisses — so steht es in der Tabelle. */
+export function hashTrustedDeviceToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+/** Formal gueltiges Geraete-Geheimnis? Alles andere wird gar nicht gesucht. */
+export function isWellFormedTrustedDeviceToken(token: unknown): boolean {
+  return typeof token === 'string' && TRUSTED_DEVICE_TOKEN_PATTERN.test(token);
+}
+
+function invalidChallenge(): UnauthorizedException {
+  return new UnauthorizedException({
+    code: ErrorCodes.UNAUTHORIZED,
+    reason: ErrorReasons.TWO_FACTOR_CHALLENGE_INVALID,
+    message: 'Die Anmeldung ist abgelaufen. Bitte melde dich neu an.',
+  });
+}
+
+function lockedError(): HttpException {
+  return new HttpException(
+    {
+      code: ErrorCodes.TOO_MANY_ATTEMPTS,
+      reason: ErrorReasons.TWO_FACTOR_LOCKED,
+      message: `Zu viele falsche Codes. Bitte melde dich in ${TWO_FACTOR_LOCK_WINDOW_MINUTES} Minuten neu an.`,
+      params: { minutes: TWO_FACTOR_LOCK_WINDOW_MINUTES },
+    },
+    HttpStatus.TOO_MANY_REQUESTS,
+  );
+}
 
 interface TotpSetupResult {
   secret: string;
@@ -52,6 +101,8 @@ export class TwoFactorService {
     private readonly encryptionService: EncryptionService,
     private readonly configService: ConfigService,
     private readonly emailService: EmailService,
+    @InjectRepository(TwoFactorChallenge)
+    private readonly challengeRepository: Repository<TwoFactorChallenge>,
   ) {
     this.issuer = this.configService.get<string>(
       'TWO_FACTOR_ISSUER',
@@ -226,15 +277,45 @@ export class TwoFactorService {
   }
 
   /**
-   * Verify 2FA during login
+   * Offenen zweiten Anmeldeschritt anlegen. Die Kennung wird `jti` des
+   * Ausweises (AuthService.issueTwoFactorToken).
+   */
+  async createChallenge(
+    userId: string,
+    expiresInMinutes: number,
+  ): Promise<TwoFactorChallenge> {
+    return this.challengeRepository.save(
+      this.challengeRepository.create({
+        userId,
+        failedAttempts: 0,
+        completedAt: null,
+        expiresAt: new Date(Date.now() + expiresInMinutes * 60 * 1000),
+      }),
+    );
+  }
+
+  /**
+   * Zweiter Faktor bei der Anmeldung.
+   *
+   * Jeder Versuch wird vor der Pruefung des Codes gezaehlt — in einer
+   * einzigen UPDATE-Anweisung, damit parallele Anfragen (auch ueber
+   * mehrere API-Instanzen) die Grenze nicht unterlaufen. Nach
+   * MAX_ATTEMPTS_PER_CHALLENGE Fehlversuchen ist der Schritt verbraucht;
+   * ueber alle offenen Schritte eines Kontos gilt zusaetzlich
+   * MAX_FAILED_ATTEMPTS_PER_USER im Zeitfenster, sonst holte man sich mit
+   * dem Passwort einfach immer neue Versuche. Ein erfolgreicher Schritt
+   * ist danach erledigt; sein Ausweis taugt nicht noch einmal.
+   *
+   * Mit `trustDevice` entsteht ein vertrautes Geraet; zurueck kommt dessen
+   * Geheimnis, das der Controller als Cookie setzt.
    */
   async verify2FA(
     userId: string,
+    challengeId: string | null | undefined,
     code: string,
     trustDevice?: boolean,
-    deviceFingerprint?: string,
-    deviceInfo?: { name?: string; browser?: string; os?: string; ip?: string },
-  ): Promise<boolean> {
+    deviceInfo?: TrustedDeviceInfo,
+  ): Promise<{ trustedDeviceToken: string | null }> {
     const user = await this.userRepository.findOneOrFail({
       where: { id: userId },
     });
@@ -247,6 +328,10 @@ export class TwoFactorService {
       });
     }
 
+    if (!challengeId) throw invalidChallenge();
+    await this.assertUserNotLocked(userId);
+    await this.reserveAttempt(userId, challengeId);
+
     if (!(await this.isValidSecondFactor(user, code))) {
       throw new UnauthorizedException({
         code: ErrorCodes.INVALID_2FA_CODE,
@@ -254,14 +339,106 @@ export class TwoFactorService {
       });
     }
 
-    // Trust device if requested
-    if (trustDevice && deviceFingerprint) {
-      await this.trustDevice(user, deviceFingerprint, deviceInfo);
-    }
+    await this.completeChallenge(challengeId);
+
+    const trustedDeviceToken = trustDevice
+      ? await this.trustDevice(user, deviceInfo)
+      : null;
 
     this.logger.log(`2FA verified for user: ${user.email}`);
 
-    return true;
+    return { trustedDeviceToken };
+  }
+
+  /**
+   * Ist der Schritt noch offen (nicht erledigt, nicht abgelaufen, nicht
+   * ausgeschoepft) und das Konto nicht gesperrt? Fuer Endpunkte des
+   * zweiten Schritts, die selbst keinen Code pruefen (Code erneut senden).
+   */
+  async assertChallengeOpen(
+    userId: string,
+    challengeId: string | null | undefined,
+  ): Promise<void> {
+    if (!challengeId) throw invalidChallenge();
+    const challenge = await this.challengeRepository.findOne({
+      where: { id: challengeId, userId },
+    });
+    if (
+      !challenge ||
+      challenge.completedAt ||
+      challenge.expiresAt <= new Date()
+    ) {
+      throw invalidChallenge();
+    }
+    if (challenge.failedAttempts >= MAX_ATTEMPTS_PER_CHALLENGE) {
+      throw lockedError();
+    }
+    await this.assertUserNotLocked(userId);
+  }
+
+  private async assertUserNotLocked(userId: string): Promise<void> {
+    const rows: { failed: number | string | null }[] =
+      await this.challengeRepository.query(
+        `SELECT COALESCE(SUM(failed_attempts), 0) AS failed
+           FROM two_factor_challenges
+          WHERE user_id = $1
+            AND completed_at IS NULL
+            AND created_at > now() - make_interval(mins => $2)`,
+        [userId, TWO_FACTOR_LOCK_WINDOW_MINUTES],
+      );
+    if (Number(rows[0]?.failed ?? 0) >= MAX_FAILED_ATTEMPTS_PER_USER) {
+      throw lockedError();
+    }
+  }
+
+  /** Zaehlt den Versuch atomar; wirft, wenn der Schritt nicht mehr gilt. */
+  private async reserveAttempt(
+    userId: string,
+    challengeId: string,
+  ): Promise<void> {
+    const result: [unknown[], number] = await this.challengeRepository.query(
+      `UPDATE two_factor_challenges
+          SET failed_attempts = failed_attempts + 1, updated_at = now()
+        WHERE id = $1 AND user_id = $2
+          AND completed_at IS NULL
+          AND expires_at > now()
+          AND failed_attempts < $3
+        RETURNING id`,
+      [challengeId, userId, MAX_ATTEMPTS_PER_CHALLENGE],
+    );
+    if (result[1] > 0) return;
+
+    // Kein Versuch mehr frei — warum, entscheidet ueber die Meldung.
+    const challenge = await this.challengeRepository.findOne({
+      where: { id: challengeId, userId },
+    });
+    if (
+      challenge &&
+      !challenge.completedAt &&
+      challenge.expiresAt > new Date() &&
+      challenge.failedAttempts >= MAX_ATTEMPTS_PER_CHALLENGE
+    ) {
+      throw lockedError();
+    }
+    throw invalidChallenge();
+  }
+
+  /**
+   * Schritt als erledigt markieren und den vorab gezaehlten Versuch
+   * zuruecknehmen. Nur einmal moeglich: ein zweiter, gleichzeitiger
+   * Erfolg mit demselben Ausweis findet keine offene Zeile mehr.
+   */
+  private async completeChallenge(challengeId: string): Promise<void> {
+    const result: [unknown[], number] = await this.challengeRepository.query(
+      `UPDATE two_factor_challenges
+          SET completed_at = now(),
+              failed_attempts = GREATEST(failed_attempts - 1, 0),
+              updated_at = now()
+        WHERE id = $1 AND completed_at IS NULL
+        RETURNING id`,
+      [challengeId],
+    );
+    if (result[1] === 0) throw invalidChallenge();
   }
 
   /**
@@ -328,7 +505,7 @@ export class TwoFactorService {
     await this.userRepository.save(user);
 
     // Remove all trusted devices
-    await this.trustedDeviceRepository.delete({ userId });
+    await this.revokeTrustedDevices(userId);
 
     this.logger.log(`2FA disabled for user: ${user.email}`);
   }
@@ -423,32 +600,38 @@ export class TwoFactorService {
   }
 
   /**
-   * Check if device is trusted
+   * Vertrautes Geraet dieses Benutzers?
+   *
+   * Prueft die vorgelegten Geheimnisse (Cookie `trustedDevice`, hoechstens
+   * fuenf) gegen die gespeicherten Hashes — nur Eintraege dieses Kontos,
+   * nur nicht abgelaufene. Alles andere heisst: zweiter Faktor.
    */
-  async isDeviceTrusted(
-    userId: string,
-    deviceFingerprint: string,
-  ): Promise<boolean> {
+  async isTrustedDevice(userId: string, tokens: string[]): Promise<boolean> {
+    const hashes = tokens
+      .filter(isWellFormedTrustedDeviceToken)
+      .slice(0, 5)
+      .map(hashTrustedDeviceToken);
+    if (hashes.length === 0) return false;
+
     const device = await this.trustedDeviceRepository.findOne({
       where: {
         userId,
-        deviceFingerprint,
+        tokenHash: In(hashes),
+        expiresAt: MoreThan(new Date()),
       },
     });
-
     if (!device) return false;
 
-    // Check if expired
-    if (device.expiresAt < new Date()) {
-      await this.trustedDeviceRepository.remove(device);
-      return false;
-    }
-
-    // Update last used
-    device.lastUsedAt = new Date();
-    await this.trustedDeviceRepository.save(device);
-
+    await this.trustedDeviceRepository.update(
+      { id: device.id },
+      { lastUsedAt: new Date() },
+    );
     return true;
+  }
+
+  /** Alle vertrauten Geraete eines Kontos entziehen (z. B. neues Passwort). */
+  async revokeTrustedDevices(userId: string): Promise<void> {
+    await this.trustedDeviceRepository.delete({ userId });
   }
 
   // Private helper methods
@@ -603,45 +786,46 @@ export class TwoFactorService {
     return true;
   }
 
+  /**
+   * Neues vertrautes Geraet. Das Geheimnis (256 Bit) verlaesst den Server
+   * nur einmal, als Cookie; gespeichert wird sein Hash.
+   */
   private async trustDevice(
     user: User,
-    deviceFingerprint: string,
-    deviceInfo?: { name?: string; browser?: string; os?: string; ip?: string },
-  ): Promise<void> {
-    // Check if device already trusted
-    let device = await this.trustedDeviceRepository.findOne({
-      where: { userId: user.id, deviceFingerprint },
+    deviceInfo?: TrustedDeviceInfo,
+  ): Promise<string> {
+    const token = randomBytes(32).toString('base64url');
+    const device = this.trustedDeviceRepository.create({
+      userId: user.id,
+      tokenHash: hashTrustedDeviceToken(token),
+      deviceName: deviceInfo?.name?.slice(0, 255) || null,
+      browser: deviceInfo?.browser?.slice(0, 100) || null,
+      os: deviceInfo?.os?.slice(0, 100) || null,
+      ipAddress: deviceInfo?.ip?.slice(0, 45) || null,
+      lastUsedAt: new Date(),
+      expiresAt: new Date(
+        Date.now() + TRUSTED_DEVICE_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
+      ),
     });
+    await this.trustedDeviceRepository.save(device);
+    await this.pruneTrustedDevices(user.id);
 
-    const expiresAt = new Date(
-      Date.now() + TRUSTED_DEVICE_EXPIRY_DAYS * 24 * 60 * 60 * 1000,
-    );
+    this.logger.log(`Device trusted for user: ${user.email}`);
+    return token;
+  }
 
-    if (device) {
-      // Update existing
-      device.lastUsedAt = new Date();
-      device.expiresAt = expiresAt;
-      if (deviceInfo) {
-        device.deviceName = deviceInfo.name || device.deviceName;
-        device.browser = deviceInfo.browser || device.browser;
-        device.os = deviceInfo.os || device.os;
-        device.ipAddress = deviceInfo.ip || device.ipAddress;
-      }
-    } else {
-      // Create new
-      device = this.trustedDeviceRepository.create({
-        userId: user.id,
-        deviceFingerprint,
-        deviceName: deviceInfo?.name,
-        browser: deviceInfo?.browser,
-        os: deviceInfo?.os,
-        ipAddress: deviceInfo?.ip,
-        expiresAt,
+  private async pruneTrustedDevices(userId: string): Promise<void> {
+    const devices = await this.trustedDeviceRepository.find({
+      where: { userId },
+      order: { lastUsedAt: 'DESC' },
+      select: { id: true },
+    });
+    const surplus = devices.slice(MAX_TRUSTED_DEVICES_PER_USER);
+    if (surplus.length > 0) {
+      await this.trustedDeviceRepository.delete({
+        id: In(surplus.map((d) => d.id)),
       });
     }
-
-    await this.trustedDeviceRepository.save(device);
-    this.logger.log(`Device trusted for user: ${user.email}`);
   }
 
   private generateRecoveryCodes(): string[] {
@@ -684,6 +868,11 @@ export class TwoFactorService {
 
     // Delete expired trusted devices
     await this.trustedDeviceRepository.delete({
+      expiresAt: LessThan(now),
+    });
+
+    // Delete expired login challenges
+    await this.challengeRepository.delete({
       expiresAt: LessThan(now),
     });
 
