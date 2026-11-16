@@ -811,7 +811,9 @@ export class OnlineOrdersService {
         .andWhere('order.online_session_id IS NOT NULL')
         .andWhere("payment.created_at > now() - interval '24 hours'")
         .andWhere("payment.created_at < now() - interval '1 minute'")
-        .orderBy('payment.created_at', 'ASC')
+        // Mit Join und take() sortiert TypeORM ueber den Eigenschaftspfad
+        // (`createdAt`); der Spaltenname liesse den Lauf jedes Mal scheitern.
+        .orderBy('payment.createdAt', 'ASC')
         .take(50)
         .getMany();
       for (const payment of pending) {
