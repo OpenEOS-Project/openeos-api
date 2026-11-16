@@ -680,9 +680,14 @@ export class OrdersService {
           );
 
           // Notify POS terminals about stock change
-          const event = await this.eventRepository.findOne({
-            where: { id: order.eventId! },
-          });
+          const event = order.eventId
+            ? await this.eventRepository.findOne({
+                where: {
+                  id: order.eventId,
+                  organizationId: order.organizationId,
+                },
+              })
+            : null;
           if (event) {
             this.gatewayService.notifyProductUpdated(
               event.organizationId,
@@ -1601,9 +1606,14 @@ export class OrdersService {
       );
 
       // Notify POS terminals about stock change
-      const event = await this.eventRepository.findOne({
-        where: { id: order.eventId! },
-      });
+      const event = order.eventId
+        ? await this.eventRepository.findOne({
+            where: {
+              id: order.eventId,
+              organizationId: order.organizationId,
+            },
+          })
+        : null;
       if (event) {
         this.gatewayService.notifyProductUpdated(
           event.organizationId,
@@ -1657,9 +1667,14 @@ export class OrdersService {
         );
 
         // Notify POS terminals about stock restoration
-        const event = await this.eventRepository.findOne({
-          where: { id: order.eventId! },
-        });
+        const event = order.eventId
+          ? await this.eventRepository.findOne({
+              where: {
+                id: order.eventId,
+                organizationId: order.organizationId,
+              },
+            })
+          : null;
         if (event) {
           this.gatewayService.notifyProductUpdated(
             event.organizationId,
