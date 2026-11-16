@@ -1595,7 +1595,7 @@
     },
     "/api/legal/versions": {
       "get": {
-        "description": "Aktuelle Fassungen (Datum der „Stand“-Zeile) mit Links auf die Website, die Archiv-Adresse der Fassung und das PDF. `enabled` ist bei eigenständigem Betrieb false — dort gelten die Texte von LUXCODE nicht. `platform`: Impressum und Datenschutz des Plattformbetreibers für öffentliche Seiten ohne Verein (z. B. Startseite des Shops); `null` = nicht anzeigen.",
+        "description": "Aktuelle Fassungen (Datum der „Stand“-Zeile) mit Links auf die Website, die Archiv-Adresse der Fassung und das PDF. `enabled` ist bei eigenständigem Betrieb false — dort gelten die Texte von LUXCODE nicht. `platform`: Impressum und Datenschutz des Plattformbetreibers für öffentliche Seiten ohne Verein (z. B. Startseite des Shops); `null` = nicht anzeigen. `tseConditions`: Einsatzbedingungen der Cloud-TSE (Umgebungsschutzkonzept; `url`, `text`), nur wenn die Cloud-TSE verfügbar ist, sonst `null`.",
         "operationId": "legal_getVersions",
         "parameters": [],
         "responses": {
@@ -9355,6 +9355,64 @@
         "summary": "SumUp payment-status webhook; settles the checkout server-side",
         "tags": [
           "Shop Checkout (Public)"
+        ]
+      }
+    },
+    "/api/public/shop/{eventId}/withdrawal": {
+      "get": {
+        "description": "Veranstaltung, Verein und rechtliche Angaben für die Seite „Vertrag widerrufen“. 404 `WITHDRAWAL_NOT_AVAILABLE`, wenn der Verein kein Widerrufsrecht eingeschaltet hat. Auch nach dem Ende der Veranstaltung erreichbar.",
+        "operationId": "eventsShopWithdrawal_info",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Withdrawal function of a shop (§ 356a BGB)",
+        "tags": [
+          "Shop (Public)"
+        ]
+      },
+      "post": {
+        "description": "Name, E-Mail-Adresse und Bestellnummer (Pflicht), weitere Angaben freiwillig. Speichert den Widerruf mit Eingangszeitpunkt, schickt ihn an den Verein und dem Gast sofort eine Eingangsbestätigung mit Inhalt, Datum und Uhrzeit. Höchstens 10 je Stunde und IP-Adresse.",
+        "operationId": "eventsShopWithdrawal_submit",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShopWithdrawalDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Declare the withdrawal from a shop order (§ 356a BGB)",
+        "tags": [
+          "Shop (Public)"
         ]
       }
     },
@@ -19021,6 +19079,7 @@
                 "audit_logs",
                 "support_messages",
                 "contact_requests",
+                "shop_withdrawals",
                 "content_reports",
                 "assistant_imports",
                 "webhook_deliveries",
@@ -25298,6 +25357,45 @@
           }
         }
       },
+      "CreateShopWithdrawalDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Erika Muster",
+            "minLength": 2,
+            "maxLength": 200
+          },
+          "email": {
+            "type": "string",
+            "example": "erika@example.com",
+            "description": "Adresse für die Eingangsbestätigung"
+          },
+          "orderNumber": {
+            "type": "string",
+            "example": "W-20261115-0042",
+            "description": "Bestellnummer aus der Bestellbestätigung"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Freiwillig: welche Positionen bzw. weitere Angaben"
+          },
+          "website": {
+            "type": "string",
+            "description": "Honeypot-Feld — muss leer bleiben"
+          },
+          "startedAt": {
+            "type": "number",
+            "description": "Zeitpunkt (epoch ms), zu dem das Formular geladen wurde"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "orderNumber"
+        ]
+      },
       "PurchaseMasterDataDto": {
         "type": "object",
         "properties": {
@@ -27695,6 +27793,7 @@
                 "audit_logs",
                 "support_messages",
                 "contact_requests",
+                "shop_withdrawals",
                 "content_reports",
                 "assistant_imports",
                 "webhook_deliveries",

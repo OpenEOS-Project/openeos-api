@@ -28,6 +28,12 @@ export interface OrganizationLegalSettings {
   privacyText?: string;
   /** Kontaktadresse fuer Datenschutzanfragen, optional. */
   contactEmail?: string;
+  /**
+   * Besteht fuer Shop-Bestellungen ein Widerrufsrecht? Standard nein
+   * (Speisen und Getraenke fuer eine Veranstaltung: § 312g Abs. 2 Nr. 2
+   * und 9 BGB). Wenn ja, zeigt der Shop die Widerrufsfunktion (§ 356a BGB).
+   */
+  withdrawalRight?: boolean;
 }
 
 export interface OrganizationSettings {
