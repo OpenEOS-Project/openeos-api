@@ -58,6 +58,9 @@ function setup() {
     save: jest.fn((u: unknown) => Promise.resolve(u)),
   };
   const none = {} as never;
+  const twoFactor = {
+    revokeTrustedDevices: jest.fn(() => Promise.resolve()),
+  };
   const service = new AuthService(
     userRepository as never,
     none,
@@ -70,7 +73,7 @@ function setup() {
     none,
     none,
     none,
-    none,
+    twoFactor as never,
     none,
     none,
   );

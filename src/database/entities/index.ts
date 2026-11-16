@@ -71,6 +71,7 @@ export * from './support-message.entity';
 
 // Auth & Security
 export * from './trusted-device.entity';
+export * from './two-factor-challenge.entity';
 export * from './email-otp.entity';
 
 // Inventory
@@ -87,6 +88,7 @@ export * from './shift-change-proposal.entity';
 export * from './helper-magic-link.entity';
 export * from './login-magic-link.entity';
 export * from './contact-request.entity';
+export * from './content-report.entity';
 export * from './api-token.entity';
 export * from './event-billing-cancellation.entity';
 export * from './organization-cash-policy-change.entity';

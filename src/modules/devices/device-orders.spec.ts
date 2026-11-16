@@ -304,11 +304,17 @@ class FakeDb {
   }
 
   private matches(row: Row, where: Record<string, unknown> = {}) {
-    return Object.entries(where).every(([k, v]) =>
-      v instanceof FindOperator && v.type === 'in'
-        ? (v.value as unknown as unknown[]).includes(row[k])
-        : row[k] === v,
-    );
+    return Object.entries(where).every(([k, v]): boolean => {
+      if (v instanceof FindOperator && v.type === 'in') {
+        return (v.value as unknown as unknown[]).includes(row[k]);
+      }
+      // Relation filter, e.g. `event: { organizationId }`.
+      if (v && typeof v === 'object' && !(v instanceof FindOperator)) {
+        const related = row[k] as Row | null | undefined;
+        return !!related && this.matches(related, v as Record<string, unknown>);
+      }
+      return row[k] === v;
+    });
   }
 
   find(entity: unknown, opts: { where?: Record<string, unknown> } = {}) {
@@ -524,6 +530,7 @@ function setupController(
   db.products.push({
     id: PRODUCT,
     eventId: EVENT,
+    event: { organizationId: ORG },
     name: 'Bier',
     price: 4.5,
     taxRate: 19,
@@ -1665,5 +1672,116 @@ describe('DeviceApiController — Zuordnung zur Bedienung (bedienungen-plan.md �
       ),
     ).toBe('WAITER_NOT_PERMITTED');
     expect(db.orders).toHaveLength(0);
+  });
+});
+
+describe('DeviceApiController.createOrder – product options', () => {
+  const withOptions = (db: FakeDb) =>
+    Object.assign(db.products[0], {
+      options: {
+        groups: [
+          {
+            name: 'Größe',
+            type: 'single',
+            required: true,
+            options: [
+              { name: '0,3 l', priceModifier: 0 },
+              { name: '0,5 l', priceModifier: 1.5 },
+            ],
+          },
+          {
+            name: 'Zutaten',
+            type: 'ingredients',
+            required: false,
+            options: [{ name: 'Zitrone', priceModifier: 0.5 }],
+          },
+        ],
+      },
+    });
+
+  it('prices options from the product definition, not from the request', async () => {
+    const { controller, device, response, db } = setupController({
+      serviceMode: 'counter',
+    });
+    withOptions(db);
+
+    const { data } = await controller.createOrder(
+      device,
+      dto({
+        items: [
+          {
+            productId: PRODUCT,
+            quantity: 2,
+            selectedOptions: [
+              { group: 'Größe', option: '0,5 l', priceModifier: -4.5 },
+              {
+                group: 'Zutaten',
+                option: 'Zitrone',
+                priceModifier: -1,
+                excluded: true,
+              },
+            ],
+          },
+        ],
+      }),
+      response() as never,
+    );
+
+    // (4,50 + 1,50) × 2; die weggelassene Zutat kostet nichts.
+    expect(data).toMatchObject({ total: 12 });
+    expect(db.items[0]).toMatchObject({
+      optionsPrice: 1.5,
+      totalPrice: 12,
+      options: {
+        selected: [
+          { group: 'Größe', option: '0,5 l', priceModifier: 1.5 },
+          {
+            group: 'Zutaten',
+            option: 'Zitrone',
+            priceModifier: 0,
+            excluded: true,
+          },
+        ],
+      },
+    });
+  });
+
+  it('rejects an option the product does not define', async () => {
+    const { controller, device, response, db } = setupController({
+      serviceMode: 'counter',
+    });
+    withOptions(db);
+
+    await expect(
+      controller.createOrder(
+        device,
+        dto({
+          items: [
+            {
+              productId: PRODUCT,
+              quantity: 1,
+              selectedOptions: [
+                { group: 'Größe', option: 'Rabatt', priceModifier: -4 },
+              ],
+            },
+          ],
+        }),
+        response() as never,
+      ),
+    ).rejects.toMatchObject({
+      response: { reason: 'PRODUCT_OPTION_INVALID' },
+    });
+    expect(db.orders).toHaveLength(0);
+  });
+
+  it('does not resolve a product of another organization', async () => {
+    const { controller, device, response, db } = setupController({
+      serviceMode: 'counter',
+    });
+    db.products[0].event = { organizationId: 'other-organization' };
+
+    await expect(
+      controller.createOrder(device, dto(), response() as never),
+    ).rejects.toMatchObject({ response: { reason: 'PRODUCT_NOT_FOUND' } });
   });
 });

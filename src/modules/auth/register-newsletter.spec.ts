@@ -125,7 +125,7 @@ describe('AuthService.register — AGB/AVV acceptance', () => {
     expect(legal?.rows).toEqual([
       expect.objectContaining({
         document: 'agb',
-        version: '2026-11-04',
+        version: '2026-11-12',
         context: 'registration',
         businessConfirmed: true,
         ipAddress: '203.0.113.9',
@@ -133,7 +133,7 @@ describe('AuthService.register — AGB/AVV acceptance', () => {
         userEmail: 'neu@example.org',
         organizationName: 'TSV Musterstadt',
       }),
-      expect.objectContaining({ document: 'avv', version: '2026-11-04' }),
+      expect.objectContaining({ document: 'avv', version: '2026-11-12' }),
     ]);
     expect(legalService.sendRegistrationEmail).toHaveBeenCalledWith(
       expect.objectContaining({ organizationName: 'TSV Musterstadt' }),

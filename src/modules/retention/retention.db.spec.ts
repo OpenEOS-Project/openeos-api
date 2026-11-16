@@ -28,6 +28,7 @@ import { AssistantImportsJob } from './jobs/assistant-imports.job';
 import { AuditLogsJob } from './jobs/audit-logs.job';
 import { AuthRecordsJob } from './jobs/auth-records.job';
 import { ContactRequestsJob } from './jobs/contact-requests.job';
+import { ContentReportsJob } from './jobs/content-reports.job';
 import { FiscalArchiveJob } from './jobs/fiscal-archive.job';
 import { GuestDataJob } from './jobs/guest-data.job';
 import { HelperDataJob } from './jobs/helper-data.job';
@@ -142,6 +143,7 @@ describeWithDb('Retention jobs against Postgres', () => {
       new AuditLogsJob(),
       new SupportMessagesJob(),
       new ContactRequestsJob(),
+      new ContentReportsJob(),
       new AssistantImportsJob({
         cleanupNow,
       } as unknown as MenuImportWorkerService),
@@ -596,8 +598,12 @@ describeWithDb('Retention jobs against Postgres', () => {
         [userId, randomUUID(), ago(2)],
       );
       await sql(
-        `INSERT INTO trusted_devices (user_id, device_fingerprint, expires_at) VALUES ($1, 'fp', $2)`,
-        [userId, ago(1)],
+        `INSERT INTO trusted_devices (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+        [userId, randomUUID(), ago(1)],
+      );
+      await sql(
+        `INSERT INTO two_factor_challenges (user_id, expires_at) VALUES ($1, $2)`,
+        [userId, ago(2)],
       );
       await sql(
         `INSERT INTO api_tokens (name, token_hash, token_prefix, user_id, organization_id, revoked_at) VALUES
@@ -619,6 +625,7 @@ describeWithDb('Retention jobs against Postgres', () => {
         'email_otps',
         'login_magic_links',
         'trusted_devices',
+        'two_factor_challenges',
       ]) {
         expect(
           await sql(`SELECT 1 FROM ${table} WHERE user_id = $1`, [userId]),
@@ -734,6 +741,34 @@ describeWithDb('Retention jobs against Postgres', () => {
         )
       ).map((r) => r.id);
       expect(left.sort()).toEqual([recentHandled, unhandled].sort());
+    });
+
+    it('deletes content reports 12 months after they were closed', async () => {
+      const insert = async (status: string, closedAt: Date | null) => {
+        const [row] = await sql(
+          `INSERT INTO content_reports (url, reason, description, reporter_name, reporter_email, good_faith, target_type, status, closed_at, created_at)
+           VALUES ('https://shop.example/x', 'illegal', 'Beschreibung', 'Melder', 'm@example.test', true, 'unknown', $1, $2, $3) RETURNING id`,
+          [status, closedAt, ago(500)],
+        );
+        return row.id;
+      };
+      const oldClosed = await insert('closed', ago(400));
+      const recentClosed = await insert('closed', ago(100));
+      const open = await insert('open', null);
+      try {
+        await run('content_reports');
+        const left = (
+          await sql(
+            `SELECT id FROM content_reports WHERE id = ANY($1::uuid[])`,
+            [[oldClosed, recentClosed, open]],
+          )
+        ).map((r) => r.id);
+        expect(left.sort()).toEqual([recentClosed, open].sort());
+      } finally {
+        await sql(`DELETE FROM content_reports WHERE id = ANY($1::uuid[])`, [
+          [oldClosed, recentClosed, open],
+        ]);
+      }
     });
   });
 

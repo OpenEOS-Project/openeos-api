@@ -12,17 +12,21 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { scaledLimit } from '../../common/rate-limit/scaled-limit';
 import type { Request } from 'express';
 import { DevicesService } from './devices.service';
 import { RegisterDeviceDto, InitDeviceDto } from './dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
+import { RevealSecrets } from '../../common/decorators/reveal-secrets.decorator';
 import { normalizePairingCode } from './pairing-code';
 
 /** Neue Geraete je Adresse: grosszuegig, beim Aufbau koppeln viele Geraete
  *  hinter demselben WLAN, und jedes wartende Geraet holt sich alle 15
  *  Minuten einen neuen Code. */
-const REGISTER_THROTTLE = { default: { limit: 120, ttl: 60 * 60 * 1000 } };
+const REGISTER_THROTTLE = {
+  default: { limit: scaledLimit(120), ttl: 60 * 60 * 1000 },
+};
 
 @ApiTags('Devices')
 @Controller('devices')
@@ -60,6 +64,8 @@ export class DevicesPublicController {
       'Until then the device has no access to anything.',
     ].join(' '),
   })
+  // Das Geraet bekommt sein Zugangstoken und den Kopplungscode genau hier.
+  @RevealSecrets('deviceToken', 'verificationCode')
   @Throttle(REGISTER_THROTTLE)
   async initDevice(@Body() initDto: InitDeviceDto, @Req() req: Request) {
     const result = await this.devicesService.initDevice(initDto, req.ip);
@@ -82,7 +88,7 @@ export class DevicesPublicController {
     description: 'Pairing code (eight digits, older devices six)',
     required: true,
   })
-  @Throttle({ default: { limit: 20, ttl: 15 * 60 * 1000 } })
+  @Throttle({ default: { limit: scaledLimit(20), ttl: 15 * 60 * 1000 } })
   async lookupByCode(@Query('code') rawCode: string) {
     const code = normalizePairingCode(rawCode);
     if (!code) {
@@ -111,6 +117,7 @@ export class DevicesPublicController {
   @ApiOperation({
     summary: 'Register a new device (legacy - requires organization slug)',
   })
+  @RevealSecrets('deviceToken', 'verificationCode')
   @Throttle(REGISTER_THROTTLE)
   async register(@Body() registerDto: RegisterDeviceDto, @Req() req: Request) {
     const result = await this.devicesService.registerDevice(

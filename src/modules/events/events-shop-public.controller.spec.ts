@@ -115,6 +115,8 @@ describe('EventsShopPublicController.getShop — legal information', () => {
         platformLegal: {
           imprintUrl: 'https://openeos.de/imprint',
           privacyUrl: 'https://openeos.de/privacy',
+          contactEmail: 'hello@openeos.de',
+          reportUrl: 'https://app.openeos.de/report',
         },
       } as never,
     );
@@ -132,6 +134,8 @@ describe('EventsShopPublicController.getShop — legal information', () => {
       platform: {
         imprintUrl: 'https://openeos.de/imprint',
         privacyUrl: 'https://openeos.de/privacy',
+        contactEmail: 'hello@openeos.de',
+        reportUrl: 'https://app.openeos.de/report',
       },
     });
     expect(JSON.stringify(data)).not.toContain('sup_sk_live_secret');

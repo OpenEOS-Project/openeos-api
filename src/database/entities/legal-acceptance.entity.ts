@@ -66,8 +66,9 @@ export class LegalAcceptance {
   context: LegalAcceptanceContext;
 
   /**
-   * Bei der Registrierung zusaetzlich bestaetigt: Unternehmer, juristische
-   * Person des oeffentlichen Rechts oder eingetragener Verein, mit
+   * Bei der Registrierung zusaetzlich bestaetigt: Kundenkreis nach AGB
+   * Ziffer 2.1 (Unternehmer, juristische Person des oeffentlichen Rechts,
+   * Verein, Stiftung oder sonstige Organisation, kein Verbraucher), mit
    * Vertretungsbefugnis (AGB Ziffer 2.4).
    */
   @Column({ name: 'business_confirmed', type: 'boolean', default: false })

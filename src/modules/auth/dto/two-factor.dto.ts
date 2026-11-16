@@ -4,6 +4,7 @@ import {
   IsBoolean,
   Length,
   Matches,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -42,26 +43,31 @@ export class Verify2FADto {
   trustDevice?: boolean;
 
   @ApiPropertyOptional({
-    example: 'abc123...',
-    description: 'Geräte-Fingerabdruck',
+    deprecated: true,
+    description:
+      'Veraltet und ohne Wirkung. Vertraute Geräte erkennt der Server am Cookie `trustedDevice`, das er nach der Bestätigung mit `trustDevice: true` setzt.',
   })
   @IsOptional()
   @IsString()
+  @MaxLength(255)
   deviceFingerprint?: string;
 
   @ApiPropertyOptional({ example: 'MacBook Pro', description: 'Gerätename' })
   @IsOptional()
   @IsString()
+  @MaxLength(255)
   deviceName?: string;
 
   @ApiPropertyOptional({ example: 'Chrome 120', description: 'Browser' })
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   browser?: string;
 
   @ApiPropertyOptional({ example: 'macOS 14.0', description: 'Betriebssystem' })
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   os?: string;
 }
 

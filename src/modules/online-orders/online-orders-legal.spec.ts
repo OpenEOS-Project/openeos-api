@@ -91,6 +91,8 @@ describe('QR order — legal information of the club', () => {
       platformLegal: {
         imprintUrl: 'https://openeos.de/impressum',
         privacyUrl: 'https://openeos.de/datenschutz',
+        contactEmail: 'hello@openeos.de',
+        reportUrl: 'https://app.openeos.de/report',
       },
     } as DeploymentService;
     const controller = new OnlineOrdersController(svc, deployment);
