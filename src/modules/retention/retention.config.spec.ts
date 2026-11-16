@@ -30,6 +30,7 @@ describe('loadRetentionConfig', () => {
       supportMonths: 12,
       contactMonths: 6,
       withdrawalMonths: 36,
+      contentReportMonths: 12,
       inactiveOrganizationMonths: 24,
       inactiveUserMonths: 24,
       noticeDays: 30,

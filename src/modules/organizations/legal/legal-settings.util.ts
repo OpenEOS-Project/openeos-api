@@ -222,6 +222,10 @@ export function normalizeLegalSettings(
 export interface PlatformLegalLinks {
   imprintUrl: string | null;
   privacyUrl: string | null;
+  /** Kontaktstelle nach Art. 11/12 DSA. */
+  contactEmail?: string | null;
+  /** Formular „Inhalt melden“ (Art. 16 DSA). */
+  reportUrl?: string | null;
 }
 
 /** Was oeffentliche Seiten ueber Impressum und Datenschutz erfahren. */
@@ -240,7 +244,7 @@ export interface PublicLegalInfo {
    * die Widerrufsfunktion nach § 356a BGB („Vertrag widerrufen“).
    */
   withdrawalRight: boolean;
-  platform: PlatformLegalLinks;
+  platform: Required<PlatformLegalLinks>;
 }
 
 /**
@@ -278,6 +282,8 @@ export function toPublicLegalInfo(
     platform: {
       imprintUrl: platform.imprintUrl || null,
       privacyUrl: platform.privacyUrl || null,
+      contactEmail: platform.contactEmail || null,
+      reportUrl: platform.reportUrl || null,
     },
   };
 }

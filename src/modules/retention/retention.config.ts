@@ -42,6 +42,8 @@ export interface RetentionConfig {
   contactMonths: number;
   /** Widerrufe von Shop-Bestellungen (§ 356a BGB): Monate nach dem Eingang. */
   withdrawalMonths: number;
+  /** Inhaltsmeldungen (DSA): Monate nach dem Abschluss der Pruefung. */
+  contentReportMonths: number;
   /** Organisationen ohne Buchung: Monate bis zur Ankuendigung. */
   inactiveOrganizationMonths: number;
   /** Benutzerkonten ohne Organisation und ohne Anmeldung. */
@@ -127,6 +129,7 @@ export function loadRetentionConfig(env: Env = process.env): RetentionConfig {
     supportMonths: int(env, 'RETENTION_SUPPORT_MONTHS', 12),
     contactMonths: int(env, 'RETENTION_CONTACT_MONTHS', 6),
     withdrawalMonths: int(env, 'RETENTION_WITHDRAWAL_MONTHS', 36),
+    contentReportMonths: int(env, 'RETENTION_CONTENT_REPORT_MONTHS', 12),
     inactiveOrganizationMonths: int(env, 'RETENTION_INACTIVE_ORG_MONTHS', 24),
     inactiveUserMonths: int(env, 'RETENTION_INACTIVE_USER_MONTHS', 24),
     noticeDays: int(

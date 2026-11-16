@@ -158,7 +158,7 @@ describe('toPublicLegalInfo', () => {
       contactEmail: 'ds@tsv.example',
       complete: true,
       withdrawalRight: false,
-      platform,
+      platform: { ...platform, contactEmail: null, reportUrl: null },
     });
     expect(JSON.stringify(info)).not.toContain('sup_sk_live_secret');
   });

@@ -15,6 +15,7 @@ export const RETENTION_CATEGORIES = [
   'support_messages',
   'contact_requests',
   'shop_withdrawals',
+  'content_reports',
   'assistant_imports',
   'webhook_deliveries',
   'receipt_links',
