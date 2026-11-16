@@ -104,6 +104,12 @@ export const validationSchema = Joi.object({
   PLATFORM_PRIVACY_URL: Joi.string()
     .uri({ scheme: ['http', 'https'] })
     .allow(''),
+  // Einsatzbedingungen der Cloud-TSE (Umgebungsschutzkonzept des
+  // TSE-Herstellers) unter „Rechtliches“; nur bei verfuegbarer Cloud-TSE.
+  TSE_CONDITIONS_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .allow(''),
+  TSE_CONDITIONS_TEXT: Joi.string().allow('').max(5000),
   // Kontaktstelle (Art. 11/12 DSA) und Formular „Inhalt melden“ (Art. 16
   // DSA); leer = nicht anzeigen. Standard siehe configuration.ts.
   PLATFORM_CONTACT_EMAIL: Joi.string().email().allow(''),
