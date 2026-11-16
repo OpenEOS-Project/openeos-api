@@ -435,6 +435,7 @@ Die vollständige, kommentierte Liste steht in `.env.example` (Entwicklung) und 
 | `TEST_EVENT_MAX_ORDERS` | Bestellungen im Testmodus vor der Freischaltung (gehostet) | 25 |
 | `REPORT_TIMEZONE` | Zeitzone stundenbasierter Auswertungen | Europe/Berlin |
 | `PLATFORM_IMPRINT_URL` / `PLATFORM_PRIVACY_URL` | Plattform-Links unter Shop und Helferseiten (siehe `.env.example`) | saas: openeos.de, selfhosted: keine |
+| `PLATFORM_CONTACT_EMAIL` / `PLATFORM_REPORT_URL` | Kontaktstelle (Art. 11/12 DSA) und Formular „Inhalt melden“ (Art. 16 DSA) unter Shop und Helferseiten | saas: hello@openeos.de, `<APP_URL>/report`; selfhosted: keine Adresse, `<APP_URL>/report` |
 | `FRONTEND_URL` | Rückfall für die Rückleitung nach einer Online-Zahlung, wenn der Client keine `returnUrl` schickt | – |
 | `SENTRY_DSN` | Fehlerberichte an Sentry (leer: aus) | – |
 | `EVENT_PRICE_EUR` | Preis pro abgerechnetem Veranstaltungstag | 25 |
@@ -864,6 +865,7 @@ Der Super-Admin sieht sie mit den übrigen Läufen und Einzellöschungen unter
 | `RETENTION_WAITER_INACTIVE_MONTHS` / `RETENTION_WAITER_SESSION_DAYS` | 12 / 90 – organisationsweite Bedienungen ohne Anmeldung; Anmeldungen an Geräten |
 | `RETENTION_AUDIT_LOG_DAYS` / `RETENTION_STALE_CREDENTIAL_DAYS` | 90 |
 | `RETENTION_SUPPORT_MONTHS` / `RETENTION_CONTACT_MONTHS` | 12 / 6 |
+| `RETENTION_CONTENT_REPORT_MONTHS` (Inhaltsmeldungen nach dem Abschluss) | 12 |
 | `RETENTION_INACTIVE_ORG_MONTHS` / `RETENTION_INACTIVE_USER_MONTHS` | 24 / 24 |
 | `RETENTION_NOTICE_DAYS` / `RETENTION_EXPORT_PERIOD_DAYS` | 30 / 30 (min. 30) |
 | `RETENTION_FISCAL_ARCHIVE_YEARS` / `RETENTION_RUN_LOG_YEARS` | 10 (min. 10) / 3 |
