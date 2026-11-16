@@ -1003,7 +1003,7 @@ export class OrganizationsService {
       where: {
         organizationId,
         email: createDto.email.toLowerCase(),
-        acceptedAt: undefined,
+        acceptedAt: IsNull(),
       },
     });
 

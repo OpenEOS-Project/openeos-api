@@ -1,3 +1,4 @@
+import { INVALID_WHERE_VALUES_BEHAVIOR } from '../../config/where-values';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { DataSource } from 'typeorm';
@@ -28,6 +29,7 @@ describeWithDb('pending device cleanup against Postgres', () => {
       throw new Error(`Database "${name}" does not end in _test/_scratch`);
     }
     ds = new DataSource({
+      invalidWhereValuesBehavior: INVALID_WHERE_VALUES_BEHAVIOR,
       type: 'postgres',
       url: TEST_DB,
       entities: [path.join(__dirname, '../../database/entities/*.entity.ts')],
