@@ -18,6 +18,10 @@ export interface RequestUser extends Partial<User> {
   organizations: { id: string; role: string }[];
   /** Sitzung aus dem Zugangstoken (`sid`); null bei Token ohne Sitzung. */
   sessionId?: string | null;
+  /** Ausweis fuer den zweiten Anmeldeschritt statt voller Anmeldung. */
+  pending2fa?: boolean;
+  /** Offener zweiter Schritt (`jti` des Ausweises); sonst null. */
+  twoFactorChallengeId?: string | null;
 }
 
 export const CurrentUser = createParamDecorator(
