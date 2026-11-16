@@ -729,4 +729,119 @@ describeWithDb('Online prepayment with Cloud-TSE against Postgres', () => {
       ]),
     ).toEqual([['ElZahlungsdienstleister', 'Google Pay', '8,50']]);
   });
+
+  it('QR order paid with SumUp, webhook lost: the reconcile job finds it (join + take) and books it once', async () => {
+    const w = await world();
+    const code = `T9-${w.orgId.slice(0, 8)}`;
+    await sql(
+      `INSERT INTO qr_codes (organization_id, event_id, code, type, table_number)
+       VALUES ($1, $2, $3, 'table', '9')`,
+      [w.orgId, w.eventId, code],
+    );
+    const config = {
+      get: (key: string) =>
+        key === 'API_PUBLIC_URL' ? 'https://api.example.org' : undefined,
+    };
+    const qr = new OnlineOrdersService(
+      ds.getRepository(OnlineOrderSession),
+      ds.getRepository(QrCode),
+      ds.getRepository(Product),
+      ds.getRepository(Category),
+      ds.getRepository(Order),
+      ds.getRepository(OrderItem),
+      ds.getRepository(Organization),
+      ds.getRepository(Payment),
+      new SumUpService(
+        ds.getRepository(Organization),
+        {} as never,
+        new SumUpApiService(),
+        config as never,
+        ds.getRepository(Event),
+      ),
+      config as never,
+      print as never,
+      { ...gateway, notifyPaymentReceived: jest.fn() } as never,
+      undefined,
+      signing,
+    );
+
+    let reference = '';
+    const checkoutId = `chk-rec-${w.orgId.slice(0, 8)}`;
+    const fetchSpy = jest
+      .spyOn(global, 'fetch')
+      .mockImplementation((input: unknown, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          const body = JSON.parse(init.body as string) as Record<
+            string,
+            string
+          >;
+          reference = body.checkout_reference;
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                id: checkoutId,
+                hosted_checkout_url: `https://pay.sumup.example/${checkoutId}`,
+              }),
+          } as Response);
+        }
+        // Andere offene SumUp-Zahlungen frueherer Tests: nicht bezahlt.
+        const paid = String(input).includes(checkoutId);
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              id: paid ? checkoutId : 'other',
+              status: paid ? 'PAID' : 'PENDING',
+              amount: 8.5,
+              currency: 'EUR',
+              checkout_reference: paid ? reference : 'other',
+            }),
+        } as Response);
+      });
+    const errors = jest.spyOn(Logger.prototype, 'error');
+    errors.mockClear();
+    print.handlePaymentReceived.mockClear();
+
+    try {
+      const { sessionToken } = await qr.startSession({ code });
+      await qr.addToCart(sessionToken, { productId: w.wurstId, quantity: 1 });
+      await qr.addToCart(sessionToken, { productId: w.bierId, quantity: 1 });
+      await qr.submitOrder(sessionToken, {});
+      const started = (await qr.initiatePayment(sessionToken, {
+        paymentMethod: OnlinePaymentMethod.SUMUP_ONLINE,
+      })) as { data: { paymentId: string } };
+      const paymentId = started.data.paymentId;
+      // Webhook nie angekommen, Gast nicht zurueckgekehrt: Zahlung ist
+      // aelter als eine Minute und noch offen.
+      await sql(
+        `UPDATE payments SET created_at = now() - interval '3 minutes' WHERE id = $1`,
+        [paymentId],
+      );
+
+      await qr.reconcilePendingSumUpPayments();
+      await qr.reconcilePendingSumUpPayments();
+
+      const [row] = await sql(
+        `SELECT p.status, o.payment_status FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = $1`,
+        [paymentId],
+      );
+      expect(row).toMatchObject({ status: 'captured', payment_status: 'paid' });
+      expect(
+        errors.mock.calls.filter(([m]) =>
+          String(m).includes('reconcile run failed'),
+        ),
+      ).toEqual([]);
+      expect(print.handlePaymentReceived).toHaveBeenCalledTimes(1);
+      const receipts = await sql(
+        `SELECT kind, status FROM tse_transactions WHERE organization_id = $1 AND payment_id = $2`,
+        [w.orgId, paymentId],
+      );
+      expect(receipts).toEqual([
+        expect.objectContaining({ kind: 'receipt', status: 'signed' }),
+      ]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });
