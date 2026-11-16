@@ -9,12 +9,13 @@ import {
 } from './encryption.service';
 
 /**
- * Zugangsdaten der Zahlungsanbieter (SumUp, PayPal) in den
+ * Zugangsdaten der Zahlungsanbieter (SumUp) in den
  * Organisationseinstellungen verschluesselt ablegen.
  *
  * Betroffen sind genau die Felder, die die API ohnehin nur maskiert
- * herausgibt (`MASKED_CREDENTIALS`): `sumup.apiKey`, `sumup.affiliateKey`,
- * `paypal.clientSecret`. Verfahren wie bei 2FA und TSE (AES-256-GCM,
+ * herausgibt (`MASKED_CREDENTIALS`): `sumup.apiKey`, `sumup.affiliateKey`.
+ * (Fruehere PayPal-Zugangsdaten sind geloescht, siehe
+ * removed-settings.util.ts.) Verfahren wie bei 2FA und TSE (AES-256-GCM,
  * `encryptWithKey`), dazu das Praefix `enc:v1:` — daran erkennt man
  * verschluesselte Werte, und Klartext aus der Zeit davor bleibt lesbar.
  *

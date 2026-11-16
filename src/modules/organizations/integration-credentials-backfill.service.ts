@@ -13,6 +13,10 @@ import {
   getIntegrationKeyring,
   isEncryptedCredential,
 } from '../../common/services/integration-credentials.crypto';
+import {
+  DELETE_REMOVED_SETTINGS_SQL,
+  REMOVED_SETTINGS_SECTIONS,
+} from '../../common/utils/removed-settings.util';
 
 /**
  * Wartezeit nach dem Start bis zum Abgleich. Beim Rollout bedienen alte und
@@ -22,6 +26,8 @@ import {
 export const BACKFILL_DELAY_MS = 5 * 60_000;
 
 export interface BackfillResult {
+  /** Organisationen, aus denen entfernte Abschnitte (PayPal) geloescht wurden. */
+  removed: number;
   encrypted: number;
   reencrypted: number;
   undecryptable: number;
@@ -37,6 +43,10 @@ interface Row {
  * `organizations.settings` stehen (Bestand vor der Verschluesselung), und
  * schreibt Werte neu, die noch mit dem Rueckfallschluessel verschluesselt
  * sind (`INTEGRATION_ENCRYPTION_KEY` nachtraeglich gesetzt).
+ *
+ * Vorher loescht er Abschnitte entfernter Integrationen (PayPal, siehe
+ * removed-settings.util.ts), die eine alte Instanz waehrend des Rollouts
+ * nach der Migration noch geschrieben haben kann.
  *
  * Bewusst keine TypeORM-Migration: der `migrate`-Dienst der Vorlage hat
  * keinen Schluessel in der Umgebung, die API schon. Mehrfach ausfuehrbar —
@@ -81,10 +91,22 @@ export class IntegrationCredentialsBackfillService
     ring: IntegrationKeyring = getIntegrationKeyring(),
   ): Promise<BackfillResult> {
     const result: BackfillResult = {
+      removed: 0,
       encrypted: 0,
       reencrypted: 0,
       undecryptable: 0,
     };
+    const removed: unknown[] = await this.dataSource.query(
+      DELETE_REMOVED_SETTINGS_SQL,
+      [[...REMOVED_SETTINGS_SECTIONS]],
+    );
+    result.removed = rowCount(removed);
+    if (result.removed) {
+      this.logger.log(
+        `Removed settings of discontinued integrations (${REMOVED_SETTINGS_SECTIONS.join(', ')}) from ${result.removed} organization(s)`,
+      );
+    }
+
     const sections = Object.keys(ENCRYPTED_CREDENTIALS);
     // Auch geloeschte Organisationen: deren Daten liegen ebenso in der Tabelle.
     const rows: Row[] = await this.dataSource.query(

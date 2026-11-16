@@ -80,6 +80,17 @@ describe('organization settings update', () => {
     ).toBe(ErrorReasons.ORGANIZATION_SETTING_NOT_UPDATABLE);
   });
 
+  it('rejects PayPal credentials (integration removed in 1.8)', () => {
+    expect(
+      reasonOf(() =>
+        filterOrganizationSettingsUpdate(
+          { paypal: { clientId: 'id', clientSecret: 'secret' } },
+          stored,
+        ),
+      ),
+    ).toBe(ErrorReasons.ORGANIZATION_SETTING_NOT_UPDATABLE);
+  });
+
   it('rejects unknown sections with a new value', () => {
     expect(
       reasonOf(() =>

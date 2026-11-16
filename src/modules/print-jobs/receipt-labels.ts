@@ -10,6 +10,7 @@ export const PAYMENT_LABELS: Readonly<Record<string, string>> = {
   card: 'Karte',
   sumup_terminal: 'Karte (SumUp)',
   sumup_online: 'Online (SumUp)',
+  // Nachdruck frueherer PayPal-Zahlungen (Anbindung seit 1.8 entfernt).
   paypal: 'PayPal',
   google_pay: 'Google Pay',
   apple_pay: 'Apple Pay',

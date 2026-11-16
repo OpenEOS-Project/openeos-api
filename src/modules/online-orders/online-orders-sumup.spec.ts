@@ -1,4 +1,4 @@
-import { Logger, NotFoundException } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 
 import { OnlineOrderSession } from '../../database/entities/online-order-session.entity';
 import {
@@ -241,7 +241,6 @@ function setup() {
     none,
     organizationRepository as never,
     paymentRepository as never,
-    { captureOrder: jest.fn(), createOrder: jest.fn() } as never,
     sumUp,
     config as never,
     print as never,
@@ -504,8 +503,8 @@ describe('QR order payment via SumUp Online / Google Pay / Apple Pay', () => {
   });
 });
 
-describe('QR order payment (PayPal) confirmation', () => {
-  it('rejects capturing a PayPal order other than the one created for the payment', async () => {
+describe('QR order payment: legacy PayPal payment', () => {
+  it('a pending PayPal payment from before the removal is marked failed, never captured', async () => {
     const ctx = setup();
     ctx.payments.set('pay-pp', {
       id: 'pay-pp',
@@ -517,9 +516,13 @@ describe('QR order payment (PayPal) confirmation', () => {
       providerTransactionId: 'PAYPAL-OWN',
     });
 
-    await expect(
-      ctx.svc.confirmPayment('sess_1', 'pay-pp', 'PAYPAL-FOREIGN'),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    const result = await ctx.svc.confirmPayment('sess_1', 'pay-pp');
+
+    expect(result.data.status).toBe(PaymentTransactionStatus.FAILED);
+    expect(ctx.payments.get('pay-pp')?.status).toBe(
+      PaymentTransactionStatus.FAILED,
+    );
     expect(ctx.tseSigning.signPayment).not.toHaveBeenCalled();
+    expect(ctx.print.handlePaymentReceived).not.toHaveBeenCalled();
   });
 });

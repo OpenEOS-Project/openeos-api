@@ -82,13 +82,6 @@ export function redigiereAdminOrganisation(
     };
   }
 
-  if (einstellungen.paypal) {
-    einstellungen.paypal = {
-      ...einstellungen.paypal,
-      clientSecret: maskieren(einstellungen.paypal.clientSecret) as string,
-    };
-  }
-
   return {
     ...organization,
     settings: einstellungen,

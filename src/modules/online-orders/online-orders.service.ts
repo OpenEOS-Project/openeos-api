@@ -55,7 +55,6 @@ import {
   CreateOnlinePaymentDto,
   OnlinePaymentMethod,
 } from './dto';
-import { PayPalService } from '../payments/providers/paypal.service';
 import { SumUpService } from '../sumup/sumup.service';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
@@ -92,7 +91,6 @@ export class OnlineOrdersService {
     private readonly organizationRepository: Repository<Organization>,
     @InjectRepository(Payment)
     private readonly paymentRepository: Repository<Payment>,
-    private readonly paypalService: PayPalService,
     private readonly sumUpService: SumUpService,
     private readonly configService: ConfigService,
     private readonly orderPrintService: OrderPrintService,
@@ -652,53 +650,11 @@ export class OnlineOrdersService {
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || '';
     const returnUrl =
       this.allowedReturnUrl(payDto.returnUrl) || `${frontendUrl}/status`;
-    const cancelUrl = `${frontendUrl}/checkout`;
     const description = `OpenEOS Bestellung #${order.dailyNumber}`;
 
     let paymentData: unknown;
 
     switch (payDto.paymentMethod) {
-      case OnlinePaymentMethod.PAYPAL: {
-        const settings = organization.settings?.paypal;
-        if (!settings?.clientId || !settings?.clientSecret) {
-          throw new BadRequestException({
-            code: ErrorCodes.VALIDATION_ERROR,
-            reason: ErrorReasons.PAYPAL_NOT_CONFIGURED,
-            message: 'PayPal ist für diese Organisation nicht konfiguriert',
-          });
-        }
-
-        const paypalOrder = await this.paypalService.createOrder(
-          Number(order.total),
-          'EUR',
-          description,
-          returnUrl,
-          cancelUrl,
-          settings.clientId,
-          settings.clientSecret,
-        );
-
-        const payment = this.paymentRepository.create({
-          orderId: order.id,
-          amount: order.total,
-          paymentMethod: PaymentMethod.PAYPAL,
-          paymentProvider: PaymentProvider.PAYPAL,
-          status: PaymentTransactionStatus.PENDING,
-          providerTransactionId: paypalOrder.id,
-          metadata: { paypalOrderId: paypalOrder.id },
-        });
-        await this.paymentRepository.save(payment);
-
-        const approveLink = paypalOrder.links.find((l) => l.rel === 'approve');
-        paymentData = {
-          provider: 'paypal',
-          paymentId: payment.id,
-          paypalOrderId: paypalOrder.id,
-          approveUrl: approveLink?.href,
-        };
-        break;
-      }
-
       case OnlinePaymentMethod.SUMUP_ONLINE:
       case OnlinePaymentMethod.GOOGLE_PAY:
       case OnlinePaymentMethod.APPLE_PAY: {
@@ -765,7 +721,6 @@ export class OnlineOrdersService {
   async confirmPayment(
     sessionToken: string,
     paymentId: string,
-    providerOrderId?: string,
   ): Promise<{ data: { status: string } }> {
     const session = await this.getSession(sessionToken);
 
@@ -793,61 +748,18 @@ export class OnlineOrdersService {
       return { data: { status } };
     }
 
-    if (payment.paymentProvider === PaymentProvider.PAYPAL) {
-      // Erfasst wird immer die PayPal-Bestellung, die zu dieser Zahlung
-      // angelegt wurde — nie eine, die der Aufrufer nennt.
-      const paypalOrderId = payment.providerTransactionId || providerOrderId;
-      if (
-        !paypalOrderId ||
-        (providerOrderId && providerOrderId !== paypalOrderId)
-      ) {
-        throw new NotFoundException({
-          code: ErrorCodes.NOT_FOUND,
-          reason: ErrorReasons.PAYMENT_NOT_FOUND,
-          message: 'Zahlung nicht gefunden',
-        });
-      }
-
-      const organization = await this.organizationRepository.findOne({
-        where: { id: session.organizationId },
-      });
-
-      if (!organization) {
-        throw new NotFoundException({
-          code: ErrorCodes.NOT_FOUND,
-          reason: ErrorReasons.ORGANIZATION_NOT_FOUND,
-          message: 'Organisation nicht gefunden',
-        });
-      }
-
-      const settings = organization.settings?.paypal;
-      if (!settings?.clientId || !settings?.clientSecret) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          reason: ErrorReasons.PAYPAL_NOT_CONFIGURED,
-          message: 'PayPal ist für diese Organisation nicht konfiguriert',
-        });
-      }
-
-      const capture = await this.paypalService.captureOrder(
-        paypalOrderId,
-        settings.clientId,
-        settings.clientSecret,
+    if (
+      payment.paymentProvider === PaymentProvider.PAYPAL &&
+      payment.status === PaymentTransactionStatus.PENDING
+    ) {
+      // PayPal ist seit 1.8 entfernt. Eine offene PayPal-Zahlung von davor
+      // wird nie mehr erfasst (ohne Erfassung bucht PayPal nichts ab); der
+      // Gast waehlt eine andere Zahlart.
+      await this.paymentRepository.update(
+        { id: payment.id, status: PaymentTransactionStatus.PENDING },
+        { status: PaymentTransactionStatus.FAILED },
       );
-
-      if (capture.status === 'COMPLETED') {
-        // Nur wer den Wechsel auf CAPTURED gewinnt, bucht, signiert und
-        // druckt (doppelter Aufruf der Rueckkehrseite).
-        const claim = await this.paymentRepository.update(
-          { id: payment.id, status: payment.status },
-          { status: PaymentTransactionStatus.CAPTURED },
-        );
-        if (!claim.affected) {
-          return { data: { status: 'already_captured' } };
-        }
-        payment.status = PaymentTransactionStatus.CAPTURED;
-        await this.bookCapturedPayment(payment);
-      }
+      return { data: { status: PaymentTransactionStatus.FAILED } };
     }
 
     return { data: { status: payment.status } };

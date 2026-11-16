@@ -17,6 +17,11 @@ export enum PaymentMethod {
   CARD = 'card',
   SUMUP_TERMINAL = 'sumup_terminal',
   SUMUP_ONLINE = 'sumup_online',
+  /**
+   * Nur Altdaten: die PayPal-Anbindung ist seit 1.8 entfernt. Der Wert
+   * bleibt, damit fruehere Zahlungen lesbar und exportierbar bleiben
+   * (Berichte, CSV, DSFinV-K, Bon-Nachdruck); neu angelegt wird er nicht.
+   */
   PAYPAL = 'paypal',
   GOOGLE_PAY = 'google_pay',
   APPLE_PAY = 'apple_pay',
@@ -31,6 +36,7 @@ export enum PaymentProvider {
   CASH = 'CASH',
   CARD = 'CARD',
   SUMUP = 'SUMUP',
+  /** Nur Altdaten (siehe PaymentMethod.PAYPAL). */
   PAYPAL = 'PAYPAL',
   TOKENS = 'TOKENS',
 }

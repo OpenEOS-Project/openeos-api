@@ -28,7 +28,6 @@ function plainSettings() {
       merchantCode: 'MC123',
       appId: 'app.openeos',
     },
-    paypal: { clientId: 'pp_client', clientSecret: 'PAYPAL_SECRET_XYZ' },
     integrations: { sumup: { enabled: true } },
   };
 }
@@ -125,14 +124,10 @@ describe('encrypt/decryptCredentialSettings', () => {
     expect(input).toEqual(plainSettings());
     expect(isEncryptedCredential(stored.sumup.apiKey)).toBe(true);
     expect(isEncryptedCredential(stored.sumup.affiliateKey)).toBe(true);
-    expect(isEncryptedCredential(stored.paypal.clientSecret)).toBe(true);
     expect(stored.sumup.merchantCode).toBe('MC123');
     expect(stored.sumup.appId).toBe('app.openeos');
-    expect(stored.paypal.clientId).toBe('pp_client');
     expect(stored.integrations).toBe(input.integrations);
-    expect(JSON.stringify(stored)).not.toMatch(
-      /REALSECRET|SECRET5678|SECRET_XYZ/,
-    );
+    expect(JSON.stringify(stored)).not.toMatch(/REALSECRET|SECRET5678/);
 
     expect(decryptCredentialSettings(stored, ring)).toEqual(plainSettings());
   });
@@ -221,10 +216,6 @@ describe('organizationSettingsTransformer', () => {
       merchantCode: 'MC123',
       appId: 'app.openeos',
     });
-    expect(out.paypal).toEqual({
-      clientId: 'pp_client',
-      clientSecret: '****_XYZ',
-    });
     expect(JSON.stringify(out)).not.toContain(ENCRYPTED_CREDENTIAL_PREFIX);
     // Antworten aendern das Entity nicht.
     expect(entity.settings.sumup.apiKey).toBe('sup_sk_REALSECRET1234');
@@ -236,7 +227,6 @@ describe('organizationSettingsTransformer', () => {
     ) as Record<string, unknown>;
     const incoming: Record<string, unknown> = {
       sumup: { apiKey: '****1234', merchantCode: 'MC999' },
-      paypal: { clientId: 'pp_client', clientSecret: 'NEW_PAYPAL_SECRET' },
     };
 
     restoreMaskedCredentials(incoming, loaded);
@@ -246,12 +236,10 @@ describe('organizationSettingsTransformer', () => {
     }) as ReturnType<typeof plainSettings>;
 
     expect(isEncryptedCredential(saved.sumup.apiKey)).toBe(true);
-    expect(isEncryptedCredential(saved.paypal.clientSecret)).toBe(true);
     const reloaded = organizationSettingsTransformer.from(saved) as ReturnType<
       typeof plainSettings
     >;
     expect(reloaded.sumup.apiKey).toBe('sup_sk_REALSECRET1234');
     expect(reloaded.sumup.merchantCode).toBe('MC999');
-    expect(reloaded.paypal.clientSecret).toBe('NEW_PAYPAL_SECRET');
   });
 });

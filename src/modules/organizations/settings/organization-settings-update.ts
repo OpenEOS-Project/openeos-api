@@ -80,7 +80,6 @@ export const UPDATABLE_ORGANIZATION_SETTINGS: Readonly<Record<string, Check>> =
     onlineOrdering: section,
     orderFlow: section,
     sumup: section,
-    paypal: section,
     waiters: section,
     eventReminders: section,
   };

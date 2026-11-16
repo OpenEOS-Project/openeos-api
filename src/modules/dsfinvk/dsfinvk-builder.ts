@@ -231,6 +231,7 @@ export function paymentDraft(
   if (tseType === 'Bar')
     return { type: 'Bar', name: 'Bargeld', cents: amountCents };
   switch (method) {
+    // Nur Altdaten: PayPal-Zahlungen bis 1.8 (Anbindung entfernt).
     case 'paypal':
       return {
         type: 'ElZahlungsdienstleister',

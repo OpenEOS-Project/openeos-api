@@ -9,9 +9,12 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentMethod } from '../../../database/entities/payment.entity';
 
-/** Zahlarten fuer Einzel-/Splitzahlungen (ohne Wertmarken). */
+/**
+ * Zahlarten fuer Einzel-/Splitzahlungen (ohne Wertmarken). PayPal gibt es
+ * nur noch in Altdaten (Anbindung in 1.8 entfernt), neu buchbar ist es nicht.
+ */
 export const DIRECT_PAYMENT_METHODS = Object.values(PaymentMethod).filter(
-  (m) => m !== PaymentMethod.TOKENS,
+  (m) => m !== PaymentMethod.TOKENS && m !== PaymentMethod.PAYPAL,
 );
 
 export class CreatePaymentDto {
