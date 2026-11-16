@@ -146,7 +146,12 @@ function setup() {
   }
 
   const sign = (claims: Record<string, unknown>) =>
-    jwt.sign({ sub: USER_ID, email: 'kim@example.org', ...claims });
+    jwt.sign({
+      sub: USER_ID,
+      email: 'kim@example.org',
+      typ: 'access',
+      ...claims,
+    });
 
   return {
     gateway,
@@ -280,6 +285,21 @@ describe('AppGateway handshake — user tokens', () => {
     const s = ctx.socket({ auth: { token: ctx.sign({ typ: '2fa' }) } });
     await ctx.gateway.handleConnection(s as never);
     expect(wasRejected(s)).toBe(true);
+  });
+
+  it('applies the HTTP rule to tokens without a type', async () => {
+    const untyped = ctx.socket({
+      auth: { token: ctx.sign({ typ: undefined }) },
+    });
+    await ctx.gateway.handleConnection(untyped as never);
+    expect(wasRejected(untyped)).toBe(true);
+
+    // Issued before the type claim existed: carries its session id.
+    const legacy = ctx.socket({
+      auth: { token: ctx.sign({ typ: undefined, sid: 'session-1' }) },
+    });
+    await ctx.gateway.handleConnection(legacy as never);
+    expect(wasRejected(legacy)).toBe(false);
   });
 
   it('refuses a token that was signed out', async () => {

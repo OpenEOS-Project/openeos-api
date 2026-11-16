@@ -201,7 +201,7 @@ describe('AuthController passes the client to the session', () => {
       consumeLoginMagicLink: () => Promise.resolve(user),
     } as unknown as AuthService;
     const twoFactorService = {
-      verify2FA: () => Promise.resolve(),
+      verify2FA: () => Promise.resolve({ trustedDeviceToken: null }),
     };
     const config = { get: () => undefined } as unknown as ConfigService;
     const ctrl = new AuthController(
@@ -242,8 +242,13 @@ describe('AuthController passes the client to the session', () => {
 
   it('after the second factor', async () => {
     const { ctrl, login } = controller();
-    await ctrl.verify2FA(user, { code: '123456' }, request, response);
-    expect(login).toHaveBeenCalledWith(user, client);
+    await ctrl.verify2FA(
+      { ...user, pending2fa: true, twoFactorChallengeId: 'c-1' } as never,
+      { code: '123456' },
+      request,
+      response,
+    );
+    expect(login).toHaveBeenCalledWith(expect.objectContaining(user), client);
   });
 
   it('on refresh', async () => {
@@ -262,7 +267,12 @@ describe('AuthController passes the client to the session', () => {
       const results = [
         await ctrl.login({ email: 'a@b.de', password: 'x' }, request, response),
         await ctrl.verifyMagicLink({ token: 't' }, request, response),
-        await ctrl.verify2FA(user, { code: '123456' }, request, response),
+        await ctrl.verify2FA(
+          { ...user, pending2fa: true, twoFactorChallengeId: 'c-1' } as never,
+          { code: '123456' },
+          request,
+          response,
+        ),
       ];
       for (const result of results) {
         expect(result).toMatchObject({

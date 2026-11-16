@@ -145,7 +145,11 @@ describe('AppGateway over Socket.IO', () => {
   });
 
   it('accepts a regular session token', async () => {
-    const token = jwt.sign({ sub: USER_ID, email: 'kim@example.org' });
+    const token = jwt.sign({
+      sub: USER_ID,
+      email: 'kim@example.org',
+      typ: 'access',
+    });
     const packets = await handshake({ token });
     expect(connected(packets)).toBe(true);
   });
@@ -162,7 +166,8 @@ describe('AppGateway over Socket.IO', () => {
   });
 
   describe('session cookie', () => {
-    const session = () => jwt.sign({ sub: USER_ID, email: 'kim@example.org' });
+    const session = () =>
+      jwt.sign({ sub: USER_ID, email: 'kim@example.org', typ: 'access' });
     const origin = 'http://localhost:3001';
 
     it('accepts the access-token cookie from a browser page', async () => {

@@ -71,6 +71,7 @@ export * from './support-message.entity';
 
 // Auth & Security
 export * from './trusted-device.entity';
+export * from './two-factor-challenge.entity';
 export * from './email-otp.entity';
 
 // Inventory
