@@ -49,7 +49,7 @@ describe.each([
 });
 
 describe('DevicesService.generateVerificationCode', () => {
-  it('keeps the six-digit format and draws from crypto.randomInt', async () => {
+  it('has eight digits and draws from crypto.randomInt', async () => {
     jest.mocked(crypto.randomInt).mockClear();
     const self = {
       deviceRepository: { findOne: jest.fn(() => Promise.resolve(null)) },
@@ -62,8 +62,8 @@ describe('DevicesService.generateVerificationCode', () => {
 
     const code = await generate.call(self);
 
-    expect(code).toMatch(/^[1-9]\d{5}$/);
-    expect(crypto.randomInt).toHaveBeenCalledWith(100000, 1000000);
+    expect(code).toMatch(/^\d{8}$/);
+    expect(crypto.randomInt).toHaveBeenCalledWith(0, 100000000);
   });
 });
 

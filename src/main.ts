@@ -8,7 +8,8 @@ import { ConfigService } from '@nestjs/config';
 import { SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
-import { join } from 'path';
+import { absolutePath } from './common/storage/private-storage';
+import { mountPublicUploads } from './common/storage/public-uploads';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters';
 import { validationException } from './common/pipes';
@@ -68,27 +69,12 @@ async function bootstrap() {
     }),
   );
 
-  // Serve uploaded files (avatars, organization logos, product images, ...)
+  // Oeffentliche Uploads (Logos, Produktbilder, Avatare). Private Dateien
+  // (Speisekarten-Importe, TSE-Exporte, DSFinV-K-Archiv) liegen ausserhalb
+  // dieses Verzeichnisses (PRIVATE_STORAGE_DIR, common/storage); der Filter
+  // laesst unter /uploads ohnehin nur die Form oeffentlicher Dateien durch.
   const uploadDir = configService.get<string>('UPLOAD_DIR') || './uploads';
-  // Hochgeladene Speisekarten (Assistent) liegen im selben Verzeichnis,
-  // sind aber nicht oeffentlich: sie gehoeren der Organisation und leben
-  // nur bis zur Auswertung. Der Pfad wird vor dem statischen Handler gesperrt.
-  // Ebenso die TAR-Exporte der Cloud-TSE (Standard TSE_EXPORT_DIR =
-  // UPLOAD_DIR/tse-exports): nur ueber den Admin-Endpunkt abrufbar.
-  for (const privatePath of ['/uploads/menu-imports', '/uploads/tse-exports']) {
-    app.use(
-      privatePath,
-      (
-        _req: unknown,
-        res: { status: (code: number) => { end: () => void } },
-      ) => {
-        res.status(404).end();
-      },
-    );
-  }
-  app.useStaticAssets(join(process.cwd(), uploadDir.replace(/^\.\//, '')), {
-    prefix: '/uploads/',
-  });
+  mountPublicUploads(app, absolutePath(uploadDir));
 
   // Cookie Parser
   app.use(cookieParser());

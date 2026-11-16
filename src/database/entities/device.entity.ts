@@ -183,10 +183,32 @@ export class Device extends BaseEntity {
   @Column({
     name: 'verification_code',
     type: 'varchar',
-    length: 6,
+    length: 8,
     nullable: true,
   })
   verificationCode: string | null;
+
+  /** Bis wann der Kopplungscode gilt (pairing-code.ts). */
+  @Column({
+    name: 'verification_code_expires_at',
+    type: 'timestamp with time zone',
+    nullable: true,
+  })
+  verificationCodeExpiresAt: Date | null;
+
+  /**
+   * Hash der IP-Adresse, von der sich ein wartendes Geraet angemeldet hat —
+   * nur fuer die Obergrenze wartender Geraete je Adresse. Wird beim
+   * Koppeln geleert.
+   */
+  @Column({
+    name: 'pairing_ip_hash',
+    type: 'varchar',
+    length: 64,
+    nullable: true,
+    select: false,
+  })
+  pairingIpHash: string | null;
 
   @Column({
     name: 'verified_at',

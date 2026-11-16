@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import type { OrganizationClosureService } from '../../common/organization-closure/organization-closure.service';
@@ -30,6 +31,7 @@ function setup(
   options: {
     active?: number;
     membership?: boolean;
+    role?: 'admin' | 'member';
     organizationClosed?: boolean;
   } = {},
 ) {
@@ -56,7 +58,10 @@ function setup(
       Promise.resolve(
         options.membership === false
           ? null
-          : ({ role: 'admin', permissions: {} } as UserOrganization),
+          : ({
+              role: options.role ?? 'admin',
+              permissions: {},
+            } as UserOrganization),
       ),
     ),
   };
@@ -199,6 +204,30 @@ describe('ApiTokensService', () => {
       ).rejects.toMatchObject({
         response: { reason: 'API_TOKEN_SCOPE_INVALID' },
       });
+    });
+
+    it('issues organization tokens only to administrators of that organization', async () => {
+      for (const options of [
+        { membership: false },
+        { role: 'member' as const },
+      ]) {
+        const { service, saved, userOrganizationRepository } = setup(options);
+        await expect(
+          service.erstelle({
+            userId: owner.id,
+            organizationId: ORG,
+            name: 'x',
+            scopes: [TokenScope.READ],
+          }),
+        ).rejects.toMatchObject({
+          constructor: ForbiddenException,
+          response: { reason: 'INSUFFICIENT_PERMISSIONS' },
+        });
+        expect(userOrganizationRepository.findOne).toHaveBeenCalledWith({
+          where: { userId: owner.id, organizationId: ORG },
+        });
+        expect(saved).toEqual([]);
+      }
     });
 
     it('refuses an expiry in the past', async () => {

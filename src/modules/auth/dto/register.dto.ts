@@ -111,11 +111,11 @@ export class RegisterDto {
   @ApiProperty({
     example: true,
     description:
-      'Pflicht: Bestätigung, als Unternehmer, juristische Person des öffentlichen Rechts oder eingetragener Verein zu handeln und die Organisation vertreten zu dürfen (AGB Ziffer 2.4).',
+      'Pflicht: Bestätigung, für eine Organisation aus dem Kundenkreis nach AGB Ziffer 2.1 zu handeln (Unternehmer, juristische Person des öffentlichen Rechts, Verein – eingetragen oder nicht –, Stiftung oder sonstige Organisation), nicht als Verbraucher, und sie vertreten zu dürfen (AGB Ziffer 2.4).',
   })
   @Equals(true, {
     message:
-      'Bitte bestätige, dass du als Unternehmer, juristische Person des öffentlichen Rechts oder eingetragener Verein handelst.',
+      'Bitte bestätige, dass du für ein Unternehmen, eine Behörde, einen Verein, eine Stiftung oder eine sonstige Organisation handelst – nicht als Verbraucher – und sie vertreten darfst.',
   })
   confirmBusiness: boolean;
 }

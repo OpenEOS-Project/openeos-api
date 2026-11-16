@@ -27,6 +27,7 @@ import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { DeploymentService } from '../../common/services/deployment.service';
 import { toPublicLegalInfo } from '../organizations/legal/legal-settings.util';
+import { RevealSecrets } from '../../common/decorators/reveal-secrets.decorator';
 
 @ApiTags('Online Orders')
 @ApiSecurity('X-Session-Token')
@@ -56,6 +57,7 @@ export class OnlineOrdersController {
   }
 
   @Post('session')
+  @RevealSecrets('sessionToken')
   async startSession(@Body() startDto: StartSessionDto) {
     const result = await this.onlineOrdersService.startSession(startDto);
     return {

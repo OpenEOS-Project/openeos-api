@@ -40,10 +40,15 @@ import {
   AdminCreateRegistrationDto,
   AdminUpdateRegistrationDto,
 } from './dto';
-import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import {
+  CurrentUser,
+  ApiTokenAccess,
+  RequiresOrganizationPermission,
+} from '../../common/decorators';
 import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { OrganizationGuard } from '../../common/guards/organization.guard';
+import { OrganizationPermissionGuard } from '../../common/guards/organization-permission.guard';
 
 @ApiTags('Shift Plans')
 @ApiParam({
@@ -54,7 +59,8 @@ import { OrganizationGuard } from '../../common/guards/organization.guard';
 @ApiExtraModels(CreateShiftDto)
 @ApiBearerAuth('JWT-auth')
 @Controller('organizations/:organizationId/shift-plans')
-@UseGuards(OrganizationGuard)
+@UseGuards(OrganizationGuard, OrganizationPermissionGuard)
+@RequiresOrganizationPermission('shiftPlans')
 export class ShiftsController {
   constructor(
     private readonly shiftsService: ShiftsService,

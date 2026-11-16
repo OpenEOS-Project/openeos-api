@@ -18,6 +18,7 @@ import { BatchPaymentDto } from './dto/batch-payment.dto';
 import { PaymentsBatchService } from './payments-batch.service';
 import { PaymentsService } from './payments.service';
 import { tseStatus } from '../../common/utils/tse.util';
+import { transactionManager } from './testing/transaction-manager';
 
 /**
  * Betriebsart „Alle Funktionen“ (`full`) in Deutschland: Bargeld nur mit
@@ -176,6 +177,14 @@ describe('Alle Funktionen in Deutschland ohne TSE — Kasse (DeviceApiController
     );
 
     const none = undefined as never;
+    // Teilzahlung bucht in einer Transaktion ueber dieselben Mocks.
+    Object.assign(orderRepository, {
+      manager: transactionManager([
+        [Order, orderRepository],
+        [OrderItem, orderItemRepository],
+        [Payment, paymentRepository],
+      ]),
+    });
     const controller = new DeviceApiController(
       organizationRepository as unknown as Repository<Organization>,
       eventRepository as unknown as Repository<Event>,

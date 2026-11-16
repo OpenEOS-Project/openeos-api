@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   Optional,
@@ -16,6 +17,7 @@ import {
   AdminAuditLog,
   ApiToken,
   Event,
+  OrganizationRole,
   User,
   UserOrganization,
 } from '../../database/entities';
@@ -134,6 +136,18 @@ export class ApiTokensService {
     }
 
     if (organizationId) {
+      /* Organisations-Tokens nur fuer Administratoren genau dieser
+         Organisation — unabhaengig davon, was der Controller geprueft hat. */
+      const membership = await this.userOrganizationRepository.findOne({
+        where: { userId: options.userId, organizationId },
+      });
+      if (!membership || membership.role !== OrganizationRole.ADMIN) {
+        throw new ForbiddenException({
+          code: ErrorCodes.FORBIDDEN,
+          reason: ErrorReasons.INSUFFICIENT_PERMISSIONS,
+          message: 'Nur Administratoren der Organisation',
+        });
+      }
       const aktive = await this.zaehleAktive(organizationId);
       if (aktive >= MAX_ACTIVE_TOKENS_PER_ORGANIZATION) {
         throw new ConflictException({

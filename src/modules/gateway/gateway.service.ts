@@ -262,6 +262,11 @@ export class GatewayService {
     this.appGateway.reassignDeviceRoom(deviceId, newOrganizationId);
   }
 
+  /** End the live connections of a device (blocked, deleted, new token). */
+  disconnectDevice(deviceId: string): void {
+    this.appGateway.disconnectDevice(deviceId);
+  }
+
   // Broadcast Messages
 
   broadcastMessage(

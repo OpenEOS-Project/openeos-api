@@ -169,9 +169,11 @@ function setup(
   } as unknown as GatewayService;
   const configService = {
     get: (key: string) =>
-      key === 'UPLOAD_DIR'
+      key === 'PRIVATE_STORAGE_DIR'
         ? uploadDir
-        : { maxUploadMb: 1, menuPagesPerImport: 2 },
+        : key === 'UPLOAD_DIR'
+          ? join(uploadDir, 'public')
+          : { maxUploadMb: 1, menuPagesPerImport: 2 },
   } as unknown as ConfigService;
   const service = new MenuImportService(
     importRepository,

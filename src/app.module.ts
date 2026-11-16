@@ -18,6 +18,7 @@ import {
 import type { PoolOptions } from './config/database.config';
 import {
   JwtAuthGuard,
+  OrganizationScopeGuard,
   DeploymentModeGuard,
   ApiTokenThrottlerGuard,
 } from './common/guards';
@@ -63,6 +64,7 @@ import { TablesModule } from './modules/tables';
 import { PlatformSettingsModule } from './modules/platform-settings';
 import { SupportModule } from './modules/support';
 import { ContactModule } from './modules/contact';
+import { ContentReportsModule } from './modules/content-reports';
 import { LegalModule } from './modules/legal';
 import { ChangelogModule } from './modules/changelog';
 import { DeployGuardModule } from './modules/deploy-guard/deploy-guard.module';
@@ -220,6 +222,7 @@ import { WaiterCoreModule, WaitersModule } from './modules/waiters';
     PlatformSettingsModule,
     SupportModule,
     ContactModule,
+    ContentReportsModule,
     LegalModule,
     DeployGuardModule,
     // Assistent: Modellanbieter + Kontingente (global) und die Funktionen
@@ -252,6 +255,11 @@ import { WaiterCoreModule, WaitersModule } from './modules/waiters';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    // Pfad-Organisation und Header/Query/Rumpf muessen uebereinstimmen
+    {
+      provide: APP_GUARD,
+      useClass: OrganizationScopeGuard,
     },
     // Global Rate Limiting Guard
     {

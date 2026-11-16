@@ -1,4 +1,8 @@
 import {
+  orderProductWhere,
+  priceSelectedOptions,
+} from '../products/product-option-pricing';
+import {
   Controller,
   Get,
   Post,
@@ -29,7 +33,11 @@ import { DeviceCapability } from '../../common/decorators/device-capability.deco
 import { DeviceCapabilityName } from '../../common/constants/device-capabilities';
 import { CurrentDevice } from '../../common/decorators';
 import { DevicesService } from './devices.service';
-import { CreateDeviceOrderDto, VerifyPinDto } from './dto';
+import {
+  CreateDeviceOrderDto,
+  DeviceSumupCheckoutDto,
+  VerifyPinDto,
+} from './dto';
 import {
   Device,
   Event,
@@ -61,7 +69,7 @@ import {
 import { Public } from '../../common/decorators/public.decorator';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { SelectedOptionDto } from '../orders/dto';
-import { CreatePaymentDto } from '../payments/dto';
+import { CreatePaymentDto, DeviceSplitPaymentDto } from '../payments/dto';
 import { SumUpApiService } from '../sumup/sumup-api.service';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { TseSigningService } from '../tse/tse-signing.service';
@@ -108,6 +116,7 @@ import {
 import { saveOrderWithNumbers } from '../orders/order-numbering';
 import { EventPhaseService } from '../events/event-phase.service';
 import { closedWithoutPaymentError } from '../orders/close-without-payment';
+import { planSplitPayment } from '../payments/split-payment';
 import {
   createDeviceTableLookup,
   isClientRequestConflict,
@@ -147,6 +156,17 @@ export function requireOrganization(device: Device): string {
     });
   }
   return device.organizationId;
+}
+
+/** Zahlungsstatus aus bezahltem Betrag und Summe, in ganzen Cent. */
+function paymentStatusFor(
+  order: Pick<Order, 'paidAmount' | 'total'>,
+): PaymentStatus {
+  const paidCents = Math.round(Number(order.paidAmount) * 100);
+  const totalCents = Math.round(Number(order.total) * 100);
+  if (paidCents >= totalCents) return PaymentStatus.PAID;
+  if (paidCents > 0) return PaymentStatus.PARTLY_PAID;
+  return PaymentStatus.UNPAID;
 }
 
 @ApiTags('Device API')
@@ -1261,14 +1281,7 @@ export class DeviceApiController {
   @WithOperator()
   async createSplitPayment(
     @CurrentDevice() device: Device,
-    @Body()
-    createDto: {
-      orderId: string;
-      amount: number;
-      paymentMethod: PaymentMethod;
-      items: Array<{ orderItemId: string; quantity: number }>;
-      amountReceived?: number;
-    },
+    @Body() createDto: DeviceSplitPaymentDto,
     @CurrentOperator() operator: Operator | null = null,
   ) {
     const organizationId = requireOrganization(device);
@@ -1284,127 +1297,106 @@ export class DeviceApiController {
       });
     }
 
-    const order = await this.orderRepository.findOne({
-      where: { id: createDto.orderId, organizationId },
-      relations: ['items'],
-    });
-
-    if (!order) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.ORDER_NOT_FOUND,
-        message: 'Bestellung nicht gefunden',
-      });
-    }
-
-    if (order.paymentStatus === PaymentStatus.PAID) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.ORDER_ALREADY_PAID,
-        message: 'Bestellung ist bereits vollständig bezahlt',
-      });
-    }
-    if (order.closedWithoutPaymentAt) {
-      throw closedWithoutPaymentError([order.id]);
-    }
-
-    // Validate items and calculate expected amount
-    let expectedAmount = 0;
-    const itemsToUpdate: { item: OrderItem; payQty: number }[] = [];
-
-    for (const itemDto of createDto.items) {
-      const item = order.items.find((i) => i.id === itemDto.orderItemId);
-      if (!item) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          reason: ErrorReasons.ORDER_ITEM_NOT_FOUND,
-          message: `Artikel nicht gefunden: ${itemDto.orderItemId}`,
-        });
-      }
-
-      const unpaidQty = item.quantity - (item.paidQuantity || 0);
-      if (itemDto.quantity > unpaidQty) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          reason: ErrorReasons.INSUFFICIENT_UNPAID_QUANTITY,
-          message: `Nicht genug unbezahlte Menge für ${item.productName}`,
-          params: { product: item.productName },
-        });
-      }
-
-      const itemPrice = Number(item.unitPrice) + Number(item.optionsPrice || 0);
-      expectedAmount += itemPrice * itemDto.quantity;
-      itemsToUpdate.push({ item, payQty: itemDto.quantity });
-    }
-
-    // Verify amount matches
-    if (Math.abs(createDto.amount - expectedAmount) > 0.01) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.PAYMENT_AMOUNT_MISMATCH,
-        message: `Betrag stimmt nicht überein. Erwartet: ${expectedAmount}, Erhalten: ${createDto.amount}`,
-        params: { expected: expectedAmount, received: createDto.amount },
-      });
-    }
-
-    const provider = this.getProviderForMethod(createDto.paymentMethod);
     await this.assertPaymentMethodAllowed(
       organizationId,
       createDto.paymentMethod,
     );
-    await this.assertSumUpAllowedForOrder(order, createDto.paymentMethod);
+    const provider = this.getProviderForMethod(createDto.paymentMethod);
 
-    // Create payment
-    const payment = this.paymentRepository.create({
-      orderId: createDto.orderId,
-      amount: createDto.amount,
-      paymentMethod: createDto.paymentMethod,
-      paymentProvider: provider,
-      providerTransactionId: null,
-      status: PaymentTransactionStatus.CAPTURED,
-      metadata: {
-        splitItems: createDto.items,
-        ...cashReceivedMetadata(
-          createDto.paymentMethod,
+    /* Pruefen und Buchen in einer Transaktion mit gesperrter Bestellung:
+       zwei Kassen, die gleichzeitig dieselben Positionen kassieren, sehen
+       so nacheinander die aktuellen bezahlten Mengen. */
+    const { order, payment, isFullyPaid } =
+      await this.orderRepository.manager.transaction(async (manager) => {
+        const orders = manager.getRepository(Order);
+        const row = await orders.findOne({
+          where: { id: createDto.orderId, organizationId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        const locked = row
+          ? await orders.findOne({
+              where: { id: row.id, organizationId },
+              relations: ['items'],
+            })
+          : null;
+        if (!locked) {
+          throw new NotFoundException({
+            code: ErrorCodes.NOT_FOUND,
+            reason: ErrorReasons.ORDER_NOT_FOUND,
+            message: 'Bestellung nicht gefunden',
+          });
+        }
+
+        if (locked.paymentStatus === PaymentStatus.PAID) {
+          throw new BadRequestException({
+            code: ErrorCodes.VALIDATION_ERROR,
+            reason: ErrorReasons.ORDER_ALREADY_PAID,
+            message: 'Bestellung ist bereits vollständig bezahlt',
+          });
+        }
+        if (locked.closedWithoutPaymentAt) {
+          throw closedWithoutPaymentError([locked.id]);
+        }
+
+        // Positionen pruefen, Betrag berechnen; nie mehr als offen ist.
+        const plan = planSplitPayment(
+          locked,
+          createDto.items,
           createDto.amount,
-          createDto.amountReceived,
-        ),
-      },
-      processedByDeviceId: device.id,
-      processedByWaiterId: operator?.waiterId ?? null,
-      processedByUserId: operator?.userId ?? null,
-    });
+        );
+        await this.assertSumUpAllowedForOrder(locked, createDto.paymentMethod);
 
-    await this.paymentRepository.save(payment);
+        const payments = manager.getRepository(Payment);
+        const created = payments.create({
+          orderId: locked.id,
+          amount: plan.amount,
+          paymentMethod: createDto.paymentMethod,
+          paymentProvider: provider,
+          providerTransactionId: null,
+          status: PaymentTransactionStatus.CAPTURED,
+          metadata: {
+            splitItems: plan.lines.map((l) => ({
+              orderItemId: l.item.id,
+              quantity: l.quantity,
+            })),
+            ...cashReceivedMetadata(
+              createDto.paymentMethod,
+              plan.amount,
+              createDto.amountReceived,
+            ),
+          },
+          processedByDeviceId: device.id,
+          processedByWaiterId: operator?.waiterId ?? null,
+          processedByUserId: operator?.userId ?? null,
+        });
+        await payments.save(created);
 
-    // Update order paid amount
-    order.paidAmount = Number(order.paidAmount) + createDto.amount;
+        const items = manager.getRepository(OrderItem);
+        for (const { item, quantity } of plan.lines) {
+          item.paidQuantity = (item.paidQuantity || 0) + quantity;
+          await items.save(item);
+        }
 
-    // Update item paid quantities
-    for (const { item, payQty } of itemsToUpdate) {
-      item.paidQuantity = (item.paidQuantity || 0) + payQty;
-      await this.orderItemRepository.save(item);
-    }
-
-    await this.updateOrderPaymentStatus(order);
-
-    // Check if fully paid
-    const isFullyPaid = Number(order.paidAmount) >= Number(order.total);
-    if (isFullyPaid) {
-      // Only auto-complete if no active station workflow is running
-      const activeItems = order.items.filter(
-        (i) => i.status !== OrderItemStatus.CANCELLED,
-      );
-      const allWorkflowDone = activeItems.every(
-        (i) => !i.productionStationId || i.status === OrderItemStatus.DELIVERED,
-      );
-
-      if (allWorkflowDone) {
-        order.status = OrderStatus.COMPLETED;
-        order.completedAt = new Date();
-        await this.orderRepository.save(order);
-      }
-    }
+        locked.paidAmount = Number(locked.paidAmount) + plan.amount;
+        locked.paymentStatus = paymentStatusFor(locked);
+        const fullyPaid = locked.paymentStatus === PaymentStatus.PAID;
+        if (fullyPaid) {
+          // Only auto-complete if no active station workflow is running
+          const allWorkflowDone = locked.items
+            .filter((i) => i.status !== OrderItemStatus.CANCELLED)
+            .every(
+              (i) =>
+                !i.productionStationId ||
+                i.status === OrderItemStatus.DELIVERED,
+            );
+          if (allWorkflowDone) {
+            locked.status = OrderStatus.COMPLETED;
+            locked.completedAt = new Date();
+          }
+        }
+        await orders.save(locked);
+        return { order: locked, payment: created, isFullyPaid: fullyPaid };
+      });
 
     this.logger.log(
       `Device split payment created: ${payment.id} for order ${order.orderNumber}`,
@@ -1532,7 +1524,7 @@ export class DeviceApiController {
   @WithOperator()
   async initiateSumupCheckout(
     @CurrentDevice() device: Device,
-    @Body() body: { amount: number; currency?: string },
+    @Body() body: DeviceSumupCheckoutDto,
   ) {
     const organizationId = requireOrganization(device);
     await this.assertPaymentsAllowedFor(organizationId);
@@ -2092,7 +2084,7 @@ export class DeviceApiController {
     const orderItemRepository = manager.getRepository(OrderItem);
 
     const product = await productRepository.findOne({
-      where: { id: itemDto.productId, eventId: order.eventId! },
+      where: orderProductWhere(order, itemDto.productId),
       relations: ['category', 'pfandType'],
     });
 
@@ -2123,12 +2115,11 @@ export class DeviceApiController {
       });
     }
 
-    // Calculate options price
-    let optionsPrice = 0;
-    const selectedOptions = itemDto.selectedOptions || [];
-    for (const opt of selectedOptions) {
-      optionsPrice += opt.priceModifier || 0;
-    }
+    // Optionspreise aus der Produktdefinition, nie aus der Anfrage.
+    const { selected: selectedOptions, optionsPrice } = priceSelectedOptions(
+      product,
+      itemDto.selectedOptions,
+    );
 
     const unitPrice = Number(product.price);
     const totalPrice = (unitPrice + optionsPrice) * itemDto.quantity;
@@ -2254,17 +2245,7 @@ export class DeviceApiController {
     // Compare in integer cents — summing decimal payments in floating point
     // can land a fully-paid order at e.g. 41.0999999 < 41.10, which would
     // mark it "partly paid" even though it was settled in full.
-    const paidCents = Math.round(Number(order.paidAmount) * 100);
-    const totalCents = Math.round(Number(order.total) * 100);
-
-    if (paidCents >= totalCents) {
-      order.paymentStatus = PaymentStatus.PAID;
-    } else if (paidCents > 0) {
-      order.paymentStatus = PaymentStatus.PARTLY_PAID;
-    } else {
-      order.paymentStatus = PaymentStatus.UNPAID;
-    }
-
+    order.paymentStatus = paymentStatusFor(order);
     await this.orderRepository.save(order);
   }
 

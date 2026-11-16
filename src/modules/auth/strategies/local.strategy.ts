@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy } from 'passport-local';
+import type { Request } from 'express';
 import { AuthService } from '../auth.service';
 import { User } from '../../../database/entities';
 import { ErrorCodes } from '../../../common/constants/error-codes';
@@ -11,11 +12,21 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
     super({
       usernameField: 'email',
       passwordField: 'password',
+      // Die Adresse zaehlt fuer die Bremse je Konto und Adresse.
+      passReqToCallback: true,
     });
   }
 
-  async validate(email: string, password: string): Promise<User> {
-    const user = await this.authService.validateUser(email, password);
+  async validate(
+    req: Pick<Request, 'ip'>,
+    email: string,
+    password: string,
+  ): Promise<User> {
+    const user = await this.authService.validateUser(
+      email,
+      password,
+      req?.ip ?? null,
+    );
     /* validateUser() liefert null sowohl fuer eine unbekannte E-Mail als
        auch fuer ein falsches Passwort (dort zaehlt es vorher den
        Fehlversuch). Beides bekommt denselben Code und dieselbe Meldung,

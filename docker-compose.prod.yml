@@ -166,6 +166,9 @@ services:
       DEPLOY_GUARD_TOKEN: ${DEPLOY_GUARD_TOKEN:-}
     volumes:
       - uploads:/app/uploads
+      # Private Ablage (Speisekarten-Importe, TSE-Exporte, DSFinV-K-Archiv),
+      # nicht oeffentlich; TSE-Exporte 10 Jahre aufbewahren → ins Backup.
+      - private_storage:/app/private
     # SIGTERM: open requests get up to 20 s (SHUTDOWN_TIMEOUT_MS) — give the
     # process that long before Docker kills it.
     stop_grace_period: 30s
@@ -265,6 +268,7 @@ volumes:
   postgres_data:
   redis_data:
   uploads:
+  private_storage:
 
 networks:
   # External network shared with Traefik

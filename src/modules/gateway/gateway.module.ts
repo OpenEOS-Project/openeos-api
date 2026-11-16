@@ -7,11 +7,11 @@ import { GatewayService } from './gateway.service';
 import { DevicesModule } from '../devices';
 import { PrintersModule } from '../printers';
 import { PrintJobsModule } from '../print-jobs';
-import { UserOrganization } from '../../database/entities';
+import { Device, User, UserOrganization } from '../../database/entities';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([UserOrganization]),
+    TypeOrmModule.forFeature([UserOrganization, User, Device]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({

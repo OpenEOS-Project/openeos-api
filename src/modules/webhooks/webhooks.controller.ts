@@ -25,6 +25,7 @@ import {
 import { ApiTokenAccess, CurrentUser, Roles } from '../../common/decorators';
 import { OrganizationGuard, RolesGuard } from '../../common/guards';
 import { Role } from '../../common/constants/roles.enum';
+import { assertOrganizationRole } from '../../common/utils/organization-access.util';
 import { User } from '../../database/entities';
 import { TokenScope } from '../api-tokens/api-scopes';
 import {
@@ -126,7 +127,11 @@ export class WebhooksController {
     description: 'Webhook-Endpunkte',
     example: { data: [ENDPOINT_EXAMPLE] },
   })
-  async list(@Param('organizationId', ParseUUIDPipe) organizationId: string) {
+  async list(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @CurrentUser() user: User,
+  ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     return { data: await this.webhooks.list(organizationId) };
   }
 
@@ -163,6 +168,7 @@ export class WebhooksController {
     @Body() dto: CreateWebhookDto,
     @Req() request: Request,
   ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     return {
       data: await this.webhooks.create(
         organizationId,
@@ -188,7 +194,9 @@ export class WebhooksController {
   async get(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('webhookId', ParseUUIDPipe) webhookId: string,
+    @CurrentUser() user: User,
   ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     return { data: await this.webhooks.get(organizationId, webhookId) };
   }
 
@@ -212,6 +220,7 @@ export class WebhooksController {
     @Body() dto: UpdateWebhookDto,
     @Req() request: Request,
   ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     return {
       data: await this.webhooks.update(
         organizationId,
@@ -241,6 +250,7 @@ export class WebhooksController {
     @CurrentUser() user: User,
     @Req() request: Request,
   ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     return {
       data: await this.webhooks.remove(
         organizationId,
@@ -271,6 +281,7 @@ export class WebhooksController {
     @CurrentUser() user: User,
     @Req() request: Request,
   ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     return {
       data: await this.webhooks.rotateSecret(
         organizationId,
@@ -315,7 +326,9 @@ export class WebhooksController {
   async test(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('webhookId', ParseUUIDPipe) webhookId: string,
+    @CurrentUser() user: User,
   ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     return { data: await this.webhooks.sendTest(organizationId, webhookId) };
   }
 
@@ -350,8 +363,10 @@ export class WebhooksController {
   async deliveries(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('webhookId', ParseUUIDPipe) webhookId: string,
+    @CurrentUser() user: User,
     @Query() query: ListWebhookDeliveriesDto,
   ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     return this.webhooks.listDeliveries(organizationId, webhookId, query);
   }
 
@@ -377,7 +392,9 @@ export class WebhooksController {
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('webhookId', ParseUUIDPipe) webhookId: string,
     @Param('deliveryId', ParseUUIDPipe) deliveryId: string,
+    @CurrentUser() user: User,
   ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     return {
       data: await this.webhooks.getDelivery(
         organizationId,
@@ -410,7 +427,9 @@ export class WebhooksController {
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('webhookId', ParseUUIDPipe) webhookId: string,
     @Param('deliveryId', ParseUUIDPipe) deliveryId: string,
+    @CurrentUser() user: User,
   ) {
+    assertOrganizationRole(user, organizationId, Role.ADMIN);
     return {
       data: await this.webhooks.redeliver(
         organizationId,

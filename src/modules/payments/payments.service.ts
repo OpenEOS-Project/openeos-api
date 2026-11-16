@@ -38,6 +38,7 @@ import {
 } from '../../common/utils/operating-mode.util';
 import { closedWithoutPaymentError } from '../orders/close-without-payment';
 import { assertMayManageOrders } from '../orders/order-permissions';
+import { planSplitPayment } from './split-payment';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
 import { TseSigningService } from '../tse/tse-signing.service';
@@ -192,114 +193,84 @@ export class PaymentsService {
     );
     await this.assertPaymentsAllowedFor(organizationId);
 
-    const order = await this.orderRepository.findOne({
-      where: { id: splitDto.orderId, organizationId },
-      relations: ['items'],
-    });
-
-    if (!order) {
-      throw new NotFoundException({
-        code: ErrorCodes.NOT_FOUND,
-        reason: ErrorReasons.ORDER_NOT_FOUND,
-        message: 'Bestellung nicht gefunden',
-      });
-    }
-
-    // Validate items and calculate total
-    let calculatedTotal = 0;
-    const itemsToUpdate: { item: OrderItem; quantityToPayNow: number }[] = [];
-
-    for (const splitItem of splitDto.items) {
-      const orderItem = order.items.find((i) => i.id === splitItem.orderItemId);
-
-      if (!orderItem) {
-        throw new NotFoundException({
-          code: ErrorCodes.NOT_FOUND,
-          reason: ErrorReasons.ORDER_ITEM_NOT_FOUND,
-          message: `Bestellposition ${splitItem.orderItemId} nicht gefunden`,
-        });
-      }
-
-      const unpaidQuantity = orderItem.quantity - orderItem.paidQuantity;
-      if (splitItem.quantity > unpaidQuantity) {
-        throw new BadRequestException({
-          code: ErrorCodes.VALIDATION_ERROR,
-          reason: ErrorReasons.INSUFFICIENT_UNPAID_QUANTITY,
-          message: `Nicht genügend unbezahlte Menge für ${orderItem.productName} (${unpaidQuantity} verfügbar)`,
-          params: { product: orderItem.productName },
-        });
-      }
-
-      const pricePerUnit =
-        Number(orderItem.unitPrice) + Number(orderItem.optionsPrice);
-      calculatedTotal += pricePerUnit * splitItem.quantity;
-
-      itemsToUpdate.push({
-        item: orderItem,
-        quantityToPayNow: splitItem.quantity,
-      });
-    }
-
-    // Allow some tolerance for rounding
-    const tolerance = 0.02;
-    if (Math.abs(calculatedTotal - splitDto.amount) > tolerance) {
-      throw new BadRequestException({
-        code: ErrorCodes.VALIDATION_ERROR,
-        reason: ErrorReasons.PAYMENT_AMOUNT_MISMATCH,
-        message: `Berechneter Betrag (${calculatedTotal.toFixed(2)}) stimmt nicht mit dem Zahlungsbetrag (${splitDto.amount}) überein`,
-        params: {
-          expected: calculatedTotal.toFixed(2),
-          received: splitDto.amount,
-        },
-      });
-    }
-
     const provider = this.getProviderForMethod(splitDto.paymentMethod);
     await this.assertPaymentMethodAllowed(
       organizationId,
       splitDto.paymentMethod,
     );
 
-    const payment = this.paymentRepository.create({
-      orderId: splitDto.orderId,
-      amount: splitDto.amount,
-      paymentMethod: splitDto.paymentMethod,
-      paymentProvider: provider,
-      providerTransactionId: splitDto.providerTransactionId || null,
-      status: PaymentTransactionStatus.CAPTURED,
-      metadata: {
-        ...(splitDto.metadata || {}),
-        ...cashReceivedMetadata(
-          splitDto.paymentMethod,
-          splitDto.amount,
-          splitDto.amountReceived,
-        ),
+    /* Pruefen und Buchen in einer Transaktion mit gesperrter Bestellung,
+       damit gleichzeitige Zahlungen dieselben Positionen nicht doppelt
+       kassieren. */
+    const { order, payment } = await this.orderRepository.manager.transaction(
+      async (manager) => {
+        const orders = manager.getRepository(Order);
+        const row = await orders.findOne({
+          where: { id: splitDto.orderId, organizationId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        const current = row
+          ? await orders.findOne({
+              where: { id: row.id, organizationId },
+              relations: ['items'],
+            })
+          : null;
+        if (!current) {
+          throw new NotFoundException({
+            code: ErrorCodes.NOT_FOUND,
+            reason: ErrorReasons.ORDER_NOT_FOUND,
+            message: 'Bestellung nicht gefunden',
+          });
+        }
+        if (current.closedWithoutPaymentAt) {
+          throw closedWithoutPaymentError([current.id]);
+        }
+
+        // Positionen pruefen, Betrag berechnen; nie mehr als offen ist.
+        const plan = planSplitPayment(current, splitDto.items, splitDto.amount);
+
+        const payments = manager.getRepository(Payment);
+        const created = payments.create({
+          orderId: current.id,
+          amount: plan.amount,
+          paymentMethod: splitDto.paymentMethod,
+          paymentProvider: provider,
+          providerTransactionId: splitDto.providerTransactionId || null,
+          status: PaymentTransactionStatus.CAPTURED,
+          metadata: {
+            ...(splitDto.metadata || {}),
+            ...cashReceivedMetadata(
+              splitDto.paymentMethod,
+              plan.amount,
+              splitDto.amountReceived,
+            ),
+          },
+          processedByUserId: user.id,
+        });
+        await payments.save(created);
+
+        // Zuordnung je Position und bezahlte Mengen
+        const itemPayments = manager.getRepository(OrderItemPayment);
+        const items = manager.getRepository(OrderItem);
+        for (const { item, quantity, amount } of plan.lines) {
+          await itemPayments.save(
+            itemPayments.create({
+              paymentId: created.id,
+              orderItemId: item.id,
+              quantity,
+              amount,
+            }),
+          );
+          item.paidQuantity = (item.paidQuantity || 0) + quantity;
+          await items.save(item);
+        }
+
+        current.paidAmount = Number(current.paidAmount) + plan.amount;
+        setPaymentStatus(current);
+        await orders.save(current);
+        return { order: current, payment: created };
       },
-      processedByUserId: user.id,
-    });
-
-    await this.paymentRepository.save(payment);
-
-    // Create order item payments and update paid quantities
-    for (const { item, quantityToPayNow } of itemsToUpdate) {
-      const pricePerUnit = Number(item.unitPrice) + Number(item.optionsPrice);
-
-      const itemPayment = this.orderItemPaymentRepository.create({
-        paymentId: payment.id,
-        orderItemId: item.id,
-        quantity: quantityToPayNow,
-        amount: pricePerUnit * quantityToPayNow,
-      });
-
-      await this.orderItemPaymentRepository.save(itemPayment);
-
-      item.paidQuantity += quantityToPayNow;
-      await this.orderItemRepository.save(item);
-    }
-
-    // Update order paid amount
-    order.paidAmount = Number(order.paidAmount) + splitDto.amount;
-    await this.updateOrderPaymentStatus(order);
+    );
 
     this.logger.log(
       `Split payment created: ${payment.id} for order ${order.orderNumber}`,
@@ -488,17 +459,7 @@ export class PaymentsService {
   }
 
   private async updateOrderPaymentStatus(order: Order): Promise<void> {
-    const total = Number(order.total);
-    const paidAmount = Number(order.paidAmount);
-
-    if (paidAmount >= total) {
-      order.paymentStatus = PaymentStatus.PAID;
-    } else if (paidAmount > 0) {
-      order.paymentStatus = PaymentStatus.PARTLY_PAID;
-    } else {
-      order.paymentStatus = PaymentStatus.UNPAID;
-    }
-
+    setPaymentStatus(order);
     await this.orderRepository.save(order);
   }
 
@@ -518,5 +479,18 @@ export class PaymentsService {
       });
     }
     return membership;
+  }
+}
+
+/** Zahlungsstatus aus bezahltem Betrag und Summe, in ganzen Cent. */
+function setPaymentStatus(order: Order): void {
+  const paidCents = Math.round(Number(order.paidAmount) * 100);
+  const totalCents = Math.round(Number(order.total) * 100);
+  if (paidCents >= totalCents) {
+    order.paymentStatus = PaymentStatus.PAID;
+  } else if (paidCents > 0) {
+    order.paymentStatus = PaymentStatus.PARTLY_PAID;
+  } else {
+    order.paymentStatus = PaymentStatus.UNPAID;
   }
 }

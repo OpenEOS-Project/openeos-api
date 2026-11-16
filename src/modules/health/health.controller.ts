@@ -1,5 +1,5 @@
-import { Controller, Get, Inject, Res } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Inject, Res, UseGuards } from '@nestjs/common';
+import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -8,6 +8,7 @@ import { appVersion } from '../../common/constants/app-version';
 import { Public } from '../../common/decorators';
 import { ShutdownService } from '../../common/lifecycle/shutdown.service';
 import { REDIS_CLIENT } from '../../common/redis';
+import { HealthDetailsGuard } from './health-details.guard';
 import type { RedisClient } from '../../common/redis';
 
 type CheckResult = {
@@ -118,7 +119,13 @@ export class HealthController {
     };
   }
 
+  /**
+   * Ausfuehrlich, mit Speicherverbrauch: nur Super-Admins oder internes
+   * Monitoring mit `HEALTH_DETAILS_TOKEN` (siehe HealthDetailsGuard).
+   */
   @Public()
+  @UseGuards(HealthDetailsGuard)
+  @ApiExcludeEndpoint()
   @Get('detailed')
   async detailed(): Promise<
     HealthCheck & { memory: NodeJS.MemoryUsage; version: string }

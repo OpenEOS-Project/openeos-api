@@ -124,3 +124,94 @@ describe('restoreMaskedCredentials', () => {
     expect(incoming.paypal).not.toHaveProperty('clientSecret');
   });
 });
+
+describe('redactResponse: device credentials, PINs and one-time values', () => {
+  it('removes device token and pairing code from device objects', () => {
+    const out = redactResponse({
+      data: {
+        id: 'd1',
+        name: 'Kasse 1',
+        deviceToken: 'a'.repeat(64),
+        verificationCode: '123456',
+        settings: { requirePin: true },
+      },
+    });
+    expect(out.data).toEqual({
+      id: 'd1',
+      name: 'Kasse 1',
+      settings: { requirePin: true },
+    });
+  });
+
+  it('removes them from raw query rows as well', () => {
+    const out = redactResponse([
+      {
+        device_id: 'd1',
+        device_device_token: 'secret',
+        device_verification_code: '123456',
+        uo_pin: '$2b$hash',
+        org_support_pin: '123456',
+        endpoint_secret_encrypted: 'enc',
+      },
+    ]);
+    expect(out).toEqual([{ device_id: 'd1' }]);
+  });
+
+  it('removes PINs, support PIN and stored hashes', () => {
+    const out = redactResponse({
+      organization: { id: 'o1', supportPin: '123456' },
+      membership: { role: 'member', pin: '$2b$10$hash' },
+      credential: { pinLookup: 'hmac', pinLength: 4 },
+      endpoint: { secretEncrypted: 'x', previousSecretEncrypted: 'y' },
+      tse: { accessTokenEnc: 'z', publicKey: 'pk' },
+      session: { sessionToken: 's', status: 'active' },
+      registration: { verificationToken: 'v', status: 'pending' },
+    });
+    expect(out).toEqual({
+      organization: { id: 'o1' },
+      membership: { role: 'member' },
+      credential: { pinLength: 4 },
+      endpoint: {},
+      tse: { publicKey: 'pk' },
+      session: { status: 'active' },
+      registration: { status: 'pending' },
+    });
+  });
+
+  it('removes `token` only from entities where it is the credential itself', () => {
+    class Invitation {
+      id = 'i1';
+      token = 'invite-secret';
+    }
+    const out = redactResponse({
+      invitation: new Invitation(),
+      // Neu ausgestellter API-Token: genau das soll der Aufrufer sehen.
+      created: { id: 't1', tokenPrefix: 'oeos_ab', token: 'oeos_abcdef' },
+    });
+    expect(out.invitation).toEqual({ id: 'i1' });
+    expect(out.created).toEqual({
+      id: 't1',
+      tokenPrefix: 'oeos_ab',
+      token: 'oeos_abcdef',
+    });
+  });
+
+  it('returns explicitly revealed fields and nothing else', () => {
+    const out = redactResponse(
+      {
+        data: {
+          deviceId: 'd1',
+          deviceToken: 'tok',
+          verificationCode: '123456',
+          passwordHash: 'never',
+        },
+      },
+      ['deviceToken', 'verificationCode'],
+    );
+    expect(out.data).toEqual({
+      deviceId: 'd1',
+      deviceToken: 'tok',
+      verificationCode: '123456',
+    });
+  });
+});

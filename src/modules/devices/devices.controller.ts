@@ -19,7 +19,11 @@ import {
 } from '@nestjs/swagger';
 import { DevicesService } from './devices.service';
 import { GatewayService } from '../gateway/gateway.service';
-import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import {
+  CurrentUser,
+  ApiTokenAccess,
+  RevealSecrets,
+} from '../../common/decorators';
 import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
@@ -39,7 +43,10 @@ export class DevicesController {
     private readonly gatewayService: GatewayService,
   ) {}
 
+  // Von Hand angelegte Geraete (z. B. Druck-Agent mit fester
+  // Konfiguration) brauchen ihr Token einmalig bei Anlage und Erneuerung.
   @Post()
+  @RevealSecrets('deviceToken')
   create(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Body() createDto: CreateDeviceDto,
@@ -108,6 +115,7 @@ export class DevicesController {
 
   @Post(':deviceId/regenerate-token')
   @HttpCode(HttpStatus.OK)
+  @RevealSecrets('deviceToken')
   regenerateToken(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
     @Param('deviceId', ParseUUIDPipe) deviceId: string,

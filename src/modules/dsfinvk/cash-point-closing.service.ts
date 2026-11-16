@@ -10,6 +10,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { existsSync } from 'fs';
 import { mkdir, readFile, writeFile, rename } from 'fs/promises';
 import { join, relative, resolve } from 'path';
+import { unguessableSuffix } from '../../common/storage/private-storage';
 import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -805,9 +806,11 @@ export class CashPointClosingService {
       const data = this.zipFor(organization, [closing]);
       const dir = join(this.baseDir(), closing.organizationId, 'dsfinvk');
       await mkdir(dir, { recursive: true, mode: 0o700 });
+      /* Zufaelliger Namensteil: der Pfad steht in der Zeile, erraten
+         laesst er sich nicht. */
       const target = join(
         dir,
-        `Z${String(closing.zNr).padStart(6, '0')}_${closing.businessDate}.zip`,
+        `Z${String(closing.zNr).padStart(6, '0')}_${closing.businessDate}_${unguessableSuffix()}.zip`,
       );
       await writeFile(`${target}.part`, data, { mode: 0o600 });
       await rename(`${target}.part`, target);

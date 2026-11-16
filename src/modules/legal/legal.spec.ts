@@ -50,7 +50,13 @@ describe('legal config', () => {
       false,
     );
     expect(config.versions.agb).toBe('2027-01-15');
-    expect(config.versions.avv).toBe('2026-11-04');
+    expect(config.versions.avv).toBe('2026-11-12');
+    expect(config.versions.anlage1).toBe('2026-11-12');
+    expect(config.reacceptanceEnabled).toBe(false);
+    expect(
+      legalConfigFromEnv({ LEGAL_REACCEPTANCE_ENABLED: 'true' }, false)
+        .reacceptanceEnabled,
+    ).toBe(true);
     expect(config.enabled).toBe(true);
     expect(legalConfigFromEnv({}, true).enabled).toBe(false);
   });
@@ -107,7 +113,7 @@ describe('acceptanceRows', () => {
     expect(rows).toEqual([
       expect.objectContaining({
         document: 'agb',
-        version: '2026-11-04',
+        version: '2026-11-12',
         organizationId: 'o1',
         businessConfirmed: true,
         ipAddress: '203.0.113.7',
@@ -159,15 +165,25 @@ describe('LegalService.status / accept', () => {
     return { service, inserted };
   }
 
-  it('requires acceptance from admins without any record (existing accounts)', async () => {
+  it('does not ask existing admins unless re-acceptance is enabled', async () => {
     const { service } = setup({
       rows: [],
       adminOrgs: [{ id: 'o1', name: 'TSV' }],
     });
+    expect((await service.status('u1')).required).toBe(false);
+    expect(await service.isReacceptanceRequired('u1')).toBe(false);
+  });
+
+  it('requires acceptance from admins without any record (existing accounts)', async () => {
+    const { service } = setup({
+      rows: [],
+      adminOrgs: [{ id: 'o1', name: 'TSV' }],
+      env: { LEGAL_REACCEPTANCE_ENABLED: 'true' },
+    });
     const status = await service.status('u1');
     expect(status.required).toBe(true);
     expect(status.documents.agb).toMatchObject({
-      currentVersion: '2026-11-04',
+      currentVersion: '2026-11-12',
       acceptedVersion: null,
       upToDate: false,
     });
@@ -177,19 +193,20 @@ describe('LegalService.status / accept', () => {
     const at = new Date('2026-11-04T10:00:00Z');
     const { service } = setup({
       rows: [
-        { document: 'agb', version: '2026-11-04', acceptedAt: at },
-        { document: 'avv', version: '2026-11-04', acceptedAt: at },
+        { document: 'agb', version: '2026-11-12', acceptedAt: at },
+        { document: 'avv', version: '2026-11-12', acceptedAt: at },
       ],
       adminOrgs: [{ id: 'o1', name: 'TSV' }],
+      env: { LEGAL_REACCEPTANCE_ENABLED: 'true' },
     });
     const status = await service.status('u1');
     expect(status.required).toBe(false);
     expect(status.documents.avv).toMatchObject({
       upToDate: true,
       acceptedAt: at.toISOString(),
-      acceptedUrl: 'https://staging.openeos.de/avv/2026-11-04',
+      acceptedUrl: 'https://staging.openeos.de/avv/2026-11-12',
       acceptedPdfUrl:
-        'https://staging.openeos.de/rechtstexte/avv-2026-11-04.pdf',
+        'https://staging.openeos.de/rechtstexte/avv-2026-11-12.pdf',
     });
   });
 
@@ -197,16 +214,35 @@ describe('LegalService.status / accept', () => {
     const at = new Date('2026-11-04T10:00:00Z');
     const { service } = setup({
       rows: [
-        { document: 'agb', version: '2026-11-04', acceptedAt: at },
-        { document: 'avv', version: '2026-11-04', acceptedAt: at },
+        { document: 'agb', version: '2026-11-12', acceptedAt: at },
+        { document: 'avv', version: '2026-11-12', acceptedAt: at },
       ],
       adminOrgs: [{ id: 'o1', name: 'TSV' }],
-      env: { LEGAL_AGB_VERSION: '2027-02-01' },
+      env: {
+        LEGAL_AGB_VERSION: '2027-02-01',
+        LEGAL_REACCEPTANCE_ENABLED: 'true',
+      },
     });
     const status = await service.status('u1');
     expect(status.required).toBe(true);
     expect(status.documents.agb.upToDate).toBe(false);
     expect(status.documents.avv.upToDate).toBe(true);
+  });
+
+  it('lists Anlage 1 with the AGB and AVV in the legal mails', () => {
+    const { service } = setup({ rows: [], adminOrgs: [] });
+    const docs = service.emailDocuments();
+    expect(docs.map((d) => d.label)).toEqual([
+      'Allgemeine Geschäftsbedingungen (AGB)',
+      'Auftragsverarbeitungsvertrag (AVV)',
+      'Anlage 1 zu den AGB – Leistungsbeschreibung und Preisliste',
+    ]);
+    expect(docs[2]).toMatchObject({
+      version: '2026-11-12',
+      versionUrl: 'https://staging.openeos.de/leistungsbeschreibung/2026-11-12',
+      pdfUrl:
+        'https://staging.openeos.de/rechtstexte/leistungsbeschreibung-2026-11-12.pdf',
+    });
   });
 
   it('does not ask plain members or self-hosted installs', async () => {

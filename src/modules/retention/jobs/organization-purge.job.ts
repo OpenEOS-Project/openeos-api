@@ -26,6 +26,8 @@ export const PURGEABLE_UPLOAD_DIRS = [
 
 export interface PurgeOptions {
   uploadDir: string;
+  /** Private Ablage (Speisekarten-Importe), siehe common/storage. */
+  privateDir: string;
   /** Ablage des Steuerarchivs; wird nie angefasst. */
   fiscalExportDir: string;
   contactEmail: string | null;
@@ -397,7 +399,7 @@ export class OrganizationPurgeJob implements RetentionJob {
 
     ctx.afterCommit(async () => {
       for (const menuImport of imports) {
-        await deleteFiles(this.options.uploadDir, menuImport.id);
+        await deleteFiles(this.options.privateDir, menuImport.id);
       }
       await removeOwnerUploads(
         this.options.uploadDir,

@@ -14,6 +14,7 @@ jest.mock('uuid', () => ({
  * Oberflaeche die Meldung uebersetzen kann.
  */
 describe('LocalStrategy.validate', () => {
+  const req = { ip: '198.51.100.7' };
   function strategy(result: User | null) {
     const validateUser = jest.fn(() => Promise.resolve(result));
     const authService = { validateUser } as unknown as AuthService;
@@ -24,7 +25,7 @@ describe('LocalStrategy.validate', () => {
     const { strategy: local } = strategy(null);
 
     const error = await local
-      .validate('someone@example.org', 'wrong')
+      .validate(req, 'someone@example.org', 'wrong')
       .catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(UnauthorizedException);
@@ -44,14 +45,18 @@ describe('LocalStrategy.validate', () => {
       validateUser,
     } as unknown as AuthService);
 
-    await expect(local.validate('a@b.de', 'x')).rejects.toBe(locked);
+    await expect(local.validate(req, 'a@b.de', 'x')).rejects.toBe(locked);
   });
 
   it('returns the user on success', async () => {
     const user = { id: 'u1' } as User;
     const { strategy: local, validateUser } = strategy(user);
 
-    await expect(local.validate('a@b.de', 'right')).resolves.toBe(user);
-    expect(validateUser).toHaveBeenCalledWith('a@b.de', 'right');
+    await expect(local.validate(req, 'a@b.de', 'right')).resolves.toBe(user);
+    expect(validateUser).toHaveBeenCalledWith(
+      'a@b.de',
+      'right',
+      '198.51.100.7',
+    );
   });
 });

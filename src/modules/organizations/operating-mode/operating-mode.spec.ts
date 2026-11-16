@@ -547,16 +547,20 @@ describe('Routes', () => {
 
   it('the organization PATCH cannot set mode or the interim fields', async () => {
     const t = setup({ operatingMode: 'cashless', operatingModeLegacy: false });
+    for (const settings of [
+      { operatingMode: 'full', vatExempt: false },
+      { operatingModeSince: '2020-01-01T00:00:00.000Z' },
+      { payments: { cashless: false } },
+    ]) {
+      await expect(
+        t.organizations.update(ORG_ID, { settings } as never, clubAdmin),
+      ).rejects.toMatchObject({
+        response: { reason: 'ORGANIZATION_SETTING_NOT_UPDATABLE' },
+      });
+    }
     const result = await t.organizations.update(
       ORG_ID,
-      {
-        settings: {
-          operatingMode: 'full',
-          operatingModeSince: '2020-01-01T00:00:00.000Z',
-          payments: { cashless: false },
-          vatExempt: false,
-        },
-      } as never,
+      { settings: { vatExempt: false } } as never,
       clubAdmin,
     );
     expect(result.operatingMode).toBe('cashless');

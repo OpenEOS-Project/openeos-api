@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { privateStorageFromConfig } from '../../common/storage/private-storage';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { EncryptionService } from '../../common/services/encryption.service';
@@ -15,6 +16,7 @@ import { ReceiptLinksJob } from './jobs/receipt-links.job';
 import { AuditLogsJob } from './jobs/audit-logs.job';
 import { AuthRecordsJob } from './jobs/auth-records.job';
 import { ContactRequestsJob } from './jobs/contact-requests.job';
+import { ContentReportsJob } from './jobs/content-reports.job';
 import { DeletionRemindersJob } from './jobs/deletion-reminders.job';
 import { FiscalArchiveJob } from './jobs/fiscal-archive.job';
 import { GuestDataJob } from './jobs/guest-data.job';
@@ -65,6 +67,7 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
         const uploadDir = config.get<string>('UPLOAD_DIR') || './uploads';
         const options = {
           uploadDir,
+          privateDir: privateStorageFromConfig(config).root,
           fiscalExportDir: tseSettingsFromEnv(process.env).exportDir,
           contactEmail:
             config.get<string>('RETENTION_CONTACT_EMAIL') ||
@@ -79,6 +82,7 @@ import { RETENTION_JOBS, type RetentionJob } from './retention.types';
           new AuditLogsJob(),
           new SupportMessagesJob(),
           new ContactRequestsJob(),
+          new ContentReportsJob(),
           new AssistantImportsJob(menuImports),
           new WebhookDeliveriesJob(webhookDeliveries),
           new ReceiptLinksJob(),

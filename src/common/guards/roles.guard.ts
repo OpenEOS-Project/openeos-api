@@ -10,6 +10,7 @@ import { Role, hasRole } from '../constants/roles.enum';
 import { RequestUser } from '../decorators/current-user.decorator';
 import { ErrorCodes, ErrorReasons } from '../constants/error-codes';
 import type { AppRequest } from '../types/request.types';
+import { resolveRequestOrganizationId } from '../utils/request-organization.util';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -42,7 +43,7 @@ export class RolesGuard implements CanActivate {
     }
 
     // Prüfe ob der User eine der benötigten Rollen hat
-    const organizationId = this.getOrganizationId(request);
+    const organizationId = resolveRequestOrganizationId(request);
     if (!organizationId) {
       throw new ForbiddenException({
         code: ErrorCodes.FORBIDDEN,
@@ -73,15 +74,5 @@ export class RolesGuard implements CanActivate {
     }
 
     return true;
-  }
-
-  private getOrganizationId(request: AppRequest): string | undefined {
-    const body = request.body as Record<string, unknown> | undefined;
-    return (
-      (request.headers['x-organization-id'] as string | undefined) ||
-      request.params?.organizationId ||
-      (body?.organizationId as string) ||
-      (request.query?.organizationId as string | undefined)
-    );
   }
 }

@@ -149,7 +149,7 @@ describe('TseExportService', () => {
         filename: 'Export_Unixt_1793750000.tar',
       });
       expect(row.filePath).toMatch(
-        /^org-1\/ff00aa\/\d{8}T\d{6}Z_\d{8}T\d{6}Z\.tar$/,
+        /^org-1\/ff00aa\/\d{8}T\d{6}Z_\d{8}T\d{6}Z_[0-9a-f]{32}\.tar$/,
       );
       expect(readFileSync(join(dir, row.filePath!))).toEqual(payload);
       expect(client.deleteExport).toHaveBeenCalledWith(

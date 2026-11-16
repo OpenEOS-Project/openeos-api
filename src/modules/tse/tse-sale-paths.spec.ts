@@ -6,13 +6,10 @@ import { Repository } from 'typeorm';
 import { tseStatus, resetTseStatus } from '../../common/utils/tse.util';
 import type { Device } from '../../database/entities/device.entity';
 import { EventStatus, type Event } from '../../database/entities/event.entity';
-import type { Order } from '../../database/entities/order.entity';
-import type { OrderItem } from '../../database/entities/order-item.entity';
+import { Order } from '../../database/entities/order.entity';
+import { OrderItem } from '../../database/entities/order-item.entity';
 import type { Organization } from '../../database/entities/organization.entity';
-import {
-  PaymentMethod,
-  type Payment,
-} from '../../database/entities/payment.entity';
+import { PaymentMethod, Payment } from '../../database/entities/payment.entity';
 import type { PfandReturn } from '../../database/entities/pfand-return.entity';
 import type { PfandType } from '../../database/entities/pfand-type.entity';
 import type { User } from '../../database/entities/user.entity';
@@ -28,6 +25,7 @@ import type { OrderPrintService } from '../print-jobs/order-print.service';
 import { RefundsService } from '../refunds/refunds.service';
 import type { TseSigningService } from './tse-signing.service';
 import type { TseReceiptView } from './tse-view';
+import { transactionManager } from '../payments/testing/transaction-manager';
 
 /**
  * Jeder Weg, auf dem Geld in OpenEOS verbucht wird, signiert ueber die
@@ -192,6 +190,21 @@ describe('Kasse (DeviceApiController)', () => {
       gatewayService as unknown as GatewayService,
       signing as unknown as TseSigningService,
     );
+    const orderRepository = {
+      findOne: jest.fn(() => Promise.resolve(order)),
+      save: jest.fn((o: Order) => Promise.resolve(o)),
+    };
+    const orderItemRepository = {
+      save: jest.fn((i: OrderItem) => Promise.resolve(i)),
+    };
+    // Teilzahlung bucht in einer Transaktion ueber dieselben Mocks.
+    Object.assign(orderRepository, {
+      manager: transactionManager([
+        [Order, orderRepository],
+        [OrderItem, orderItemRepository],
+        [Payment, paymentRepository],
+      ]),
+    });
     const none = undefined as never;
     const controller = new DeviceApiController(
       { findOne: jest.fn(() => Promise.resolve(organization())) } as never,
@@ -201,11 +214,8 @@ describe('Kasse (DeviceApiController)', () => {
       } as unknown as Repository<Event>,
       none,
       none,
-      {
-        findOne: jest.fn(() => Promise.resolve(order)),
-        save: jest.fn((o: Order) => Promise.resolve(o)),
-      } as never,
-      { save: jest.fn((i: OrderItem) => Promise.resolve(i)) } as never,
+      orderRepository as never,
+      orderItemRepository as never,
       paymentRepository as never,
       none,
       none,

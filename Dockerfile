@@ -84,7 +84,13 @@ COPY --from=builder --chown=nestjs:nodejs /app/assets ./assets
 # Container-Nutzer. Achtung: ein Bind-Mount vom Host ueberstimmt das —
 # dann muss das Host-Verzeichnis uid 1001 gehoeren (`chown -R 1001 <dir>`),
 # sonst antworten Uploads mit 503 UPLOAD_DIR_NOT_WRITABLE (siehe README).
-RUN mkdir -p /app/uploads && chown nestjs:nodejs /app/uploads
+# Private Ablage (PRIVATE_STORAGE_DIR, Standard /app/private): Speisekarten-
+# Importe, TSE-Exporte, DSFinV-K-Archiv. Nie oeffentlich ausgeliefert; als
+# eigenes Volume einhaengen, sonst weicht die API auf <UPLOAD_DIR>/.private
+# aus (README „Private Ablage“).
+RUN mkdir -p /app/uploads /app/private \
+ && chown nestjs:nodejs /app/uploads /app/private \
+ && chmod 700 /app/private
 
 # Set environment
 ENV NODE_ENV=production
