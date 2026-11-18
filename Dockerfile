@@ -3,7 +3,7 @@
 # ============================================
 # Stage 1: Dependencies
 # ============================================
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 
 RUN corepack enable && corepack prepare pnpm@10.16.0 --activate
 
@@ -18,7 +18,7 @@ RUN pnpm install --frozen-lockfile
 # ============================================
 # Stage 2: Builder
 # ============================================
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 RUN corepack enable && corepack prepare pnpm@10.16.0 --activate
 
@@ -34,7 +34,7 @@ RUN pnpm build
 # ============================================
 # Stage 3: Production dependencies
 # ============================================
-FROM node:20-alpine AS prod-deps
+FROM node:24-alpine AS prod-deps
 
 RUN corepack enable && corepack prepare pnpm@10.16.0 --activate
 
@@ -51,7 +51,7 @@ RUN pnpm install --frozen-lockfile --prod \
 # ============================================
 # Stage 4: Runner (Production)
 # ============================================
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 
 # Install dumb-init for proper signal handling + tzdata so we can pin TZ.
 # poppler-utils (pdfinfo/pdftoppm, GPL, called as a separate process): the
