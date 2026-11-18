@@ -18,7 +18,7 @@ export const DEFAULT_LEGAL_VERSIONS = {
   agb: '2026-11-18',
   avv: '2026-11-18',
   privacy: '2026-11-18',
-  imprint: '2026-11-12',
+  imprint: '2026-11-18',
   /** Anlage 1 zu den AGB: Leistungsbeschreibung und Preisliste. */
   anlage1: '2026-11-18',
 } as const;
