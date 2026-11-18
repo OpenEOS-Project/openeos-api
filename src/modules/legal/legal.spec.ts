@@ -50,8 +50,8 @@ describe('legal config', () => {
       false,
     );
     expect(config.versions.agb).toBe('2027-01-15');
-    expect(config.versions.avv).toBe('2026-11-12');
-    expect(config.versions.anlage1).toBe('2026-11-12');
+    expect(config.versions.avv).toBe('2026-11-18');
+    expect(config.versions.anlage1).toBe('2026-11-18');
     expect(config.reacceptanceEnabled).toBe(false);
     expect(
       legalConfigFromEnv({ LEGAL_REACCEPTANCE_ENABLED: 'true' }, false)
@@ -113,7 +113,7 @@ describe('acceptanceRows', () => {
     expect(rows).toEqual([
       expect.objectContaining({
         document: 'agb',
-        version: '2026-11-12',
+        version: '2026-11-18',
         organizationId: 'o1',
         businessConfirmed: true,
         ipAddress: '203.0.113.7',
@@ -183,7 +183,7 @@ describe('LegalService.status / accept', () => {
     const status = await service.status('u1');
     expect(status.required).toBe(true);
     expect(status.documents.agb).toMatchObject({
-      currentVersion: '2026-11-12',
+      currentVersion: '2026-11-18',
       acceptedVersion: null,
       upToDate: false,
     });
@@ -193,8 +193,8 @@ describe('LegalService.status / accept', () => {
     const at = new Date('2026-11-04T10:00:00Z');
     const { service } = setup({
       rows: [
-        { document: 'agb', version: '2026-11-12', acceptedAt: at },
-        { document: 'avv', version: '2026-11-12', acceptedAt: at },
+        { document: 'agb', version: '2026-11-18', acceptedAt: at },
+        { document: 'avv', version: '2026-11-18', acceptedAt: at },
       ],
       adminOrgs: [{ id: 'o1', name: 'TSV' }],
       env: { LEGAL_REACCEPTANCE_ENABLED: 'true' },
@@ -204,9 +204,9 @@ describe('LegalService.status / accept', () => {
     expect(status.documents.avv).toMatchObject({
       upToDate: true,
       acceptedAt: at.toISOString(),
-      acceptedUrl: 'https://staging.openeos.de/avv/2026-11-12',
+      acceptedUrl: 'https://staging.openeos.de/avv/2026-11-18',
       acceptedPdfUrl:
-        'https://staging.openeos.de/rechtstexte/avv-2026-11-12.pdf',
+        'https://staging.openeos.de/rechtstexte/avv-2026-11-18.pdf',
     });
   });
 
@@ -214,8 +214,8 @@ describe('LegalService.status / accept', () => {
     const at = new Date('2026-11-04T10:00:00Z');
     const { service } = setup({
       rows: [
-        { document: 'agb', version: '2026-11-12', acceptedAt: at },
-        { document: 'avv', version: '2026-11-12', acceptedAt: at },
+        { document: 'agb', version: '2026-11-18', acceptedAt: at },
+        { document: 'avv', version: '2026-11-18', acceptedAt: at },
       ],
       adminOrgs: [{ id: 'o1', name: 'TSV' }],
       env: {
@@ -238,10 +238,10 @@ describe('LegalService.status / accept', () => {
       'Anlage 1 zu den AGB – Leistungsbeschreibung und Preisliste',
     ]);
     expect(docs[2]).toMatchObject({
-      version: '2026-11-12',
-      versionUrl: 'https://staging.openeos.de/leistungsbeschreibung/2026-11-12',
+      version: '2026-11-18',
+      versionUrl: 'https://staging.openeos.de/leistungsbeschreibung/2026-11-18',
       pdfUrl:
-        'https://staging.openeos.de/rechtstexte/leistungsbeschreibung-2026-11-12.pdf',
+        'https://staging.openeos.de/rechtstexte/leistungsbeschreibung-2026-11-18.pdf',
     });
   });
 
