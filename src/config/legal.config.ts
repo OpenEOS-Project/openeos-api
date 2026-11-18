@@ -15,12 +15,12 @@
  * Admins die erneute Annahme aus.
  */
 export const DEFAULT_LEGAL_VERSIONS = {
-  agb: '2026-11-12',
-  avv: '2026-11-12',
-  privacy: '2026-11-12',
+  agb: '2026-11-18',
+  avv: '2026-11-18',
+  privacy: '2026-11-18',
   imprint: '2026-11-12',
   /** Anlage 1 zu den AGB: Leistungsbeschreibung und Preisliste. */
-  anlage1: '2026-11-12',
+  anlage1: '2026-11-18',
 } as const;
 
 export type LegalDocumentKey = keyof typeof DEFAULT_LEGAL_VERSIONS;
