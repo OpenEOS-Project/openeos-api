@@ -134,7 +134,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
     if (request.params?.eventId && genannt.size === 0) {
       const eventOrg = await this.apiTokensService.organizationOfEvent(
-        request.params.eventId,
+        String(request.params.eventId),
       );
       if (!eventOrg) {
         throw new NotFoundException({

@@ -17,7 +17,7 @@ Backend-Server für OpenEOS mit REST API, WebSocket und Authentifizierung.
 
 ## Tech Stack
 
-- **Runtime:** Node.js 20 LTS
+- **Runtime:** Node.js 24 LTS
 - **Framework:** NestJS 10.x
 - **Sprache:** TypeScript 5.x (strict mode)
 - **ORM:** TypeORM 0.3.x
@@ -30,7 +30,7 @@ Backend-Server für OpenEOS mit REST API, WebSocket und Authentifizierung.
 
 ### Voraussetzungen
 
-- Node.js 20 LTS
+- Node.js 24 LTS
 - pnpm 8+
 - Docker & Docker Compose
 
