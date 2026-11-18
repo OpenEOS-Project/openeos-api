@@ -12,6 +12,7 @@ import {
 import type { User } from '../../database/entities';
 import {
   currentLegalLinks,
+  isAfterInitialVersion,
   LegalConfig,
   legalConfigFromEnv,
   LegalDocumentLinks,
@@ -76,12 +77,30 @@ export function acceptanceRows(input: {
 }
 
 /**
+ * Muss ein Admin dieses Dokument erneut annehmen? Nur wenn die aktuelle
+ * Fassung nach der Ausgangsfassung liegt (`LEGAL_INITIAL_VERSION`) und er
+ * sie noch nicht angenommen hat. Fassungen bis zur Ausgangsfassung fragen
+ * niemanden — auch nicht, wer eine aeltere Fassung oder gar keine
+ * angenommen hat (Konten aus der Testphase).
+ */
+export function reacceptanceNeeded(
+  config: Pick<LegalConfig, 'versions' | 'initialVersion'>,
+  document: LegalDocument,
+  acceptedVersion: string | null,
+): boolean {
+  const current = config.versions[document];
+  if (!isAfterInitialVersion(current, config.initialVersion)) return false;
+  // ISO-Datum: lexikografisch = zeitlich.
+  return !acceptedVersion || acceptedVersion < current;
+}
+
+/**
  * Annahme von AGB und Auftragsverarbeitungsvertrag (AVV), versioniert nach
  * dem Datum der „Stand“-Zeile.
  *
  * Admins einer Organisation muessen die aktuelle Fassung beider Dokumente
- * angenommen haben; liegt ihre letzte Annahme vor der aktuellen Fassung
- * (oder gibt es keine, wie bei Bestandskonten), meldet `/auth/me`
+ * angenommen haben, sobald sie nach der Ausgangsfassung liegt
+ * (`reacceptanceNeeded`); dann meldet `/auth/me`
  * `legalReacceptanceRequired` und die Oberflaeche fragt erneut.
  */
 @Injectable()
@@ -172,13 +191,13 @@ export class LegalService {
         acceptedPdfUrl: links?.pdfUrl ?? null,
       };
     }
-    /* Erneut gefragt wird nur mit LEGAL_REACCEPTANCE_ENABLED=true — die
-       Annahme bei Registrierung und Buchung bleibt davon unberuehrt. */
     const required =
       config.enabled &&
       config.reacceptanceEnabled &&
       admin.length > 0 &&
-      LEGAL_DOCUMENTS.some((d) => !documents[d].upToDate);
+      LEGAL_DOCUMENTS.some((d) =>
+        reacceptanceNeeded(config, d, documents[d].acceptedVersion),
+      );
     return { required, documents };
   }
 

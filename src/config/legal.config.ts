@@ -25,6 +25,36 @@ export const DEFAULT_LEGAL_VERSIONS = {
 
 export type LegalDocumentKey = keyof typeof DEFAULT_LEGAL_VERSIONS;
 
+/** Alle Dokumente in fester Reihenfolge (Mails, Ankuendigungen). */
+export const LEGAL_DOCUMENT_KEYS: readonly LegalDocumentKey[] = [
+  'agb',
+  'anlage1',
+  'avv',
+  'privacy',
+  'imprint',
+];
+
+/**
+ * Ausgangsfassung: die ersten Rechtstexte von LUXCODE fuer echte Kunden.
+ *
+ * Fassungen bis einschliesslich dieses Datums loesen nichts aus — keine
+ * Ankuendigung, keinen Hinweis, keine erneute Annahme. Auch wer davor eine
+ * aeltere Fassung (Testphase) angenommen hat, wird fuer diese Fassung nicht
+ * erneut gefragt. Erst eine spaetere Fassung wird angekuendigt (Super-Admin
+ * → Rechtstexte) und nach ihrem Inkrafttreten von den Admins erneut
+ * angenommen.
+ */
+export const LEGAL_INITIAL_VERSION = '2026-11-18';
+
+/** Geht eine Fassung ueber die Ausgangsfassung hinaus (ISO-Datum)? */
+export function isAfterInitialVersion(
+  version: string | null | undefined,
+  initialVersion: string = LEGAL_INITIAL_VERSION,
+): boolean {
+  // ISO-Datum: lexikografisch = zeitlich.
+  return !!version && version > initialVersion;
+}
+
 /** Pfade der Dokumente auf der Website. */
 export const LEGAL_PATHS: Record<LegalDocumentKey, string> = {
   agb: 'agb',
@@ -40,12 +70,14 @@ export interface LegalConfig {
   /** Basis der Website ohne Schraegstrich am Ende, z. B. https://openeos.de */
   siteUrl: string;
   versions: Record<LegalDocumentKey, string>;
+  /** Ausgangsfassung (`LEGAL_INITIAL_VERSION`), siehe dort. */
+  initialVersion: string;
   /**
-   * Bestehende Admins nach einer neuen Fassung von AGB/AVV erneut fragen
-   * (blockierender Dialog)? Standard aus (`LEGAL_REACCEPTANCE_ENABLED`):
-   * Die Fassung vom 12.11.2026 sind die ersten AGB fuer echte Kunden, es
-   * gibt keine Bestandskunden zu fragen. Angenommen wird weiter bei der
-   * Registrierung und bei jeder kostenpflichtigen Buchung.
+   * Bestehende Admins nach einer neuen Fassung von AGB/AVV erneut fragen?
+   * Standard an; `LEGAL_REACCEPTANCE_ENABLED=false` schaltet es ab. Gefragt
+   * wird ohnehin nur nach Fassungen nach der Ausgangsfassung
+   * (`initialVersion`). Angenommen wird ausserdem bei der Registrierung und
+   * bei jeder kostenpflichtigen Buchung.
    */
   reacceptanceEnabled: boolean;
 }
@@ -95,8 +127,9 @@ export function legalConfigFromEnv(
   return {
     enabled: !selfHosted,
     siteUrl,
+    initialVersion: LEGAL_INITIAL_VERSION,
     reacceptanceEnabled:
-      env.LEGAL_REACCEPTANCE_ENABLED?.trim().toLowerCase() === 'true',
+      env.LEGAL_REACCEPTANCE_ENABLED?.trim().toLowerCase() !== 'false',
     versions: {
       agb: version('LEGAL_AGB_VERSION', DEFAULT_LEGAL_VERSIONS.agb),
       avv: version('LEGAL_AVV_VERSION', DEFAULT_LEGAL_VERSIONS.avv),
