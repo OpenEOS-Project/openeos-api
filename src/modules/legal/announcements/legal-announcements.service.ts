@@ -30,6 +30,7 @@ import {
   type AnnouncementInput,
   type AnnouncementProblem,
   berlinToday,
+  isValidVersion,
   LEGAL_NOTICE_DAYS,
   validateAnnouncement,
 } from './legal-announcement.util';
@@ -236,12 +237,23 @@ export class LegalAnnouncementsService {
     version: string,
   ): Promise<AnnouncementProblem[]> {
     const config = this.legal.config;
+    /* Nur ein echtes Datum kommt in die Adresse, neu aus seinen Zahlen
+       zusammengesetzt: Host und Pfad stammen aus der Konfiguration, die
+       Eingabe kann die Anfrage nirgendwo anders hinlenken. */
+    if (!isValidVersion(version)) return [];
+    const [y, m, d] = version.split('-').map(Number);
+    const safeVersion = new Date(Date.UTC(y, m - 1, d))
+      .toISOString()
+      .slice(0, 10);
+    const allowed = new Set<string>(LEGAL_DOCUMENT_KEYS);
     const results = await Promise.all(
-      documents.map(async (document) => {
-        const url = legalLinks(config, document, version).versionUrl;
-        const status = await this.probe(url);
-        return { document, url, status };
-      }),
+      documents
+        .filter((document) => allowed.has(document))
+        .map(async (document) => {
+          const url = legalLinks(config, document, safeVersion).versionUrl;
+          const status = await this.probe(url);
+          return { document, url, status };
+        }),
     );
     return results
       .filter((r) => r.status < 200 || r.status >= 300)
