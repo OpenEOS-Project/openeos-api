@@ -4,12 +4,19 @@ import { validate } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 
 import {
+  DEFAULT_LEGAL_VERSIONS,
+  isAfterInitialVersion,
+  LEGAL_INITIAL_VERSION,
   legalConfigFromEnv,
   legalLinks,
   siteUrlFromAppUrl,
 } from '../../config/legal.config';
 import { RegisterDto } from '../auth/dto/register.dto';
-import { acceptanceRows, LegalService } from './legal.service';
+import {
+  acceptanceRows,
+  LegalService,
+  reacceptanceNeeded,
+} from './legal.service';
 
 /*
  * Rechtstexte: Fassungen aus der Umgebung, Links auf Website und PDF,
@@ -52,11 +59,12 @@ describe('legal config', () => {
     expect(config.versions.agb).toBe('2027-01-15');
     expect(config.versions.avv).toBe('2026-11-18');
     expect(config.versions.anlage1).toBe('2026-11-18');
-    expect(config.reacceptanceEnabled).toBe(false);
+    expect(config.reacceptanceEnabled).toBe(true);
+    expect(config.initialVersion).toBe(LEGAL_INITIAL_VERSION);
     expect(
-      legalConfigFromEnv({ LEGAL_REACCEPTANCE_ENABLED: 'true' }, false)
+      legalConfigFromEnv({ LEGAL_REACCEPTANCE_ENABLED: 'FALSE' }, false)
         .reacceptanceEnabled,
-    ).toBe(true);
+    ).toBe(false);
     expect(config.enabled).toBe(true);
     expect(legalConfigFromEnv({}, true).enabled).toBe(false);
   });
@@ -70,6 +78,38 @@ describe('legal config', () => {
       versionUrl: 'https://openeos.de/datenschutz/2026-11-04',
       pdfUrl: 'https://openeos.de/rechtstexte/datenschutz-2026-11-04.pdf',
     });
+  });
+});
+
+describe('initial version (baseline)', () => {
+  const config = (versions: Partial<typeof DEFAULT_LEGAL_VERSIONS>) => ({
+    initialVersion: '2026-11-18',
+    versions: { ...DEFAULT_LEGAL_VERSIONS, ...versions },
+  });
+
+  it('is the 2026-11-18 set', () => {
+    expect(LEGAL_INITIAL_VERSION).toBe('2026-11-18');
+    // Die eingebauten Fassungen loesen nie etwas aus.
+    for (const version of Object.values(DEFAULT_LEGAL_VERSIONS)) {
+      expect(isAfterInitialVersion(version)).toBe(false);
+    }
+  });
+
+  it('only versions after it need announcement and re-acceptance', () => {
+    expect(isAfterInitialVersion('2026-11-12', '2026-11-18')).toBe(false);
+    expect(isAfterInitialVersion('2026-11-18', '2026-11-18')).toBe(false);
+    expect(isAfterInitialVersion('2026-11-19', '2026-11-18')).toBe(true);
+    expect(isAfterInitialVersion(null)).toBe(false);
+
+    const initial = config({ agb: '2026-11-18' });
+    expect(reacceptanceNeeded(initial, 'agb', null)).toBe(false);
+    expect(reacceptanceNeeded(initial, 'agb', '2026-11-12')).toBe(false);
+
+    const later = config({ agb: '2027-01-15' });
+    expect(reacceptanceNeeded(later, 'agb', null)).toBe(true);
+    expect(reacceptanceNeeded(later, 'agb', '2026-11-18')).toBe(true);
+    expect(reacceptanceNeeded(later, 'agb', '2027-01-15')).toBe(false);
+    expect(reacceptanceNeeded(later, 'avv', null)).toBe(false);
   });
 });
 
@@ -165,28 +205,57 @@ describe('LegalService.status / accept', () => {
     return { service, inserted };
   }
 
-  it('does not ask existing admins unless re-acceptance is enabled', async () => {
-    const { service } = setup({
-      rows: [],
-      adminOrgs: [{ id: 'o1', name: 'TSV' }],
-    });
-    expect((await service.status('u1')).required).toBe(false);
-    expect(await service.isReacceptanceRequired('u1')).toBe(false);
+  it('never asks for versions up to the initial version (baseline)', async () => {
+    // Konten aus der Testphase: aeltere Fassung oder gar keine Annahme.
+    for (const rows of [
+      [],
+      [
+        {
+          document: 'agb',
+          version: '2026-11-04',
+          acceptedAt: new Date('2026-11-04T10:00:00Z'),
+        },
+      ],
+    ]) {
+      const { service } = setup({
+        rows,
+        adminOrgs: [{ id: 'o1', name: 'TSV' }],
+        env: {
+          LEGAL_AGB_VERSION: LEGAL_INITIAL_VERSION,
+          LEGAL_AVV_VERSION: LEGAL_INITIAL_VERSION,
+        },
+      });
+      expect((await service.status('u1')).required).toBe(false);
+      expect(await service.isReacceptanceRequired('u1')).toBe(false);
+    }
   });
 
-  it('requires acceptance from admins without any record (existing accounts)', async () => {
+  it('asks admins without any record once a later version is current', async () => {
     const { service } = setup({
       rows: [],
       adminOrgs: [{ id: 'o1', name: 'TSV' }],
-      env: { LEGAL_REACCEPTANCE_ENABLED: 'true' },
+      env: { LEGAL_AVV_VERSION: '2027-03-01' },
     });
     const status = await service.status('u1');
     expect(status.required).toBe(true);
-    expect(status.documents.agb).toMatchObject({
-      currentVersion: '2026-11-18',
+    expect(status.documents.avv).toMatchObject({
+      currentVersion: '2027-03-01',
       acceptedVersion: null,
       upToDate: false,
     });
+  });
+
+  it('can be switched off with LEGAL_REACCEPTANCE_ENABLED=false', async () => {
+    const { service } = setup({
+      rows: [],
+      adminOrgs: [{ id: 'o1', name: 'TSV' }],
+      env: {
+        LEGAL_AGB_VERSION: '2027-03-01',
+        LEGAL_REACCEPTANCE_ENABLED: 'false',
+      },
+    });
+    expect((await service.status('u1')).required).toBe(false);
+    expect(await service.isReacceptanceRequired('u1')).toBe(false);
   });
 
   it('is satisfied by the current versions and links the accepted one', async () => {
@@ -220,7 +289,6 @@ describe('LegalService.status / accept', () => {
       adminOrgs: [{ id: 'o1', name: 'TSV' }],
       env: {
         LEGAL_AGB_VERSION: '2027-02-01',
-        LEGAL_REACCEPTANCE_ENABLED: 'true',
       },
     });
     const status = await service.status('u1');
