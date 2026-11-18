@@ -32,6 +32,7 @@ import {
   berlinToday,
   isValidVersion,
   LEGAL_NOTICE_DAYS,
+  AVV_ANNEX_NOTICE_DAYS,
   validateAnnouncement,
 } from './legal-announcement.util';
 
@@ -44,6 +45,8 @@ export interface AnnouncementForMail {
   summaryEn: string | null;
   shortNotice: boolean;
   explicitConsent: boolean;
+  /** Vom AVV nur Anhang B/C (AVV Ziffer 6.3 statt Zustimmung). */
+  avvAnnexesOnly: boolean;
 }
 
 export interface DeliveryStats {
@@ -72,6 +75,7 @@ export interface UpcomingLegalChange {
   summaryDe: string;
   summaryEn: string | null;
   explicitConsent: boolean;
+  avvAnnexesOnly: boolean;
   announcedAt: string;
   links: Partial<
     Record<
@@ -194,6 +198,7 @@ export class LegalAnnouncementsService {
       summaryEn: announcement.summaryEn,
       shortNotice: announcement.shortNotice,
       explicitConsent: announcement.explicitConsent,
+      avvAnnexesOnly: announcement.avvAnnexesOnly,
       contactEmail: this.contactEmail,
       appUrl: this.emailService.appUrl,
     });
@@ -214,6 +219,9 @@ export class LegalAnnouncementsService {
       summaryEn: input.summaryEn?.trim() || null,
       shortNotice: input.shortNotice === true,
       explicitConsent: input.explicitConsent === true,
+      /* Nur mit AVV sinnvoll (sonst lehnt validateAnnouncement ab). */
+      avvAnnexesOnly:
+        input.avvAnnexesOnly === true && documents.includes('avv'),
     };
   }
 
@@ -340,8 +348,9 @@ export class LegalAnnouncementsService {
       const [row]: { id: string }[] = await manager.query(
         `INSERT INTO legal_announcements
            (documents, version, previous_versions, summary_de, summary_en,
-            short_notice, explicit_consent, created_by_id, created_by_email)
-         VALUES ($1::varchar(10)[], $2, $3::jsonb, $4, $5, $6, $7, $8, $9)
+            short_notice, explicit_consent, avv_annexes_only, created_by_id,
+            created_by_email)
+         VALUES ($1::varchar(10)[], $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
         [
           announcement.documents,
@@ -351,6 +360,7 @@ export class LegalAnnouncementsService {
           announcement.summaryEn,
           announcement.shortNotice,
           announcement.explicitConsent,
+          announcement.avvAnnexesOnly,
           user.id,
           user.email.slice(0, 255),
         ],
@@ -396,6 +406,7 @@ export class LegalAnnouncementsService {
       summary_en: string | null;
       short_notice: boolean;
       explicit_consent: boolean;
+      avv_annexes_only: boolean;
       created_by_email: string;
       created_at: Date;
     }[] = await this.dataSource.query(
@@ -441,6 +452,7 @@ export class LegalAnnouncementsService {
         summaryEn: r.summary_en,
         shortNotice: r.short_notice,
         explicitConsent: r.explicit_consent,
+        avvAnnexesOnly: r.avv_annexes_only,
         createdAt: new Date(r.created_at).toISOString(),
         createdByEmail: r.created_by_email,
         inForce: r.version <= today,
@@ -464,6 +476,8 @@ export class LegalAnnouncementsService {
       today,
       noticeDays: LEGAL_NOTICE_DAYS,
       earliestContractVersion: addDays(today, LEGAL_NOTICE_DAYS),
+      avvAnnexNoticeDays: AVV_ANNEX_NOTICE_DAYS,
+      earliestAvvAnnexVersion: addDays(today, AVV_ANNEX_NOTICE_DAYS),
       emailEnabled: this.emailService.enabled,
       contactEmail: this.contactEmail,
       recipients: await this.countRecipients(),
@@ -535,6 +549,7 @@ export class LegalAnnouncementsService {
           summaryDe: a.summaryDe,
           summaryEn: a.summaryEn,
           explicitConsent: a.explicitConsent,
+          avvAnnexesOnly: a.avvAnnexesOnly,
           announcedAt: a.createdAt.toISOString(),
           links,
         };

@@ -115,7 +115,7 @@ describe('AuthService.register — AGB/AVV acceptance', () => {
     sendRegistrationEmail: jest.fn(() => Promise.resolve()),
   };
 
-  it('stores AGB and AVV acceptance with IP and user agent in the transaction', async () => {
+  it('stores AGB, AVV and Anlage 1 acceptance with IP and user agent in the transaction', async () => {
     const { service, inserted } = setup(legalService);
     await service.register(
       { ...base },
@@ -134,6 +134,12 @@ describe('AuthService.register — AGB/AVV acceptance', () => {
         organizationName: 'TSV Musterstadt',
       }),
       expect.objectContaining({ document: 'avv', version: '2026-11-18' }),
+      // Anlage 1 ist Teil der AGB; die Zeile haelt ihre Fassung fest.
+      expect.objectContaining({
+        document: 'anlage1',
+        version: '2026-11-18',
+        context: 'registration',
+      }),
     ]);
     expect(legalService.sendRegistrationEmail).toHaveBeenCalledWith(
       expect.objectContaining({ organizationName: 'TSV Musterstadt' }),

@@ -27,7 +27,7 @@ export class LegalAnnouncementDto {
   @ApiProperty({
     example: '2027-01-15',
     description:
-      'Neue Fassung = Tag des Inkrafttretens (JJJJ-MM-TT). AGB, Anlage 1 und AVV mindestens sechs Wochen im Voraus.',
+      'Neue Fassung = Tag des Inkrafttretens (JJJJ-MM-TT). AGB, Anlage 1 und AVV mindestens sechs Wochen im Voraus, nur Anhang B/C des AVV vier Wochen.',
   })
   @IsString()
   @MaxLength(10)
@@ -58,9 +58,17 @@ export class LegalAnnouncementDto {
 
   @ApiPropertyOptional({
     description:
-      'Nur mit ausdrücklicher Zustimmung wirksam (Hauptleistungen, Vergütung, Auftragsverarbeitungsvertrag): die Mail fragt nach Zustimmung statt auf das Widerspruchsrecht hinzuweisen.',
+      'Nur mit ausdrücklicher Zustimmung wirksam (Hauptleistungen, Vergütung, Auftragsverarbeitungsvertrag): die Mail fragt nach Zustimmung statt auf das Widerspruchsrecht hinzuweisen. Pflicht, wenn der Auftragsverarbeitungsvertrag dabei ist (AVV Ziffer 12.4) — außer mit `avvAnnexesOnly`.',
   })
   @IsOptional()
   @IsBoolean()
   explicitConsent?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Vom Auftragsverarbeitungsvertrag ändern sich nur Anhang B (Unterauftragsverarbeiter) bzw. Anhang C (technische und organisatorische Maßnahmen): Verfahren nach AVV Ziffer 6.3 — Frist vier Wochen, Widerspruchsrecht statt Zustimmung. Nur zusammen mit `avv`.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  avvAnnexesOnly?: boolean;
 }

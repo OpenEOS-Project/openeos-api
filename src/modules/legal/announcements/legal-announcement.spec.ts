@@ -101,12 +101,82 @@ describe('validateAnnouncement', () => {
   it('requires six weeks for AGB, Anlage 1 and AVV', () => {
     for (const doc of ['agb', 'anlage1', 'avv']) {
       const problems = validateAnnouncement(
-        { ...valid, documents: [doc], version: '2026-12-29' },
+        {
+          ...valid,
+          documents: [doc],
+          version: '2026-12-29',
+          explicitConsent: true,
+        },
         context,
       );
       expect(fields(problems)).toEqual(['version']);
       expect(problems[0].message).toContain('30.12.2026');
     }
+  });
+
+  it('requires consent for AVV changes (AVV 12.4)', () => {
+    const problems = validateAnnouncement(
+      { ...valid, documents: ['agb', 'avv'] },
+      context,
+    );
+    expect(problems).toEqual([
+      expect.objectContaining({ field: 'explicitConsent', document: 'avv' }),
+    ]);
+    expect(problems[0].message).toContain('AVV Ziffer 12.4');
+    expect(
+      validateAnnouncement(
+        { ...valid, documents: ['agb', 'avv'], explicitConsent: true },
+        context,
+      ),
+    ).toEqual([]);
+    // Ohne AVV bleibt die Zustimmung freiwillig.
+    expect(
+      validateAnnouncement({ ...valid, documents: ['agb'] }, context),
+    ).toEqual([]);
+  });
+
+  it('allows AVV annex B/C changes without consent four weeks ahead (AVV 6.3)', () => {
+    const annex = { ...valid, documents: ['avv'], avvAnnexesOnly: true };
+    // 18.11. + 28 Tage = 16.12.2026
+    expect(
+      validateAnnouncement({ ...annex, version: '2026-12-16' }, context),
+    ).toEqual([]);
+    const early = validateAnnouncement(
+      { ...annex, version: '2026-12-15' },
+      context,
+    );
+    expect(early).toEqual([
+      expect.objectContaining({ field: 'version', document: 'avv' }),
+    ]);
+    expect(early[0].message).toContain('vier Wochen');
+    expect(early[0].message).toContain('16.12.2026');
+    expect(
+      validateAnnouncement(
+        { ...annex, version: '2026-11-25', shortNotice: true },
+        context,
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps six weeks for AGB announced together with an AVV annex change', () => {
+    const problems = validateAnnouncement(
+      {
+        ...valid,
+        documents: ['agb', 'avv'],
+        avvAnnexesOnly: true,
+        version: '2026-12-16',
+      },
+      context,
+    );
+    expect(problems).toHaveLength(1);
+    expect(problems[0].message).toContain('AGB müssen mindestens sechs Wochen');
+    expect(problems[0].message).not.toContain('Auftragsverarbeitungsvertrag');
+  });
+
+  it('accepts the annex option only together with the AVV', () => {
+    expect(
+      fields(validateAnnouncement({ ...valid, avvAnnexesOnly: true }, context)),
+    ).toEqual(['avvAnnexesOnly']);
   });
 
   it('allows a shorter period only with the explicit flag', () => {
@@ -217,6 +287,7 @@ describe('legalAnnouncementMail', () => {
     summaryEn: null,
     shortNotice: false,
     explicitConsent: false,
+    avvAnnexesOnly: false,
     contactEmail: 'hello@openeos.de',
     appUrl: 'https://app.openeos.de',
   };
@@ -245,6 +316,57 @@ describe('legalAnnouncementMail', () => {
     const { html } = legalAnnouncementMail({ ...input, explicitConsent: true });
     expect(html).toContain('Deine Zustimmung ist nötig');
     expect(html).not.toContain('als angenommen');
+  });
+
+  const avvDoc = {
+    document: 'avv' as const,
+    versionUrl: 'https://openeos.de/avv/2027-01-15',
+    pdfUrl: 'https://openeos.de/rechtstexte/avv-2027-01-15.pdf',
+    previousVersion: '2026-11-18',
+    previousUrl: 'https://openeos.de/avv/2026-11-18',
+  };
+
+  it('uses the AVV 6.3 procedure when only annexes B/C of the AVV change', () => {
+    const { html } = legalAnnouncementMail({
+      ...input,
+      documents: [avvDoc],
+      avvAnnexesOnly: true,
+    });
+    expect(html).toContain('Anhang B (Unterauftragsverarbeiter)');
+    expect(html).toContain('Ziffer 6.3');
+    expect(html).toContain('innerhalb von vier Wochen');
+    expect(html).toContain('gilt die Änderung als genehmigt');
+    expect(html).toContain('innerhalb von zwei Wochen');
+    expect(html).toContain('jede Seite den Nutzungsvertrag');
+    expect(html).toContain('Ziffer 6.4');
+    expect(html).toContain('nur Anhang B/C');
+    expect(html).not.toContain('sechs Wochen');
+    expect(html).not.toContain('Zustimmung ist nötig');
+  });
+
+  it('separates AGB and AVV annex objections when both change', () => {
+    const { html } = legalAnnouncementMail({
+      ...input,
+      documents: [input.documents[0], avvDoc],
+      avvAnnexesOnly: true,
+    });
+    expect(html).toContain('Dein Widerspruchsrecht: AGB');
+    expect(html).toContain('gelten die Änderungen der AGB als angenommen');
+    expect(html).toContain('innerhalb von sechs Wochen');
+    expect(html).toContain(
+      'Dein Widerspruchsrecht: Auftragsverarbeitungsvertrag',
+    );
+    expect(html).toContain('innerhalb von vier Wochen');
+  });
+
+  it('asks for consent for an AVV change that is not limited to annexes', () => {
+    const { html } = legalAnnouncementMail({
+      ...input,
+      documents: [avvDoc],
+      explicitConsent: true,
+    });
+    expect(html).toContain('Deine Zustimmung ist nötig');
+    expect(html).not.toContain('Ziffer 6.3');
   });
 
   it('is informational for privacy and imprint only', () => {
@@ -282,7 +404,7 @@ describe('LegalService with announcements', () => {
       ),
     };
     return new LegalService(
-      { createQueryBuilder: () => qb } as never,
+      { createQueryBuilder: () => qb, insert: jest.fn() } as never,
       dataSource as never,
       new ConfigService({
         legal: legalConfigFromEnv({ APP_URL: 'https://app.openeos.de' }, false),
@@ -299,6 +421,7 @@ describe('LegalService with announcements', () => {
     summary_en: null,
     short_notice: false,
     explicit_consent: false,
+    avv_annexes_only: false,
     created_at: new Date('2026-11-18T10:00:00Z'),
     ...extra,
   });
@@ -349,6 +472,109 @@ describe('LegalService with announcements', () => {
       documents: ['agb'],
       explicitConsent: false,
       announcedAt: '2026-11-18T10:00:00.000Z',
+    });
+  });
+
+  /** Uhr auf den 15.01.2027, 00:30 in Berlin. */
+  const onEffectiveDate = () =>
+    jest.useFakeTimers({
+      now: new Date('2027-01-14T23:30:00Z'),
+      doNotFake: [
+        'nextTick',
+        'setImmediate',
+        'setTimeout',
+        'setInterval',
+        'queueMicrotask',
+      ],
+    });
+  const inserted = (legal: LegalService) =>
+    (
+      legal as unknown as { acceptances: { insert: jest.Mock } }
+    ).acceptances.insert.mock.calls.flatMap(
+      ([rows]: [{ document: string; version: string }[]]) =>
+        rows.map((r) => `${r.document}@${r.version}`),
+    );
+
+  it('names per document what needs to be accepted again', async () => {
+    onEffectiveDate();
+    const legal = service(accepted, [announcement('2027-01-15')]);
+    await legal.refreshAnnouncements();
+    const status = await legal.status('u1');
+    expect(status.documents.agb.reacceptanceRequired).toBe(true);
+    expect(status.documents.avv.reacceptanceRequired).toBe(false);
+    // Anlage 1 in der Ausgangsfassung: niemand wird gefragt, auch ohne Zeile.
+    expect(status.documents.anlage1).toMatchObject({
+      acceptedVersion: null,
+      reacceptanceRequired: false,
+    });
+  });
+
+  it('records only the documents that need it on re-acceptance', async () => {
+    onEffectiveDate();
+    const legal = service(accepted, [announcement('2027-01-15')]);
+    await legal.refreshAnnouncements();
+    await legal.accept({ id: 'u1', email: 'nina@example.org' }, {});
+    expect(inserted(legal)).toEqual(['agb@2027-01-15']);
+  });
+
+  it('records nothing on re-acceptance when nothing is due', async () => {
+    const legal = service(accepted, []);
+    await legal.accept(
+      { id: 'u1', email: 'nina@example.org' },
+      { context: 'reacceptance' },
+    );
+    expect(inserted(legal)).toEqual([]);
+  });
+
+  it('records all documents, including Anlage 1, when booking', async () => {
+    const legal = service(accepted, []);
+    await legal.accept(
+      { id: 'u1', email: 'nina@example.org' },
+      { context: 'purchase' },
+    );
+    expect(inserted(legal)).toEqual([
+      `agb@${DEFAULT_LEGAL_VERSIONS.agb}`,
+      `avv@${DEFAULT_LEGAL_VERSIONS.avv}`,
+      `anlage1@${DEFAULT_LEGAL_VERSIONS.anlage1}`,
+    ]);
+  });
+
+  it('asks again for Anlage 1 alone when only Anlage 1 changed', async () => {
+    onEffectiveDate();
+    const legal = service(accepted, [
+      announcement('2027-01-15', {
+        documents: ['anlage1'],
+        explicit_consent: true,
+      }),
+    ]);
+    await legal.refreshAnnouncements();
+    const status = await legal.status('u1');
+    expect(status.required).toBe(true);
+    expect(status.documents.anlage1.reacceptanceRequired).toBe(true);
+    expect(status.documents.agb.reacceptanceRequired).toBe(false);
+    expect(status.change).toMatchObject({
+      documents: ['anlage1'],
+      explicitConsent: true,
+    });
+    await legal.accept({ id: 'u1', email: 'nina@example.org' }, {});
+    expect(inserted(legal)).toEqual(['anlage1@2027-01-15']);
+  });
+
+  it('passes the AVV annex procedure on to the dialog', async () => {
+    onEffectiveDate();
+    const legal = service(accepted, [
+      announcement('2027-01-15', {
+        documents: ['avv'],
+        avv_annexes_only: true,
+      }),
+    ]);
+    await legal.refreshAnnouncements();
+    const status = await legal.status('u1');
+    expect(status.documents.avv.reacceptanceRequired).toBe(true);
+    expect(status.change).toMatchObject({
+      documents: ['avv'],
+      explicitConsent: false,
+      avvAnnexesOnly: true,
     });
   });
 

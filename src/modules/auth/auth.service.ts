@@ -43,7 +43,10 @@ import {
 } from './dto';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { DeploymentService } from '../../common/services/deployment.service';
-import { LegalAcceptance } from '../../database/entities/legal-acceptance.entity';
+import {
+  LEGAL_DOCUMENTS,
+  LegalAcceptance,
+} from '../../database/entities/legal-acceptance.entity';
 import {
   acceptanceRows,
   AcceptanceClient,
@@ -300,7 +303,7 @@ export class AuthService {
                   name: registeredOrganization.name,
                 }
               : null,
-            documents: ['agb', 'avv'],
+            documents: LEGAL_DOCUMENTS,
             context: 'registration',
             businessConfirmed: true,
             client,

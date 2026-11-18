@@ -333,6 +333,11 @@ describe('LegalService.status / accept', () => {
         { id: 'o1', name: 'TSV' },
         { id: 'o2', name: 'FC' },
       ],
+      // AGB und AVV neu, Anlage 1 in der Ausgangsfassung: nur AGB und AVV.
+      env: {
+        LEGAL_AGB_VERSION: '2027-02-01',
+        LEGAL_AVV_VERSION: '2027-02-01',
+      },
     });
     await service.accept(
       { id: 'u1', email: 'a@b.de' },
@@ -345,10 +350,29 @@ describe('LegalService.status / accept', () => {
         expect.objectContaining({
           organizationId: 'o2',
           document: 'avv',
+          version: '2027-02-01',
           context: 'reacceptance',
           ipAddress: '198.51.100.1',
         }),
       ]),
     );
+    expect(
+      inserted.map((r) => (r as { document: string }).document),
+    ).not.toContain('anlage1');
+  });
+
+  it('records the documents named in the request', async () => {
+    const { service, inserted } = setup({
+      rows: [],
+      adminOrgs: [{ id: 'o1', name: 'TSV' }],
+    });
+    await service.accept(
+      { id: 'u1', email: 'a@b.de' },
+      { context: 'reacceptance', documents: ['avv', 'anlage1'] },
+    );
+    expect(inserted).toEqual([
+      expect.objectContaining({ document: 'avv', version: '2026-11-18' }),
+      expect.objectContaining({ document: 'anlage1', version: '2026-11-18' }),
+    ]);
   });
 });
