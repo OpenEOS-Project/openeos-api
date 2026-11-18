@@ -19,6 +19,22 @@ export const CHANGELOG: ChangelogEintrag[] = [
     datum: '2026-11-09',
     art: 'neu',
     titel: {
+      de: 'Änderungen der Rechtstexte kündigen wir vorher an',
+      en: 'Changes to the legal texts are announced in advance',
+    },
+    kurz: {
+      de: 'Ändern sich AGB, Auftragsverarbeitungsvertrag oder Datenschutzerklärung, bekommst du vorher eine E-Mail und siehst bis zum Inkrafttreten einen Hinweis in der App.',
+      en: 'If the terms, the data processing agreement or the privacy policy change, you receive an e-mail in advance and see a notice in the app until the change takes effect.',
+    },
+    text: {
+      de: 'Ändern wir die AGB, die Leistungsbeschreibung, den Auftragsverarbeitungsvertrag, die Datenschutzerklärung oder das Impressum, bekommen alle Admins vorher eine E-Mail: was sich ändert, ab wann es gilt und Links auf die neue und die bisherige Fassung – bei AGB und Auftragsverarbeitungsvertrag mindestens sechs Wochen vorher und mit dem Hinweis auf dein Widerspruchsrecht. Bis zum Inkrafttreten steht oben in der App ein Hinweis, den du ausblenden kannst. Bei neuen AGB oder einem neuen Auftragsverarbeitungsvertrag bitten wir dich danach, die neue Fassung zu bestätigen. Die Fassung vom 18. November 2026 ist die erste und muss niemand erneut bestätigen.',
+      en: 'If we change the terms, the service description, the data processing agreement, the privacy policy or the imprint, all admins receive an e-mail in advance: what changes, from when it applies and links to the new and the previous version – for the terms and the data processing agreement at least six weeks ahead and with a note on your right to object. Until the change takes effect, a notice at the top of the app tells you about it; you can hide it. For new terms or a new data processing agreement we then ask you to confirm the new version. The version of 18 November 2026 is the first one; nobody has to confirm it again.',
+    },
+  },
+  {
+    datum: '2026-11-09',
+    art: 'neu',
+    titel: {
       de: 'Inhalt melden in Shop und Helferseiten',
       en: 'Report content in shops and on helper pages',
     },
