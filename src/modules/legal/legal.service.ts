@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
@@ -15,10 +20,15 @@ import {
   isAfterInitialVersion,
   LegalConfig,
   legalConfigFromEnv,
+  LegalDocumentKey,
   LegalDocumentLinks,
   legalLinks,
 } from '../../config/legal.config';
 import { EmailService, LegalEmailDocument } from '../email/email.service';
+import {
+  berlinToday,
+  effectiveLegalVersions,
+} from './announcements/legal-announcement.util';
 
 /** Wer und von wo — wie bei den Sitzungen. */
 export interface AcceptanceClient {
@@ -35,11 +45,42 @@ export interface LegalDocumentStatus {
   acceptedPdfUrl: string | null;
 }
 
+/** Angekuendigte Fassung, wie die API sie im Speicher haelt. */
+export interface KnownAnnouncement {
+  id: string;
+  documents: LegalDocumentKey[];
+  version: string;
+  summaryDe: string;
+  summaryEn: string | null;
+  shortNotice: boolean;
+  explicitConsent: boolean;
+  createdAt: Date;
+}
+
+/** Die angekuendigte Aenderung, mit der die aktuelle AGB/AVV gilt. */
+export interface LegalChange {
+  version: string;
+  documents: LegalDocumentKey[];
+  announcedAt: string;
+  summaryDe: string;
+  summaryEn: string | null;
+  /** Nur mit ausdruecklicher Zustimmung wirksam (nicht aufschiebbar). */
+  explicitConsent: boolean;
+}
+
 export interface LegalStatus {
   /** Muss der Benutzer AGB/AVV (erneut) annehmen? */
   required: boolean;
   documents: Record<LegalDocument, LegalDocumentStatus>;
+  /**
+   * Ankuendigung zur geltenden AGB-/AVV-Fassung (Zusammenfassung, Datum der
+   * Mail); `null`, wenn die Fassung nicht angekuendigt wurde.
+   */
+  change: LegalChange | null;
 }
+
+/** Wie oft die angekuendigten Fassungen neu gelesen werden. */
+const ANNOUNCEMENT_REFRESH_MS = 60_000;
 
 export const LEGAL_LABELS: Record<LegalDocument, string> = {
   agb: 'Allgemeine Geschäftsbedingungen (AGB)',
@@ -104,8 +145,11 @@ export function reacceptanceNeeded(
  * `legalReacceptanceRequired` und die Oberflaeche fragt erneut.
  */
 @Injectable()
-export class LegalService {
+export class LegalService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LegalService.name);
+  /** Angekuendigte Fassungen (legal_announcements), sortiert nach Fassung. */
+  private announcements: KnownAnnouncement[] = [];
+  private refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     @InjectRepository(LegalAcceptance)
@@ -115,11 +159,108 @@ export class LegalService {
     private readonly emailService: EmailService,
   ) {}
 
-  get config(): LegalConfig {
+  /** Fassungen aus Code bzw. Umgebung, ohne Ankuendigungen. */
+  get baseConfig(): LegalConfig {
     return (
       this.configService.get<LegalConfig>('legal') ??
       legalConfigFromEnv({}, false)
     );
+  }
+
+  /**
+   * Geltende Konfiguration: je Dokument die neuere von Code/Umgebung und
+   * der neuesten angekuendigten Fassung, deren Tag erreicht ist (siehe
+   * legal-announcement.util.ts).
+   */
+  get config(): LegalConfig {
+    const base = this.baseConfig;
+    if (!base.enabled || !this.announcements.length) return base;
+    return {
+      ...base,
+      versions: effectiveLegalVersions(
+        base.versions,
+        this.announcements,
+        berlinToday(),
+      ),
+    };
+  }
+
+  onModuleInit(): void {
+    if (!this.baseConfig.enabled) return;
+    void this.refreshAnnouncements();
+    this.refreshTimer = setInterval(
+      () => void this.refreshAnnouncements(),
+      ANNOUNCEMENT_REFRESH_MS,
+    );
+    this.refreshTimer.unref?.();
+  }
+
+  onModuleDestroy(): void {
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
+    this.refreshTimer = null;
+  }
+
+  /** Alle angekuendigten Fassungen (auch kuenftige), aelteste zuerst. */
+  get knownAnnouncements(): readonly KnownAnnouncement[] {
+    return this.announcements;
+  }
+
+  /**
+   * Angekuendigte Fassungen neu lesen — beim Start, jede Minute und nach
+   * einer neuen Ankuendigung. Scheitert das, bleibt der letzte Stand.
+   */
+  async refreshAnnouncements(): Promise<void> {
+    try {
+      const rows: {
+        id: string;
+        documents: LegalDocumentKey[];
+        version: string;
+        summary_de: string;
+        summary_en: string | null;
+        short_notice: boolean;
+        explicit_consent: boolean;
+        created_at: Date;
+      }[] = await this.dataSource.query(
+        `SELECT id, documents, version, summary_de, summary_en, short_notice,
+                explicit_consent, created_at
+           FROM legal_announcements
+          ORDER BY version, created_at`,
+      );
+      this.announcements = rows.map((r) => ({
+        id: r.id,
+        documents: r.documents,
+        version: r.version,
+        summaryDe: r.summary_de,
+        summaryEn: r.summary_en,
+        shortNotice: r.short_notice,
+        explicitConsent: r.explicit_consent,
+        createdAt: new Date(r.created_at),
+      }));
+    } catch (error) {
+      this.logger.warn(
+        `Angekündigte Fassungen nicht gelesen: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  /** Ankuendigung, mit der die geltende AGB- bzw. AVV-Fassung kam. */
+  currentChange(config: LegalConfig = this.config): LegalChange | null {
+    for (let i = this.announcements.length - 1; i >= 0; i--) {
+      const a = this.announcements[i];
+      const matches = LEGAL_DOCUMENTS.some(
+        (d) => a.documents.includes(d) && config.versions[d] === a.version,
+      );
+      if (!matches) continue;
+      return {
+        version: a.version,
+        documents: a.documents,
+        announcedAt: a.createdAt.toISOString(),
+        summaryDe: a.summaryDe,
+        summaryEn: a.summaryEn,
+        explicitConsent: a.explicitConsent,
+      };
+    }
+    return null;
   }
 
   versions(): {
@@ -198,7 +339,7 @@ export class LegalService {
       LEGAL_DOCUMENTS.some((d) =>
         reacceptanceNeeded(config, d, documents[d].acceptedVersion),
       );
-    return { required, documents };
+    return { required, documents, change: this.currentChange(config) };
   }
 
   async isReacceptanceRequired(userId: string): Promise<boolean> {

@@ -97,6 +97,8 @@ export * from './organization-operating-mode-change.entity';
 export * from './menu-import.entity';
 export * from './ai-usage.entity';
 export * from './legal-acceptance.entity';
+export * from './legal-announcement.entity';
+export * from './legal-announcement-delivery.entity';
 export * from './retention-run.entity';
 export * from './retention-notice.entity';
 

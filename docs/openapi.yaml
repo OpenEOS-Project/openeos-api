@@ -949,7 +949,7 @@ paths:
         - Legal
   /api/legal/status:
     get:
-      description: "Je Dokument die aktuelle und die zuletzt angenommene Fassung (mit Zeitpunkt und Links). `required`: Admin einer Organisation ohne Annahme der aktuellen Fassung."
+      description: "Je Dokument die aktuelle und die zuletzt angenommene Fassung (mit Zeitpunkt und Links). `required`: Admin einer Organisation ohne Annahme der aktuellen Fassung (nur Fassungen nach der Ausgangsfassung). `change`: Ankündigung, mit der die aktuelle AGB-/AVV-Fassung kam (Zusammenfassung, Datum, ob ausdrückliche Zustimmung nötig ist), sonst `null`."
       operationId: legal_getStatus
       parameters: []
       responses:
@@ -958,6 +958,35 @@ paths:
       security:
         - JWT-auth: []
       summary: Accepted AGB/AVV versions of the current user
+      tags: *a10
+  /api/legal/announcements:
+    get:
+      description: "Für Admins einer Organisation: angekündigte neue Fassungen, die noch nicht gelten (Datum, Dokumente, Zusammenfassung, Links auf neue und bisherige Fassung) — ohne die, die du ausgeblendet hast. Sonst eine leere Liste."
+      operationId: legal_getAnnouncements
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      security:
+        - JWT-auth: []
+      summary: Announced, not yet effective legal text changes
+      tags: *a10
+  /api/legal/announcements/{id}/dismiss:
+    post:
+      description: Blendet den Hinweis auf diese Ankündigung für dich aus.
+      operationId: legal_dismissAnnouncement
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "204":
+          description: ""
+      security:
+        - JWT-auth: []
+      summary: Hide an announcement notice for the current user
       tags: *a10
   /api/legal/accept:
     post:
@@ -997,6 +1026,68 @@ paths:
       summary: Data for the tax office notification (ELSTER, admins)
       tags:
         - Legal
+  /api/admin/legal-announcements:
+    get:
+      description: Geltende Fassungen, Ausgangsfassung, frühestes Datum für AGB/AVV (sechs Wochen), Zahl der Empfänger und alle Ankündigungen mit Versandstand (gesendet, offen, gescheitert).
+      operationId: legalAnnouncementsAdmin_overview
+      parameters: []
+      responses:
+        "200":
+          description: ""
+      security: &a11
+        - JWT-auth: []
+      summary: Legal text announcements with delivery status
+      tags: &a12
+        - Admin
+    post:
+      description: Speichert die Ankündigung und verschickt die Mail an alle Admins aller Organisationen (je Adresse einmal, im Hintergrund). Ab dem Datum gilt die neue Fassung. Bei Fehlern 400 mit `details`.
+      operationId: legalAnnouncementsAdmin_create
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegalAnnouncementDto"
+      responses:
+        "201":
+          description: ""
+      security: *a11
+      summary: Announce a new version of the legal texts
+      tags: *a12
+  /api/admin/legal-announcements/preview:
+    post:
+      description: Prüft Frist, Reihenfolge und ob die neue Fassung auf der Website abrufbar ist, und liefert Betreff und HTML der Mail (an dich adressiert) sowie die Zahl der Empfänger. Speichert nichts.
+      operationId: legalAnnouncementsAdmin_preview
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegalAnnouncementDto"
+      responses:
+        "200":
+          description: ""
+      security: *a11
+      summary: Validate an announcement and render its e-mail
+      tags: *a12
+  /api/admin/legal-announcements/{id}/retry:
+    post:
+      description: "Reiht die gescheiterten Mails einer Ankündigung erneut ein. Achtung: Bei „Versand unterbrochen“ kann die Mail schon angekommen sein."
+      operationId: legalAnnouncementsAdmin_retry
+      parameters:
+        - name: id
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a11
+      summary: Queue failed announcement e-mails again
+      tags: *a12
   /api/organizations:
     post:
       operationId: organizations_create
@@ -1010,10 +1101,10 @@ paths:
       responses:
         "201":
           description: ""
-      security: &a11
-        - &a13
+      security: &a13
+        - &a15
           JWT-auth: []
-      tags: &a12
+      tags: &a14
         - Organizations
     get:
       operationId: organizations_findAll
@@ -1040,8 +1131,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
   /api/organizations/{id}:
     get:
       description: Liefert Stammdaten, Einstellungen und freigeschaltete Module der Organisation. Scope `read`; ein Token sieht nur seine eigene Organisation.
@@ -1058,10 +1149,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a15
         - API-token: []
       summary: Organisation abrufen
-      tags: *a12
+      tags: *a14
       x-api-token-scope: read
     patch:
       description: "Ändert Name, Kontaktdaten oder Einstellungen. In `settings` sind nur diese Abschnitte änderbar: `currency`, `timezone`, `locale`, `description`, `taxId`, `legalName`, `taxNumber`, `vatId`, `vatExempt`, `address`, `contact`, `receipt`, `legal`, `pos`, `pfand`, `onlineOrdering`, `orderFlow`, `sumup`, `waiters`, `eventReminders`. Unverändert mitgeschickte andere Abschnitte werden ignoriert; Änderungen daran (z. B. `assistant`, `integrations`, Betriebsart) → 400 ORGANIZATION_SETTING_NOT_UPDATABLE, dafür gibt es eigene Endpunkte. Drucker und Vorlagen in `orderFlow` müssen zur Organisation gehören (400 ORGANIZATION_SETTINGS_INVALID). Die Betriebsart und das Land ändern sich nur über ihre eigenen Endpunkte. Scope `settings:write`, nur für Administratoren; geänderte Einstellungen gehen sofort an die Kassen."
@@ -1084,10 +1175,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a13
+        - *a15
         - API-token: []
       summary: Organisation ändern
-      tags: *a12
+      tags: *a14
       x-api-token-scope: settings:write
     delete:
       operationId: organizations_remove
@@ -1100,8 +1191,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
   /api/organizations/{id}/integrations/{integrationId}:
     patch:
       description: "Integrationen: `sumup`, `tse` (Cloud-TSE, nur Deutschland; Ausschalten mit aktiver TSE: 409 TSE_ACTIVE_DEACTIVATE_FIRST — erst ausdrücklich deaktivieren)."
@@ -1126,9 +1217,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a11
+      security: *a13
       summary: Enable or disable an integration (admins only)
-      tags: *a12
+      tags: *a14
   /api/organizations/{id}/operating-mode:
     get:
       description: "Betriebsart (`orders_only` „Nur Bons“, `cashless` „Bargeldlos“, `full` „Alle Funktionen“), Bestand (`operatingModeLegacy`), Land, TSE, abgeleitete Werte (`cashAllowed`, `pricesVisible`), wählbare Betriebsarten (`options`, Gründe `unavailableReason`: `country_required`, `tse_required`, `tse_coming_soon` = Cloud-TSE bald verfügbar, `paid_event_required`) und Verlauf."
@@ -1142,9 +1233,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a11
+      security: *a13
       summary: Operating mode with options and change log
-      tags: *a12
+      tags: *a14
     patch:
       description: Wechselt die Betriebsart. `full` geht in Deutschland nur mit aktiver Cloud-TSE (sonst 403 TSE_REQUIRED_FOR_CASH); ohne Land 400 COUNTRY_REQUIRED. Jeder Wechsel hebt den Bestand auf, steht im Verlauf und im Protokoll und geht sofort an die Kassen.
       operationId: organizations_setOperatingMode
@@ -1163,9 +1254,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a11
+      security: *a13
       summary: Switch the operating mode (admins, logged)
-      tags: *a12
+      tags: *a14
   /api/organizations/{id}/operating-mode/certificate.pdf:
     get:
       description: "Herstellerbescheinigung für die Verfahrensdokumentation: Bargeld kann in dieser Organisation nicht erfasst werden; Bargeld ist ausschließlich mit aktiver zertifizierter TSE möglich. Nur in Deutschland in den Betriebsarten `orders_only` und `cashless`."
@@ -1179,9 +1270,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a11
+      security: *a13
       summary: Manufacturer certificate for the operating mode (PDF, admins)
-      tags: *a12
+      tags: *a14
   /api/organizations/{id}/country:
     patch:
       description: "Für Bestandsorganisationen ohne Land: einmalig setzen. Steht schon ein Land, 403 COUNTRY_ALREADY_SET — ändern kann es dann nur der OpenEOS-Support."
@@ -1201,9 +1292,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a11
+      security: *a13
       summary: Set the country once (admins, only while none is set)
-      tags: *a12
+      tags: *a14
   /api/organizations/{id}/restore:
     post:
       operationId: organizations_restore
@@ -1216,9 +1307,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a11
+      security: *a13
       summary: Cancel the deletion of an organization (admins, until the final deletion)
-      tags: *a12
+      tags: *a14
   /api/organizations/{id}/members:
     get:
       operationId: organizations_getMembers
@@ -1250,8 +1341,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
     post:
       operationId: organizations_addMember
       parameters:
@@ -1269,8 +1360,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
   /api/organizations/{id}/members/{memberId}:
     patch:
       operationId: organizations_updateMember
@@ -1294,8 +1385,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
     delete:
       operationId: organizations_removeMember
       parameters:
@@ -1312,8 +1403,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
   /api/organizations/{id}/members/{userId}/pin:
     post:
       operationId: organizations_setMemberPin
@@ -1337,8 +1428,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
     delete:
       operationId: organizations_removeMemberPin
       parameters:
@@ -1355,8 +1446,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
   /api/organizations/{id}/invitations:
     get:
       operationId: organizations_getInvitations
@@ -1369,8 +1460,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
     post:
       operationId: organizations_createInvitation
       parameters:
@@ -1388,8 +1479,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
   /api/organizations/{id}/invitations/{invitationId}/resend:
     post:
       operationId: organizations_resendInvitation
@@ -1407,8 +1498,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
   /api/organizations/{id}/invitations/{invitationId}:
     delete:
       operationId: organizations_cancelInvitation
@@ -1426,8 +1517,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a11
-      tags: *a12
+      security: *a13
+      tags: *a14
   /api/organizations/{id}/broadcast:
     post:
       description: Send a message to all connected devices in the organization
@@ -1449,9 +1540,9 @@ paths:
           description: Message broadcasted
         "403":
           description: Forbidden - not a member or insufficient permissions
-      security: *a11
+      security: *a13
       summary: Broadcast message to all devices
-      tags: *a12
+      tags: *a14
   /api/invitations/{token}:
     get:
       operationId: invitations_getInvitation
@@ -1464,7 +1555,7 @@ paths:
       responses:
         "200":
           description: ""
-      tags: &a14
+      tags: &a16
         - Organizations
   /api/invitations/{token}/accept:
     post:
@@ -1478,7 +1569,7 @@ paths:
       responses:
         "201":
           description: ""
-      tags: *a14
+      tags: *a16
   /api/invitations/{token}/decline:
     post:
       operationId: invitations_declineInvitation
@@ -1491,7 +1582,7 @@ paths:
       responses:
         "201":
           description: ""
-      tags: *a14
+      tags: *a16
   /api/organizations/{organizationId}/devices:
     post:
       operationId: devices_create
@@ -1512,10 +1603,10 @@ paths:
       responses:
         "201":
           description: ""
-      security: &a17
-        - &a15
+      security: &a19
+        - &a17
           JWT-auth: []
-      tags: &a16
+      tags: &a18
         - Devices
     get:
       description: Kassen und Displays der Organisation mit Status, seitenweise (`page`, `limit`). Scope `read`; koppeln, sperren und löschen geht nur in der App.
@@ -1551,10 +1642,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a15
+        - *a17
         - API-token: []
       summary: Geräte auflisten
-      tags: *a16
+      tags: *a18
       x-api-token-scope: read
   /api/organizations/{organizationId}/devices/{deviceId}:
     get:
@@ -1579,10 +1670,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a15
+        - *a17
         - API-token: []
       summary: Gerät abrufen
-      tags: *a16
+      tags: *a18
       x-api-token-scope: read
     patch:
       operationId: devices_update
@@ -1608,8 +1699,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a17
-      tags: *a16
+      security: *a19
+      tags: *a18
     delete:
       operationId: devices_remove
       parameters:
@@ -1628,8 +1719,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a17
-      tags: *a16
+      security: *a19
+      tags: *a18
   /api/organizations/{organizationId}/devices/{deviceId}/regenerate-token:
     post:
       operationId: devices_regenerateToken
@@ -1649,8 +1740,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a17
-      tags: *a16
+      security: *a19
+      tags: *a18
   /api/organizations/{organizationId}/devices/{deviceId}/verify:
     post:
       operationId: devices_verify
@@ -1676,8 +1767,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a17
-      tags: *a16
+      security: *a19
+      tags: *a18
   /api/organizations/{organizationId}/devices/{deviceId}/block:
     post:
       operationId: devices_block
@@ -1697,8 +1788,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a17
-      tags: *a16
+      security: *a19
+      tags: *a18
   /api/organizations/{organizationId}/devices/{deviceId}/unblock:
     post:
       operationId: devices_unblock
@@ -1718,8 +1809,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a17
-      tags: *a16
+      security: *a19
+      tags: *a18
   /api/organizations/{organizationId}/devices/{deviceId}/stats:
     get:
       description: Bestellungen, Zahlungen und Umsatz, die über dieses Gerät liefen, dazu Online-Status und letzter Kontakt. Scope `read`.
@@ -1743,10 +1834,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a15
+        - *a17
         - API-token: []
       summary: Gerätestatistik
-      tags: *a16
+      tags: *a18
       x-api-token-scope: read
   /api/organizations/{organizationId}/devices/online/ids:
     get:
@@ -1764,10 +1855,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a15
+        - *a17
         - API-token: []
       summary: IDs der verbundenen Geräte
-      tags: *a16
+      tags: *a18
       x-api-token-scope: read
   /api/devices/init:
     post:
@@ -1784,7 +1875,7 @@ paths:
         "201":
           description: ""
       summary: Step 1 — register a device and get its pairing code
-      tags: &a18
+      tags: &a20
         - Devices
   /api/devices/lookup:
     get:
@@ -1801,7 +1892,7 @@ paths:
         "200":
           description: ""
       summary: Step 2 — look up which device a code belongs to
-      tags: *a18
+      tags: *a20
   /api/devices/register:
     post:
       operationId: devicesPublic_register
@@ -1816,7 +1907,7 @@ paths:
         "201":
           description: ""
       summary: Register a new device (legacy - requires organization slug)
-      tags: *a18
+      tags: *a20
   /api/devices/status:
     get:
       operationId: devicesPublic_getStatus
@@ -1831,7 +1922,7 @@ paths:
         "200":
           description: ""
       summary: Get device status
-      tags: *a18
+      tags: *a20
   /api/devices/me:
     get:
       operationId: devicesPublic_getMe
@@ -1846,7 +1937,7 @@ paths:
         "200":
           description: ""
       summary: Get current device info
-      tags: *a18
+      tags: *a20
   /api/devices/logout:
     post:
       operationId: devicesPublic_logout
@@ -1861,7 +1952,7 @@ paths:
         "201":
           description: ""
       summary: Logout device
-      tags: *a18
+      tags: *a20
   /api/devices/link:
     post:
       description: Finishes the pairing a device started with POST /devices/init. The caller must be signed in and hold the devices permission in the target organisation — the device itself never chooses where it belongs.  Codes are valid for 15 minutes and accept a limited number of tries. On success the device becomes verified, its code is cleared, and its next status poll tells it where to go. Type defaults are applied here, so a display arrives already set to the customer view.
@@ -1885,7 +1976,7 @@ paths:
     get:
       operationId: deviceApi_getOrganization
       parameters:
-        - &a19
+        - &a21
           name: X-Device-Token
           in: header
           description: Device authentication token
@@ -1896,33 +1987,33 @@ paths:
         "200":
           description: ""
       summary: Get organization info and settings for device
-      tags: &a20
+      tags: &a22
         - Device API
   /api/device-api/discount-vouchers:
     get:
       operationId: deviceApi_getDiscountVouchers
       parameters:
-        - *a19
+        - *a21
       responses:
         "200":
           description: ""
       summary: Get active discount vouchers (Rabatt-Bons) for the device organization
-      tags: *a20
+      tags: *a22
   /api/device-api/pfand-types:
     get:
       operationId: deviceApi_getPfandTypes
       parameters:
-        - *a19
+        - *a21
       responses:
         "200":
           description: ""
       summary: Get active deposit (Pfand) types for the device organization
-      tags: *a20
+      tags: *a22
   /api/device-api/pfand-returns:
     post:
       operationId: deviceApi_createPfandReturn
       parameters:
-        - *a19
+        - *a21
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -1939,13 +2030,13 @@ paths:
         "201":
           description: ""
       summary: Record a deposit payout (Pfand-Rückgabe) and open the cash drawer
-      tags: *a20
+      tags: *a22
   /api/device-api/pfand-returns/{pfandReturnId}/print:
     post:
       description: "Druckt den Beleg „Pfandrückgabe“ einer gespeicherten Auszahlung auf dem Bon-Drucker dieser Kasse: gespeicherte Beträge, MwSt je Satz und TSE-Daten, keine neue TSE-Transaktion. `reprint: true` druckt den Vermerk „NACHDRUCK“."
       operationId: deviceApi_printPfandReturn
       parameters:
-        - *a19
+        - *a21
         - name: pfandReturnId
           required: true
           in: path
@@ -1961,24 +2052,24 @@ paths:
         "201":
           description: ""
       summary: Beleg einer Pfand-Rückgabe drucken (auf Wunsch oder Nachdruck)
-      tags: *a20
+      tags: *a22
   /api/device-api/printers:
     get:
       description: Nur übernommene (adoptierte) oder manuell angelegte Drucker — der Agent druckt ausschließlich auf diese. Neu laden bei `printerConfigUpdate`.
       operationId: deviceApi_getPrinters
       parameters:
-        - *a19
+        - *a21
       responses:
         "200":
           description: ""
       summary: Übernommene Drucker dieses Agents
-      tags: *a20
+      tags: *a22
   /api/device-api/printers/discovered:
     post:
       description: "Upsert nach (deviceId, fingerprint), lastSeenAt = jetzt. Bei `full: true` (kompletter Scan) werden nicht gemeldete Einträge nicht gelöscht, nur ihr lastSeenAt bleibt alt."
       operationId: deviceApi_reportDiscoveredPrinters
       parameters:
-        - *a19
+        - *a21
       requestBody:
         required: true
         content:
@@ -1989,35 +2080,35 @@ paths:
         "201":
           description: ""
       summary: Gefundene Drucker melden
-      tags: *a20
+      tags: *a22
   /api/device-api/printers/sync:
     post:
       deprecated: true
       description: Die Druckerliste kommt nicht mehr aus der YAML des Agents. Drucker werden in der Web-App übernommen; der Agent liest sie über GET /device-api/printers.
       operationId: deviceApi_syncPrinters
       parameters:
-        - *a19
+        - *a21
       responses:
         "201":
           description: ""
       summary: Entfernt — 410 Gone
-      tags: *a20
+      tags: *a22
   /api/device-api/templates:
     get:
       operationId: deviceApi_getTemplates
       parameters:
-        - *a19
+        - *a21
       responses:
         "200":
           description: ""
       summary: Get print templates for this device
-      tags: *a20
+      tags: *a22
   /api/device-api/verify-pin:
     post:
       description: "Rückwärtskompatibel: meldet die Bedienung bzw. das Mitglied an wie `POST /device-api/waiter-session` und liefert zusätzlich `userId`, `firstName`, `lastName`, `role`. Neu: `token` für den Header `X-Waiter-Session`. Fehler wie dort (403 PIN_INVALID, 429 PIN_LOCKED)."
       operationId: deviceApi_verifyPin
       parameters:
-        - *a19
+        - *a21
       requestBody:
         required: true
         content:
@@ -2028,22 +2119,22 @@ paths:
         "200":
           description: ""
       summary: PIN prüfen (Alias von POST /device-api/waiter-session)
-      tags: *a20
+      tags: *a22
   /api/device-api/events:
     get:
       operationId: deviceApi_getEvents
       parameters:
-        - *a19
+        - *a21
       responses:
         "200":
           description: ""
       summary: Get active or test event for device organization (at most one)
-      tags: *a20
+      tags: *a22
   /api/device-api/events/{eventId}:
     get:
       operationId: deviceApi_getEvent
       parameters:
-        - *a19
+        - *a21
         - name: eventId
           required: true
           in: path
@@ -2053,12 +2144,12 @@ paths:
         "200":
           description: ""
       summary: Get single event
-      tags: *a20
+      tags: *a22
   /api/device-api/events/{eventId}/categories:
     get:
       operationId: deviceApi_getCategories
       parameters:
-        - *a19
+        - *a21
         - name: eventId
           required: true
           in: path
@@ -2068,12 +2159,12 @@ paths:
         "200":
           description: ""
       summary: Get categories for an event
-      tags: *a20
+      tags: *a22
   /api/device-api/events/{eventId}/products:
     get:
       operationId: deviceApi_getProducts
       parameters:
-        - *a19
+        - *a21
         - name: eventId
           required: true
           in: path
@@ -2083,13 +2174,13 @@ paths:
         "200":
           description: ""
       summary: Get products for an event
-      tags: *a20
+      tags: *a22
   /api/device-api/orders/open:
     get:
       description: Offen = unbezahlt/teilbezahlt und weder storniert noch abgeschlossen. Ohne `eventId` gilt das aktive bzw. Test-Event der Organisation. `tableKey` (Tischbezeichnung, groß/klein egal) bzw. `tableId` schränken auf einen Tisch ein, `fulfillmentType` z. B. auf Theke (`counter_pickup`).
       operationId: deviceApi_getOpenOrders
       parameters:
-        - *a19
+        - *a21
         - name: eventId
           required: false
           in: query
@@ -2117,13 +2208,13 @@ paths:
         "200":
           description: ""
       summary: Get open (unpaid/partly paid) orders of the active/test event
-      tags: *a20
+      tags: *a22
   /api/device-api/orders:
     post:
       description: "Tischbetrieb je Gerät und Veranstaltung (Spezifikation §2.3). Mit `clientRequestId` idempotent: eine Wiederholung liefert die bestehende Bestellung mit HTTP 200, ohne erneuten Küchenbon. Mit `payment` werden Bestellung und Zahlung in einer Transaktion gebucht; im Kassiermodus `immediate` ist das Pflicht (sonst 400 ORDER_PAYMENT_REQUIRED) — Küchenbon und Stationen bekommen die Bestellung dann erst nach der Zahlung."
       operationId: deviceApi_createOrder
       parameters:
-        - *a19
+        - *a21
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -2140,12 +2231,12 @@ paths:
         "201":
           description: ""
       summary: Create a new order from device
-      tags: *a20
+      tags: *a22
     get:
       description: "Neueste zuerst. `cursor` aus `meta.nextCursor` lädt die nächste Seite („Mehr laden“). `displayStatus` (kommagetrennt): in_kitchen, ready, completed, unpaid, cancelled, partly_refunded, refunded. `paymentMethod`: cash, card, sumup, discount. `scope=device`: nur Bestellungen dieser Kasse. `from`/`to`: ISO-Zeitpunkte. `q`: Nummer, Tisch, Name oder Produkt. `meta.counts` zählt je Status bei sonst gleichen Filtern. Alte Kassen: `status` und `page` wirken wie bisher."
       operationId: deviceApi_getAllOrders
       parameters:
-        - *a19
+        - *a21
         - name: page
           required: false
           in: query
@@ -2198,12 +2289,12 @@ paths:
         "200":
           description: ""
       summary: Bestellverlauf der Kasse (Filter und Seiten serverseitig)
-      tags: *a20
+      tags: *a22
   /api/device-api/payments:
     post:
       operationId: deviceApi_createPayment
       parameters:
-        - *a19
+        - *a21
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -2220,12 +2311,12 @@ paths:
         "201":
           description: ""
       summary: Create a payment for an order from device
-      tags: *a20
+      tags: *a22
   /api/device-api/payments/split:
     post:
       operationId: deviceApi_createSplitPayment
       parameters:
-        - *a19
+        - *a21
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -2242,13 +2333,13 @@ paths:
         "201":
           description: ""
       summary: Create a split payment for specific items from device
-      tags: *a20
+      tags: *a22
   /api/device-api/cash-drawer/open:
     post:
       description: "`reason: payment` beim Barkassieren (immer erlaubt). Von Hand (`manual`, Standard) braucht eine Bedienung das Recht `cashDrawer`, sonst 403 WAITER_NOT_PERMITTED."
       operationId: deviceApi_openCashDrawer
       parameters:
-        - *a19
+        - *a21
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -2259,13 +2350,13 @@ paths:
         "201":
           description: ""
       summary: Open the cash drawer via configured printer
-      tags: *a20
+      tags: *a22
   /api/device-api/sumup/checkout:
     post:
       description: "Im Testmodus der Veranstaltung abgelehnt (400 SUMUP_DISABLED_IN_TEST_MODE): Testbestellungen lösen keine echten Kartenzahlungen aus. Status und Abbruch bleiben erreichbar."
       operationId: deviceApi_initiateSumupCheckout
       parameters:
-        - *a19
+        - *a21
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -2282,12 +2373,12 @@ paths:
         "201":
           description: ""
       summary: Initiate SumUp checkout on linked card reader
-      tags: *a20
+      tags: *a22
   /api/device-api/sumup/status:
     get:
       operationId: deviceApi_getSumupStatus
       parameters:
-        - *a19
+        - *a21
         - name: clientTransactionId
           required: true
           in: query
@@ -2297,22 +2388,22 @@ paths:
         "200":
           description: ""
       summary: Get SumUp reader/checkout status
-      tags: *a20
+      tags: *a22
   /api/device-api/sumup/terminate:
     post:
       operationId: deviceApi_terminateSumupCheckout
       parameters:
-        - *a19
+        - *a21
       responses:
         "201":
           description: ""
       summary: Terminate running SumUp checkout
-      tags: *a20
+      tags: *a22
   /api/device-api/orders/{orderId}:
     get:
       operationId: deviceApi_getOrderDetail
       parameters:
-        - *a19
+        - *a21
         - name: orderId
           required: true
           in: path
@@ -2322,13 +2413,13 @@ paths:
         "200":
           description: ""
       summary: "Bestellung im Detail: Positionen mit Status, Zahlungen, Erstattungen, Verlauf"
-      tags: *a20
+      tags: *a22
   /api/device-api/orders/{orderId}/tse:
     get:
       description: Alle TSE-Vorgänge der Bestellung in zeitlicher Reihenfolge — Bestellvorgang, Kassenbelege (auch Teil- und Sammelzahlungen), Gegenbelege der Erstattungen — je mit `kind`, `status`, Signatur, QR-Code-Inhalt (`qrCode`, DSFinV-K Anhang I) und Bezug (`paymentId`, `refundId`). Nur Bestellungen der Organisation des Geräts (sonst 404). Leer ohne Cloud-TSE. Liest nur gespeicherte Daten, signiert nichts.
       operationId: deviceApi_getOrderTse
       parameters:
-        - *a19
+        - *a21
         - name: orderId
           required: true
           in: path
@@ -2338,13 +2429,13 @@ paths:
         "200":
           description: ""
       summary: TSE-Daten einer Bestellung (Kasse)
-      tags: *a20
+      tags: *a22
   /api/device-api/orders/{orderId}/cancel:
     post:
       description: "Bezahlte oder teilweise bezahlte Bestellungen: 400 ORDER_PAID_REFUND_REQUIRED — stattdessen `POST orders/:orderId/refunds` mit `mode: full, cancelItems: true`. Bestand zurück nur für Positionen, mit denen die Küche noch nicht begonnen hat. Berechtigung je Gerät (`refundPermission`)."
       operationId: deviceApi_cancelOrder
       parameters:
-        - *a19
+        - *a21
         - name: orderId
           required: true
           in: path
@@ -2366,13 +2457,13 @@ paths:
         "201":
           description: ""
       summary: Ganze Bestellung stornieren (nur unbezahlt)
-      tags: *a20
+      tags: *a22
   /api/device-api/orders/{orderId}/cancel-items:
     post:
       description: "Solange die Küche nicht begonnen hat (`pending`): Bestand zurück, Station entfernt sie live, Storno-Bon an den Stationsdrucker. In Arbeit/fertig/serviert nur mit `confirmStarted` und Grund (Ausschuss, kein Bestand zurück), sonst 409 ORDER_ITEM_ALREADY_STARTED. Sinkt die Summe unter das schon Bezahlte: 400 ORDER_PAID_REFUND_REQUIRED."
       operationId: deviceApi_cancelOrderItems
       parameters:
-        - *a19
+        - *a21
         - name: orderId
           required: true
           in: path
@@ -2394,13 +2485,13 @@ paths:
         "201":
           description: ""
       summary: Positionen oder Teilmengen stornieren (ohne Erstattung)
-      tags: *a20
+      tags: *a22
   /api/device-api/orders/{orderId}/refunds:
     post:
       description: "Jede Erstattung ist ein eigener Beleg mit negativen Beträgen, MwSt je Satz und Bezug auf Bestellung und Zahlung; er wird auf dem Kassenbon-Drucker gedruckt. Rückgabeweg je ursprünglicher Zahlart: bar (Kassenlade öffnet), SumUp (Erstattung über die SumUp-API; Fehler: 400 REFUND_PROVIDER_FAILED, Wiederholung mit `manual: true` bucht „manuell erstattet“), fremdes Kartengerät (manuell). Im Testmodus wird bei SumUp nichts erstattet. `cancelItems` storniert die Positionen zugleich (Storno bezahlter Bestellungen)."
       operationId: deviceApi_createRefund
       parameters:
-        - *a19
+        - *a21
         - name: orderId
           required: true
           in: path
@@ -2422,12 +2513,12 @@ paths:
         "201":
           description: ""
       summary: Erstattung mit Gegenbeleg (Teil-, Positions- oder Vollerstattung)
-      tags: *a20
+      tags: *a22
   /api/device-api/orders/{orderId}/refunds/{refundId}/reprint:
     post:
       operationId: deviceApi_reprintRefund
       parameters:
-        - *a19
+        - *a21
         - name: orderId
           required: true
           in: path
@@ -2442,12 +2533,12 @@ paths:
         "201":
           description: ""
       summary: Gegenbeleg einer Erstattung nachdrucken
-      tags: *a20
+      tags: *a22
   /api/device-api/orders/{orderId}/reprint:
     post:
       operationId: deviceApi_reprintOrder
       parameters:
-        - *a19
+        - *a21
         - name: orderId
           required: true
           in: path
@@ -2463,22 +2554,22 @@ paths:
         "201":
           description: ""
       summary: Reprint tickets or receipt for an order
-      tags: *a20
+      tags: *a22
   /api/device-api/station/items:
     get:
       operationId: deviceApi_getStationItems
       parameters:
-        - *a19
+        - *a21
       responses:
         "200":
           description: ""
       summary: Get open items for this device's station
-      tags: *a20
+      tags: *a22
   /api/device-api/station/items/{itemId}/ready:
     post:
       operationId: deviceApi_markStationItemReady
       parameters:
-        - *a19
+        - *a21
         - name: itemId
           required: true
           in: path
@@ -2488,13 +2579,13 @@ paths:
         "201":
           description: ""
       summary: Mark a station item as ready
-      tags: *a20
+      tags: *a22
   /api/device-api/tables:
     get:
       description: Bereiche mit aktiven Tischen, gefiltert auf `event.settings.tables.areaIds`. Ohne `eventId` gilt das aktive bzw. Test-Event.
       operationId: deviceTables_getTables
       parameters:
-        - &a21
+        - &a23
           name: X-Device-Token
           in: header
           description: Device authentication token
@@ -2510,13 +2601,13 @@ paths:
         "200":
           description: ""
       summary: Table mode and active tables for the active/test event
-      tags: &a22
+      tags: &a24
         - Device API
   /api/device-api/tables/status:
     get:
       operationId: deviceTables_getTableStatus
       parameters:
-        - *a21
+        - *a23
         - name: eventId
           required: false
           in: query
@@ -2526,12 +2617,12 @@ paths:
         "200":
           description: ""
       summary: Status of all non-free tables of the active/test event
-      tags: *a22
+      tags: *a24
   /api/device-api/tables/acknowledge:
     post:
       operationId: deviceTables_acknowledgeTable
       parameters:
-        - *a21
+        - *a23
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -2548,12 +2639,12 @@ paths:
         "200":
           description: ""
       summary: Acknowledge guest orders (shop/QR) of a table
-      tags: *a22
+      tags: *a24
   /api/device-api/order-items/deliver:
     post:
       operationId: deviceTables_deliverItems
       parameters:
-        - *a21
+        - *a23
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -2570,13 +2661,13 @@ paths:
         "200":
           description: ""
       summary: Mark ready items as delivered (served at the table)
-      tags: *a22
+      tags: *a24
   /api/device-api/orders/complete:
     post:
       description: "Nur in der Betriebsart `orders_only` („Nur Bons“): „Abgeholt“ (Theke) bzw. „Tisch abschließen“ statt „Kassieren“, z. B. für alle offenen Bestellungen eines Tisches oder eine abgeholte Thekenbestellung. Fertige Positionen gelten damit als ausgegeben. Solange eine Station noch arbeitet: 400 ORDER_ITEMS_IN_PRODUCTION. In den Betriebsarten `cashless` und `full`: 400 ORDER_NOT_FULLY_PAID."
       operationId: deviceTables_completeOrders
       parameters:
-        - *a21
+        - *a23
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -2593,13 +2684,13 @@ paths:
         "200":
           description: ""
       summary: Complete open orders without payment (operating mode orders_only)
-      tags: *a22
+      tags: *a24
   /api/device-api/payments/batch:
     post:
       description: "Alles oder nichts: ist eine Bestellung bereits bezahlt, kommt 409 ORDER_ALREADY_PAID und nichts wird gebucht. Mit aktiver Cloud-TSE trägt jede Zahlung `tse` (Kassenbeleg oder Ausfallvermerk)."
       operationId: deviceTables_payBatch
       parameters:
-        - *a21
+        - *a23
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -2616,17 +2707,17 @@ paths:
         "201":
           description: ""
       summary: Pay several open orders in one transaction
-      tags: *a22
+      tags: *a24
   /api/device-api/status:
     get:
       operationId: deviceTables_getStatus
       parameters:
-        - *a21
+        - *a23
       responses:
         "200":
           description: ""
       summary: Receipt printer and TSE state for the POS status pills
-      tags: *a22
+      tags: *a24
   /api/organizations/{organizationId}/printers:
     post:
       operationId: printers_create
@@ -2647,10 +2738,10 @@ paths:
       responses:
         "201":
           description: ""
-      security: &a25
-        - &a23
+      security: &a27
+        - &a25
           JWT-auth: []
-      tags: &a24
+      tags: &a26
         - Printers
     get:
       description: Alle Drucker der Organisation mit Verbindungsstatus, seitenweise (`page`, `limit`). Scope `read`; anlegen, ändern und Testdruck gehen nur in der App.
@@ -2686,10 +2777,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a23
+        - *a25
         - API-token: []
       summary: Drucker auflisten
-      tags: *a24
+      tags: *a26
       x-api-token-scope: read
   /api/organizations/{organizationId}/printers/{printerId}:
     get:
@@ -2714,10 +2805,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a23
+        - *a25
         - API-token: []
       summary: Drucker abrufen
-      tags: *a24
+      tags: *a26
       x-api-token-scope: read
     patch:
       operationId: printers_update
@@ -2743,8 +2834,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a25
-      tags: *a24
+      security: *a27
+      tags: *a26
     delete:
       operationId: printers_remove
       parameters:
@@ -2763,8 +2854,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a25
-      tags: *a24
+      security: *a27
+      tags: *a26
   /api/organizations/{organizationId}/printers/{printerId}/test:
     post:
       operationId: printers_testPrint
@@ -2784,8 +2875,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a25
-      tags: *a24
+      security: *a27
+      tags: *a26
   /api/organizations/{organizationId}/printer-agents:
     get:
       operationId: printerAgents_list
@@ -2798,10 +2889,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a26
+      security: &a28
         - JWT-auth: []
       summary: Drucker-Agenten der Organisation
-      tags: &a27
+      tags: &a29
         - Printers
   /api/organizations/{organizationId}/printer-agents/{deviceId}:
     delete:
@@ -2820,9 +2911,9 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a26
+      security: *a28
       summary: Agent samt Druckern entfernen (Zuordnungen werden gelöst)
-      tags: *a27
+      tags: *a29
   /api/organizations/{organizationId}/printer-agents/{deviceId}/discover:
     post:
       operationId: printerAgents_discover
@@ -2846,9 +2937,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a26
+      security: *a28
       summary: Agent neu suchen lassen (409 PRINTER_AGENT_OFFLINE, wenn nicht verbunden)
-      tags: *a27
+      tags: *a29
   /api/organizations/{organizationId}/printer-agents/{deviceId}/discovered:
     get:
       operationId: printerAgents_listDiscovered
@@ -2866,9 +2957,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a26
+      security: *a28
       summary: Vom Agenten gefundene Drucker
-      tags: *a27
+      tags: *a29
   /api/organizations/{organizationId}/printer-agents/{deviceId}/discovered/{id}/adopt:
     post:
       operationId: printerAgents_adopt
@@ -2897,9 +2988,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a26
+      security: *a28
       summary: Gefundenen Drucker übernehmen (409 PRINTER_ALREADY_ADOPTED)
-      tags: *a27
+      tags: *a29
   /api/organizations/{organizationId}/print-jobs:
     post:
       operationId: printJobs_create
@@ -2918,9 +3009,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: &a28
+      security: &a30
         - JWT-auth: []
-      tags: &a29
+      tags: &a31
         - Print Jobs
     get:
       operationId: printJobs_findAll
@@ -2978,8 +3069,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a28
-      tags: *a29
+      security: *a30
+      tags: *a31
   /api/organizations/{organizationId}/print-jobs/{jobId}:
     get:
       operationId: printJobs_findOne
@@ -2997,8 +3088,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a28
-      tags: *a29
+      security: *a30
+      tags: *a31
   /api/organizations/{organizationId}/print-jobs/{jobId}/retry:
     post:
       operationId: printJobs_retry
@@ -3016,8 +3107,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a28
-      tags: *a29
+      security: *a30
+      tags: *a31
   /api/organizations/{organizationId}/print-jobs/{jobId}/cancel:
     post:
       operationId: printJobs_cancel
@@ -3035,8 +3126,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a28
-      tags: *a29
+      security: *a30
+      tags: *a31
   /api/organizations/{organizationId}/orders:
     post:
       operationId: orders_create
@@ -3057,10 +3148,10 @@ paths:
       responses:
         "201":
           description: ""
-      security: &a32
-        - &a30
+      security: &a34
+        - &a32
           JWT-auth: []
-      tags: &a31
+      tags: &a33
         - Orders
     get:
       description: Bestellungen der Organisation, neueste zuerst, seitenweise (höchstens 100 je Seite) und filterbar nach Veranstaltung, Status, Zahlart, Gerät und Zeitraum; `includeItems=true` liefert die Positionen mit. Scope `read`. Anlegen, Stornieren und Erstatten sind der Kasse und der App vorbehalten.
@@ -3330,10 +3421,10 @@ paths:
                   hasNext: false
                   hasPrev: false
       security:
-        - *a30
+        - *a32
         - API-token: []
       summary: Bestellungen auflisten
-      tags: *a31
+      tags: *a33
       x-api-token-scope: read
   /api/organizations/{organizationId}/orders/stats:
     get:
@@ -3478,10 +3569,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a30
+        - *a32
         - API-token: []
       summary: Bestellstatistik
-      tags: *a31
+      tags: *a33
       x-api-token-scope: read
   /api/organizations/{organizationId}/orders/export:
     get:
@@ -3617,10 +3708,10 @@ paths:
 
                 SF-0042;42;11.07.2026;20:04:58;Sommerfest;Abgeschlossen;Kasse;Am Tisch;A03;Kasse Festzelt 1;3;Bar;12,50;0,00;2,00;0,00;14,50;14,50;0,00;1,49;Nein;;\r\n"
       security:
-        - *a30
+        - *a32
         - API-token: []
       summary: Bestellungen als CSV exportieren
-      tags: *a31
+      tags: *a33
       x-api-token-scope: read
   /api/organizations/{organizationId}/orders/{orderId}:
     get:
@@ -3645,10 +3736,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a30
+        - *a32
         - API-token: []
       summary: Bestellung abrufen
-      tags: *a31
+      tags: *a33
       x-api-token-scope: read
     patch:
       description: "Offene, unbezahlte Bestellungen ändert jedes Mitglied. Bezahlte oder teilbezahlte Bestellungen: Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED). Gilt auch für Positionen."
@@ -3675,9 +3766,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
+      security: *a34
       summary: Bestellung ändern
-      tags: *a31
+      tags: *a33
     delete:
       description: Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED).
       operationId: orders_remove
@@ -3697,9 +3788,9 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a32
+      security: *a34
       summary: Unbezahlte Bestellung löschen
-      tags: *a31
+      tags: *a33
   /api/organizations/{organizationId}/orders/{orderId}/items:
     post:
       operationId: orders_addItem
@@ -3725,8 +3816,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a32
-      tags: *a31
+      security: *a34
+      tags: *a33
   /api/organizations/{organizationId}/orders/{orderId}/items/{itemId}:
     patch:
       operationId: orders_updateItem
@@ -3757,8 +3848,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
-      tags: *a31
+      security: *a34
+      tags: *a33
     delete:
       operationId: orders_removeItem
       parameters:
@@ -3782,8 +3873,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
-      tags: *a31
+      security: *a34
+      tags: *a33
   /api/organizations/{organizationId}/orders/{orderId}/items/{itemId}/ready:
     post:
       operationId: orders_markItemReady
@@ -3808,8 +3899,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
-      tags: *a31
+      security: *a34
+      tags: *a33
   /api/organizations/{organizationId}/orders/{orderId}/items/{itemId}/deliver:
     post:
       operationId: orders_markItemDelivered
@@ -3834,8 +3925,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
-      tags: *a31
+      security: *a34
+      tags: *a33
   /api/organizations/{organizationId}/orders/{orderId}/call:
     post:
       operationId: orders_callOrder
@@ -3855,8 +3946,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
-      tags: *a31
+      security: *a34
+      tags: *a33
   /api/organizations/{organizationId}/orders/{orderId}/complete:
     post:
       description: "Bezahlte Bestellungen schließt jedes Mitglied ab. Ohne vollständige Zahlung (Betriebsart „Nur Bons“): Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED)."
@@ -3877,9 +3968,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
+      security: *a34
       summary: Bestellung abschließen
-      tags: *a31
+      tags: *a33
   /api/organizations/{organizationId}/orders/{orderId}/cancel:
     post:
       description: "Bezahlte Bestellungen: 400 ORDER_PAID_REFUND_REQUIRED — stattdessen Erstattung mit `mode: full, cancelItems: true`. Recht „Bestellungen“ oder Admin."
@@ -3906,9 +3997,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
+      security: *a34
       summary: Ganze Bestellung stornieren (nur unbezahlt)
-      tags: *a31
+      tags: *a33
   /api/organizations/{organizationId}/orders/{orderId}/history:
     get:
       operationId: orders_getHistory
@@ -3928,9 +4019,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
+      security: *a34
       summary: "Bestellung im Detail wie in der Kasse: Positionen, Zahlungen, Erstattungen, Verlauf"
-      tags: *a31
+      tags: *a33
   /api/organizations/{organizationId}/orders/{orderId}/cancel-items:
     post:
       operationId: orders_cancelItems
@@ -3956,9 +4047,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
+      security: *a34
       summary: Positionen stornieren (ohne Erstattung), wie an der Kasse
-      tags: *a31
+      tags: *a33
   /api/organizations/{organizationId}/orders/{orderId}/refunds:
     post:
       operationId: orders_createRefund
@@ -3984,9 +4075,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
+      security: *a34
       summary: Erstattung mit Gegenbeleg (gleiche Regeln wie an der Kasse)
-      tags: *a31
+      tags: *a33
   /api/organizations/{organizationId}/orders/{orderId}/refunds/{refundId}/reprint:
     post:
       operationId: orders_reprintRefund
@@ -4011,9 +4102,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a32
+      security: *a34
       summary: Gegenbeleg nachdrucken
-      tags: *a31
+      tags: *a33
   /api/organizations/{organizationId}/sumup/test-connection:
     post:
       operationId: sumUp_testConnection
@@ -4026,9 +4117,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a33
+      security: &a35
         - JWT-auth: []
-      tags: &a34
+      tags: &a36
         - SumUp
   /api/organizations/{organizationId}/sumup/readers:
     get:
@@ -4042,8 +4133,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a33
-      tags: *a34
+      security: *a35
+      tags: *a36
     post:
       operationId: sumUp_pairReader
       parameters:
@@ -4061,8 +4152,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a33
-      tags: *a34
+      security: *a35
+      tags: *a36
   /api/organizations/{organizationId}/sumup/readers/{readerId}/status:
     get:
       operationId: sumUp_getReaderStatus
@@ -4080,8 +4171,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a33
-      tags: *a34
+      security: *a35
+      tags: *a36
   /api/organizations/{organizationId}/sumup/readers/{readerId}:
     patch:
       operationId: sumUp_updateReader
@@ -4105,8 +4196,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a33
-      tags: *a34
+      security: *a35
+      tags: *a36
     delete:
       operationId: sumUp_deleteReader
       parameters:
@@ -4123,8 +4214,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a33
-      tags: *a34
+      security: *a35
+      tags: *a36
   /api/organizations/{organizationId}/sumup/readers/{readerId}/checkout:
     post:
       operationId: sumUp_initiateCheckout
@@ -4148,8 +4239,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a33
-      tags: *a34
+      security: *a35
+      tags: *a36
   /api/organizations/{organizationId}/sumup/readers/{readerId}/terminate:
     post:
       operationId: sumUp_terminateCheckout
@@ -4167,8 +4258,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a33
-      tags: *a34
+      security: *a35
+      tags: *a36
   /api/organizations/{organizationId}/discount-vouchers:
     post:
       operationId: discountVouchers_create
@@ -4187,9 +4278,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: &a35
+      security: &a37
         - JWT-auth: []
-      tags: &a36
+      tags: &a38
         - Discount Vouchers
     get:
       operationId: discountVouchers_findAll
@@ -4202,8 +4293,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a35
-      tags: *a36
+      security: *a37
+      tags: *a38
   /api/organizations/{organizationId}/discount-vouchers/{voucherId}:
     get:
       operationId: discountVouchers_findOne
@@ -4221,8 +4312,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a35
-      tags: *a36
+      security: *a37
+      tags: *a38
     patch:
       operationId: discountVouchers_update
       parameters:
@@ -4245,8 +4336,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a35
-      tags: *a36
+      security: *a37
+      tags: *a38
     delete:
       operationId: discountVouchers_remove
       parameters:
@@ -4263,8 +4354,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a35
-      tags: *a36
+      security: *a37
+      tags: *a38
   /api/organizations/{organizationId}/pfand-types:
     post:
       description: Legt eine Pfandart (z. B. Glas 2 €) für die Organisation an. Scope `catalog:write` und Modulrecht Pfand.
@@ -4287,11 +4378,11 @@ paths:
         "201":
           description: ""
       security:
-        - &a37
+        - &a39
           JWT-auth: []
         - API-token: []
       summary: Pfandart anlegen
-      tags: &a38
+      tags: &a40
         - Pfand Types
       x-api-token-scope: catalog:write
     get:
@@ -4309,10 +4400,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a37
+        - *a39
         - API-token: []
       summary: Pfandarten auflisten
-      tags: *a38
+      tags: *a40
       x-api-token-scope: read
   /api/organizations/{organizationId}/pfand-types/legacy-balance:
     get:
@@ -4330,10 +4421,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a37
+        - *a39
         - API-token: []
       summary: Pfand-Altsaldo
-      tags: *a38
+      tags: *a40
       x-api-token-scope: read
   /api/organizations/{organizationId}/pfand-types/{pfandTypeId}:
     get:
@@ -4358,10 +4449,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a37
+        - *a39
         - API-token: []
       summary: Pfandart abrufen
-      tags: *a38
+      tags: *a40
       x-api-token-scope: read
     patch:
       description: Ändert Name, Betrag oder Sichtbarkeit einer Pfandart. Scope `catalog:write`.
@@ -4391,10 +4482,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a37
+        - *a39
         - API-token: []
       summary: Pfandart ändern
-      tags: *a38
+      tags: *a40
       x-api-token-scope: catalog:write
     delete:
       operationId: pfandTypes_remove
@@ -4415,8 +4506,8 @@ paths:
         "204":
           description: ""
       security:
-        - *a37
-      tags: *a38
+        - *a39
+      tags: *a40
   /api/organizations/{organizationId}/table-areas:
     get:
       description: Alle Bereiche der Organisation inklusive ihrer Tische (aktive und inaktive) und des Tischplans. Scope `read`.
@@ -4433,11 +4524,11 @@ paths:
         "200":
           description: ""
       security:
-        - &a39
+        - &a41
           JWT-auth: []
         - API-token: []
       summary: Bereiche und Tische auflisten
-      tags: &a40
+      tags: &a42
         - Tables
       x-api-token-scope: read
     post:
@@ -4461,10 +4552,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a39
+        - *a41
         - API-token: []
       summary: Bereich anlegen
-      tags: *a40
+      tags: *a42
       x-api-token-scope: tables:write
   /api/organizations/{organizationId}/table-areas/order:
     patch:
@@ -4488,10 +4579,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a39
+        - *a41
         - API-token: []
       summary: Bereiche sortieren
-      tags: *a40
+      tags: *a42
       x-api-token-scope: tables:write
   /api/organizations/{organizationId}/table-areas/{areaId}:
     patch:
@@ -4522,10 +4613,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a39
+        - *a41
         - API-token: []
       summary: Bereich ändern
-      tags: *a40
+      tags: *a42
       x-api-token-scope: tables:write
     delete:
       operationId: tables_removeArea
@@ -4545,10 +4636,10 @@ paths:
       responses:
         "204":
           description: ""
-      security: &a41
-        - *a39
+      security: &a43
+        - *a41
       summary: Bereich samt Tischen löschen
-      tags: *a40
+      tags: *a42
   /api/organizations/{organizationId}/table-areas/{areaId}/layout:
     put:
       description: Ersetzt die Karte eines Bereichs (Positionen der Tische und Deko) vollständig. Scope `tables:write`.
@@ -4578,10 +4669,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a39
+        - *a41
         - API-token: []
       summary: Tischplan eines Bereichs speichern
-      tags: *a40
+      tags: *a42
       x-api-token-scope: tables:write
   /api/organizations/{organizationId}/tables:
     post:
@@ -4605,10 +4696,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a39
+        - *a41
         - API-token: []
       summary: Tisch anlegen
-      tags: *a40
+      tags: *a42
       x-api-token-scope: tables:write
   /api/organizations/{organizationId}/tables/bulk:
     post:
@@ -4632,10 +4723,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a39
+        - *a41
         - API-token: []
       summary: Tischserie anlegen
-      tags: *a40
+      tags: *a42
       x-api-token-scope: tables:write
   /api/organizations/{organizationId}/tables/{tableId}:
     patch:
@@ -4666,10 +4757,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a39
+        - *a41
         - API-token: []
       summary: Tisch ändern
-      tags: *a40
+      tags: *a42
       x-api-token-scope: tables:write
     delete:
       operationId: tables_removeTable
@@ -4689,9 +4780,9 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a41
+      security: *a43
       summary: Tisch löschen
-      tags: *a40
+      tags: *a42
   /api/users/me:
     patch:
       description: Update the current user profile
@@ -4711,7 +4802,7 @@ paths:
       security:
         - JWT-auth: []
       summary: Update profile
-      tags: &a42
+      tags: &a44
         - Users
   /api/users/me/avatar:
     post:
@@ -4738,7 +4829,7 @@ paths:
       security:
         - JWT-auth: []
       summary: Upload avatar
-      tags: *a42
+      tags: *a44
     delete:
       description: Remove the current avatar
       operationId: users_deleteAvatar
@@ -4751,7 +4842,7 @@ paths:
       security:
         - JWT-auth: []
       summary: Delete avatar
-      tags: *a42
+      tags: *a44
   /api/users/me/email/change:
     post:
       description: Request a verification email to change email address
@@ -4773,7 +4864,7 @@ paths:
       security:
         - JWT-auth: []
       summary: Request email change
-      tags: *a42
+      tags: *a44
   /api/users/me/email/verify:
     post:
       description: Completes an email change with the token from the confirmation mail sent to the new address. No session required.
@@ -4793,7 +4884,7 @@ paths:
         "409":
           description: Email already in use
       summary: Verify email change
-      tags: *a42
+      tags: *a44
   /api/users/me/preferences:
     get:
       description: Get user preferences
@@ -4807,7 +4898,7 @@ paths:
       security:
         - JWT-auth: []
       summary: Get preferences
-      tags: *a42
+      tags: *a44
     patch:
       description: Update user preferences
       operationId: users_updatePreferences
@@ -4826,7 +4917,7 @@ paths:
       security:
         - JWT-auth: []
       summary: Update preferences
-      tags: *a42
+      tags: *a44
   /api/users/me/sessions:
     get:
       description: Get list of active sessions/devices
@@ -4840,7 +4931,7 @@ paths:
       security:
         - JWT-auth: []
       summary: Get active sessions
-      tags: *a42
+      tags: *a44
     delete:
       description: Revoke all sessions except the current one
       operationId: users_revokeAllOtherSessions
@@ -4853,7 +4944,7 @@ paths:
       security:
         - JWT-auth: []
       summary: Revoke all other sessions
-      tags: *a42
+      tags: *a44
   /api/users/me/sessions/{id}:
     delete:
       description: Revoke a specific session
@@ -4874,7 +4965,7 @@ paths:
       security:
         - JWT-auth: []
       summary: Revoke session
-      tags: *a42
+      tags: *a44
   /api/users/me/newsletter:
     get:
       operationId: newsletter_get
@@ -4882,10 +4973,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a43
+      security: &a45
         - JWT-auth: []
       summary: Newsletter consent of the current user
-      tags: &a44
+      tags: &a46
         - Users
     put:
       operationId: newsletter_set
@@ -4899,9 +4990,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a43
+      security: *a45
       summary: Give or withdraw the newsletter consent (both timestamps are kept as proof)
-      tags: *a44
+      tags: *a46
   /api/public/newsletter/unsubscribe:
     post:
       operationId: newsletterPublic_unsubscribe
@@ -4936,9 +5027,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: &a45
+      security: &a47
         - JWT-auth: []
-      tags: &a46
+      tags: &a48
         - Uploads
   /api/organizations/{organizationId}/uploads/{filename}:
     delete:
@@ -4957,8 +5048,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a45
-      tags: *a46
+      security: *a47
+      tags: *a48
   /api/organizations/{organizationId}/uploads/{category}/{filename}:
     get:
       operationId: uploads_getImage
@@ -4976,8 +5067,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a45
-      tags: *a46
+      security: *a47
+      tags: *a48
   /api/organizations/{organizationId}/events:
     post:
       description: Legt eine neue Veranstaltung mit Status `inactive` an. Scope `events:write` und Modulrecht Veranstaltungen; freischalten und aktivieren geht nur in der App.
@@ -5000,11 +5091,11 @@ paths:
         "201":
           description: ""
       security:
-        - &a48
+        - &a50
           JWT-auth: []
         - API-token: []
       summary: Veranstaltung anlegen
-      tags: &a49
+      tags: &a51
         - Events
       x-api-token-scope: events:write
     get:
@@ -5108,7 +5199,7 @@ paths:
                     realSalesFrom: 2026-07-09T16:00:00.000Z
                     realSalesUntil: 2026-07-13T10:00:00.000Z
                     presaleEnabled: false
-                    phaseDetails: &a47
+                    phaseDetails: &a49
                       datePhases: true
                       businessDaysFrom: 2026-07-10T04:00:00.000Z
                       businessDaysUntil: 2026-07-13T04:00:00.000Z
@@ -5145,7 +5236,7 @@ paths:
                     realSalesFrom: 2026-07-09T16:00:00.000Z
                     realSalesUntil: 2026-07-13T10:00:00.000Z
                     presaleEnabled: false
-                    phaseDetails: *a47
+                    phaseDetails: *a49
                 meta:
                   page: 1
                   limit: 20
@@ -5154,10 +5245,10 @@ paths:
                   hasNext: false
                   hasPrev: false
       security:
-        - *a48
+        - *a50
         - API-token: []
       summary: Veranstaltungen auflisten
-      tags: *a49
+      tags: *a51
       x-api-token-scope: read
   /api/organizations/{organizationId}/events/active:
     get:
@@ -5175,10 +5266,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a48
+        - *a50
         - API-token: []
       summary: Aktive Veranstaltung abrufen
-      tags: *a49
+      tags: *a51
       x-api-token-scope: read
   /api/organizations/{organizationId}/events/{eventId}:
     get:
@@ -5203,10 +5294,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a48
+        - *a50
         - API-token: []
       summary: Veranstaltung abrufen
-      tags: *a49
+      tags: *a51
       x-api-token-scope: read
     patch:
       description: "Ändert Name, Beschreibung, Zeitraum oder Einstellungen. Scope `events:write`; der Status (aktiv, Test) lässt sich hier nicht setzen. Freigeschaltete Veranstaltungen lassen sich nur verschieben, solange sie „Geplant“ sind (`phase: planned`); danach ist der Beginn fest und das Ende kann nur noch vorgezogen werden (400 `EVENT_DATES_LOCKED`). `settings.sales`: `earlyStartHours` (Vorlauf vor dem ersten Geschäftstag, 0 bis `EVENT_EARLY_START_MAX_HOURS`, Standard `EVENT_EARLY_START_HOURS`) und `presale` (Vorverkauf im Shop schon vor dem Verkaufsfenster)."
@@ -5236,10 +5327,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a48
+        - *a50
         - API-token: []
       summary: Veranstaltung ändern
-      tags: *a49
+      tags: *a51
       x-api-token-scope: events:write
     delete:
       operationId: events_remove
@@ -5259,9 +5350,9 @@ paths:
       responses:
         "204":
           description: ""
-      security: &a50
-        - *a48
-      tags: *a49
+      security: &a52
+        - *a50
+      tags: *a51
   /api/organizations/{organizationId}/events/{eventId}/activate:
     post:
       operationId: events_activate
@@ -5281,9 +5372,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a50
+      security: *a52
       summary: Aktiviert ein Event (deaktiviert das aktuell aktive Event der Organisation, löscht die im Testmodus entstandenen Bestellungen)
-      tags: *a49
+      tags: *a51
   /api/organizations/{organizationId}/events/{eventId}/deactivate:
     post:
       operationId: events_deactivate
@@ -5303,9 +5394,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a50
+      security: *a52
       summary: Deaktiviert ein Event
-      tags: *a49
+      tags: *a51
   /api/organizations/{organizationId}/events/{eventId}/test:
     post:
       operationId: events_setTestMode
@@ -5325,9 +5416,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a50
+      security: *a52
       summary: Setzt ein Event in den Test-Modus (Bestellungen werden als Test markiert)
-      tags: *a49
+      tags: *a51
   /api/organizations/{organizationId}/events/{eventId}/copy-from/{sourceEventId}:
     post:
       description: Kopiert Kategorien und Produkte aus `sourceEventId` in diese Veranstaltung; was übernommen wird, steuert der Body. Scope `events:write`.
@@ -5364,10 +5455,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a48
+        - *a50
         - API-token: []
       summary: Katalog aus anderer Veranstaltung kopieren
-      tags: *a49
+      tags: *a51
       x-api-token-scope: events:write
   /api/public/shop/{eventId}:
     get:
@@ -5382,7 +5473,7 @@ paths:
         "200":
           description: ""
       summary: Get public shop info for an event (must have settings.shop.enabled)
-      tags: &a51
+      tags: &a53
         - Shop (Public)
   /api/public/shop/{eventId}/categories:
     get:
@@ -5397,7 +5488,7 @@ paths:
         "200":
           description: ""
       summary: List active categories for the shop
-      tags: *a51
+      tags: *a53
   /api/public/shop/{eventId}/products:
     get:
       operationId: eventsShopPublic_getProducts
@@ -5411,7 +5502,7 @@ paths:
         "200":
           description: ""
       summary: List available products for the shop
-      tags: *a51
+      tags: *a53
   /api/public/shop/{eventId}/checkout:
     post:
       operationId: eventsShopCheckout_createCheckout
@@ -5425,7 +5516,7 @@ paths:
         "201":
           description: ""
       summary: Create a pending shop checkout + SumUp Online Checkout session
-      tags: &a52
+      tags: &a54
         - Shop Checkout (Public)
   /api/public/shop/checkout/{checkoutId}/verify:
     get:
@@ -5440,7 +5531,7 @@ paths:
         "200":
           description: ""
       summary: Verify SumUp checkout status; idempotently create the Order on PAID
-      tags: *a52
+      tags: *a54
   /api/public/shop/checkout/{checkoutId}/webhook:
     post:
       operationId: eventsShopCheckout_checkoutWebhook
@@ -5454,7 +5545,7 @@ paths:
         "200":
           description: ""
       summary: SumUp payment-status webhook; settles the checkout server-side
-      tags: *a52
+      tags: *a54
   /api/public/shop/{eventId}/withdrawal:
     get:
       description: Veranstaltung, Verein und rechtliche Angaben für die Seite „Vertrag widerrufen“. 404 `WITHDRAWAL_NOT_AVAILABLE`, wenn der Verein kein Widerrufsrecht eingeschaltet hat. Auch nach dem Ende der Veranstaltung erreichbar.
@@ -5469,7 +5560,7 @@ paths:
         "200":
           description: ""
       summary: Withdrawal function of a shop (§ 356a BGB)
-      tags: &a53
+      tags: &a55
         - Shop (Public)
     post:
       description: Name, E-Mail-Adresse und Bestellnummer (Pflicht), weitere Angaben freiwillig. Speichert den Widerruf mit Eingangszeitpunkt, schickt ihn an den Verein und dem Gast sofort eine Eingangsbestätigung mit Inhalt, Datum und Uhrzeit. Höchstens 10 je Stunde und IP-Adresse.
@@ -5490,7 +5581,7 @@ paths:
         "200":
           description: ""
       summary: Declare the withdrawal from a shop order (§ 356a BGB)
-      tags: *a53
+      tags: *a55
   /api/organizations/{organizationId}/event-price-preview:
     get:
       description: Same calculation as the real price, so the preview cannot disagree with the invoice. Dates as YYYY-MM-DD; end defaults to start.
@@ -5515,10 +5606,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a54
+      security: &a56
         - JWT-auth: []
       summary: What an event over this period would cost, before creating it
-      tags: &a55
+      tags: &a57
         - Event Billing
   /api/organizations/{organizationId}/events/{eventId}/billing:
     get:
@@ -5537,9 +5628,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a54
+      security: *a56
       summary: Preis, Rabatt und Freischaltungsstatus einer Veranstaltung
-      tags: *a55
+      tags: *a57
   /api/organizations/{organizationId}/purchase-master-data:
     put:
       description: "Offizieller Name (`settings.legalName`), Rechnungsanschrift (`billingAddress`) und optional Steuernummer/USt-IdNr. (`settings.taxNumber`/`vatId`, Format DE geprüft: 400 `TAX_ID_INVALID` mit `params.field`). Ist die Anschrift der Organisation (Kontakt) noch leer, wird sie mit der Rechnungsanschrift gefüllt. Antwort: der neue Stand wie `masterData` in `GET …/events/:eventId/billing`."
@@ -5559,9 +5650,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a54
+      security: *a56
       summary: Pflichtangaben vor dem Kauf speichern (Admins)
-      tags: *a55
+      tags: *a57
   /api/organizations/{organizationId}/events/{eventId}/order-invoice:
     post:
       description: Fehlen Pflichtangaben (offizieller Name, Rechnungsanschrift; bei Cloud-TSE Steuernummer/USt-IdNr.), 400 `PURCHASE_MASTER_DATA_REQUIRED` mit `params.missing`. Die Anschrift aus dem Formular zählt mit.
@@ -5586,9 +5677,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a54
+      security: *a56
       summary: Veranstaltung kostenpflichtig auf Rechnung bestellen (Kauf auf Rechnung)
-      tags: *a55
+      tags: *a57
   /api/organizations/{organizationId}/events/{eventId}/checkout:
     post:
       description: "Deutschland mit Cloud-TSE (`tse.offer` in GET …/billing): bei „Alle Funktionen“ gehört die TSE immer dazu, Bestandsorganisationen antworten mit `withTse`. Nach der Zahlung schaltet der Server die Integration `tse` automatisch ein; die TSE wird am ersten Veranstaltungstag angelegt (sofort, wenn die Veranstaltung schon läuft). Mit `TSE_EVENT_SURCHARGE_EUR` > 0 kommt eine Position „Cloud-TSE“ je Veranstaltung dazu. Fehlen Pflichtangaben (`masterData` in GET …/billing): 400 `PURCHASE_MASTER_DATA_REQUIRED` mit `params.missing` (`legalName`, `street`, `zip`, `city`, `taxNumber`, `vatId`)."
@@ -5613,9 +5704,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a54
+      security: *a56
       summary: Stripe-Zahlungsseite für die Freischaltung anlegen
-      tags: *a55
+      tags: *a57
   /api/organizations/{organizationId}/events/{eventId}/billing/sync:
     post:
       operationId: eventBilling_syncPayment
@@ -5633,9 +5724,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a54
+      security: *a56
       summary: Nach der Rückkehr aus dem Stripe-Checkout den Zahlungsstand abgleichen
-      tags: *a55
+      tags: *a57
   /api/organizations/{organizationId}/events/{eventId}/billing/cancel:
     post:
       description: "Nur Administratoren der Organisation und nur ohne echte Bestellungen. Stripe-Zahlungen werden voll erstattet (mit Stornorechnung, wenn eine Rechnung erzeugt wurde); die Veranstaltung faellt in den Testmodus zurueck. Wiederholte Aufrufe liefern die bestehende Stornierung. Fehler: EVENT_CANCELLATION_DEADLINE_PASSED, EVENT_HAS_ORDERS, EVENT_NOT_PAID, REFUND_FAILED."
@@ -5654,9 +5745,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a54
+      security: *a56
       summary: Freischaltung kostenlos stornieren (bis 7 Tage vor Beginn)
-      tags: *a55
+      tags: *a57
   /api/organizations/{organizationId}/billing/invoices:
     get:
       operationId: eventBilling_listInvoices
@@ -5669,9 +5760,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a54
+      security: *a56
       summary: Von Stripe ausgestellte Rechnungen der Organisation
-      tags: *a55
+      tags: *a57
   /api/organizations/{organizationId}/billing/invoices/{invoiceId}/pdf:
     get:
       operationId: eventBilling_downloadInvoicePdf
@@ -5689,9 +5780,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a54
+      security: *a56
       summary: Rechnungs-PDF herunterladen
-      tags: *a55
+      tags: *a57
   /api/organizations/{organizationId}/billing/company-search:
     get:
       operationId: eventBilling_companySearch
@@ -5709,9 +5800,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a54
+      security: *a56
       summary: Firmensuche (openregister.de) für das Kauf-auf-Rechnung-Formular
-      tags: *a55
+      tags: *a57
   /api/events/{eventId}/categories:
     post:
       description: Legt eine Kategorie in der Veranstaltung an. Scope `catalog:write` und Modulrecht Produkte.
@@ -5734,11 +5825,11 @@ paths:
         "201":
           description: ""
       security:
-        - &a56
+        - &a58
           JWT-auth: []
         - API-token: []
       summary: Kategorie anlegen
-      tags: &a57
+      tags: &a59
         - Categories
       x-api-token-scope: catalog:write
     get:
@@ -5756,10 +5847,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a56
+        - *a58
         - API-token: []
       summary: Kategorien auflisten (je Veranstaltung)
-      tags: *a57
+      tags: *a59
       x-api-token-scope: read
   /api/events/{eventId}/categories/{categoryId}:
     get:
@@ -5784,10 +5875,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a56
+        - *a58
         - API-token: []
       summary: Kategorie abrufen
-      tags: *a57
+      tags: *a59
       x-api-token-scope: read
     patch:
       description: Ändert Name, Farbe, Icon oder Sichtbarkeit einer Kategorie. Scope `catalog:write`.
@@ -5817,10 +5908,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a56
+        - *a58
         - API-token: []
       summary: Kategorie ändern
-      tags: *a57
+      tags: *a59
       x-api-token-scope: catalog:write
     delete:
       operationId: categories_remove
@@ -5841,8 +5932,8 @@ paths:
         "204":
           description: ""
       security:
-        - *a56
-      tags: *a57
+        - *a58
+      tags: *a59
   /api/events/{eventId}/categories/reorder:
     patch:
       description: Setzt die Reihenfolge aller Kategorien anhand der übergebenen ID-Liste. Scope `catalog:write`.
@@ -5865,10 +5956,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a56
+        - *a58
         - API-token: []
       summary: Kategorien sortieren
-      tags: *a57
+      tags: *a59
       x-api-token-scope: catalog:write
   /api/events/{eventId}/products:
     post:
@@ -5892,11 +5983,11 @@ paths:
         "201":
           description: ""
       security:
-        - &a58
+        - &a60
           JWT-auth: []
         - API-token: []
       summary: Produkt anlegen
-      tags: &a59
+      tags: &a61
         - Products
       x-api-token-scope: catalog:write
     get:
@@ -6043,10 +6134,10 @@ paths:
                   hasNext: false
                   hasPrev: false
       security:
-        - *a58
+        - *a60
         - API-token: []
       summary: Produkte auflisten (je Veranstaltung)
-      tags: *a59
+      tags: *a61
       x-api-token-scope: read
   /api/events/{eventId}/products/import:
     post:
@@ -6070,10 +6161,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a58
+        - *a60
         - API-token: []
       summary: Produkte importieren (CSV)
-      tags: *a59
+      tags: *a61
       x-api-token-scope: catalog:write
   /api/events/{eventId}/products/low-stock:
     get:
@@ -6091,10 +6182,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a58
+        - *a60
         - API-token: []
       summary: Lagerbestand-Warnungen auflisten
-      tags: *a59
+      tags: *a61
       x-api-token-scope: read
   /api/events/{eventId}/products/{productId}:
     get:
@@ -6119,10 +6210,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a58
+        - *a60
         - API-token: []
       summary: Produkt abrufen
-      tags: *a59
+      tags: *a61
       x-api-token-scope: read
     patch:
       description: Ändert beliebige Felder eines Produkts; nicht genannte Felder bleiben. Scope `catalog:write`.
@@ -6152,10 +6243,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a58
+        - *a60
         - API-token: []
       summary: Produkt ändern
-      tags: *a59
+      tags: *a61
       x-api-token-scope: catalog:write
     delete:
       operationId: products_remove
@@ -6175,9 +6266,9 @@ paths:
       responses:
         "204":
           description: ""
-      security: &a60
-        - *a58
-      tags: *a59
+      security: &a62
+        - *a60
+      tags: *a61
   /api/events/{eventId}/products/{productId}/availability:
     patch:
       description: Markiert ein Produkt als verfügbar oder ausverkauft, ohne es zu deaktivieren; die Kassen übernehmen das sofort. Scope `catalog:write`.
@@ -6214,10 +6305,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a58
+        - *a60
         - API-token: []
       summary: Verfügbarkeit eines Produkts setzen
-      tags: *a59
+      tags: *a61
       x-api-token-scope: catalog:write
   /api/events/{eventId}/products/{productId}/stock/adjust:
     post:
@@ -6244,8 +6335,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a60
-      tags: *a59
+      security: *a62
+      tags: *a61
   /api/organizations/{organizationId}/payments:
     post:
       description: Erfasst eine Zahlung ohne Kasse. Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED).
@@ -6265,10 +6356,10 @@ paths:
       responses:
         "201":
           description: ""
-      security: &a61
+      security: &a63
         - JWT-auth: []
       summary: Zahlung erfassen
-      tags: &a62
+      tags: &a64
         - Payments
     get:
       operationId: payments_findAll
@@ -6350,8 +6441,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a61
-      tags: *a62
+      security: *a63
+      tags: *a64
   /api/organizations/{organizationId}/payments/split:
     post:
       description: Erfasst eine Teilzahlung ohne Kasse. Recht „Bestellungen“ oder Admin (sonst 403 ORDERS_PERMISSION_REQUIRED).
@@ -6371,9 +6462,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a61
+      security: *a63
       summary: Teilzahlung nach Positionen erfassen
-      tags: *a62
+      tags: *a64
   /api/organizations/{organizationId}/payments/{paymentId}:
     get:
       operationId: payments_findOne
@@ -6391,8 +6482,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a61
-      tags: *a62
+      security: *a63
+      tags: *a64
   /api/organizations/{organizationId}/payments/order/{orderId}:
     get:
       operationId: payments_getPaymentsByOrder
@@ -6410,8 +6501,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a61
-      tags: *a62
+      security: *a63
+      tags: *a64
   /api/organizations/{organizationId}/payments/{paymentId}/refund:
     post:
       operationId: payments_refund
@@ -6429,8 +6520,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a61
-      tags: *a62
+      security: *a63
+      tags: *a64
   /api/organizations/{organizationId}/print-templates:
     post:
       description: Legt eine Vorlage für Bons oder Bestellzettel an. Scope `devices:write` und Modulrecht Geräte.
@@ -6453,11 +6544,11 @@ paths:
         "201":
           description: ""
       security:
-        - &a63
+        - &a65
           JWT-auth: []
         - API-token: []
       summary: Bon-Vorlage anlegen
-      tags: &a64
+      tags: &a66
         - Print Templates
       x-api-token-scope: devices:write
     get:
@@ -6494,10 +6585,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a63
+        - *a65
         - API-token: []
       summary: Bon-Vorlagen auflisten
-      tags: *a64
+      tags: *a66
       x-api-token-scope: read
   /api/organizations/{organizationId}/print-templates/{templateId}:
     get:
@@ -6522,10 +6613,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a63
+        - *a65
         - API-token: []
       summary: Bon-Vorlage abrufen
-      tags: *a64
+      tags: *a66
       x-api-token-scope: read
     patch:
       description: Ändert Name, Typ oder Definition einer Vorlage. Scope `devices:write`.
@@ -6555,10 +6646,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a63
+        - *a65
         - API-token: []
       summary: Bon-Vorlage ändern
-      tags: *a64
+      tags: *a66
       x-api-token-scope: devices:write
     delete:
       operationId: printTemplates_remove
@@ -6579,8 +6670,8 @@ paths:
         "204":
           description: ""
       security:
-        - *a63
-      tags: *a64
+        - *a65
+      tags: *a66
   /api/organizations/{organizationId}/print-templates/{templateId}/preview:
     post:
       description: Rendert die Vorlage mit Beispieldaten und liefert das Ergebnis als HTML (`data.html`), ohne zu drucken. Scope `read`.
@@ -6604,10 +6695,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a63
+        - *a65
         - API-token: []
       summary: Bon-Vorlage als Vorschau rendern
-      tags: *a64
+      tags: *a66
       x-api-token-scope: read
   /api/organizations/{organizationId}/qr-codes:
     post:
@@ -6627,9 +6718,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: &a65
+      security: &a67
         - JWT-auth: []
-      tags: &a66
+      tags: &a68
         - QR Codes
     get:
       operationId: qrCodes_findAll
@@ -6661,8 +6752,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a65
-      tags: *a66
+      security: *a67
+      tags: *a68
   /api/organizations/{organizationId}/qr-codes/bulk:
     post:
       operationId: qrCodes_bulkCreate
@@ -6681,8 +6772,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a65
-      tags: *a66
+      security: *a67
+      tags: *a68
   /api/organizations/{organizationId}/qr-codes/{qrCodeId}:
     get:
       operationId: qrCodes_findOne
@@ -6700,8 +6791,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a65
-      tags: *a66
+      security: *a67
+      tags: *a68
     patch:
       operationId: qrCodes_update
       parameters:
@@ -6724,8 +6815,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a65
-      tags: *a66
+      security: *a67
+      tags: *a68
     delete:
       operationId: qrCodes_remove
       parameters:
@@ -6742,8 +6833,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a65
-      tags: *a66
+      security: *a67
+      tags: *a68
   /api/organizations/{organizationId}/qr-codes/{qrCodeId}/image:
     get:
       operationId: qrCodes_getImage
@@ -6766,8 +6857,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a65
-      tags: *a66
+      security: *a67
+      tags: *a68
   /api/public/order/events/{organizationId}:
     get:
       operationId: onlineOrders_getPublicEvents
@@ -6780,9 +6871,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a67
+      security: &a69
         - X-Session-Token: []
-      tags: &a68
+      tags: &a70
         - Online Orders
   /api/public/order/session:
     post:
@@ -6797,16 +6888,16 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a67
-      tags: *a68
+      security: *a69
+      tags: *a70
     get:
       operationId: onlineOrders_getSession
       parameters: []
       responses:
         "200":
           description: ""
-      security: *a67
-      tags: *a68
+      security: *a69
+      tags: *a70
   /api/public/order/menu:
     get:
       operationId: onlineOrders_getMenu
@@ -6814,8 +6905,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a67
-      tags: *a68
+      security: *a69
+      tags: *a70
   /api/public/order/cart:
     post:
       operationId: onlineOrders_addToCart
@@ -6829,16 +6920,16 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a67
-      tags: *a68
+      security: *a69
+      tags: *a70
     delete:
       operationId: onlineOrders_clearCart
       parameters: []
       responses:
         "200":
           description: ""
-      security: *a67
-      tags: *a68
+      security: *a69
+      tags: *a70
   /api/public/order/cart/{index}:
     patch:
       operationId: onlineOrders_updateCartItem
@@ -6857,8 +6948,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a67
-      tags: *a68
+      security: *a69
+      tags: *a70
   /api/public/order/submit:
     post:
       operationId: onlineOrders_submitOrder
@@ -6872,8 +6963,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a67
-      tags: *a68
+      security: *a69
+      tags: *a70
   /api/public/order/pay:
     post:
       operationId: onlineOrders_initiatePayment
@@ -6887,8 +6978,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a67
-      tags: *a68
+      security: *a69
+      tags: *a70
   /api/public/order/pay/confirm:
     post:
       operationId: onlineOrders_confirmPayment
@@ -6896,8 +6987,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a67
-      tags: *a68
+      security: *a69
+      tags: *a70
   /api/public/order/pay/{paymentId}/webhook:
     post:
       operationId: onlineOrders_sumUpWebhook
@@ -6910,9 +7001,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a67
+      security: *a69
       summary: SumUp payment-status webhook for QR order payments; re-verified against SumUp
-      tags: *a68
+      tags: *a70
   /api/public/order/status:
     get:
       operationId: onlineOrders_getOrderStatus
@@ -6920,8 +7011,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a67
-      tags: *a68
+      security: *a69
+      tags: *a70
   /api/organizations/{organizationId}/invoices:
     get:
       operationId: invoices_findAll
@@ -6976,9 +7067,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a69
+      security: &a71
         - JWT-auth: []
-      tags: &a70
+      tags: &a72
         - Invoices
   /api/organizations/{organizationId}/invoices/{id}:
     get:
@@ -6997,8 +7088,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a69
-      tags: *a70
+      security: *a71
+      tags: *a72
   /api/organizations/{organizationId}/invoices/{id}/pdf:
     get:
       operationId: invoices_getPdfUrl
@@ -7016,8 +7107,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a69
-      tags: *a70
+      security: *a71
+      tags: *a72
   /api/admin/organizations:
     get:
       operationId: admin_findAllOrganizations
@@ -7059,9 +7150,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a71
+      security: &a73
         - JWT-auth: []
-      tags: &a72
+      tags: &a74
         - Admin
   /api/admin/organizations/{id}:
     get:
@@ -7075,8 +7166,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
     patch:
       operationId: admin_updateOrganization
       parameters:
@@ -7094,8 +7185,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/organizations/{id}/operating-mode:
     patch:
       description: Nur Support (Super-Admin). Betriebsart `orders_only`, `cashless` oder `full` (in Deutschland nur mit aktiver Cloud-TSE, sonst 403 TSE_REQUIRED_FOR_CASH). Steht mit Zeitpunkt, Person und Grund im Verlauf und im Admin-Protokoll.
@@ -7115,9 +7206,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
+      security: *a73
       summary: Switch the operating mode, logged with reason
-      tags: *a72
+      tags: *a74
   /api/admin/organizations/{id}/operating-mode/history:
     get:
       operationId: admin_getOperatingModeHistory
@@ -7130,9 +7221,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
+      security: *a73
       summary: Operating mode and country change log (newest first)
-      tags: *a72
+      tags: *a74
   /api/admin/organizations/{id}/country:
     patch:
       description: "Nur Support (Super-Admin). Das Land bestimmt die wählbaren Betriebsarten (Deutschland: Bargeld nur mit Cloud-TSE) und die Steuersätze. Steht mit Grund im Verlauf und im Admin-Protokoll."
@@ -7152,9 +7243,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
+      security: *a73
       summary: Change the country of an organization (logged with reason)
-      tags: *a72
+      tags: *a74
   /api/admin/organizations/{id}/discount:
     patch:
       operationId: admin_setDiscount
@@ -7173,8 +7264,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
     delete:
       operationId: admin_removeDiscount
       parameters:
@@ -7186,8 +7277,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/organizations/{id}/access:
     post:
       operationId: admin_accessWithPin
@@ -7206,8 +7297,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/organizations/{id}/impersonate:
     get:
       operationId: admin_impersonate
@@ -7220,8 +7311,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/users:
     get:
       operationId: admin_findAllUsers
@@ -7259,8 +7350,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/users/{id}:
     get:
       operationId: admin_getUser
@@ -7273,8 +7364,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
     patch:
       operationId: admin_updateUser
       parameters:
@@ -7292,8 +7383,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/users/{id}/unlock:
     post:
       operationId: admin_unlockUser
@@ -7306,8 +7397,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/invoices:
     get:
       operationId: admin_findAllInvoices
@@ -7364,8 +7455,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/invoices/{id}/mark-paid:
     post:
       operationId: admin_markInvoicePaid
@@ -7378,8 +7469,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/devices:
     get:
       operationId: admin_findAllDevices
@@ -7397,8 +7488,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/devices/{id}:
     delete:
       operationId: admin_deleteDevice
@@ -7411,8 +7502,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/printers:
     get:
       operationId: admin_printerOverview
@@ -7425,8 +7516,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/printers/{id}/test:
     post:
       operationId: admin_testPrintAdmin
@@ -7439,8 +7530,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/stats/overview:
     get:
       operationId: admin_getOverviewStats
@@ -7448,8 +7539,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/stats/revenue:
     get:
       operationId: admin_getRevenueStats
@@ -7467,8 +7558,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/audit-logs:
     get:
       operationId: admin_findAuditLogs
@@ -7595,8 +7686,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/subscription-config:
     get:
       operationId: admin_getSubscriptionConfig
@@ -7604,8 +7695,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
     post:
       operationId: admin_createSubscriptionConfig
       parameters: []
@@ -7618,8 +7709,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
     patch:
       operationId: admin_upsertSubscriptionConfig
       parameters: []
@@ -7632,8 +7723,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/subscription-configs:
     get:
       operationId: admin_getAllSubscriptionConfigs
@@ -7641,8 +7732,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/subscription-config/{id}:
     patch:
       operationId: admin_updateSubscriptionConfig
@@ -7661,8 +7752,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
     delete:
       operationId: admin_deleteSubscriptionConfig
       parameters:
@@ -7674,8 +7765,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/settings/notifications:
     get:
       operationId: admin_getNotificationSettings
@@ -7683,8 +7774,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
     patch:
       operationId: admin_updateNotificationSettings
       parameters: []
@@ -7697,8 +7788,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a71
-      tags: *a72
+      security: *a73
+      tags: *a74
   /api/admin/events:
     get:
       operationId: adminEvents_findAll
@@ -7761,9 +7852,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a73
+      security: &a75
         - JWT-auth: []
-      tags: &a74
+      tags: &a76
         - Admin
   /api/admin/events/{id}:
     get:
@@ -7777,8 +7868,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a73
-      tags: *a74
+      security: *a75
+      tags: *a76
   /api/admin/events/{id}/invoice:
     patch:
       operationId: adminEvents_markInvoiced
@@ -7797,8 +7888,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a73
-      tags: *a74
+      security: *a75
+      tags: *a76
     delete:
       operationId: adminEvents_unmarkInvoiced
       parameters:
@@ -7810,8 +7901,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a73
-      tags: *a74
+      security: *a75
+      tags: *a76
   /api/admin/events/{id}/cancel-billing:
     get:
       operationId: adminEvents_cancelBillingPreview
@@ -7824,8 +7915,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a73
-      tags: *a74
+      security: *a75
+      tags: *a76
     post:
       operationId: adminEvents_cancelBilling
       parameters:
@@ -7843,8 +7934,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a73
-      tags: *a74
+      security: *a75
+      tags: *a76
   /api/admin/events/{id}/invoice/resend:
     post:
       operationId: adminEvents_resendInvoice
@@ -7857,8 +7948,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a73
-      tags: *a74
+      security: *a75
+      tags: *a76
   /api/admin/events/{id}/invoice/mark-paid:
     post:
       operationId: adminEvents_markInvoicePaid
@@ -7871,8 +7962,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a73
-      tags: *a74
+      security: *a75
+      tags: *a76
   /api/admin/events/{id}/invoice/pdf:
     get:
       operationId: adminEvents_invoicePdf
@@ -7885,8 +7976,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a73
-      tags: *a74
+      security: *a75
+      tags: *a76
   /api/admin/events/{id}/waive:
     post:
       description: "Wie ein Kauf: in Deutschland mit „Alle Funktionen“ schaltet der Server danach die Cloud-TSE ein; Bestandsorganisationen nur mit `withTse: true` (sonst gilt die Antwort einer früheren Zahlungsseite)."
@@ -7906,9 +7997,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a73
+      security: *a75
       summary: Freischaltung erlassen (Support)
-      tags: *a74
+      tags: *a76
   /api/admin/events/{id}/dates:
     post:
       description: "Übersteuert die Sperre der Phasen: nach Beginn des Verkaufsfensters lassen sich Beginn und Ende sonst nicht mehr verschieben (Ende nur vorziehen). Grund Pflicht (400 `EVENT_DATES_OVERRIDE_REASON_REQUIRED`), protokolliert als `event_dates_override`. Die bezahlte Dauer gilt weiter (400 `EVENT_PAID_DAYS_EXCEEDED`). Liegt das Verkaufsfenster danach wieder in der Zukunft, ist die Veranstaltung wieder „Geplant“ (Testbestellungen) und wird zu Beginn erneut aufgeräumt."
@@ -7928,9 +8019,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a73
+      security: *a75
       summary: Veranstaltung trotz begonnenem Verkauf verschieben (Support)
-      tags: *a74
+      tags: *a76
   /api/organizations/{organizationId}/reports/sales:
     get:
       description: Umsatz, Bestellungen und Durchschnittsbon im Zeitraum (`startDate`, `endDate`), optional je Veranstaltung und gruppiert (`groupBy`). Scope `read` und Modulrecht Auswertung.
@@ -7981,11 +8072,11 @@ paths:
         "200":
           description: ""
       security:
-        - &a75
+        - &a77
           JWT-auth: []
         - API-token: []
       summary: Umsatzbericht
-      tags: &a76
+      tags: &a78
         - Reports
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/vat:
@@ -8038,10 +8129,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Umsatz und Umsatzsteuer je Steuersatz
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/small-business:
     get:
@@ -8058,10 +8149,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Kleinunternehmer-Grenzen (§ 19 UStG)
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/products:
     get:
@@ -8113,10 +8204,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Umsatzbericht je Produkt
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/payments:
     get:
@@ -8168,10 +8259,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Zahlungsbericht je Zahlart
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/hourly:
     get:
@@ -8223,10 +8314,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Umsatz je Stunde
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/channels:
     get:
@@ -8278,10 +8369,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Umsatz je Bestellkanal
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/categories:
     get:
@@ -8333,10 +8424,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Umsatzbericht je Kategorie
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/net-summary:
     get:
@@ -8388,10 +8479,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Netto-Abgleich Produkte und Kategorien
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/devices:
     get:
@@ -8443,10 +8534,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Umsatz je Gerät
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/waiters:
     get:
@@ -8498,9 +8589,9 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
       summary: Bericht je Bedienung
-      tags: *a76
+      tags: *a78
   /api/organizations/{organizationId}/reports/inventory:
     get:
       description: Aktueller Bestand aller Produkte mit Bestandsführung samt Warnung bei leerem Bestand. Scope `read` und Modulrecht Auswertung.
@@ -8516,10 +8607,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Bestandsbericht
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/stock-movements:
     get:
@@ -8571,10 +8662,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Bestandsbewegungen
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/export:
     get:
@@ -8653,10 +8744,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Bericht exportieren (CSV, Excel, JSON)
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/system-status:
     get:
@@ -8673,10 +8764,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Systemstatus
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/organizations/{organizationId}/reports/activity:
     get:
@@ -8693,10 +8784,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a75
+        - *a77
         - API-token: []
       summary: Letzte Aktivitäten
-      tags: *a76
+      tags: *a78
       x-api-token-scope: read
   /api/events/{eventId}/inventory/counts:
     get:
@@ -8738,9 +8829,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a77
+      security: &a79
         - JWT-auth: []
-      tags: &a78
+      tags: &a80
         - Inventory
     post:
       operationId: inventory_createCount
@@ -8759,8 +8850,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
   /api/events/{eventId}/inventory/counts/{id}:
     get:
       operationId: inventory_findOneCount
@@ -8778,8 +8869,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
     patch:
       operationId: inventory_updateCount
       parameters:
@@ -8802,8 +8893,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
     delete:
       operationId: inventory_deleteCount
       parameters:
@@ -8820,8 +8911,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
   /api/events/{eventId}/inventory/counts/{id}/start:
     post:
       operationId: inventory_startCount
@@ -8839,8 +8930,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
   /api/events/{eventId}/inventory/counts/{id}/complete:
     post:
       operationId: inventory_completeCount
@@ -8858,8 +8949,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
   /api/events/{eventId}/inventory/counts/{id}/cancel:
     post:
       operationId: inventory_cancelCount
@@ -8877,8 +8968,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
   /api/events/{eventId}/inventory/counts/{id}/items:
     post:
       operationId: inventory_addItem
@@ -8902,8 +8993,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
   /api/events/{eventId}/inventory/counts/{id}/items/bulk-add:
     post:
       operationId: inventory_bulkAddItems
@@ -8927,8 +9018,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
   /api/events/{eventId}/inventory/counts/{countId}/items/{itemId}:
     patch:
       operationId: inventory_updateItem
@@ -8957,8 +9048,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
   /api/events/{eventId}/inventory/stock-movements:
     get:
       operationId: inventory_findAllMovements
@@ -9026,8 +9117,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
   /api/events/{eventId}/inventory/stock-movements/{id}:
     get:
       operationId: inventory_findOneMovement
@@ -9045,8 +9136,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a77
-      tags: *a78
+      security: *a79
+      tags: *a80
   /api/health:
     get:
       operationId: health_check
@@ -9054,7 +9145,7 @@ paths:
       responses:
         "200":
           description: ""
-      tags: &a79
+      tags: &a81
         - Health
   /api/health/ready:
     get:
@@ -9063,7 +9154,7 @@ paths:
       responses:
         "200":
           description: ""
-      tags: *a79
+      tags: *a81
   /api/health/live:
     get:
       operationId: health_liveness
@@ -9071,7 +9162,7 @@ paths:
       responses:
         "200":
           description: ""
-      tags: *a79
+      tags: *a81
   /api/setup/status:
     get:
       operationId: setup_getSetupStatus
@@ -9091,7 +9182,7 @@ paths:
                   tokenRequired:
                     type: boolean
       summary: Prüft ob die erstmalige Einrichtung erforderlich ist
-      tags: &a80
+      tags: &a82
         - Setup
   /api/setup:
     post:
@@ -9125,7 +9216,7 @@ paths:
         "409":
           description: Einrichtung bereits abgeschlossen
       summary: Führt die erstmalige Einrichtung durch
-      tags: *a80
+      tags: *a82
   /api/organizations/{organizationId}/onboarding/status:
     get:
       operationId: onboarding_getStatus
@@ -9165,11 +9256,11 @@ paths:
         "201":
           description: ""
       security:
-        - &a81
+        - &a83
           JWT-auth: []
         - API-token: []
       summary: Schichtplan anlegen
-      tags: &a82
+      tags: &a84
         - Shift Plans
       x-api-token-scope: staff:write
     get:
@@ -9187,10 +9278,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Schichtpläne auflisten
-      tags: *a82
+      tags: *a84
       x-api-token-scope: read
   /api/organizations/{organizationId}/shift-plans/{planId}:
     get:
@@ -9215,10 +9306,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Schichtplan abrufen
-      tags: *a82
+      tags: *a84
       x-api-token-scope: read
     patch:
       description: Ändert Name, Zeitraum, Beschreibung oder Einstellungen eines Schichtplans. Scope `staff:write`.
@@ -9248,10 +9339,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Schichtplan ändern
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
     delete:
       operationId: shifts_deletePlan
@@ -9271,9 +9362,9 @@ paths:
       responses:
         "204":
           description: ""
-      security: &a83
-        - *a81
-      tags: *a82
+      security: &a85
+        - *a83
+      tags: *a84
   /api/organizations/{organizationId}/shift-plans/{planId}/publish:
     post:
       description: Schaltet den Plan für die öffentliche Helfer-Anmeldung frei (`400 SHIFT_PLAN_ALREADY_PUBLISHED`, wenn er schon offen ist). Scope `staff:write`.
@@ -9297,10 +9388,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Schichtplan veröffentlichen
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
   /api/organizations/{organizationId}/shift-plans/{planId}/close:
     post:
@@ -9325,10 +9416,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Schichtplan schließen
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
   /api/organizations/{organizationId}/shift-plans/{planId}/export/pdf:
     get:
@@ -9353,10 +9444,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Schichtplan als PDF exportieren
-      tags: *a82
+      tags: *a84
       x-api-token-scope: read
   /api/organizations/{organizationId}/shift-plans/{planId}/jobs:
     post:
@@ -9387,10 +9478,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Job anlegen
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
     get:
       description: Alle Jobs eines Schichtplans mit ihren Schichten. Scope `read`.
@@ -9414,10 +9505,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Jobs auflisten (je Schichtplan)
-      tags: *a82
+      tags: *a84
       x-api-token-scope: read
   /api/organizations/{organizationId}/shift-plans/jobs/{jobId}:
     patch:
@@ -9448,10 +9539,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Job ändern
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
     delete:
       operationId: shifts_deleteJob
@@ -9471,8 +9562,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a83
-      tags: *a82
+      security: *a85
+      tags: *a84
   /api/organizations/{organizationId}/shift-plans/jobs/{jobId}/shifts:
     post:
       description: Legt eine Schicht (Zeitraum, benötigte Helfer) für einen Job an. Scope `staff:write`.
@@ -9502,10 +9593,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Schicht anlegen
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
     get:
       description: Alle Schichten eines Jobs mit Belegung. Scope `read`.
@@ -9529,10 +9620,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Schichten auflisten (je Job)
-      tags: *a82
+      tags: *a84
       x-api-token-scope: read
   /api/organizations/{organizationId}/shift-plans/jobs/{jobId}/shifts/bulk:
     post:
@@ -9571,10 +9662,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Mehrere Schichten anlegen
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
   /api/organizations/{organizationId}/shift-plans/shifts/{shiftId}:
     patch:
@@ -9605,10 +9696,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Schicht ändern
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
     delete:
       operationId: shifts_deleteShift
@@ -9628,8 +9719,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a83
-      tags: *a82
+      security: *a85
+      tags: *a84
   /api/organizations/{organizationId}/shift-plans/{planId}/registrations:
     get:
       description: Alle Anmeldungen eines Schichtplans mit Status und Schicht. Scope `read`.
@@ -9653,10 +9744,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Helfer-Anmeldungen auflisten (je Schichtplan)
-      tags: *a82
+      tags: *a84
       x-api-token-scope: read
   /api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/approve:
     post:
@@ -9687,10 +9778,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Anmeldung annehmen
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
   /api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/reject:
     post:
@@ -9721,10 +9812,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Anmeldung ablehnen
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
   /api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/message:
     post:
@@ -9751,8 +9842,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a83
-      tags: *a82
+      security: *a85
+      tags: *a84
   /api/organizations/{organizationId}/shift-plans/{planId}/broadcast:
     post:
       operationId: shifts_broadcastMessage
@@ -9778,8 +9869,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a83
-      tags: *a82
+      security: *a85
+      tags: *a84
   /api/organizations/{organizationId}/shift-plans/registrations/{registrationId}:
     delete:
       operationId: shifts_deleteRegistration
@@ -9799,8 +9890,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a83
-      tags: *a82
+      security: *a85
+      tags: *a84
     patch:
       description: Ändert Name, Kontakt, Notizen oder Schicht einer Anmeldung; auf Wunsch wird der Helfer per E-Mail informiert. Scope `staff:write`.
       operationId: updateShiftRegistration
@@ -9829,10 +9920,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Anmeldung ändern
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
   /api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/one:
     delete:
@@ -9853,8 +9944,8 @@ paths:
       responses:
         "204":
           description: ""
-      security: *a83
-      tags: *a82
+      security: *a85
+      tags: *a84
   /api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/mark-verified:
     post:
       operationId: shifts_markRegistrationVerified
@@ -9874,8 +9965,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a83
-      tags: *a82
+      security: *a85
+      tags: *a84
   /api/organizations/{organizationId}/shift-plans/registrations/{registrationId}/notes:
     patch:
       description: Speichert eine Notiz, die nur Organisatoren sehen. Scope `staff:write`.
@@ -9905,10 +9996,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Interne Notiz zur Anmeldung setzen
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
   /api/organizations/{organizationId}/shift-plans/shifts/{shiftId}/registrations:
     post:
@@ -9939,10 +10030,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a81
+        - *a83
         - API-token: []
       summary: Helfer in Schicht eintragen
-      tags: *a82
+      tags: *a84
       x-api-token-scope: staff:write
   /api/organizations/{organizationId}/shift-plans/registration-groups/{registrationGroupId}/propose:
     post:
@@ -9963,8 +10054,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a83
-      tags: *a82
+      security: *a85
+      tags: *a84
   /api/public/shifts/{slug}:
     get:
       operationId: shiftsPublic_getShiftPlan
@@ -9978,7 +10069,7 @@ paths:
         "200":
           description: ""
       summary: Get public shift plan by slug
-      tags: &a84
+      tags: &a86
         - Shifts (Public)
   /api/public/shifts/{slug}/register:
     post:
@@ -9999,7 +10090,7 @@ paths:
         "201":
           description: ""
       summary: Register for shift(s)
-      tags: *a84
+      tags: *a86
   /api/public/shifts/proposal/{token}:
     post:
       operationId: shiftsPublic_respondToProposal
@@ -10013,7 +10104,7 @@ paths:
         "201":
           description: ""
       summary: Helper responds to a shift-move proposal (accept | decline)
-      tags: *a84
+      tags: *a86
   /api/public/shifts/{slug}/request-magic-link:
     post:
       operationId: shiftsPublic_requestMagicLink
@@ -10027,7 +10118,7 @@ paths:
         "201":
           description: ""
       summary: "Send helper a magic link to manage their shifts (no enumeration: always 200)"
-      tags: *a84
+      tags: *a86
   /api/public/shifts/manage/{token}:
     get:
       operationId: shiftsPublic_openHelperManage
@@ -10041,7 +10132,7 @@ paths:
         "200":
           description: ""
       summary: Open the helper-manage session (token-bound, 24h)
-      tags: *a84
+      tags: *a86
   /api/public/shifts/manage/{token}/shift:
     post:
       operationId: shiftsPublic_addShiftViaMagicLink
@@ -10055,7 +10146,7 @@ paths:
         "201":
           description: ""
       summary: Helper adds a shift to their signup via magic link
-      tags: *a84
+      tags: *a86
   /api/public/shifts/manage/{token}/shift/{registrationId}:
     delete:
       operationId: shiftsPublic_removeShiftViaMagicLink
@@ -10074,7 +10165,7 @@ paths:
         "200":
           description: ""
       summary: Helper removes one of their shifts via magic link
-      tags: *a84
+      tags: *a86
   /api/public/shifts/verify/{token}:
     get:
       operationId: shiftsPublic_verifyEmail
@@ -10088,7 +10179,7 @@ paths:
         "200":
           description: ""
       summary: Verify email address
-      tags: *a84
+      tags: *a86
   /api/events/{eventId}/production-stations:
     post:
       description: Legt eine Produktionsstation (Küche, Ausgabe, Bar) für die Veranstaltung an, optional mit Drucker. Scope `events:write` und Modulrecht Veranstaltungen.
@@ -10111,11 +10202,11 @@ paths:
         "201":
           description: ""
       security:
-        - &a85
+        - &a87
           JWT-auth: []
         - API-token: []
       summary: Station anlegen
-      tags: &a86
+      tags: &a88
         - Production Stations
       x-api-token-scope: events:write
     get:
@@ -10133,10 +10224,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a85
+        - *a87
         - API-token: []
       summary: Stationen auflisten (je Veranstaltung)
-      tags: *a86
+      tags: *a88
       x-api-token-scope: read
   /api/events/{eventId}/production-stations/{stationId}:
     get:
@@ -10161,10 +10252,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a85
+        - *a87
         - API-token: []
       summary: Station abrufen
-      tags: *a86
+      tags: *a88
       x-api-token-scope: read
     patch:
       description: Ändert Name, Drucker oder Einstellungen einer Station. Scope `events:write`.
@@ -10194,10 +10285,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a85
+        - *a87
         - API-token: []
       summary: Station ändern
-      tags: *a86
+      tags: *a88
       x-api-token-scope: events:write
     delete:
       operationId: productionStations_remove
@@ -10218,8 +10309,8 @@ paths:
         "204":
           description: ""
       security:
-        - *a85
-      tags: *a86
+        - *a87
+      tags: *a88
   /api/organizations/{organizationId}/token-types:
     get:
       description: Alle Markentypen der Organisation; mit `eventId` die der Veranstaltung und die organisationsweiten. `inUse` = schon verkauft oder angenommen (Nennwert/Art fest). Scope `read`.
@@ -10242,11 +10333,11 @@ paths:
         "200":
           description: ""
       security:
-        - &a87
+        - &a89
           JWT-auth: []
         - API-token: []
       summary: Markentypen (Wertmarken) auflisten
-      tags: &a88
+      tags: &a90
         - Wertmarken
       x-api-token-scope: read
     post:
@@ -10270,10 +10361,10 @@ paths:
         "201":
           description: ""
       security:
-        - *a87
+        - *a89
         - API-token: []
       summary: Markentyp anlegen
-      tags: *a88
+      tags: *a90
       x-api-token-scope: catalog:write
   /api/organizations/{organizationId}/token-types/{tokenTypeId}:
     patch:
@@ -10303,10 +10394,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a87
+        - *a89
         - API-token: []
       summary: Markentyp ändern
-      tags: *a88
+      tags: *a90
       x-api-token-scope: catalog:write
     delete:
       description: Nur solange keine Marke verkauft oder angenommen wurde, sonst 409 TOKEN_TYPE_IN_USE (deaktivieren statt löschen).
@@ -10329,9 +10420,9 @@ paths:
         "204":
           description: ""
       security:
-        - *a87
+        - *a89
       summary: Markentyp löschen
-      tags: *a88
+      tags: *a90
   /api/organizations/{organizationId}/reports/tokens:
     get:
       description: "Je Markentyp und je Veranstaltung, ohne Testbuchungen. Verkaufte Marken sind kein Umsatz (Mehrzweckgutschein: Umsatz entsteht bei der Einlösung). Recht „Berichte“ oder „Produkte“."
@@ -10368,10 +10459,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a87
+        - *a89
         - API-token: []
       summary: "Wertmarken: verkauft, eingelöst, zurückgegeben, Rücktausch, im Umlauf"
-      tags: *a88
+      tags: *a90
       x-api-token-scope: read
   /api/organizations/{organizationId}/token-transactions:
     get:
@@ -10425,17 +10516,17 @@ paths:
         "200":
           description: ""
       security:
-        - *a87
+        - *a89
         - API-token: []
       summary: Verkäufe und Rücktausch von Wertmarken
-      tags: *a88
+      tags: *a90
       x-api-token-scope: read
   /api/device-api/token-types:
     get:
       description: Aktive Markentypen der Veranstaltung und organisationsweite. Leer, wo Wertmarken nicht erlaubt sind („Bargeldlos“, „Nur Bons“, Deutschland ohne aktive Cloud-TSE).
       operationId: deviceTokens_list
       parameters:
-        - &a89
+        - &a91
           name: X-Device-Token
           in: header
           description: Device authentication token
@@ -10451,14 +10542,14 @@ paths:
         "200":
           description: ""
       summary: Markentypen (Wertmarken) für die Kasse
-      tags: &a90
+      tags: &a92
         - Device API
   /api/device-api/tokens/sales:
     post:
       description: "Bar, Karte oder SumUp. Kein Umsatz: Mehrzweckgutschein nicht steuerbar (TSE `MehrzweckgutscheinKauf`), Einzweckgutschein mit seinem Satz. Bar zählt ins Kassenbuch. 403 wie Bargeld außerhalb von „Alle Funktionen“ bzw. TSE_REQUIRED_FOR_TOKENS in Deutschland ohne aktive Cloud-TSE."
       operationId: deviceTokens_sell
       parameters:
-        - *a89
+        - *a91
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -10475,13 +10566,13 @@ paths:
         "201":
           description: ""
       summary: Wertmarken verkaufen
-      tags: *a90
+      tags: *a92
   /api/device-api/tokens/buybacks:
     post:
       description: Nur Typen mit „Rücktausch erlaubt“ (400 TOKEN_BUYBACK_NOT_ALLOWED), höchstens der Bestand im Umlauf (409 TOKEN_BUYBACK_EXCEEDS_OUTSTANDING), Bedienungen brauchen das Recht „Storno/Erstattung“. Beleg mit Unterschriftszeile wird immer gedruckt.
       operationId: deviceTokens_buyback
       parameters:
-        - *a89
+        - *a91
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -10498,13 +10589,13 @@ paths:
         "201":
           description: ""
       summary: Wertmarken zurücktauschen (Bargeld auszahlen)
-      tags: *a90
+      tags: *a92
   /api/device-api/tokens/transactions/{tokenTransactionId}/print:
     post:
       description: "`reprint: true` druckt den Vermerk „NACHDRUCK“."
       operationId: deviceTokens_print
       parameters:
-        - *a89
+        - *a91
         - name: tokenTransactionId
           required: true
           in: path
@@ -10520,7 +10611,7 @@ paths:
         "201":
           description: ""
       summary: Beleg eines Markenverkaufs/Rücktauschs drucken
-      tags: *a90
+      tags: *a92
   /api/organizations/{organizationId}/support:
     get:
       operationId: support_getThread
@@ -10533,9 +10624,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a91
+      security: &a93
         - JWT-auth: []
-      tags: &a92
+      tags: &a94
         - Support
   /api/organizations/{organizationId}/support/emergency:
     get:
@@ -10550,9 +10641,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a91
+      security: *a93
       summary: Emergency support phone for booked event days
-      tags: *a92
+      tags: *a94
   /api/organizations/{organizationId}/support/messages:
     post:
       operationId: support_sendMessage
@@ -10571,8 +10662,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a91
-      tags: *a92
+      security: *a93
+      tags: *a94
   /api/admin/support/threads:
     get:
       operationId: supportAdmin_getThreads
@@ -10580,9 +10671,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a93
+      security: &a95
         - JWT-auth: []
-      tags: &a94
+      tags: &a96
         - Admin Support
   /api/admin/support/{organizationId}/messages:
     get:
@@ -10596,8 +10687,8 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a93
-      tags: *a94
+      security: *a95
+      tags: *a96
     post:
       operationId: supportAdmin_sendMessage
       parameters:
@@ -10615,8 +10706,8 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a93
-      tags: *a94
+      security: *a95
+      tags: *a96
   /api/device-api/support/emergency:
     get:
       description: "Wie `GET /organizations/{organizationId}/support/emergency` für die Organisation des Geräts: Rufnummer nur mit gebuchter, noch nicht beendeter Veranstaltung und hinterlegter Nummer, sonst `phone: null`."
@@ -10667,10 +10758,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a95
+      security: &a97
         - JWT-auth: []
       summary: List website enquiries, newest first
-      tags: &a96
+      tags: &a98
         - Admin — Zuschriften
   /api/admin/contact-requests/{id}/handled:
     patch:
@@ -10684,9 +10775,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a95
+      security: *a97
       summary: Mark an enquiry as dealt with (toggles)
-      tags: *a96
+      tags: *a98
   /api/public/content-reports:
     post:
       description: Meldung eines rechtswidrigen Inhalts in einem Vereins-Shop oder auf einer Helferseite (Melde- und Abhilfeverfahren nach Art. 16 DSA). Nicht authentifiziert; Honeypot, Mindest-Ausfüllzeit, höchstens 5 Meldungen je Stunde und IP-Adresse. Der Meldende erhält eine Eingangsbestätigung per E-Mail.
@@ -10716,10 +10807,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a97
+      security: &a99
         - JWT-auth: []
       summary: List content reports (DSA), newest first
-      tags: &a98
+      tags: &a100
         - Admin — Inhaltsmeldungen
   /api/admin/content-reports/{id}:
     get:
@@ -10733,9 +10824,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a97
+      security: *a99
       summary: Get one content report
-      tags: *a98
+      tags: *a100
     patch:
       description: Status (open/in_review/closed), Maßnahme (none/hide_content/disable_shop), Entscheidung, Sachverhalt, Grundlage und Rechtsbehelfe. `disable_shop` schaltet den Shop der Veranstaltung ab bzw. nimmt die Helferseite aus der Veröffentlichung (einmalig).
       operationId: contentReportsAdmin_update
@@ -10754,9 +10845,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a97
+      security: *a99
       summary: Update status, decision and statement of reasons
-      tags: *a98
+      tags: *a100
   /api/admin/content-reports/{id}/notify:
     post:
       description: "`reporter`: Mitteilung der Entscheidung an den Meldenden (Art. 16 Abs. 5 DSA). `organization`: Begründung an die Admins des Vereins (Art. 17 DSA) mit Maßnahme, Sachverhalt, Grundlage und Rechtsbehelfen."
@@ -10776,9 +10867,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a97
+      security: *a99
       summary: Send the decision to the reporter or the statement of reasons to the club
-      tags: *a98
+      tags: *a100
   /api/internal/deploy-guard:
     get:
       description: busy = an active event took a non-test order within the window (default 30 min). Lists those events with their last order time.
@@ -10814,11 +10905,11 @@ paths:
       responses:
         "200":
           description: "{ data: { enabled, available, pdfSupported, quotas } }"
-      security: &a99
-        - &a101
+      security: &a101
+        - &a103
           JWT-auth: []
       summary: Status der Assistent-Funktionen
-      tags: &a100
+      tags: &a102
         - Assistant
     patch:
       operationId: assistant_setEnabled
@@ -10837,9 +10928,9 @@ paths:
       responses:
         "200":
           description: "{ data: { enabled, available, pdfSupported, quotas } }"
-      security: *a99
+      security: *a101
       summary: Assistent-Funktionen ein- oder ausschalten (Admin, protokolliert)
-      tags: *a100
+      tags: *a102
   /api/organizations/{organizationId}/assistant/icon-suggestions:
     post:
       description: "Schlägt zu Produktnamen passende Icons aus @openeos/pos-icons vor: Stufe 1 ohne Modell (Namen und Suchbegriffe der Icons), Stufe 2 fragt bei unklaren Namen das Klassifikationsmodell. `icon` ist die Referenz `pos-icon:<id>`. Scope `read`; `404 AI_DISABLED` ohne Anbieter, `403 ASSISTANT_DISABLED` ohne Opt-in der Organisation."
@@ -10862,10 +10953,10 @@ paths:
         "201":
           description: "{ data: [{ name, suggestions: [{ icon, score, source: lexical|model }] }] } — leeres Array, wenn kein Icon passt"
       security:
-        - *a101
+        - *a103
         - API-token: []
       summary: Icon-Vorschläge für Produktnamen
-      tags: *a100
+      tags: *a102
       x-api-token-scope: read
   /api/organizations/{organizationId}/events/{eventId}/menu-imports:
     post:
@@ -10901,10 +10992,10 @@ paths:
       responses:
         "202":
           description: "{ data: { id, status: 'queued' } }"
-      security: &a102
+      security: &a104
         - JWT-auth: []
       summary: Speisekarte zur Auswertung einreichen
-      tags: &a103
+      tags: &a105
         - Assistant
     get:
       operationId: menuImport_list
@@ -10922,9 +11013,9 @@ paths:
       responses:
         "200":
           description: "{ data: [{ id, status, source, error?, createdAt, finishedAt?, appliedAt?, usage? }] }"
-      security: *a102
+      security: *a104
       summary: Die letzten 20 Importe der Veranstaltung (ohne Vorschlag)
-      tags: *a103
+      tags: *a105
   /api/organizations/{organizationId}/events/{eventId}/menu-imports/{id}:
     get:
       description: "status: queued | processing | done | failed | applied. Bei done enthält `suggestion` { categories[{ key, name, existingCategoryId? }], products[{ key, categoryKey, name, description?, price, taxRate, pfand?, variants?, existingProductId?, iconSuggestions?, confidence, note? }], warnings[] }. Erkennt das Modell kein Produkt, ist der Import trotzdem done mit leerem `products` und einem Hinweis in `warnings`. Bei failed steht in `error` ein kurzer Hinweis für Nutzer:innen; die Rohmeldung des Anbieters bleibt im Server-Log."
@@ -10948,9 +11039,9 @@ paths:
       responses:
         "200":
           description: "{ data: { id, status, source, error?, createdAt, finishedAt?, appliedAt?, suggestion?, usage? } }"
-      security: *a102
+      security: *a104
       summary: Status und Vorschlag eines Imports
-      tags: *a103
+      tags: *a105
     delete:
       operationId: menuImport_remove
       parameters:
@@ -10972,9 +11063,9 @@ paths:
       responses:
         "200":
           description: "{ data: { success: true } }"
-      security: *a102
+      security: *a104
       summary: Import verwerfen (löscht Dateien und Vorschlag)
-      tags: *a103
+      tags: *a105
   /api/organizations/{organizationId}/events/{eventId}/menu-imports/{id}/apply:
     post:
       description: Legt Kategorien (neu oder vorhanden) und Produkte an bzw. aktualisiert sie (action create | update | skip). Varianten werden options.groups[0] (single). Danach status applied; Audit-Eintrag menu_import_applied.
@@ -11004,9 +11095,9 @@ paths:
       responses:
         "201":
           description: "{ data: { createdCategories, createdProducts, updatedProducts } }"
-      security: *a102
+      security: *a104
       summary: Ausgewählte Kategorien und Produkte anlegen
-      tags: *a103
+      tags: *a105
   /api/organizations/{id}/dsfinvk:
     get:
       description: "Export nach DSFinV-K 2.4 für Kassen-Nachschau (§ 146b AO) und Außenprüfung: 20 CSV-Dateien, `index.xml` und `gdpdu-01-09-2004.dtd` als ZIP. Zeitraum nach Geschäftstagen (`from`/`to`, 6–6 Uhr) oder Z-Nummern (`zFrom`/`zTo`). Enthält nur abgeschlossene Tage — für den laufenden Tag vorher `POST …/dsfinvk/closings`. Header `X-Checksum-SHA256`. Fehler: 400 DSFINVK_RANGE_INVALID, 404 DSFINVK_NO_CLOSINGS."
@@ -11048,10 +11139,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a104
+      security: &a106
         - JWT-auth: []
       summary: DSFinV-K export as ZIP (admins)
-      tags: &a105
+      tags: &a107
         - DSFinV-K
   /api/organizations/{id}/dsfinvk/closings:
     get:
@@ -11085,9 +11176,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a104
+      security: *a106
       summary: Cash point closings (admins)
-      tags: *a105
+      tags: *a107
     post:
       description: "Schließt alle offenen Vorgänge bis jetzt ab (je Geschäftstag ein Abschluss, fortlaufende Z-Nr.). Abschlüsse sind unveränderlich. Fehler: 409 DSFINVK_NOTHING_TO_CLOSE, 409 DSFINVK_PENDING_TRANSACTIONS."
       operationId: dsfinvk_createClosing
@@ -11100,9 +11191,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a104
+      security: *a106
       summary: Create a cash point closing now (admins)
-      tags: *a105
+      tags: *a107
   /api/organizations/{id}/vat-status:
     post:
       description: "Kleinunternehmer (`vatExempt: true`) ↔ umsatzsteuerpflichtig (`vatExempt: false`), z. B. „ab sofort umsatzsteuerpflichtig“ beim Überschreiten der Grenzen des § 19 UStG. Schließt vorher alle offenen Vorgänge ab (Kassenabschluss, DSFinV-K Tz. 3), dann Stammdatenwechsel, Protokoll `vat_status_changed`, Verlauf `settings.vatStatusHistory`. Fehler: 409 DSFINVK_PENDING_TRANSACTIONS."
@@ -11122,9 +11213,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a104
+      security: *a106
       summary: Change the VAT status after a cash point closing (admins)
-      tags: *a105
+      tags: *a107
   /api/organizations/{id}/dsfinvk/closings/{closingId}/download:
     get:
       description: ZIP des Abschlusses aus dem Archiv (`TSE_EXPORT_DIR/<org>/dsfinvk/`), Header `X-Checksum-SHA256`.
@@ -11143,9 +11234,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a104
+      security: *a106
       summary: Download the DSFinV-K export of one closing (admins)
-      tags: *a105
+      tags: *a107
   /api/organizations/{id}/cashbook:
     get:
       description: "Kassenbuch eines Geschäftstags (6–6 Uhr): Buchungen (Anfangsbestand, Einlage, Entnahme, Kassensturz) und Soll-Bestand gesamt und je Gerät (Kassenbuch + Barzahlungen − Bar-Erstattungen − Pfand-Auszahlungen)."
@@ -11172,9 +11263,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a104
+      security: *a106
       summary: Cash book of a business day (admins)
-      tags: *a105
+      tags: *a107
     post:
       description: Wie an der Kasse, aber für die ganze Kasse (ohne Gerät). Jede Bargeldbewegung ist ein eigener TSE-gesicherter Beleg. Nur wenn Bargeld erlaubt ist (sonst 403 wie bei Barzahlungen).
       operationId: dsfinvk_createCashbookEntry
@@ -11193,15 +11284,15 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a104
+      security: *a106
       summary: Book a cash book entry for the whole register (admins)
-      tags: *a105
+      tags: *a107
   /api/device-api/cashbook:
     get:
       description: "Heutiger Geschäftstag (6–6 Uhr): Buchungen dieses Geräts und Soll-Bestand seiner Schublade; `cashAllowed` = Bargeld erlaubt (sonst kein Kassenbuch)."
       operationId: deviceCashbook_today
       parameters:
-        - &a106
+        - &a108
           name: X-Device-Token
           in: header
           description: Device authentication token
@@ -11212,13 +11303,13 @@ paths:
         "200":
           description: ""
       summary: Cash book of today for this device
-      tags: &a107
+      tags: &a109
         - Device API
     post:
       description: Anfangsbestand (Wechselgeld), Einlage, Entnahme/Abschöpfung (Geldtransit) oder Kassensturz (gezählter Bestand → Differenz Soll/Ist). Jede Bargeldbewegung ist ein eigener TSE-gesicherter Beleg (Kassenbeleg-V1, `tse` in der Antwort). Nur wenn Bargeld erlaubt ist.
       operationId: deviceCashbook_create
       parameters:
-        - *a106
+        - *a108
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -11235,7 +11326,7 @@ paths:
         "201":
           description: ""
       summary: Book a cash book entry at the till
-      tags: *a107
+      tags: *a109
   /api/admin/retention/config:
     get:
       operationId: retentionAdmin_config
@@ -11243,10 +11334,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a108
+      security: &a110
         - JWT-auth: []
       summary: Effective retention periods and run mode
-      tags: &a109
+      tags: &a111
         - Admin — Aufbewahrung und Löschung
   /api/admin/retention/runs:
     get:
@@ -11313,9 +11404,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a108
+      security: *a110
       summary: Protocol of deletion runs, newest first
-      tags: *a109
+      tags: *a111
     post:
       operationId: retentionAdmin_start
       parameters: []
@@ -11328,9 +11419,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a108
+      security: *a110
       summary: Run the deletion jobs now (dry run unless dryRun=false or RETENTION_DRY_RUN=false)
-      tags: *a109
+      tags: *a111
   /api/admin/retention/notices:
     get:
       operationId: retentionAdmin_notices
@@ -11352,9 +11443,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a108
+      security: *a110
       summary: Announced closures and deletions of organizations and accounts
-      tags: *a109
+      tags: *a111
   /api/admin/retention/organizations/{organizationId}/keep:
     post:
       operationId: retentionAdmin_keepOrganization
@@ -11367,9 +11458,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a108
+      security: *a110
       summary: Cancel an announced closure for inactivity (counts as activity, period restarts)
-      tags: *a109
+      tags: *a111
   /api/admin/retention/users/{userId}/keep:
     post:
       operationId: retentionAdmin_keepUser
@@ -11382,9 +11473,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a108
+      security: *a110
       summary: Cancel an announced account deletion for inactivity (period restarts)
-      tags: *a109
+      tags: *a111
   /api/admin/retention/organizations/{organizationId}/erasures:
     post:
       operationId: retentionAdmin_erase
@@ -11403,9 +11494,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a108
+      security: *a110
       summary: Erase a specific guest or helper record on the customer’s instruction (logged with reason and executing admin)
-      tags: *a109
+      tags: *a111
   /api/admin/retention/organizations/{organizationId}/purge:
     post:
       operationId: retentionAdmin_purgeOrganization
@@ -11424,9 +11515,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a108
+      security: *a110
       summary: Finally delete an organization now, on the customer’s request (AVV 10.2, AGB 20.5). Requires the exact organization name and a reason; fiscal archive stays; logged as instruction
-      tags: *a109
+      tags: *a111
   /api/users/me/deletion:
     get:
       operationId: accountDeletion_status
@@ -11434,10 +11525,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a110
+      security: &a112
         - JWT-auth: []
       summary: What deleting the own account would do (blocking organizations, organizations closed with it, confirmation method)
-      tags: &a111
+      tags: &a113
         - Users
     post:
       operationId: accountDeletion_delete
@@ -11451,9 +11542,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a110
+      security: *a112
       summary: Delete (anonymise) the own account after confirming with password or e-mail code; logs out
-      tags: *a111
+      tags: *a113
   /api/users/me/deletion/code:
     post:
       operationId: accountDeletion_sendCode
@@ -11461,9 +11552,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a110
+      security: *a112
       summary: Send a confirmation code by e-mail
-      tags: *a111
+      tags: *a113
   /api/users/me/deletion/cancel:
     post:
       operationId: accountDeletion_cancel
@@ -11471,9 +11562,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a110
+      security: *a112
       summary: Cancel a scheduled account deletion (restores the account and the organizations deleted with it, until the final deletion)
-      tags: *a111
+      tags: *a113
   /api/organizations/{organizationId}/webhooks/info:
     get:
       description: Ob Webhooks auf diesem Server eingeschaltet sind, Grenzen (Endpunkte je Organisation, Versuche, Aufbewahrung des Protokolls), die aktuelle `apiVersion` der Nutzlast und alle abonnierbaren Ereignisse mit Beschreibung. Scope `webhooks:read`.
@@ -11489,11 +11580,11 @@ paths:
         "200":
           description: ""
       security:
-        - &a112
+        - &a114
           JWT-auth: []
         - API-token: []
       summary: Webhook-Einstellungen des Servers
-      tags: &a113
+      tags: &a115
         - Webhooks
       x-api-token-scope: webhooks:read
   /api/organizations/{organizationId}/webhooks:
@@ -11541,10 +11632,10 @@ paths:
                     createdAt: 2026-11-10T17:55:02.000Z
                     updatedAt: 2026-11-10T18:04:13.511Z
       security:
-        - *a112
+        - *a114
         - API-token: []
       summary: Webhooks auflisten
-      tags: *a113
+      tags: *a115
       x-api-token-scope: webhooks:read
     post:
       description: Legt einen Endpunkt an. Die Adresse muss mit `https://` beginnen und auf öffentliche Adressen zeigen (`400 WEBHOOK_URL_INVALID`, `params.reason`). Das Signatur-Geheimnis (`data.secret`, `whsec_…`) kommt genau einmal in dieser Antwort. Höchstens 10 Endpunkte je Organisation (`409 WEBHOOK_LIMIT_REACHED`). Scope `webhooks:write`.
@@ -11603,10 +11694,10 @@ paths:
         "503":
           description: WEBHOOKS_DISABLED
       security:
-        - *a112
+        - *a114
         - API-token: []
       summary: Webhook anlegen
-      tags: *a113
+      tags: *a115
       x-api-token-scope: webhooks:write
   /api/organizations/{organizationId}/webhooks/{webhookId}:
     get:
@@ -11631,10 +11722,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a112
+        - *a114
         - API-token: []
       summary: Webhook abrufen
-      tags: *a113
+      tags: *a115
       x-api-token-scope: webhooks:read
     patch:
       description: "Ändert Adresse, Beschreibung, Ereignisse oder Schalter. `active: true` schaltet einen automatisch abgeschalteten Endpunkt wieder ein und setzt die Fehlerserie zurück; `active: false` beendet offene Zustellungen. Scope `webhooks:write`."
@@ -11664,10 +11755,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a112
+        - *a114
         - API-token: []
       summary: Webhook ändern
-      tags: *a113
+      tags: *a115
       x-api-token-scope: webhooks:write
     delete:
       description: Löscht den Endpunkt samt Zustellprotokoll. Nur mit Anmeldung (JWT) als Administrator — nicht per Token.
@@ -11691,9 +11782,9 @@ paths:
         "200":
           description: ""
       security:
-        - *a112
+        - *a114
       summary: Webhook löschen
-      tags: *a113
+      tags: *a115
   /api/organizations/{organizationId}/webhooks/{webhookId}/rotate-secret:
     post:
       description: Erzeugt ein neues Geheimnis (`data.secret`, genau einmal). Das alte signiert noch 24 Stunden mit (zweites `v1=` in `OpenEOS-Signature`, bis `previousSecretExpiresAt`), damit du den Empfänger ohne Ausfall umstellen kannst. Scope `webhooks:write`.
@@ -11717,10 +11808,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a112
+        - *a114
         - API-token: []
       summary: Signatur-Geheimnis erneuern
-      tags: *a113
+      tags: *a115
       x-api-token-scope: webhooks:write
   /api/organizations/{organizationId}/webhooks/{webhookId}/test:
     post:
@@ -11764,10 +11855,10 @@ paths:
                   redeliveryOf: null
                   createdAt: 2026-11-10T18:04:13.250Z
       security:
-        - *a112
+        - *a114
         - API-token: []
       summary: Test senden
-      tags: *a113
+      tags: *a115
       x-api-token-scope: webhooks:write
   /api/organizations/{organizationId}/webhooks/{webhookId}/deliveries:
     get:
@@ -11853,10 +11944,10 @@ paths:
                   hasNext: false
                   hasPrev: false
       security:
-        - *a112
+        - *a114
         - API-token: []
       summary: Zustellprotokoll
-      tags: *a113
+      tags: *a115
       x-api-token-scope: webhooks:read
   /api/organizations/{organizationId}/webhooks/{webhookId}/deliveries/{deliveryId}:
     get:
@@ -11888,10 +11979,10 @@ paths:
         "200":
           description: ""
       security:
-        - *a112
+        - *a114
         - API-token: []
       summary: Zustellung abrufen
-      tags: *a113
+      tags: *a115
       x-api-token-scope: webhooks:read
   /api/organizations/{organizationId}/webhooks/{webhookId}/deliveries/{deliveryId}/redeliver:
     post:
@@ -11923,10 +12014,10 @@ paths:
         "202":
           description: ""
       security:
-        - *a112
+        - *a114
         - API-token: []
       summary: Erneut senden
-      tags: *a113
+      tags: *a115
       x-api-token-scope: webhooks:write
   /api/organizations/{id}/waiters:
     get:
@@ -11954,10 +12045,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a114
+      security: &a116
         - JWT-auth: []
       summary: Bedienungen der Organisation (ohne PIN)
-      tags: &a115
+      tags: &a117
         - Waiters
     post:
       description: "Ohne `pin` erzeugt das System eine eindeutige PIN (Länge laut `settings.waiters.pinLength`, Standard 4). Die Antwort enthält die PIN **einmalig**; gespeichert wird nur ein Prüfwert. Eigene PIN: einfache Folgen und vergebene PINs → 400 PIN_NOT_AVAILABLE. Obergrenze: 400 WAITER_LIMIT_REACHED."
@@ -11977,9 +12068,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a114
+      security: *a116
       summary: Bedienung anlegen
-      tags: *a115
+      tags: *a117
   /api/organizations/{id}/waiters/bulk:
     post:
       description: Namensliste je Veranstaltung (`eventId`) oder organisationsweit. Alle bekommen eine erzeugte PIN; die Antwort enthält sie **einmalig** (PIN-Zettel). Alles oder nichts.
@@ -11999,9 +12090,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a114
+      security: *a116
       summary: Bedienungen in einem Schritt anlegen (bis 200)
-      tags: *a115
+      tags: *a117
   /api/organizations/{id}/waiters/{waiterId}:
     get:
       operationId: waiters_findOne
@@ -12019,9 +12110,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a114
+      security: *a116
       summary: Eine Bedienung (ohne PIN)
-      tags: *a115
+      tags: *a117
     patch:
       description: Name, Kurzname, Farbe, Rolle, Rechte, Veranstaltung, aktiv. Deaktivieren löscht die PIN und beendet offene Sitzungen (Kasse sperrt).
       operationId: waiters_update
@@ -12045,9 +12136,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a114
+      security: *a116
       summary: Bedienung ändern
-      tags: *a115
+      tags: *a117
     delete:
       description: "Ohne Buchungen wird sie gelöscht (`deleted: true`). Mit Buchungen wird sie deaktiviert und anonymisiert (`anonymized: true`, Name „Bedienung N“); das Steuerarchiv behält den Namen beim Signieren."
       operationId: waiters_remove
@@ -12065,9 +12156,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a114
+      security: *a116
       summary: Bedienung löschen
-      tags: *a115
+      tags: *a117
   /api/organizations/{id}/waiters/{waiterId}/pin:
     post:
       description: Erzeugt eine neue PIN (oder setzt die gewählte) und beendet offene Sitzungen. Die Antwort enthält die PIN **einmalig**.
@@ -12092,9 +12183,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a114
+      security: *a116
       summary: Neue PIN vergeben
-      tags: *a115
+      tags: *a117
   /api/organizations/{id}/waiters/{waiterId}/summary:
     get:
       description: "Zahlen seit der letzten Abrechnung dieser Bedienung in der Veranstaltung (sonst ab Beginn): kassiert je Zahlart mit Trinkgeld, Storno/Erstattungen, Pfand-Auszahlungen, aufgenommen, Soll bar (informativ, Schublade je Gerät), offene Tische, Training getrennt. In „Nur Bons“ nur Mengen. `eventId` ohne Angabe: Veranstaltung der Bedienung bzw. die laufende."
@@ -12118,9 +12209,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a114
+      security: *a116
       summary: Zwischenstand einer Bedienung
-      tags: *a115
+      tags: *a117
   /api/organizations/{id}/waiters/{waiterId}/settlements:
     post:
       description: "Schließt den Zeitraum seit der letzten Abrechnung ab (unveränderlich, fortlaufende Nummer je Organisation; nur Testbuchungen → Training ohne Nummer). Offene Tische: 409 WAITER_OPEN_TABLES (`params.openTables`) — übergeben oder mit `force` + `note` trotzdem abrechnen. Nichts abzurechnen: 400 WAITER_SETTLEMENT_EMPTY. Mit `printerId` wird der Abrechnungsbon gedruckt."
@@ -12145,9 +12236,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a114
+      security: *a116
       summary: Bedienung abrechnen
-      tags: *a115
+      tags: *a117
   /api/organizations/{id}/waiters/{waiterId}/tip-payouts:
     get:
       description: Arbeitnehmer (Lohnkonto)? Offenes Kartentrinkgeld (unbare Zahlungen dieser Bedienung abzüglich Erstattungen und Auszahlungen) und bisherige Auszahlungen mit TSE-Beleg.
@@ -12166,9 +12257,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a114
+      security: *a116
       summary: Kartentrinkgeld einer Bedienung
-      tags: *a115
+      tags: *a117
     post:
       description: "Nur für Bedienungen mit „Arbeitnehmer (Lohnkonto)“ (sonst 409 TIP_PAYOUT_NOT_EMPLOYEE: bei Ehrenamtlichen gehört das Trinkgeld dem Verein). Eigener Kassenbeleg TrinkgeldAN −x / Bar −x (Cloud-TSE), Empfänger, Quittung mit Unterschrift; mindert den Soll-Bestand. Bargeld muss erlaubt sein. Betrag höchstens das offene Kartentrinkgeld (400 TIP_PAYOUT_AMOUNT_INVALID)."
       operationId: waiters_payOutTips
@@ -12192,9 +12283,9 @@ paths:
       responses:
         "201":
           description: ""
-      security: *a114
+      security: *a116
       summary: Kartentrinkgeld bar auszahlen
-      tags: *a115
+      tags: *a117
   /api/organizations/{id}/waiters/{waiterId}/transfer-tables:
     post:
       description: Alle offenen Bestellungen der Bedienung (optional nur einer Veranstaltung) bekommen eine neue verantwortliche Bedienung. Jede Übergabe steht im Bestellverlauf; die Kassen bekommen `orderTransferred`.
@@ -12219,9 +12310,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a114
+      security: *a116
       summary: Offene Tische einer Bedienung übergeben
-      tags: *a115
+      tags: *a117
   /api/organizations/{id}/waiters/{waiterId}/export:
     get:
       description: Stammdaten (ohne PIN), Anmeldungen an Geräten, Abrechnungen und Anzahl der zugeordneten Buchungen. `format=csv` (Standard) oder `json`.
@@ -12248,9 +12339,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a114
+      security: *a116
       summary: Auskunft über eine Bedienung (Art. 15 DSGVO)
-      tags: *a115
+      tags: *a117
   /api/organizations/{id}/waiter-settlements/live:
     get:
       description: "Für eine Kassen-Nachschau (§ 146b AO): je Bedienung bzw. Mitglied mit Buchungen seit der letzten Abrechnung in der Veranstaltung (ohne Angabe: die laufende) das Soll bar, wo das Bargeld liegt (Schublade je Gerät), kassiert je Zahlart, Trinkgeld, Erstattungen, Pfand-Auszahlungen, offene Tische und bei Arbeitnehmern das offene Kartentrinkgeld. Zeitpunkt `generatedAt`."
@@ -12269,10 +12360,10 @@ paths:
       responses:
         "200":
           description: ""
-      security: &a116
+      security: &a118
         - JWT-auth: []
       summary: Live-Kassensturz je Bedienung
-      tags: &a117
+      tags: &a119
         - Waiters
   /api/organizations/{id}/waiter-settlements:
     get:
@@ -12297,9 +12388,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a116
+      security: *a118
       summary: Kellnerabrechnungen
-      tags: *a117
+      tags: *a119
   /api/organizations/{id}/waiter-settlements/{settlementId}:
     get:
       operationId: waiterSettlements_findOne
@@ -12317,9 +12408,9 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a116
+      security: *a118
       summary: Eine Kellnerabrechnung
-      tags: *a117
+      tags: *a119
   /api/organizations/{id}/waiter-settlements/{settlementId}/reprint:
     post:
       description: "Druckt den Bon „ABRECHNUNG Nr. N“ mit Vermerk „Nachdruck“ auf dem gewählten Drucker (sonst dem Bondrucker des Geräts der Abrechnung). `printed: false`, wenn kein Drucker erreichbar ist."
@@ -12344,15 +12435,15 @@ paths:
       responses:
         "200":
           description: ""
-      security: *a116
+      security: *a118
       summary: Abrechnungsbon nachdrucken
-      tags: *a117
+      tags: *a119
   /api/device-api/waiter-session:
     post:
       description: "Die PIN allein identifiziert die Bedienung bzw. das Mitglied. Antwort: `token` (Header `X-Waiter-Session` bei jeder Buchung, nur im Speicher halten), `expiresAt`, `kind` (`waiter`|`member`), `waiter` (id, name, shortName, color, role, permissions). Eine vorige Sitzung an diesem Gerät endet (Wechsel). Fehler: 403 PIN_INVALID (`params.remainingAttempts`), 429 PIN_LOCKED (`params.retryAfterSeconds`), 429 PIN_DEVICE_LOCKED (Freigabe durch Admin), 403 WAITER_NOT_FOR_EVENT."
       operationId: deviceWaiters_login
       parameters:
-        - &a118
+        - &a120
           name: X-Device-Token
           in: header
           description: Device authentication token
@@ -12369,23 +12460,23 @@ paths:
         "200":
           description: ""
       summary: Bedienung per PIN anmelden („Wer bedient?“)
-      tags: &a119
+      tags: &a121
         - Device API
     get:
       description: "`data: null` ohne gültige Sitzung (dann PIN-Bildschirm). Bei fester Bedienung (`personal`) die Bedienung des Geräts. `mode`: Gerätemodus."
       operationId: deviceWaiters_current
       parameters:
-        - *a118
+        - *a120
       responses:
         "200":
           description: ""
       summary: Aktuelle Bedienungs-Sitzung
-      tags: *a119
+      tags: *a121
     delete:
       description: "Beendet die Sitzung des Tokens (`reason`: lock, switch, timeout, logout). Ohne gültiges Token passiert nichts."
       operationId: deviceWaiters_end
       parameters:
-        - *a118
+        - *a120
       requestBody:
         required: true
         content:
@@ -12396,24 +12487,24 @@ paths:
         "200":
           description: ""
       summary: Sperren bzw. abmelden
-      tags: *a119
+      tags: *a121
   /api/device-api/waiters:
     get:
       description: "Aktive Bedienungen der laufenden Veranstaltung plus organisationsweite: nur `id`, `shortName` (sonst Vorname) und `color`."
       operationId: deviceWaiters_list
       parameters:
-        - *a118
+        - *a120
       responses:
         "200":
           description: ""
       summary: Kurzliste der Bedienungen (Kacheln, Tischfarben)
-      tags: *a119
+      tags: *a121
   /api/device-api/waiter/summary:
     get:
       description: "Zahlen der angemeldeten Bedienung (bzw. des Mitglieds) seit ihrer letzten Abrechnung in der laufenden Veranstaltung: kassiert je Zahlart mit Trinkgeld, Storno/Erstattungen, Pfand, aufgenommen, Soll bar (informativ, Schublade je Gerät), offene Tische. `waiterId`: andere Bedienung (nur Schichtleitung/Admin). `meta.canSettle`: darf abrechnen; `meta.canForce`: darf trotz offener Tische abrechnen."
       operationId: deviceWaiters_summary
       parameters:
-        - *a118
+        - *a120
         - name: waiterId
           required: true
           in: query
@@ -12429,13 +12520,13 @@ paths:
         "200":
           description: ""
       summary: Mein Zwischenstand
-      tags: *a119
+      tags: *a121
   /api/device-api/waiter/summary/print:
     post:
       description: "Druckt den unverbindlichen Zwischenstand auf dem Bondrucker des Geräts (`printed: false`, wenn keiner eingerichtet ist)."
       operationId: deviceWaiters_printSummary
       parameters:
-        - *a118
+        - *a120
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12452,13 +12543,13 @@ paths:
         "200":
           description: ""
       summary: Zwischenstand drucken
-      tags: *a119
+      tags: *a121
   /api/device-api/waiter/settlements:
     post:
       description: "Schichtleitung bzw. Admin-Mitglied rechnet eine Bedienung ab (`waiterId`, sonst sich selbst). Sich selbst abrechnen darf eine Bedienung nur mit der Organisations-Einstellung `selfSettlement`; sonst 403 WAITER_NOT_PERMITTED. Offene Tische: 409 WAITER_OPEN_TABLES, außer `force` + `note` (Schichtleitung). Der Bon geht an den Bondrucker des Geräts (`print: false` unterdrückt ihn)."
       operationId: deviceWaiters_settle
       parameters:
-        - *a118
+        - *a120
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12475,13 +12566,13 @@ paths:
         "201":
           description: ""
       summary: Abrechnen an der Kasse
-      tags: *a119
+      tags: *a121
   /api/device-api/waiter/live-cash-audit:
     get:
       description: Soll bar jeder Bedienung seit ihrer letzten Abrechnung in der laufenden Veranstaltung, für eine Kassen-Nachschau. Nur Schichtleitung bzw. Admin-Mitglied (sonst 403 WAITER_NOT_PERMITTED).
       operationId: deviceWaiters_liveCashAudit
       parameters:
-        - *a118
+        - *a120
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12492,13 +12583,13 @@ paths:
         "200":
           description: ""
       summary: Live-Kassensturz (Schichtleitung)
-      tags: *a119
+      tags: *a121
   /api/device-api/waiter/tip-payouts:
     post:
       description: "Wie die Verwaltung: nur für Bedienungen mit „Arbeitnehmer (Lohnkonto)“, eigener TSE-Beleg TrinkgeldAN −x / Bar −x, Quittung auf dem Bondrucker des Geräts. Nur Schichtleitung bzw. Admin-Mitglied."
       operationId: deviceWaiters_payOutTips
       parameters:
-        - *a118
+        - *a120
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12515,13 +12606,13 @@ paths:
         "201":
           description: ""
       summary: Kartentrinkgeld bar auszahlen (Schichtleitung)
-      tags: *a119
+      tags: *a121
   /api/device-api/orders/{orderId}/transfer:
     post:
       description: Neue verantwortliche Bedienung für eine offene Bestellung; mit `wholeTable` (Standard) alle offenen Bestellungen desselben Tisches dieser Bedienung. Eigene Tische übergibt jede Bedienung, fremde nur Schichtleitung/Admin (403 WAITER_NOT_PERMITTED). Eintrag im Bestellverlauf, Echtzeit `orderTransferred`.
       operationId: deviceWaiters_transfer
       parameters:
-        - *a118
+        - *a120
         - name: orderId
           required: true
           in: path
@@ -12543,13 +12634,13 @@ paths:
         "200":
           description: ""
       summary: Tisch bzw. Bestellung übergeben
-      tags: *a119
+      tags: *a121
   /api/device-api/receipts/link:
     post:
       description: Erzeugt einen Link auf den Kassenbeleg der Bestellungen (gleicher Inhalt wie der gedruckte Bon, ohne Gästeangaben). Der Link enthält ein zufälliges 128-Bit-Token, gespeichert wird nur dessen SHA-256. Gültig `RECEIPT_LINK_DAYS` Tage (Standard 90). 409 `RECEIPT_NOT_AVAILABLE` in der Betriebsart „Nur Bons“ oder ohne Zahlung.
       operationId: receiptsDevice_link
       parameters:
-        - &a120
+        - &a122
           name: X-Device-Token
           in: header
           description: Device authentication token
@@ -12572,14 +12663,14 @@ paths:
         "200":
           description: ""
       summary: Digitalen Beleg als Link (QR-Code) ausgeben
-      tags: &a121
+      tags: &a123
         - Device API
   /api/device-api/receipts/email:
     post:
       description: "Schickt den Kassenbeleg als HTML mit PDF-Anhang. Absendername ist der Verein, Antworten gehen an seine Kontaktadresse. Die Adresse wird nicht gespeichert und nicht protokolliert; im Verlauf der Bestellung steht nur „Beleg per E-Mail“. Grenzen: `RECEIPT_EMAIL_DEVICE_LIMIT_PER_HOUR` je Gerät (Standard 30) und `RECEIPT_EMAIL_ORDER_LIMIT` je Bestellung (Standard 5), sonst 429 `RECEIPT_EMAIL_RATE_LIMITED`."
       operationId: receiptsDevice_email
       parameters:
-        - *a120
+        - *a122
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12596,7 +12687,7 @@ paths:
         "200":
           description: ""
       summary: Digitalen Beleg per E-Mail schicken
-      tags: *a121
+      tags: *a123
   /api/public/receipts/{token}:
     get:
       description: Beleg-Bausteine (wie gedruckter Bon) und die rechtlichen Angaben des Vereins. 404 `RECEIPT_LINK_NOT_FOUND`, wenn der Link abgelaufen oder unbekannt ist.
@@ -12611,7 +12702,7 @@ paths:
         "200":
           description: ""
       summary: Digitalen Beleg anzeigen
-      tags: &a122
+      tags: &a124
         - Public Receipts
   /api/public/receipts/{token}/pdf:
     get:
@@ -12626,13 +12717,13 @@ paths:
         "200":
           description: ""
       summary: Digitalen Beleg als PDF herunterladen
-      tags: *a122
+      tags: *a124
   /api/device-api/hospitality-receipts/check:
     get:
       description: Vorhandener Beleg zu den Bestellungen, Betrag, ob der Name des Bewirtenden Pflicht ist (über 250 €), fehlende Stammdaten des Vereins, Sammelbezeichnungen unter den Artikeln und der erlaubte Tag der Bewirtung.
       operationId: hospitalityDevice_check
       parameters:
-        - &a123
+        - &a125
           name: X-Device-Token
           in: header
           description: Device authentication token
@@ -12649,14 +12740,14 @@ paths:
         "200":
           description: ""
       summary: Bewirtungsbeleg vorbereiten
-      tags: &a124
+      tags: &a126
         - Device API
   /api/device-api/hospitality-receipts:
     post:
       description: "Vergibt die nächste Nummer (B-JJJJ-NNNN, lückenlos je Organisation und Jahr) und speichert den Beleg unveränderlich. 409 `HOSPITALITY_MASTER_DATA_REQUIRED` (`params.missing`), 409 `HOSPITALITY_ITEMS_NOT_SPECIFIC`, 400 `HOSPITALITY_RECIPIENT_REQUIRED` über 250 €, 409 `HOSPITALITY_RECEIPT_EXISTS`. Gibt es für genau diese Bestellungen schon einen Beleg, kommt er zurück (`existing: true`)."
       operationId: hospitalityDevice_issue
       parameters:
-        - *a123
+        - *a125
         - name: X-Waiter-Session
           in: header
           description: "Token der Bedienungs-Sitzung (POST /device-api/waiter-session). Pflicht, wenn das Gerät im Modus „gemeinsame Kasse“ (`waiterMode: shared`) läuft; sonst 403 WAITER_SESSION_REQUIRED."
@@ -12673,13 +12764,13 @@ paths:
         "200":
           description: ""
       summary: Bewirtungsbeleg ausstellen
-      tags: *a124
+      tags: *a126
   /api/device-api/hospitality-receipts/{id}/print:
     post:
       description: "Bon-Drucker dieser Kasse (sonst der Organisation). Ab der zweiten Ausgabe mit „KOPIE“. `printed: false`, wenn kein Drucker gefunden wurde."
       operationId: hospitalityDevice_print
       parameters:
-        - *a123
+        - *a125
         - name: id
           required: true
           in: path
@@ -12695,12 +12786,12 @@ paths:
         "200":
           description: ""
       summary: Bewirtungsbeleg drucken
-      tags: *a124
+      tags: *a126
   /api/device-api/hospitality-receipts/{id}/link:
     post:
       operationId: hospitalityDevice_link
       parameters:
-        - *a123
+        - *a125
         - name: id
           required: true
           in: path
@@ -12716,13 +12807,13 @@ paths:
         "200":
           description: ""
       summary: Bewirtungsbeleg als Link (QR-Code)
-      tags: *a124
+      tags: *a126
   /api/device-api/hospitality-receipts/{id}/email:
     post:
       description: HTML + PDF. Die Adresse wird nicht gespeichert; gleiche Grenzen wie beim Kassenbeleg.
       operationId: hospitalityDevice_email
       parameters:
-        - *a123
+        - *a125
         - name: id
           required: true
           in: path
@@ -12744,7 +12835,7 @@ paths:
         "200":
           description: ""
       summary: Bewirtungsbeleg per E-Mail
-      tags: *a124
+      tags: *a126
 info:
   title: OpenEOS API
   description: |-
@@ -13557,6 +13648,40 @@ components:
           type: string
           format: uuid
           description: "Organisation, für die angenommen wird. Ohne Angabe: alle Organisationen, in denen du Admin bist."
+    LegalAnnouncementDto:
+      type: object
+      properties:
+        documents:
+          type: array
+          description: "Geänderte Dokumente: `agb`, `anlage1` (Leistungsbeschreibung und Preisliste), `avv`, `privacy`, `imprint`."
+          items:
+            type: string
+            enum:
+              - agb
+              - anlage1
+              - avv
+              - privacy
+              - imprint
+        version:
+          type: string
+          example: 2027-01-15
+          description: Neue Fassung = Tag des Inkrafttretens (JJJJ-MM-TT). AGB, Anlage 1 und AVV mindestens sechs Wochen im Voraus.
+        summaryDe:
+          type: string
+          description: Was sich ändert, auf Deutsch (10–4000 Zeichen).
+        summaryEn:
+          type: string
+          description: "Optional: dieselbe Zusammenfassung auf Englisch."
+        shortNotice:
+          type: boolean
+          description: Kürzere Frist als sechs Wochen — nur für gesetzlich oder behördlich veranlasste Änderungen.
+        explicitConsent:
+          type: boolean
+          description: "Nur mit ausdrücklicher Zustimmung wirksam (Hauptleistungen, Vergütung, Auftragsverarbeitungsvertrag): die Mail fragt nach Zustimmung statt auf das Widerspruchsrecht hinzuweisen."
+      required:
+        - documents
+        - version
+        - summaryDe
     CreateOrganizationDto:
       type: object
       properties:
@@ -14086,7 +14211,7 @@ components:
           description: "Sind die Marken mehr wert als offen ist, wird der Rest als Trinkgeld gebucht (der Gast verzichtet auf Wechselgeld). Ohne diese Bestätigung: 400 TOKEN_OVERPAYMENT."
         paymentMethod:
           type: string
-          enum: &a126
+          enum: &a128
             - cash
             - card
             - sumup_terminal
@@ -14157,7 +14282,7 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: &a127
+          enum: &a129
             - normal
             - high
             - rush
@@ -14165,7 +14290,7 @@ components:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: &a128
+          enum: &a130
             - pos
             - online
             - qr_order
@@ -14173,7 +14298,7 @@ components:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: &a129
+          enum: &a131
             - table_service
             - counter_pickup
         items:
@@ -14212,7 +14337,7 @@ components:
           type: string
           example: cash
           description: "Zahlungsmethode (Wertmarken nur über die Kasse: `POST /device-api/payments/batch` bzw. Bestellung mit Zahlung)"
-          enum: &a133
+          enum: &a135
             - cash
             - card
             - sumup_terminal
@@ -14314,7 +14439,7 @@ components:
           type: string
         reasonCode:
           type: string
-          enum: &a125
+          enum: &a127
             - wrong_order
             - quality
             - not_delivered
@@ -14351,7 +14476,7 @@ components:
             $ref: "#/components/schemas/RefundItemSelectionDto"
         reasonCode:
           type: string
-          enum: *a125
+          enum: *a127
         reasonText:
           type: string
           example: Gast hat es sich anders überlegt
@@ -14396,7 +14521,7 @@ components:
           description: "Zahlung, über die erstattet wird. Ohne: von der jüngsten Zahlung rückwärts."
         reasonCode:
           type: string
-          enum: *a125
+          enum: *a127
         reasonText:
           type: string
           example: Burger kalt
@@ -14478,7 +14603,7 @@ components:
             type: string
         paymentMethod:
           type: string
-          enum: *a126
+          enum: *a128
           example: cash
         amountReceived:
           type: number
@@ -14708,17 +14833,17 @@ components:
           type: string
           example: normal
           description: Priorität der Bestellung
-          enum: *a127
+          enum: *a129
         source:
           type: string
           example: pos
           description: Quelle der Bestellung
-          enum: *a128
+          enum: *a130
         fulfillmentType:
           type: string
           example: counter_pickup
           description: "Erfüllungstyp der Bestellung. Geräte-API: nur `counter_pickup` wirkt (Theke/To-go an einem Tisch-Gerät), sonst ergibt er sich aus dem Gerät."
-          enum: *a129
+          enum: *a131
         items:
           description: Liste der Bestellpositionen
           type: array
@@ -14878,7 +15003,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: &a130
+          enum: &a132
             - fixed
             - manual
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
@@ -14915,7 +15040,7 @@ components:
         type:
           type: string
           example: fixed
-          enum: *a130
+          enum: *a132
           description: "Art des Bons: fester Betrag oder bei Einlösung eingegebener Betrag"
         amount:
           type: number
@@ -14947,7 +15072,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: &a131
+          enum: &a133
             - 19
             - 7
             - 0
@@ -14978,7 +15103,7 @@ components:
         vatRate:
           type: number
           example: 19
-          enum: *a131
+          enum: *a133
           default: 19
           description: "Umsatzsteuersatz des Pfands in Prozent: der Satz der Getränke/Waren, für die dieses Pfand gilt (meist 19). Pfand gehört zum Entgelt; die Rückgabe mindert Umsatz und Umsatzsteuer zum selben Satz. Steuerbefreite Organisationen (Kleinunternehmer) weisen trotzdem keine MwSt aus."
         isActive:
@@ -15176,7 +15301,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: &a132
+          enum: &a134
             - rect
             - round
         x:
@@ -15260,7 +15385,7 @@ components:
           nullable: true
         shape:
           type: string
-          enum: *a132
+          enum: *a134
         x:
           type: number
         y:
@@ -15928,7 +16053,7 @@ components:
           type: string
           example: card
           description: "Zahlungsmethode (Wertmarken nur über die Kasse: `POST /device-api/payments/batch` bzw. Bestellung mit Zahlung)"
-          enum: *a133
+          enum: *a135
         items:
           description: Liste der zu bezahlenden Positionen
           type: array
@@ -16864,7 +16989,7 @@ components:
           description: Nennwert in Euro (Verkaufspreis = Einlösewert)
         kind:
           type: string
-          enum: &a134
+          enum: &a136
             - multi_purpose
             - single_purpose
           default: multi_purpose
@@ -16914,7 +17039,7 @@ components:
           description: Nennwert in Euro (Verkaufspreis = Einlösewert)
         kind:
           type: string
-          enum: *a134
+          enum: *a136
           default: multi_purpose
           description: "`multi_purpose` = Mehrzweckgutschein (Standard, § 3 Abs. 15 UStG: Steuer bei Einlösung); `single_purpose` = Einzweckgutschein (§ 3 Abs. 14 UStG: nur für Artikel mit genau einem Steuersatz, Steuer beim Verkauf)."
         vatRate:
@@ -17413,7 +17538,7 @@ components:
           description: Abonnierte Ereignisse (mindestens eines)
           items:
             type: string
-            enum: &a135
+            enum: &a137
               - order.created
               - order.paid
               - order.completed
@@ -17454,7 +17579,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a135
+            enum: *a137
         active:
           type: boolean
           description: Ein- oder ausschalten. Einschalten setzt eine automatische Abschaltung und die Fehlerserie zurück.
@@ -17480,7 +17605,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: &a136
+          enum: &a138
             - service
             - lead
           default: service
@@ -17514,7 +17639,7 @@ components:
           example: Ben
         role:
           type: string
-          enum: *a136
+          enum: *a138
       required:
         - name
     BulkCreateWaitersDto:
@@ -17526,7 +17651,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: *a136
+          enum: *a138
           default: service
         items:
           maxItems: 200
@@ -17550,7 +17675,7 @@ components:
           nullable: true
         role:
           type: string
-          enum: *a136
+          enum: *a138
         permissions:
           type: object
         eventId:

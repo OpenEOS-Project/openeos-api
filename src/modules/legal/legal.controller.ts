@@ -4,6 +4,8 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Param,
+  ParseUUIDPipe,
   Post,
   Req,
 } from '@nestjs/common';
@@ -18,6 +20,7 @@ import { LegalService } from './legal.service';
 import { ConfigService } from '@nestjs/config';
 import { DeploymentService } from '../../common/services/deployment.service';
 import { tseConditionsFrom } from './tse-conditions';
+import { LegalAnnouncementsService } from './announcements/legal-announcements.service';
 
 export function clientOf(request: Request): {
   ip?: string;
@@ -37,6 +40,7 @@ export class LegalController {
     private readonly legal: LegalService,
     private readonly deployment: DeploymentService,
     private readonly configService: ConfigService,
+    private readonly announcements: LegalAnnouncementsService,
   ) {}
 
   @Public()
@@ -61,10 +65,35 @@ export class LegalController {
   @ApiOperation({
     summary: 'Accepted AGB/AVV versions of the current user',
     description:
-      'Je Dokument die aktuelle und die zuletzt angenommene Fassung (mit Zeitpunkt und Links). `required`: Admin einer Organisation ohne Annahme der aktuellen Fassung.',
+      'Je Dokument die aktuelle und die zuletzt angenommene Fassung (mit Zeitpunkt und Links). `required`: Admin einer Organisation ohne Annahme der aktuellen Fassung (nur Fassungen nach der Ausgangsfassung). `change`: Ankündigung, mit der die aktuelle AGB-/AVV-Fassung kam (Zusammenfassung, Datum, ob ausdrückliche Zustimmung nötig ist), sonst `null`.',
   })
   async getStatus(@CurrentUser() user: User) {
     return { data: await this.legal.status(user.id) };
+  }
+
+  @Get('announcements')
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Announced, not yet effective legal text changes',
+    description:
+      'Für Admins einer Organisation: angekündigte neue Fassungen, die noch nicht gelten (Datum, Dokumente, Zusammenfassung, Links auf neue und bisherige Fassung) — ohne die, die du ausgeblendet hast. Sonst eine leere Liste.',
+  })
+  async getAnnouncements(@CurrentUser() user: User) {
+    return { data: await this.announcements.upcomingFor(user.id) };
+  }
+
+  @Post('announcements/:id/dismiss')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Hide an announcement notice for the current user',
+    description: 'Blendet den Hinweis auf diese Ankündigung für dich aus.',
+  })
+  async dismissAnnouncement(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    await this.announcements.dismiss(user.id, id);
   }
 
   @Post('accept')
