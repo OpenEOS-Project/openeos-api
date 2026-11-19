@@ -1,3 +1,4 @@
+import { isTestPaymentMethod } from '../../common/utils/test-payment.util';
 import {
   BadRequestException,
   ConflictException,
@@ -829,7 +830,11 @@ export class RefundsService {
             // „Bargeldlos“: nie dorthin erstatten, wo Bargeld gesperrt ist.
             // Erstattet wird immer auf die urspruengliche Zahlart, eine
             // Auszahlung in bar gibt es nicht.
-            isCash: !isCashlessPaymentMethod(p.paymentMethod),
+            // Testzahlungen sind kein Geld: zurueck nur auf die Testzahlung
+            // selbst, auch wo Bargeld gesperrt ist.
+            isCash:
+              !isCashlessPaymentMethod(p.paymentMethod) &&
+              !isTestPaymentMethod(p.paymentMethod),
           });
         }
         // Mit Wertmarken bezahlter Teil: geht als Marken zurueck (nie als
@@ -1130,6 +1135,14 @@ export class RefundsService {
     metadata: Record<string, unknown>;
   }> {
     const reference = payment.providerTransactionId ?? null;
+    if (isTestPaymentMethod(payment.paymentMethod)) {
+      // Testzahlung: nur gebucht, kein Geld, kein Anbieter, keine Lade.
+      return {
+        status: 'test',
+        providerReference: null,
+        metadata: { note: 'Testzahlung: kein Geld erstattet' },
+      };
+    }
     if (payment.paymentMethod === PaymentMethod.CASH) {
       // Bargeldlos: refundInTransaction verteilt gar nicht erst auf
       // Barzahlungen; hier nur zur Sicherheit.

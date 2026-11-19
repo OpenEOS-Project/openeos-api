@@ -19,6 +19,22 @@ export const CHANGELOG: ChangelogEintrag[] = [
     datum: '2026-11-19',
     art: 'neu',
     titel: {
+      de: 'Testzahlungen im Testmodus, neue Vereine starten mit „Alle Funktionen“',
+      en: 'Test payments in test mode, new clubs start with “Alle Funktionen”',
+    },
+    kurz: {
+      de: 'Im Testmodus kassierst du an der Kasse mit „Bar (Test)“ und „Karte (Test)“ – ohne Geld, auch ohne TSE und SumUp. Neue Organisationen starten in „Alle Funktionen“.',
+      en: 'In test mode the POS takes “Bar (Test)” and “Karte (Test)” – simulated, without money, even without TSE or SumUp. New organizations start in “Alle Funktionen” (all features).',
+    },
+    text: {
+      de: 'Solange eine Veranstaltung im Testmodus ist, bietet die Kasse „Bar (Test)“ und „Karte (Test)“ an. So probierst du den ganzen Kassenablauf aus – mit Rückgeldrechner, Bon und Abrechnung –, ohne dass Geld gebucht wird: Testzahlungen öffnen keine Kassenlade, stehen nicht im Kassenbuch, nicht im DSFinV-K-Export und in der Kellnerabrechnung nur als Training. Beim Aktivieren der Veranstaltung werden sie mit den Testbestellungen gelöscht. Das geht in jeder Betriebsart außer „Nur Bons“. Neue Organisationen starten außerdem in „Alle Funktionen“, auch in Deutschland, und „Alle Funktionen“ ist dort jederzeit wählbar. Ohne aktive Cloud-TSE kassierst du in Deutschland weiter mit Karte und online; Bargeld kommt mit der Cloud-TSE. Bestehende Organisationen behalten ihre Betriebsart.',
+      en: 'While an event is in test mode, the POS offers “Bar (Test)” and “Karte (Test)” (test cash, test card). You can try the whole checkout – with change calculator, receipt and settlement – without booking any money: test payments never open the cash drawer, are not in the cash book, not in the DSFinV-K export and count only as training in the waiter settlement. When you activate the event they are deleted together with the test orders. This works in every operating mode except “Nur Bons” (orders only). New organizations now start in “Alle Funktionen” (all features), also in Germany, and the mode can be chosen there at any time. Without an active Cloud-TSE, German clubs keep taking card and online payments; cash comes with the Cloud-TSE. Existing organizations keep their operating mode.',
+    },
+  },
+  {
+    datum: '2026-11-19',
+    art: 'neu',
+    titel: {
       de: 'Inhalt melden in Shop und Helferseiten',
       en: 'Report content in shops and on helper pages',
     },

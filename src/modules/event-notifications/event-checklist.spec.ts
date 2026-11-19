@@ -162,7 +162,7 @@ describe('buildChecklist', () => {
       expect(item.title).toContain('bald verfügbar');
     });
     it('nicht eingerichtet', () =>
-      expect(full({ availability: 'not_configured' }).status).toBe('todo'));
+      expect(full({ availability: 'not_configured' }).status).toBe('info'));
     it('Integration aus', () =>
       expect(full({}).title).toContain('einschalten'));
     it('Stammdaten fehlen', () => {

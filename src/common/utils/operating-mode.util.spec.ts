@@ -78,8 +78,11 @@ function expected(c: Case) {
     cashError,
     payments: c.mode !== 'orders_only',
     prices: c.mode !== 'orders_only',
-    fullSelectable: c.country !== 'DE' || c.tse,
-    certificate: c.country === 'DE' && c.mode !== 'full',
+    // Seit 2026-11-19: `full` auch in Deutschland ohne TSE waehlbar.
+    fullSelectable: true,
+    // Bescheinigung in DE, solange kein Bargeld moeglich ist (auch `full`
+    // ohne TSE, nicht Bestand).
+    certificate: c.country === 'DE' && !cash,
   };
 }
 
@@ -110,8 +113,15 @@ describe('operating mode matrix (country × mode × legacy × TSE)', () => {
     expect(modeUnavailableReason(org, 'orders_only')).toBeNull();
     expect(modeUnavailableReason(org, 'cashless')).toBeNull();
     expect(modeUnavailableReason(org, 'full')).toBe(
-      want.fullSelectable ? null : 'tse_required',
+      want.fullSelectable ? null : 'country_required',
     );
+    // Testzahlungen sind kein Geld: ausser in „Nur Bons“ nie von der
+    // Bargeld-Sperre betroffen (die Bestellung prueft assertTestPaymentAllowed).
+    for (const method of [PaymentMethod.TEST_CASH, PaymentMethod.TEST_CARD]) {
+      expect(codeOf(() => assertCashAllowed(org, method))).toBe(
+        c.mode === 'orders_only' ? 'ORDER_ONLY_MODE' : null,
+      );
+    }
     expect(isCertificateAvailable(org)).toBe(want.certificate);
     expect(operatingModeView(org)).toMatchObject({
       country: c.country,
@@ -135,35 +145,30 @@ describe('operating mode helper', () => {
     );
   });
 
-  it('DE full without TSE: selectable when the Cloud-TSE follows a paid event', () => {
+  it('DE full without TSE: selectable, but cash stays blocked live', () => {
     const org = { id: 'org-1', country: 'DE', operatingMode: 'cashless' };
-    expect(modeUnavailableReason(org, 'full')).toBe('tse_required');
-    expect(modeUnavailableReason(org, 'full', { available: true })).toBe(
-      'paid_event_required',
+    expect(modeUnavailableReason(org, 'full')).toBeNull();
+    const full = { ...org, operatingMode: 'full', operatingModeLegacy: false };
+    // Gewaehlt, aber ohne aktive TSE: kein Bargeld, Karte geht.
+    expect(isCashAllowed(full)).toBe(false);
+    expect(codeOf(() => assertCashAllowed(full, PaymentMethod.CASH))).toBe(
+      'TSE_REQUIRED_FOR_CASH',
     );
+    expect(codeOf(() => assertCashAllowed(full))).toBe('TSE_REQUIRED_FOR_CASH');
     expect(
-      modeUnavailableReason(org, 'full', { available: true, follows: true }),
+      codeOf(() => assertCashAllowed(full, PaymentMethod.CARD)),
     ).toBeNull();
-    // Gehostet, Cloud-TSE angekuendigt (TSE_COMING_SOON): eigener Grund.
-    expect(modeUnavailableReason(org, 'full', { comingSoon: true })).toBe(
-      'tse_coming_soon',
-    );
-    expect(
-      modeUnavailableReason(org, 'full', { available: true, comingSoon: true }),
-    ).toBe('paid_event_required');
-    expect(
-      modeUnavailableReason({ ...org, country: 'AT' }, 'full', {
-        comingSoon: true,
-      }),
-    ).toBeNull();
-    // Gewaehlt, aber ohne aktive TSE: noch kein Bargeld.
-    expect(
-      isCashAllowed({
-        ...org,
-        operatingMode: 'full',
-        operatingModeLegacy: false,
-      }),
-    ).toBe(false);
+    // Bescheinigung: kein Bargeld moeglich.
+    expect(isCertificateAvailable(full)).toBe(true);
+    expect(operatingModeView(full)).toMatchObject({
+      operatingMode: 'full',
+      cashAllowed: false,
+      tokensAllowed: false,
+    });
+    // Mit TSE: Bargeld, keine Bescheinigung.
+    tseStatus.isActive = () => true;
+    expect(isCashAllowed(full)).toBe(true);
+    expect(isCertificateAvailable(full)).toBe(false);
   });
 
   it('without a country no mode can be chosen, cash follows the mode', () => {
@@ -181,12 +186,12 @@ describe('operating mode helper', () => {
     expect(hasActiveTse({ id: 'org-1' })).toBe(true);
   });
 
-  it('new organizations: DE starts cashless, others full, self-hosted full with legacy', () => {
+  it('new organizations: full everywhere (also DE), self-hosted full with legacy', () => {
     expect(initialOperatingMode('DE', false)).toMatchObject({
-      operatingMode: 'cashless',
+      operatingMode: 'full',
       operatingModeLegacy: false,
     });
-    expect(initialOperatingMode('de', false).operatingMode).toBe('cashless');
+    expect(initialOperatingMode('de', false).operatingMode).toBe('full');
     for (const country of ['AT', 'CH', 'FR', null]) {
       expect(initialOperatingMode(country, false)).toMatchObject({
         operatingMode: 'full',
@@ -293,9 +298,13 @@ describe('„Bargeldlos“: positive list of payment methods (AEAO zu § 146a Nr
     // neue dazu (Wertmarke, Guthaben …), ist sie in „Bargeldlos“ gesperrt,
     // bis sie hier ausdruecklich aufgenommen wird.
     for (const m of Object.values(PaymentMethod)) {
-      // Bargeld und Wertmarken („an Geldes statt“) stehen nie darauf.
+      // Bargeld und Wertmarken („an Geldes statt“) stehen nie darauf,
+      // Testzahlungen auch nicht (kein Geld; eigene Pruefung je Bestellung).
       expect(isCashlessPaymentMethod(m)).toBe(
-        m !== PaymentMethod.CASH && m !== PaymentMethod.TOKENS,
+        m !== PaymentMethod.CASH &&
+          m !== PaymentMethod.TOKENS &&
+          m !== PaymentMethod.TEST_CASH &&
+          m !== PaymentMethod.TEST_CARD,
       );
     }
     expect(isCashlessPaymentMethod(null)).toBe(false);

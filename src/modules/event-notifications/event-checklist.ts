@@ -358,7 +358,7 @@ function tseItem(facts: ChecklistFacts): ChecklistItem | null {
       status: 'info',
       title: 'Cloud-TSE: bald verfügbar',
       detail:
-        'Bargeld geht in Deutschland nur mit TSE. Bis die Cloud-TSE da ist, kassierst du mit Karte oder online – oder nutzt „Nur Bons“.',
+        'Bargeld geht in Deutschland nur mit TSE. Bis die Cloud-TSE da ist, kassierst du mit Karte oder online. Im Testmodus probierst du die Kasse mit „Bar (Test)“ und „Karte (Test)“ aus.',
       url: `${app}/settings?tab=org-mode`,
       linkLabel: 'Betriebsart',
     };
@@ -366,10 +366,10 @@ function tseItem(facts: ChecklistFacts): ChecklistItem | null {
   if (t.availability === 'not_configured') {
     return {
       id: 'tse',
-      status: 'todo',
+      status: 'info',
       title: 'Keine Cloud-TSE',
       detail:
-        'Auf diesem Server ist keine Cloud-TSE eingerichtet, Bargeld bleibt gesperrt. Wähle „Bargeldlos“ oder „Nur Bons“.',
+        'Auf diesem Server ist keine Cloud-TSE eingerichtet, Bargeld bleibt gesperrt. An der Kasse gehen Karte und Online-Zahlung.',
       url: `${app}/settings?tab=org-mode`,
       linkLabel: 'Betriebsart',
     };

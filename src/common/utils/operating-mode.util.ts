@@ -3,6 +3,7 @@ import { OrderFulfillmentType } from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
 import { PaymentMethod } from '../../database/entities/payment.entity';
 import { ErrorCodes, ErrorReasons } from '../constants/error-codes';
+import { isTestPaymentMethod } from './test-payment.util';
 import { hasActiveTse } from './tse.util';
 
 /**
@@ -117,43 +118,24 @@ export function arePricesVisible(
   return !isOrdersOnly(org);
 }
 
-export type ModeUnavailableReason =
-  | 'tse_required'
-  | 'tse_coming_soon'
-  | 'paid_event_required'
-  | 'country_required';
-
 /**
- * Was die Cloud-TSE fuer die Wahl von `full` in Deutschland beitraegt:
- * - `available`: der Server bietet die Cloud-TSE an,
- * - `follows`: dazu steht eine bezahlte Veranstaltung an — die TSE wird
- *   dann automatisch eingerichtet (TseAutoActivationService), `full` ist
- *   schon vorher waehlbar (Bargeld erst mit aktiver TSE).
+ * Warum eine Betriebsart nicht waehlbar ist. Nur noch ohne Land: seit
+ * 2026-11-19 ist `full` auch in Deutschland ohne aktive TSE waehlbar —
+ * Bargeld bleibt dort trotzdem gesperrt, geprueft bei jeder Barzahlung
+ * (`assertCashAllowed`). Ohne TSE verhaelt sich `full` in Deutschland live
+ * also wie `cashless` (Karte und Online), mit TSE kommt Bargeld dazu.
  */
-export interface TseModeContext {
-  available?: boolean;
-  /** Gehostet, Cloud-TSE angekuendigt (`TSE_COMING_SOON`) — „Bald verfuegbar“. */
-  comingSoon?: boolean;
-  follows?: boolean;
-}
+export type ModeUnavailableReason = 'country_required';
 
 /**
  * Darf die Organisation in diese Betriebsart wechseln? `null` = ja. Ohne
- * Land keine Wahl (die Regeln haengen am Land); `full` in Deutschland nur
- * mit aktiver TSE — oder wenn sie mit einer bezahlten Veranstaltung
- * automatisch folgt (`paid_event_required`, solange keine ansteht).
+ * Land keine Wahl (die Regeln haengen am Land); sonst jede Betriebsart.
  */
 export function modeUnavailableReason(
   org: OperatingModeOrg | null | undefined,
-  mode: OperatingMode,
-  tse: TseModeContext = {},
+  _mode?: OperatingMode,
 ): ModeUnavailableReason | null {
   if (!countryOf(org)) return 'country_required';
-  if (mode === 'full' && countryOf(org) === 'DE' && !hasActiveTse(org)) {
-    if (tse.follows) return null;
-    if (tse.available) return 'paid_event_required';
-    return tse.comingSoon ? 'tse_coming_soon' : 'tse_required';
-  }
   return null;
 }
 
@@ -192,13 +174,16 @@ export function operatingModeView(
 }
 
 /**
- * Betriebsart einer neuen Organisation: in Deutschland `cashless` (ohne TSE
- * ist `full` dort nicht waehlbar), sonst `full`. Eigene Installation
+ * Betriebsart einer neuen Organisation: `full` — auch in Deutschland
+ * (Entscheidung 2026-11-19, ersetzt „DE startet in `cashless`“). Ohne
+ * aktive TSE bleibt Bargeld dort gesperrt (`isCashAllowed`), die Kasse
+ * kassiert mit Karte und online; im Testmodus gibt es die simulierten
+ * Testzahlungen (`TEST_PAYMENT_METHODS`). Eigene Installation
  * (Selbstbetrieb): `full` mit Bestand — der Verein betreibt den Server
  * selbst, eine Sperre durch den Hersteller gibt es dort nicht.
  */
 export function initialOperatingMode(
-  country: string | null | undefined,
+  _country: string | null | undefined,
   selfHosted: boolean,
 ): {
   operatingMode: OperatingMode;
@@ -213,19 +198,23 @@ export function initialOperatingMode(
       operatingModeSince,
     };
   }
-  const de = (country ?? '').toUpperCase() === 'DE';
   return {
-    operatingMode: de ? 'cashless' : 'full',
+    operatingMode: 'full',
     operatingModeLegacy: false,
     operatingModeSince,
   };
 }
 
-/** Herstellerbescheinigung: Deutschland, Betriebsart ohne Bargeld. */
+/**
+ * Herstellerbescheinigung: Deutschland, solange OpenEOS fuer die
+ * Organisation kein Bargeld erfassen kann — „Nur Bons“, „Bargeldlos“ und
+ * „Alle Funktionen“ ohne aktive TSE (nicht Bestand). Mit aktiver TSE (oder
+ * im Bestand) erfasst `full` Bargeld; dann gibt es keine Bescheinigung.
+ */
 export function isCertificateAvailable(
   org: OperatingModeOrg | null | undefined,
 ): boolean {
-  return countryOf(org) === 'DE' && getOperatingMode(org) !== 'full';
+  return countryOf(org) === 'DE' && !isCashAllowed(org);
 }
 
 export function orderOnlyModeError(): ForbiddenException {
@@ -320,6 +309,10 @@ export function paymentMethodNotAllowedCashlessError(
  * PAYMENT_METHOD_NOT_ALLOWED_CASHLESS. Ohne Zahlart (`undefined`) ist der
  * Vorgang selbst ein reiner Bargeldvorgang (Pfand-Auszahlung, Kassenlade,
  * Bar-Erstattung).
+ *
+ * Testzahlungen (`test_cash`, `test_card`) sind kein Geld: ausser in
+ * „Nur Bons“ laesst diese Pruefung sie durch; ob die Bestellung eine
+ * Testbestellung ist, prueft `assertTestPaymentAllowed` am Zahlungsweg.
  */
 export function assertCashAllowed(
   org: OperatingModeOrg | null | undefined,
@@ -330,6 +323,7 @@ export function assertCashAllowed(
   }
   const mode = getOperatingMode(org);
   if (mode === 'orders_only') throw orderOnlyModeError();
+  if (isTestPaymentMethod(paymentMethod)) return;
   if (mode === 'cashless') {
     // `PaymentMethod.CASH` als Text; alles andere ausserhalb der Liste.
     if (paymentMethod === undefined || paymentMethod === 'cash') {

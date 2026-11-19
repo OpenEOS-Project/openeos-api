@@ -267,27 +267,37 @@ describe('OperatingModeService — switch by the club (admins)', () => {
     );
   });
 
-  it('DE: back to full only with an active TSE (403 TSE_REQUIRED_FOR_CASH)', async () => {
+  it('DE: back to full without TSE is allowed — cash stays blocked until a TSE is active', async () => {
     const t = setup({ operatingMode: 'cashless', operatingModeLegacy: false });
-    expect(
-      await responseOf(t.service.setByMember(ORG_ID, 'full', clubAdmin)),
-    ).toMatchObject({
-      code: 'TSE_REQUIRED_FOR_CASH',
-      reason: 'OPERATING_MODE_FULL_REQUIRES_TSE',
+    const before = await t.service.getForMember(ORG_ID, clubAdmin);
+    expect(before.options.find((o) => o.mode === 'full')).toEqual({
+      mode: 'full',
+      available: true,
+      unavailableReason: null,
     });
-    expect(t.history).toHaveLength(0);
-    expect(t.stored.operatingMode).toBe('cashless');
-
-    tseStatus.isActive = () => true;
     const state = await t.service.setByMember(ORG_ID, 'full', clubAdmin);
     expect(state).toMatchObject({
       operatingMode: 'full',
-      tseActive: true,
+      tseActive: false,
+      cashAllowed: false,
+      // Kein Bargeld moeglich: Bescheinigung bleibt.
+      certificateAvailable: true,
+    });
+    expect(t.history[0]).toMatchObject({
+      fromMode: 'cashless',
+      toMode: 'full',
+    });
+
+    tseStatus.isActive = () => true;
+    const view = await t.service.getForMember(ORG_ID, clubAdmin);
+    expect(view).toMatchObject({
+      operatingMode: 'full',
       cashAllowed: true,
+      certificateAvailable: false,
     });
   });
 
-  it('DE: Cloud-TSE coming soon — full shows its own reason and stays blocked', async () => {
+  it('DE: Cloud-TSE coming soon — full is selectable anyway (cash follows the TSE)', async () => {
     const t = setup(
       { operatingMode: 'cashless', operatingModeLegacy: false },
       { tse: { paidEvent: false, comingSoon: true } },
@@ -295,17 +305,12 @@ describe('OperatingModeService — switch by the club (admins)', () => {
     const view = await t.service.getForMember(ORG_ID, clubAdmin);
     expect(view.options.find((o) => o.mode === 'full')).toEqual({
       mode: 'full',
-      available: false,
-      unavailableReason: 'tse_coming_soon',
+      available: true,
+      unavailableReason: null,
     });
-    expect(
-      await responseOf(t.service.setByMember(ORG_ID, 'full', clubAdmin)),
-    ).toMatchObject({
-      code: 'TSE_REQUIRED_FOR_CASH',
-      reason: 'OPERATING_MODE_FULL_REQUIRES_TSE',
-    });
-    expect(t.history).toHaveLength(0);
-    expect(t.stored.operatingMode).toBe('cashless');
+    const state = await t.service.setByMember(ORG_ID, 'full', clubAdmin);
+    expect(state).toMatchObject({ operatingMode: 'full', cashAllowed: false });
+    expect(t.tseAuto?.onModeSwitchedToFull).not.toHaveBeenCalled();
   });
 
   it('DE: full without TSE is allowed with a paid event — the Cloud-TSE follows automatically', async () => {
@@ -336,22 +341,22 @@ describe('OperatingModeService — switch by the club (admins)', () => {
     );
   });
 
-  it('DE: without a paid event full stays disabled (paid_event_required)', async () => {
+  it('DE: without a paid event full is selectable, no Cloud-TSE is planned', async () => {
     const t = setup(
       { operatingMode: 'cashless', operatingModeLegacy: false },
       { tse: { paidEvent: false } },
     );
     const before = await t.service.getForMember(ORG_ID, clubAdmin);
     expect(before.options.find((o) => o.mode === 'full')).toMatchObject({
-      available: false,
-      unavailableReason: 'paid_event_required',
+      available: true,
+      unavailableReason: null,
     });
     expect(before.tseSetup).toBeNull();
-    expect(
-      await responseOf(t.service.setByMember(ORG_ID, 'full', clubAdmin)),
-    ).toMatchObject({
-      code: 'TSE_REQUIRED_FOR_CASH',
-      reason: 'OPERATING_MODE_FULL_REQUIRES_TSE',
+    const state = await t.service.setByMember(ORG_ID, 'full', clubAdmin);
+    expect(state).toMatchObject({
+      operatingMode: 'full',
+      cashAllowed: false,
+      tseSetup: null,
     });
     expect(t.tseAuto?.onModeSwitchedToFull).not.toHaveBeenCalled();
   });
@@ -370,12 +375,19 @@ describe('OperatingModeService — switch by the club (admins)', () => {
     expect(t.tseAuto?.onModeSwitchedToFull).toHaveBeenCalled();
   });
 
-  it('DE legacy: confirming full without TSE is not possible either', async () => {
+  it('DE legacy: confirming full without TSE ends the legacy status — and with it cash', async () => {
     const t = setup();
-    expect(
-      await responseOf(t.service.setByMember(ORG_ID, 'full', clubAdmin)),
-    ).toMatchObject({ code: 'TSE_REQUIRED_FOR_CASH' });
-    expect(t.stored.operatingModeLegacy).toBe(true);
+    const state = await t.service.setByMember(ORG_ID, 'full', clubAdmin);
+    expect(state).toMatchObject({
+      operatingMode: 'full',
+      operatingModeLegacy: false,
+      cashAllowed: false,
+    });
+    expect(t.stored.operatingModeLegacy).toBe(false);
+    expect(t.history[0]).toMatchObject({
+      fromMode: 'full_legacy',
+      toMode: 'full',
+    });
   });
 
   it.each(['AT', 'CH', 'FR'])(
@@ -446,7 +458,7 @@ describe('OperatingModeService — switch by the club (admins)', () => {
     expect(view.options).toEqual([
       { mode: 'orders_only', available: true, unavailableReason: null },
       { mode: 'cashless', available: true, unavailableReason: null },
-      { mode: 'full', available: false, unavailableReason: 'tse_required' },
+      { mode: 'full', available: true, unavailableReason: null },
     ]);
     expect(view.history.map((h) => h.changedByName)).toEqual([
       'OpenEOS-Support',
@@ -482,13 +494,15 @@ describe('OperatingModeService — switch by the support', () => {
     });
   });
 
-  it('the support cannot enable cash in DE without TSE either', async () => {
+  it('the support can switch DE to full without TSE, but cash stays blocked', async () => {
     const t = setup({ operatingMode: 'cashless', operatingModeLegacy: false });
-    expect(
-      await responseOf(
-        t.service.adminSetMode(ORG_ID, 'full', 'Bitte Bargeld', superAdmin),
-      ),
-    ).toMatchObject({ code: 'TSE_REQUIRED_FOR_CASH' });
+    const state = await t.service.adminSetMode(
+      ORG_ID,
+      'full',
+      'Bitte Alle Funktionen',
+      superAdmin,
+    );
+    expect(state).toMatchObject({ operatingMode: 'full', cashAllowed: false });
   });
 });
 
@@ -649,7 +663,36 @@ describe('Herstellerbescheinigung', () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it.each(['cashless', 'orders_only'] as const)(
+  it('DE full with an active TSE: none (cash is recorded with the TSE)', async () => {
+    const t = setup();
+    await t.service.setByMember(ORG_ID, 'full', clubAdmin);
+    tseStatus.isActive = () => true;
+    expect(
+      await responseOf(t.service.certificatePdf(ORG_ID, clubAdmin)),
+    ).toMatchObject({ reason: 'CERTIFICATE_NOT_AVAILABLE' });
+  });
+
+  it('DE full without TSE: content says cash is blocked until a TSE is active', () => {
+    const content = buildCertificateContent({
+      organization: { id: ORG_ID, name: 'TSV Musterstadt' },
+      mode: 'full',
+      country: 'DE',
+      tseActive: false,
+      since: new Date('2026-11-19T10:00:00Z'),
+      issuedAt: new Date('2026-11-19T11:00:00Z'),
+      version: '1.9.0',
+      operator: { name: 'Hersteller', addressLines: [], email: null },
+      timeZone: 'Europe/Berlin',
+      history: [],
+    });
+    const text = JSON.stringify(content);
+    expect(content.subtitle).toContain('„Alle Funktionen“ (ohne aktive TSE)');
+    expect(text).toContain('nur für den Zeitraum ohne aktive TSE');
+    expect(text).toContain('Bar (Test)');
+    expect(text).not.toContain('nur einstellen, wenn');
+  });
+
+  it.each(['cashless', 'orders_only', 'full'] as const)(
     'renders a PDF in DE for %s',
     async (mode) => {
       const t = setup();

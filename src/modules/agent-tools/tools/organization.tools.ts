@@ -129,7 +129,7 @@ export class OrganizationTools {
     return defineTool({
       name: 'get_organization',
       description:
-        'The organization this token belongs to: name, currency, timezone, address, contact, receipt texts, POS defaults, country and operating mode (operatingMode orders_only = „Nur Bons“ without prices or payments, cashless = „Bargeldlos“, full = „Alle Funktionen“; cashAllowed, pricesVisible). No billing or payment credentials.',
+        'The organization this token belongs to: name, currency, timezone, address, contact, receipt texts, POS defaults, country and operating mode (operatingMode orders_only = „Nur Bons“ without prices or payments, cashless = „Bargeldlos“, full = „Alle Funktionen“ — new organizations start in full; in Germany cash needs an active Cloud-TSE, so full without TSE takes card and online payments only (cashAllowed false); pricesVisible). Test orders (event in test mode) can be paid with the simulated methods test_cash/test_card, which never count as money. No billing or payment credentials.',
       inputSchema: z.object({}).strict(),
       scope: TokenScope.READ,
       mutating: false,

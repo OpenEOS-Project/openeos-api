@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -26,12 +25,10 @@ import {
   isCertificateAvailable,
   modeUnavailableReason,
   operatingModeView,
-  tseRequiredError,
   type ModeUnavailableReason,
   type OperatingMode,
   type OperatingModeOrg,
   type OperatingModeView,
-  type TseModeContext,
   OPERATING_MODE_SELECT,
 } from '../../../common/utils/operating-mode.util';
 import {
@@ -106,8 +103,9 @@ function rowToOrg(id: string, row: LockedRow): OperatingModeOrg {
  * (Admins des Vereins und Support), Verlauf und Herstellerbescheinigung.
  *
  * Der Verein darf selbst wechseln, weil Bargeld in Deutschland ohne TSE in
- * keiner waehlbaren Betriebsart moeglich ist: `full` ist dort nur mit
- * aktiver TSE waehlbar — auch fuer den Support.
+ * keiner Betriebsart moeglich ist: `full` ist dort seit 2026-11-19 auch
+ * ohne TSE waehlbar, Bargeld sperrt der Server dann bei jeder Barzahlung
+ * (`assertCashAllowed`), bis eine TSE aktiv ist.
  */
 @Injectable()
 export class OperatingModeService {
@@ -127,7 +125,7 @@ export class OperatingModeService {
 
   /**
    * Plan der automatischen TSE (Deutschland, keine aktive TSE, bezahlte
-   * Veranstaltung) — davon haengt ab, ob „Alle Funktionen“ waehlbar ist.
+   * Veranstaltung) — wann die TSE fuer „Alle Funktionen“ kommt.
    */
   private async tsePlan(
     org: OperatingModeOrg | null | undefined,
@@ -142,24 +140,15 @@ export class OperatingModeService {
     });
   }
 
-  private tseContext(plan: TseSetupPlan | null): TseModeContext {
-    return {
-      available: this.tseAuto?.available ?? false,
-      comingSoon: this.tseAuto?.availability === 'coming_soon',
-      follows: !!plan,
-    };
-  }
-
   /** Zustand samt waehlbaren Betriebsarten. */
   stateFor(
     org: OperatingModeOrg | null | undefined,
     plan: TseSetupPlan | null = null,
   ): OperatingModeState {
-    const tse = this.tseContext(plan);
     return {
       ...operatingModeView(org),
       options: OPERATING_MODES.map((mode) => {
-        const reason = modeUnavailableReason(org, mode, tse);
+        const reason = modeUnavailableReason(org, mode);
         return { mode, available: reason === null, unavailableReason: reason };
       }),
       certificateAvailable:
@@ -240,7 +229,8 @@ export class OperatingModeService {
    * gesperrter Organisationszeile.
    *
    * - Ohne Land: 400 COUNTRY_REQUIRED (die Regeln haengen am Land).
-   * - `full` in Deutschland ohne aktive TSE: 403 TSE_REQUIRED_FOR_CASH.
+   * - `full` geht auch in Deutschland ohne aktive TSE; Bargeld bleibt dort
+   *   gesperrt, bis eine TSE aktiv ist.
    * - Gleiche Betriebsart ohne Bestand: 400 OPERATING_MODE_UNCHANGED. Mit
    *   Bestand ist `full` eine Bestaetigung und hebt den Bestand auf.
    * - Jeder Wechsel hebt den Bestand auf.
@@ -253,9 +243,9 @@ export class OperatingModeService {
     supportReason: string | null,
   ): Promise<OperatingModeState> {
     const bySupport = supportReason !== null;
-    /* Ob „Alle Funktionen“ in Deutschland ohne TSE geht, haengt an einer
-       bezahlten Veranstaltung — vor der Sperre nachgesehen (Lesen genuegt:
-       die TSE folgt ohnehin nur mit einer bezahlten Veranstaltung). */
+    /* „Alle Funktionen“ in Deutschland ohne TSE: mit bezahlter
+       Veranstaltung folgt die Cloud-TSE automatisch — vor der Sperre
+       nachgesehen (Lesen genuegt). */
     const planBefore =
       mode === 'full' && this.tseAuto
         ? await this.tsePlan(
@@ -268,36 +258,13 @@ export class OperatingModeService {
     const state = await this.dataSource.transaction(async (manager) => {
       const row = await this.lock(manager, organizationId);
       const before = rowToOrg(organizationId, row);
-      const unavailable = modeUnavailableReason(
-        before,
-        mode,
-        this.tseContext(planBefore),
-      );
+      const unavailable = modeUnavailableReason(before, mode);
       if (unavailable === 'country_required') {
         throw new BadRequestException({
           code: ErrorCodes.VALIDATION_ERROR,
           reason: ErrorReasons.COUNTRY_REQUIRED,
           message:
             'Lege zuerst das Land deiner Organisation fest – davon hängt ab, welche Betriebsarten möglich sind.',
-        });
-      }
-      if (unavailable === 'tse_required') {
-        throw tseRequiredError(ErrorReasons.OPERATING_MODE_FULL_REQUIRES_TSE);
-      }
-      if (unavailable === 'tse_coming_soon') {
-        throw new ForbiddenException({
-          code: ErrorCodes.TSE_REQUIRED_FOR_CASH,
-          reason: ErrorReasons.OPERATING_MODE_FULL_REQUIRES_TSE,
-          message:
-            '„Alle Funktionen“ mit Bargeld geht in Deutschland nur mit Cloud-TSE – die Cloud-TSE ist bald verfügbar. Bis dahin kannst du „Nur Bons“ oder „Bargeldlos“ nutzen.',
-        });
-      }
-      if (unavailable === 'paid_event_required') {
-        throw new ForbiddenException({
-          code: ErrorCodes.TSE_REQUIRED_FOR_CASH,
-          reason: ErrorReasons.OPERATING_MODE_FULL_REQUIRES_TSE,
-          message:
-            '„Alle Funktionen“ mit Bargeld geht in Deutschland nur mit Cloud-TSE. OpenEOS richtet sie automatisch ein, sobald du eine Veranstaltung freigeschaltet hast – schalte zuerst eine Veranstaltung frei.',
         });
       }
       const from = getOperatingMode(before);
@@ -427,8 +394,8 @@ export class OperatingModeService {
 
   /**
    * Herstellerbescheinigung als PDF (nur Admins der Organisation, nur im
-   * gehosteten Dienst): Deutschland, Betriebsart `orders_only` oder
-   * `cashless`.
+   * gehosteten Dienst): Deutschland, solange kein Bargeld erfasst werden
+   * kann — `orders_only`, `cashless` und `full` ohne aktive TSE.
    */
   async certificatePdf(
     organizationId: string,
@@ -444,16 +411,12 @@ export class OperatingModeService {
       OrganizationRole.ADMIN,
     );
     const mode = getOperatingMode(organization);
-    if (
-      this.deployment.isSelfHosted ||
-      mode === 'full' ||
-      !isCertificateAvailable(organization)
-    ) {
+    if (this.deployment.isSelfHosted || !isCertificateAvailable(organization)) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.CERTIFICATE_NOT_AVAILABLE,
         message:
-          'Die Herstellerbescheinigung gibt es für Organisationen in Deutschland in den Betriebsarten „Nur Bons“ und „Bargeldlos“.',
+          'Die Herstellerbescheinigung gibt es für Organisationen in Deutschland, solange OpenEOS kein Bargeld erfassen kann: in „Nur Bons“, „Bargeldlos“ und in „Alle Funktionen“ ohne aktive Cloud-TSE.',
       });
     }
 

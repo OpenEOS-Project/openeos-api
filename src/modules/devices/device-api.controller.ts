@@ -94,6 +94,7 @@ import {
   orderTaxTotal,
 } from '../print-jobs/receipt-tax.util';
 import { serviceFeeOf } from '../refunds/refund-calc';
+import { assertTestPaymentAllowed } from '../../common/utils/test-payment.util';
 import { PrintJobsService } from '../print-jobs/print-jobs.service';
 import { OrdersService } from '../orders/orders.service';
 import { DiscountVouchersService } from '../discount-vouchers/discount-vouchers.service';
@@ -1173,6 +1174,8 @@ export class DeviceApiController {
     if (order.closedWithoutPaymentAt) {
       throw closedWithoutPaymentError([order.id]);
     }
+    // „Bar (Test)“/„Karte (Test)“ nur fuer Testbestellungen.
+    assertTestPaymentAllowed(createDto.paymentMethod, [order]);
 
     const remainingAmount = Number(order.total) - Number(order.paidAmount);
     if (createDto.amount > remainingAmount + 0.01) {
@@ -1337,6 +1340,7 @@ export class DeviceApiController {
         if (locked.closedWithoutPaymentAt) {
           throw closedWithoutPaymentError([locked.id]);
         }
+        assertTestPaymentAllowed(createDto.paymentMethod, [locked]);
 
         // Positionen pruefen, Betrag berechnen; nie mehr als offen ist.
         const plan = planSplitPayment(
@@ -2351,6 +2355,9 @@ export class DeviceApiController {
       case PaymentMethod.SUMUP_TERMINAL:
       case PaymentMethod.SUMUP_ONLINE:
         return PaymentProvider.SUMUP;
+      case PaymentMethod.TEST_CASH:
+      case PaymentMethod.TEST_CARD:
+        return PaymentProvider.TEST;
       default:
         return PaymentProvider.CASH;
     }

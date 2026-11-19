@@ -37,6 +37,7 @@ import {
   OPERATING_MODE_SELECT,
 } from '../../common/utils/operating-mode.util';
 import { closedWithoutPaymentError } from '../orders/close-without-payment';
+import { assertTestPaymentAllowed } from '../../common/utils/test-payment.util';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { OrderPrintService } from '../print-jobs/order-print.service';
 import { TseSigningService } from '../tse/tse-signing.service';
@@ -125,6 +126,9 @@ function providerForMethod(method: PaymentMethod): PaymentProvider {
     case PaymentMethod.SUMUP_TERMINAL:
     case PaymentMethod.SUMUP_ONLINE:
       return PaymentProvider.SUMUP;
+    case PaymentMethod.TEST_CASH:
+    case PaymentMethod.TEST_CARD:
+      return PaymentProvider.TEST;
     default:
       return PaymentProvider.CASH;
   }
@@ -324,6 +328,9 @@ export class PaymentsBatchService {
     }
     // Reihenfolge der Anfrage: die letzte bekommt Trinkgeld/Bargeld.
     const orders = dto.orderIds.map((id) => byId.get(id)!);
+    // „Bar (Test)“/„Karte (Test)“: nur wenn jede Bestellung eine
+    // Testbestellung ist (auch beim Anlegen mit Zahlung).
+    assertTestPaymentAllowed(dto.paymentMethod, orders);
 
     // Testbestellungen: keine echte SumUp-Kartenzahlung buchen.
     if (dto.paymentMethod === PaymentMethod.SUMUP_TERMINAL) {

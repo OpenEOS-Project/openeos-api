@@ -167,7 +167,7 @@ export class OrganizationsController {
   @ApiOperation({
     summary: 'Operating mode with options and change log',
     description:
-      'Betriebsart (`orders_only` „Nur Bons“, `cashless` „Bargeldlos“, `full` „Alle Funktionen“), Bestand (`operatingModeLegacy`), Land, TSE, abgeleitete Werte (`cashAllowed`, `pricesVisible`), wählbare Betriebsarten (`options`, Gründe `unavailableReason`: `country_required`, `tse_required`, `tse_coming_soon` = Cloud-TSE bald verfügbar, `paid_event_required`) und Verlauf.',
+      'Betriebsart (`orders_only` „Nur Bons“, `cashless` „Bargeldlos“, `full` „Alle Funktionen“), Bestand (`operatingModeLegacy`), Land, TSE, abgeleitete Werte (`cashAllowed`, `pricesVisible`), wählbare Betriebsarten (`options`, Grund `unavailableReason`: `country_required`; `full` ist auch in Deutschland ohne TSE wählbar, Bargeld dann gesperrt, bis eine TSE aktiv ist — siehe `cashAllowed`), Herstellerbescheinigung (`certificateAvailable`: DE, solange kein Bargeld möglich ist) und Verlauf.',
   })
   async getOperatingMode(
     @Param('id', ParseUUIDPipe) id: string,
