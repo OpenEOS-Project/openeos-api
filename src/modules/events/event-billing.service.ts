@@ -52,6 +52,8 @@ import {
 } from '../tse/tse-auto-activation.service';
 import { BookingConfirmationService } from '../legal/booking-confirmation.service';
 import { BillingAuditService } from './billing-audit.service';
+import { EventPhaseService } from './event-phase.service';
+import { salesWindow } from '../../common/utils/event-phase.util';
 import { AdminAction } from '../../database/entities/admin-audit-log.entity';
 import {
   CancellationInfo,
@@ -144,6 +146,11 @@ export interface EventBillingInfo extends EventPrice {
   masterData: PurchaseMasterDataStatus;
   /** Ob die Online-Zahlung ueberhaupt zur Verfuegung steht. */
   onlinePaymentAvailable: boolean;
+  /**
+   * Letzter Geschaeftstag vorbei: kaufen (online oder auf Rechnung) geht
+   * nicht mehr (400 EVENT_OVER_CANNOT_PURCHASE).
+   */
+  eventOver: boolean;
   billingMode: string;
   billingStatus: string;
   organizationName: string;
@@ -229,7 +236,42 @@ export class EventBillingService {
     /* Optional wie tseAuto: Buchungsbestaetigung an die Organisation. */
     @Optional()
     private readonly bookingConfirmation?: BookingConfirmationService,
+    /* Optional wie tseAuto: Tests ohne Phasen pruefen kein Datum. */
+    @Optional()
+    private readonly eventPhase?: EventPhaseService,
   ) {}
+
+  /**
+   * Ist der letzte Geschaeftstag (Tageswechsel, Standard 6 Uhr) vorbei?
+   * Unabhaengig vom Status — vor dem Kauf gelten noch keine Datumsphasen.
+   */
+  private isOver(
+    event: Event,
+    organization: Organization,
+    now: Date = new Date(),
+  ): boolean {
+    if (!this.eventPhase) return false;
+    const window = salesWindow(
+      event,
+      EventPhaseService.organizationContext(organization),
+      this.eventPhase.settings,
+    );
+    return !!window && now.getTime() >= window.businessDaysUntil.getTime();
+  }
+
+  /**
+   * Eine beendete Veranstaltung laesst sich nicht mehr kaufen. Laufende
+   * gehen weiter (Kauf am Veranstaltungstag).
+   */
+  private assertNotOver(event: Event, organization: Organization): void {
+    if (!this.isOver(event, organization)) return;
+    throw new BadRequestException({
+      code: ErrorCodes.VALIDATION_ERROR,
+      reason: ErrorReasons.EVENT_OVER_CANNOT_PURCHASE,
+      message:
+        'Die Veranstaltung ist schon vorbei und lässt sich nicht mehr kaufen. Passe das Datum an, wenn sie noch stattfindet.',
+    });
+  }
 
   /** Cloud-TSE-Angaben fuer Dialog und Vorschau. */
   private tseTerms(organization: Organization, event?: Event): EventTseTerms {
@@ -643,6 +685,7 @@ export class EventBillingService {
       tse: this.tseTerms(organization, event),
       masterData: this.masterDataStatus(organization),
       onlinePaymentAvailable: this.stripeService.isConfigured,
+      eventOver: this.isOver(event, organization),
       billingMode: organization.billingMode,
       billingStatus: event.billingStatus,
       organizationName: organization.name,
@@ -690,6 +733,7 @@ export class EventBillingService {
         message: 'Veranstaltung ist bereits freigeschaltet',
       });
     }
+    this.assertNotOver(event, organization);
 
     if (organization.billingMode !== 'invoice') {
       throw new BadRequestException({
@@ -908,6 +952,8 @@ export class EventBillingService {
         message: 'Veranstaltung ist bereits freigeschaltet',
       });
     }
+
+    this.assertNotOver(event, organization);
 
     const price = await this.resolvePrice(organization, event);
     const currency = organization.settings?.currency || 'EUR';
