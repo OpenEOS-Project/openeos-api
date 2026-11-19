@@ -72,6 +72,7 @@ import { orderTaxTotal } from '../print-jobs/receipt-tax.util';
 import { GatewayService } from '../gateway/gateway.service';
 import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 import { saveOrderWithNumbers } from './order-numbering';
+import { orderStatusFromItems } from './order-status';
 import { workflowDoneForClose } from './close-without-payment';
 import { assertMayManageOrders } from './order-permissions';
 import {
@@ -83,39 +84,13 @@ import {
   shouldAutoCompleteOrderOnly,
 } from '../../common/utils/operating-mode.util';
 
+export { orderStatusFromItems } from './order-status';
+
 export interface OrderStats {
   count: number;
   revenue: number;
   avgReceipt: number;
   pfand: number;
-}
-
-/**
- * Bestellstatus aus den Positionen (dieselbe Regel wie bei Erstattungen):
- * keine aktiven Positionen → open, alle fertig oder ausgegeben → ready,
- * sonst in_progress, sobald eine Position nicht mehr pending ist.
- */
-export function orderStatusFromItems(
-  items: Pick<OrderItem, 'status'>[],
-  current: OrderStatus,
-): OrderStatus {
-  const activeItems = items.filter(
-    (i) => i.status !== OrderItemStatus.CANCELLED,
-  );
-  if (activeItems.length === 0) return OrderStatus.OPEN;
-  if (
-    activeItems.every(
-      (i) =>
-        i.status === OrderItemStatus.READY ||
-        i.status === OrderItemStatus.DELIVERED,
-    )
-  ) {
-    return OrderStatus.READY;
-  }
-  if (activeItems.some((i) => i.status !== OrderItemStatus.PENDING)) {
-    return OrderStatus.IN_PROGRESS;
-  }
-  return current;
 }
 
 export interface DeliverItemsResult {
@@ -1051,7 +1026,11 @@ export class OrdersService {
           });
           if (!order) continue;
           const previous = order.status;
+          const previousReadyAt = order.readyAt;
           order.status = orderStatusFromItems(order.items, order.status);
+          if (order.status === OrderStatus.READY && !order.readyAt) {
+            order.readyAt = now;
+          }
           // Wie markItemDelivered: alles ausgegeben und bezahlt → fertig.
           // „Nur Bons“: ausgegeben genuegt (nicht am Tisch).
           // „Ohne Zahlung abgeschlossen“: wie bezahlt, sobald keine Station
@@ -1075,11 +1054,15 @@ export class OrdersService {
               if (handedOver.length) await manager.save(handedOver);
             }
           }
-          if (order.status !== previous) {
+          if (order.status !== previous || order.readyAt !== previousReadyAt) {
             await manager.update(
               Order,
               { id: order.id },
-              { status: order.status, completedAt: order.completedAt },
+              {
+                status: order.status,
+                completedAt: order.completedAt,
+                readyAt: order.readyAt,
+              },
             );
           }
           changedOrders.push(order);
