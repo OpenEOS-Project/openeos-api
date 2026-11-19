@@ -16,23 +16,7 @@ import type { ChangelogEintrag } from './changelog.types';
  */
 export const CHANGELOG: ChangelogEintrag[] = [
   {
-    datum: '2026-11-09',
-    art: 'neu',
-    titel: {
-      de: 'Änderungen der Rechtstexte kündigen wir vorher an',
-      en: 'Changes to the legal texts are announced in advance',
-    },
-    kurz: {
-      de: 'Ändern sich AGB, Auftragsverarbeitungsvertrag oder Datenschutzerklärung, bekommst du vorher eine E-Mail und siehst bis zum Inkrafttreten einen Hinweis in der App.',
-      en: 'If the terms, the data processing agreement or the privacy policy change, you receive an e-mail in advance and see a notice in the app until the change takes effect.',
-    },
-    text: {
-      de: 'Ändern wir die AGB, die Leistungsbeschreibung, den Auftragsverarbeitungsvertrag, die Datenschutzerklärung oder das Impressum, bekommen alle Admins vorher eine E-Mail: was sich ändert, ab wann es gilt und Links auf die neue und die bisherige Fassung – bei AGB und Auftragsverarbeitungsvertrag mindestens sechs Wochen vorher und mit dem Hinweis auf dein Widerspruchsrecht. Bis zum Inkrafttreten steht oben in der App ein Hinweis, den du ausblenden kannst. Bei neuen AGB oder einem neuen Auftragsverarbeitungsvertrag bitten wir dich danach, die neue Fassung zu bestätigen. Die Fassung vom 18. November 2026 ist die erste und muss niemand erneut bestätigen.',
-      en: 'If we change the terms, the service description, the data processing agreement, the privacy policy or the imprint, all admins receive an e-mail in advance: what changes, from when it applies and links to the new and the previous version – for the terms and the data processing agreement at least six weeks ahead and with a note on your right to object. Until the change takes effect, a notice at the top of the app tells you about it; you can hide it. For new terms or a new data processing agreement we then ask you to confirm the new version. The version of 18 November 2026 is the first one; nobody has to confirm it again.',
-    },
-  },
-  {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Inhalt melden in Shop und Helferseiten',
@@ -48,7 +32,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Widerrufsfunktion für deinen Shop',
@@ -64,7 +48,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'verbessert',
     titel: {
       de: 'Assistent: Vorschläge sind als KI-generiert gekennzeichnet',
@@ -80,7 +64,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'verbessert',
     titel: {
       de: 'Rechtliches: Leistungsbeschreibung, Data Act und TSE-Einsatzbedingungen',
@@ -96,8 +80,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    // Naechste Veroeffentlichung (1.8): Datum beim Release anpassen.
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Wertmarken: verkaufen, annehmen, zurücktauschen',
@@ -113,7 +96,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Bewirtungsbeleg an der Kasse',
@@ -129,7 +112,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Live-Kassensturz und Trinkgeld-Auszahlung',
@@ -145,7 +128,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'verbessert',
     titel: {
       de: 'Trinkgeld mit dem richtigen Steuersatz',
@@ -161,7 +144,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'verbessert',
     titel: {
       de: 'Kleinunternehmer-Hinweis auf jedem Beleg',
@@ -177,7 +160,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'verbessert',
     titel: {
       de: 'Kassenbuch: Wechselgeld aus der Vereinskasse',
@@ -193,7 +176,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Beleg per QR-Code oder E-Mail',
@@ -209,7 +192,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Bedienungen mit PIN und Kellnerabrechnung',
@@ -225,7 +208,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Drei Betriebsarten statt Bargeld-Schalter',
@@ -241,7 +224,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Erinnerungen zu deinen Veranstaltungen',
@@ -257,7 +240,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Geplant, Aktiv, Beendet: Phasen einer Veranstaltung',
@@ -273,7 +256,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Neue Rechtstexte und der Bereich „Rechtliches“',
@@ -289,7 +272,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Shop und QR-Bestellung nur mit Impressum und Datenschutzhinweis',
@@ -305,7 +288,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Assistent: Speisekarte importieren und Icons vorschlagen',
@@ -321,7 +304,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Pfand mit Steuersatz und Beleg zur Rückgabe',
@@ -337,7 +320,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Webhooks: OpenEOS meldet sich bei deinem System',
@@ -353,7 +336,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'API-Zugänge und KI-Agenten',
@@ -369,7 +352,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Cloud-TSE für Bargeld kommt in Kürze',
@@ -385,7 +368,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Kassenbuch für Wechselgeld und Kassensturz',
@@ -401,7 +384,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Bestellungen als CSV exportieren',
@@ -417,7 +400,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: '„Bedienung“ und „Gerät“ auf Bons',
@@ -433,7 +416,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Konto und Organisation selbst löschen',
@@ -449,7 +432,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'neu',
     titel: {
       de: 'Notfall-Support am Veranstaltungstag',
@@ -465,7 +448,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'verbessert',
     titel: {
       de: 'Buchen mit Zusammenfassung',
@@ -481,7 +464,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'verbessert',
     titel: {
       de: 'Höchstzahlen für Organisationen und Mitglieder',
@@ -497,7 +480,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'verbessert',
     titel: {
       de: 'Aufgeräumte Einstellungen, verschlüsselte Zugangsdaten',
@@ -513,7 +496,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'verbessert',
     titel: {
       de: 'PayPal-Anbindung entfernt',
@@ -529,7 +512,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'behoben',
     titel: {
       de: 'Bonzeilen, Kategorien und Rechnungshinweis',
@@ -545,7 +528,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'behoben',
     titel: {
       de: 'Trinkgeld, Servicegebühr und Küchenbons bei TSE-Ausfall',
@@ -561,7 +544,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
     },
   },
   {
-    datum: '2026-11-09',
+    datum: '2026-11-19',
     art: 'behoben',
     titel: {
       de: 'Kartenzahlung bei QR-Bestellungen am Tisch',
@@ -1458,7 +1441,7 @@ export const CHANGELOG: ChangelogEintrag[] = [
  * Eintrag ohne Version da.
  */
 export const RELEASES: Record<string, string> = {
-  '2026-11-09': '1.8',
+  '2026-11-19': '1.8',
   '2026-10-29': '1.7',
   '2026-10-08': '1.6',
   '2026-10-03': '1.5',
