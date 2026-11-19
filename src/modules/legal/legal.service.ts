@@ -41,6 +41,12 @@ export interface LegalDocumentStatus {
   acceptedVersion: string | null;
   acceptedAt: string | null;
   upToDate: boolean;
+  /**
+   * Muss der Benutzer dieses Dokument jetzt (erneut) annehmen? Nur diese
+   * Dokumente nennt der Dialog, und nur sie haelt `accept` ohne Angabe
+   * von Dokumenten fest.
+   */
+  reacceptanceRequired: boolean;
   acceptedUrl: string | null;
   acceptedPdfUrl: string | null;
 }
@@ -54,6 +60,8 @@ export interface KnownAnnouncement {
   summaryEn: string | null;
   shortNotice: boolean;
   explicitConsent: boolean;
+  /** Vom AVV nur Anhang B/C (AVV Ziffer 6.3). */
+  avvAnnexesOnly: boolean;
   createdAt: Date;
 }
 
@@ -66,10 +74,12 @@ export interface LegalChange {
   summaryEn: string | null;
   /** Nur mit ausdruecklicher Zustimmung wirksam (nicht aufschiebbar). */
   explicitConsent: boolean;
+  /** Vom AVV nur Anhang B/C: Widerspruchsrecht nach AVV Ziffer 6.3. */
+  avvAnnexesOnly: boolean;
 }
 
 export interface LegalStatus {
-  /** Muss der Benutzer AGB/AVV (erneut) annehmen? */
+  /** Muss der Benutzer AGB/AVV/Anlage 1 (erneut) annehmen? */
   required: boolean;
   documents: Record<LegalDocument, LegalDocumentStatus>;
   /**
@@ -82,14 +92,15 @@ export interface LegalStatus {
 /** Wie oft die angekuendigten Fassungen neu gelesen werden. */
 const ANNOUNCEMENT_REFRESH_MS = 60_000;
 
-export const LEGAL_LABELS: Record<LegalDocument, string> = {
-  agb: 'Allgemeine Geschäftsbedingungen (AGB)',
-  avv: 'Auftragsverarbeitungsvertrag (AVV)',
-};
-
 /** Anlage 1 ist Teil der AGB (Ziffer 4.2, 8.1) und steht in den Mails mit. */
 export const ANLAGE1_LABEL =
   'Anlage 1 zu den AGB – Leistungsbeschreibung und Preisliste';
+
+export const LEGAL_LABELS: Record<LegalDocument, string> = {
+  agb: 'Allgemeine Geschäftsbedingungen (AGB)',
+  avv: 'Auftragsverarbeitungsvertrag (AVV)',
+  anlage1: ANLAGE1_LABEL,
+};
 
 /** Die Zeilen, die eine Annahme schreibt (eine je Dokument). */
 export function acceptanceRows(input: {
@@ -136,10 +147,10 @@ export function reacceptanceNeeded(
 }
 
 /**
- * Annahme von AGB und Auftragsverarbeitungsvertrag (AVV), versioniert nach
- * dem Datum der „Stand“-Zeile.
+ * Annahme von AGB, Auftragsverarbeitungsvertrag (AVV) und Anlage 1,
+ * versioniert nach dem Datum der „Stand“-Zeile.
  *
- * Admins einer Organisation muessen die aktuelle Fassung beider Dokumente
+ * Admins einer Organisation muessen die aktuelle Fassung jedes Dokuments
  * angenommen haben, sobald sie nach der Ausgangsfassung liegt
  * (`reacceptanceNeeded`); dann meldet `/auth/me`
  * `legalReacceptanceRequired` und die Oberflaeche fragt erneut.
@@ -219,10 +230,11 @@ export class LegalService implements OnModuleInit, OnModuleDestroy {
         summary_en: string | null;
         short_notice: boolean;
         explicit_consent: boolean;
+        avv_annexes_only: boolean;
         created_at: Date;
       }[] = await this.dataSource.query(
         `SELECT id, documents, version, summary_de, summary_en, short_notice,
-                explicit_consent, created_at
+                explicit_consent, avv_annexes_only, created_at
            FROM legal_announcements
           ORDER BY version, created_at`,
       );
@@ -234,6 +246,7 @@ export class LegalService implements OnModuleInit, OnModuleDestroy {
         summaryEn: r.summary_en,
         shortNotice: r.short_notice,
         explicitConsent: r.explicit_consent,
+        avvAnnexesOnly: r.avv_annexes_only === true,
         createdAt: new Date(r.created_at),
       }));
     } catch (error) {
@@ -243,7 +256,7 @@ export class LegalService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Ankuendigung, mit der die geltende AGB- bzw. AVV-Fassung kam. */
+  /** Ankuendigung, mit der die geltende AGB-, AVV- bzw. Anlage-1-Fassung kam. */
   currentChange(config: LegalConfig = this.config): LegalChange | null {
     for (let i = this.announcements.length - 1; i >= 0; i--) {
       const a = this.announcements[i];
@@ -258,6 +271,7 @@ export class LegalService implements OnModuleInit, OnModuleDestroy {
         summaryDe: a.summaryDe,
         summaryEn: a.summaryEn,
         explicitConsent: a.explicitConsent,
+        avvAnnexesOnly: a.avvAnnexesOnly,
       };
     }
     return null;
@@ -317,6 +331,8 @@ export class LegalService implements OnModuleInit, OnModuleDestroy {
       this.latest(userId),
       config.enabled ? this.adminOrganizations(userId) : Promise.resolve([]),
     ]);
+    const asking =
+      config.enabled && config.reacceptanceEnabled && admin.length > 0;
     const documents = {} as Record<LegalDocument, LegalDocumentStatus>;
     for (const document of LEGAL_DOCUMENTS) {
       const row = latest[document];
@@ -328,17 +344,15 @@ export class LegalService implements OnModuleInit, OnModuleDestroy {
         acceptedAt: row?.acceptedAt ? row.acceptedAt.toISOString() : null,
         // ISO-Datum: lexikografisch = zeitlich.
         upToDate: !!row && row.version >= current,
+        reacceptanceRequired:
+          asking && reacceptanceNeeded(config, document, row?.version ?? null),
         acceptedUrl: links?.versionUrl ?? null,
         acceptedPdfUrl: links?.pdfUrl ?? null,
       };
     }
-    const required =
-      config.enabled &&
-      config.reacceptanceEnabled &&
-      admin.length > 0 &&
-      LEGAL_DOCUMENTS.some((d) =>
-        reacceptanceNeeded(config, d, documents[d].acceptedVersion),
-      );
+    const required = LEGAL_DOCUMENTS.some(
+      (d) => documents[d].reacceptanceRequired,
+    );
     return { required, documents, change: this.currentChange(config) };
   }
 
@@ -370,10 +384,22 @@ export class LegalService implements OnModuleInit, OnModuleDestroy {
     client?: AcceptanceClient,
   ): Promise<LegalStatus> {
     const config = this.config;
-    const documents = input.documents?.length
-      ? [...new Set(input.documents)]
-      : [...LEGAL_DOCUMENTS];
     const context = input.context ?? 'reacceptance';
+    /* Ohne Angabe: beim Buchen alle Dokumente, bei der erneuten Annahme
+       nur die, die sie verlangen (wie im Dialog genannt) — eine unveraenderte
+       Fassung wird nicht noch einmal als „erneut angenommen“ vermerkt. */
+    let documents: LegalDocument[];
+    if (input.documents?.length) {
+      documents = [...new Set(input.documents)];
+    } else if (context === 'reacceptance') {
+      const current = await this.status(user.id);
+      documents = LEGAL_DOCUMENTS.filter(
+        (d) => current.documents[d].reacceptanceRequired,
+      );
+      if (!documents.length) return current;
+    } else {
+      documents = [...LEGAL_DOCUMENTS];
+    }
 
     let organizations: ({ id: string; name: string } | null)[];
     if (input.organizationId) {
@@ -415,7 +441,9 @@ export class LegalService implements OnModuleInit, OnModuleDestroy {
     versions?: Partial<Record<LegalDocument, string>>,
   ): LegalEmailDocument[] {
     const config = this.config;
-    const documents = LEGAL_DOCUMENTS.map((document) => {
+    /* Anlage 1 gehoert zu den AGB (Leistungsumfang, Preise) und steht nach
+       ihnen und dem AVV in der Mail. */
+    return LEGAL_DOCUMENTS.map((document) => {
       const links = legalLinks(
         config,
         document,
@@ -428,16 +456,6 @@ export class LegalService implements OnModuleInit, OnModuleDestroy {
         pdfUrl: links.pdfUrl,
       };
     });
-    /* Anlage 1 gehoert zu den AGB (Leistungsumfang, Preise) und wird nicht
-       eigens angenommen — die Mail nennt die bei Annahme geltende Fassung. */
-    const anlage1 = legalLinks(config, 'anlage1', config.versions.anlage1);
-    documents.push({
-      label: ANLAGE1_LABEL,
-      version: anlage1.version,
-      versionUrl: anlage1.versionUrl,
-      pdfUrl: anlage1.pdfUrl,
-    });
-    return documents;
   }
 
   /** Bestaetigung nach der Registrierung (best effort). */

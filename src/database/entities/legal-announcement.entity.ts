@@ -59,6 +59,14 @@ export class LegalAnnouncement {
   @Column({ name: 'explicit_consent', type: 'boolean', default: false })
   explicitConsent: boolean;
 
+  /**
+   * Vom AVV aendern sich nur Anhang B (Unterauftragsverarbeiter) bzw.
+   * Anhang C (TOM): keine Zustimmung noetig (AVV 12.4), sondern Information
+   * vier Wochen vorher mit Widerspruchsrecht (AVV 6.3/6.4).
+   */
+  @Column({ name: 'avv_annexes_only', type: 'boolean', default: false })
+  avvAnnexesOnly: boolean;
+
   @Column({ name: 'created_by_id', type: 'uuid', nullable: true })
   createdById: string | null;
 

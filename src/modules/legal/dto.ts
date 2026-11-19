@@ -16,11 +16,12 @@ export class AcceptLegalDto {
   @ApiPropertyOptional({
     enum: LEGAL_DOCUMENTS,
     isArray: true,
-    description: 'Welche Dokumente angenommen werden; ohne Angabe beide.',
+    description:
+      'Welche Dokumente angenommen werden (`agb`, `avv`, `anlage1`). Ohne Angabe: beim Buchen alle, bei `reacceptance` die, die eine erneute Annahme verlangen (`reacceptanceRequired` in `/legal/status`).',
   })
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(2)
+  @ArrayMaxSize(3)
   @IsIn(LEGAL_DOCUMENTS, { each: true })
   documents?: LegalDocument[];
 

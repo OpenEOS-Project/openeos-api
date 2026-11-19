@@ -13632,12 +13632,13 @@ components:
       properties:
         documents:
           type: array
-          description: Welche Dokumente angenommen werden; ohne Angabe beide.
+          description: "Welche Dokumente angenommen werden (`agb`, `avv`, `anlage1`). Ohne Angabe: beim Buchen alle, bei `reacceptance` die, die eine erneute Annahme verlangen (`reacceptanceRequired` in `/legal/status`)."
           items:
             type: string
             enum:
               - agb
               - avv
+              - anlage1
         context:
           type: string
           enum:
@@ -13665,7 +13666,7 @@ components:
         version:
           type: string
           example: 2027-01-15
-          description: Neue Fassung = Tag des Inkrafttretens (JJJJ-MM-TT). AGB, Anlage 1 und AVV mindestens sechs Wochen im Voraus.
+          description: Neue Fassung = Tag des Inkrafttretens (JJJJ-MM-TT). AGB, Anlage 1 und AVV mindestens sechs Wochen im Voraus, nur Anhang B/C des AVV vier Wochen.
         summaryDe:
           type: string
           description: Was sich ändert, auf Deutsch (10–4000 Zeichen).
@@ -13677,7 +13678,10 @@ components:
           description: Kürzere Frist als sechs Wochen — nur für gesetzlich oder behördlich veranlasste Änderungen.
         explicitConsent:
           type: boolean
-          description: "Nur mit ausdrücklicher Zustimmung wirksam (Hauptleistungen, Vergütung, Auftragsverarbeitungsvertrag): die Mail fragt nach Zustimmung statt auf das Widerspruchsrecht hinzuweisen."
+          description: "Nur mit ausdrücklicher Zustimmung wirksam (Hauptleistungen, Vergütung, Auftragsverarbeitungsvertrag): die Mail fragt nach Zustimmung statt auf das Widerspruchsrecht hinzuweisen. Pflicht, wenn der Auftragsverarbeitungsvertrag dabei ist (AVV Ziffer 12.4) — außer mit `avvAnnexesOnly`."
+        avvAnnexesOnly:
+          type: boolean
+          description: "Vom Auftragsverarbeitungsvertrag ändern sich nur Anhang B (Unterauftragsverarbeiter) bzw. Anhang C (technische und organisatorische Maßnahmen): Verfahren nach AVV Ziffer 6.3 — Frist vier Wochen, Widerspruchsrecht statt Zustimmung. Nur zusammen mit `avv`."
       required:
         - documents
         - version

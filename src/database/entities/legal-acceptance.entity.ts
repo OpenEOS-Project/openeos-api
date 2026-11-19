@@ -6,8 +6,15 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-/** Dokumente, die ein Kunde annimmt (AGB und Auftragsverarbeitungsvertrag). */
-export const LEGAL_DOCUMENTS = ['agb', 'avv'] as const;
+/**
+ * Dokumente, die ein Kunde annimmt: AGB, Auftragsverarbeitungsvertrag und
+ * Anlage 1 zu den AGB (Leistungsbeschreibung und Preisliste). Anlage 1 ist
+ * Teil der AGB und wird mit ihnen angenommen; eine eigene Zeile haelt
+ * fest, welche Fassung galt, und laesst eine Aenderung nur der Anlage 1
+ * erneut bestaetigen. Konten von vor dieser Zeile haben keine Anlage-1-
+ * Zeile — bis zur Ausgangsfassung fragt das niemanden erneut.
+ */
+export const LEGAL_DOCUMENTS = ['agb', 'avv', 'anlage1'] as const;
 export type LegalDocument = (typeof LEGAL_DOCUMENTS)[number];
 
 /** Wo die Annahme passiert ist. */

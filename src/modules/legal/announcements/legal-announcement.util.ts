@@ -25,6 +25,13 @@ import {
 /** Mindestfrist fuer AGB, Anlage 1 und AVV (AGB 13.4): sechs Wochen. */
 export const LEGAL_NOTICE_DAYS = 42;
 
+/**
+ * Mindestfrist, wenn sich vom AVV nur Anhang B (Unterauftragsverarbeiter)
+ * oder Anhang C (technische und organisatorische Massnahmen) aendert: vier
+ * Wochen (AVV Ziffer 6.3, ueber 12.4 auch fuer Anhang C angewandt).
+ */
+export const AVV_ANNEX_NOTICE_DAYS = 28;
+
 /** Dokumente, die Vertragsbestandteil sind (Frist, Widerspruchsrecht). */
 export const CONTRACT_DOCUMENTS: readonly LegalDocumentKey[] = [
   'agb',
@@ -115,6 +122,11 @@ export interface AnnouncementInput {
   summaryEn?: string | null;
   shortNotice?: boolean;
   explicitConsent?: boolean;
+  /**
+   * Vom AVV aendern sich nur die Anhaenge B/C: keine Zustimmung noetig,
+   * Information vier Wochen vorher mit Widerspruchsrecht (AVV 6.3, 12.4).
+   */
+  avvAnnexesOnly?: boolean;
 }
 
 export interface AnnouncementContext {
@@ -128,7 +140,14 @@ export interface AnnouncementContext {
 }
 
 export interface AnnouncementProblem {
-  field: 'documents' | 'version' | 'summaryDe' | 'summaryEn' | 'website';
+  field:
+    | 'documents'
+    | 'version'
+    | 'summaryDe'
+    | 'summaryEn'
+    | 'website'
+    | 'explicitConsent'
+    | 'avvAnnexesOnly';
   message: string;
   document?: LegalDocumentKey;
 }
@@ -155,6 +174,10 @@ function shortDate(version: string): string {
  *   geltenden und jeder schon angekuendigten Fassung jedes Dokuments;
  * - AGB, Anlage 1 und AVV: mindestens sechs Wochen im Voraus, ausser bei
  *   gesetzlich veranlassten Aenderungen (`shortNotice`);
+ * - AVV: Aenderungen brauchen die Zustimmung des Kunden in Textform (AVV
+ *   Ziffer 12.4) — also `explicitConsent`, ausser es aendern sich nur die
+ *   Anhaenge B/C (`avvAnnexesOnly`, Verfahren nach AVV Ziffer 6.3); dann
+ *   reichen vier Wochen;
  * - Zusammenfassung auf Deutsch (10–4000 Zeichen), Englisch optional.
  */
 export function validateAnnouncement(
@@ -220,18 +243,54 @@ export function validateAnnouncement(
         });
       }
     }
-    const contractual = documents.filter((d) => CONTRACT_DOCUMENTS.includes(d));
+    const annexesOnly = input.avvAnnexesOnly === true;
+    const sixWeeks = documents.filter(
+      (d) => CONTRACT_DOCUMENTS.includes(d) && !(d === 'avv' && annexesOnly),
+    );
     const earliest = addDays(context.today, LEGAL_NOTICE_DAYS);
-    if (contractual.length && !input.shortNotice && version < earliest) {
+    if (sixWeeks.length && !input.shortNotice && version < earliest) {
       problems.push({
         field: 'version',
-        message: `${contractual
+        message: `${sixWeeks
           .map((d) => DOCUMENT_NAMES[d])
           .join(
             ', ',
           )} müssen mindestens sechs Wochen vorher angekündigt werden — frühestens zum ${shortDate(earliest)}. Kürzer nur bei gesetzlich oder behördlich veranlassten Änderungen (Option „Kürzere Frist“).`,
       });
     }
+    const earliestAnnex = addDays(context.today, AVV_ANNEX_NOTICE_DAYS);
+    if (
+      annexesOnly &&
+      documents.includes('avv') &&
+      !input.shortNotice &&
+      version < earliestAnnex
+    ) {
+      problems.push({
+        field: 'version',
+        document: 'avv',
+        message: `Änderungen der Anhänge B/C des Auftragsverarbeitungsvertrags müssen mindestens vier Wochen vorher angekündigt werden (AVV Ziffer 6.3) — frühestens zum ${shortDate(earliestAnnex)}.`,
+      });
+    }
+  }
+
+  if (input.avvAnnexesOnly && !documents.includes('avv')) {
+    problems.push({
+      field: 'avvAnnexesOnly',
+      message:
+        '„Nur Anhang B/C geändert“ gibt es nur zusammen mit dem Auftragsverarbeitungsvertrag.',
+    });
+  }
+  if (
+    documents.includes('avv') &&
+    !input.avvAnnexesOnly &&
+    !input.explicitConsent
+  ) {
+    problems.push({
+      field: 'explicitConsent',
+      document: 'avv',
+      message:
+        'Änderungen des Auftragsverarbeitungsvertrags werden nur mit Zustimmung des Kunden in Textform wirksam (AVV Ziffer 12.4). Wähle „Ausdrückliche Zustimmung“ – oder „Nur Anhang B/C geändert“, wenn sich nur die Unterauftragsverarbeiter (Anhang B) oder die technischen und organisatorischen Maßnahmen (Anhang C) ändern.',
+    });
   }
 
   const summaryDe = input.summaryDe?.trim() ?? '';

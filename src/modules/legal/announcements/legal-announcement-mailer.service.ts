@@ -191,9 +191,10 @@ export class LegalAnnouncementMailer {
       summary_en: string | null;
       short_notice: boolean;
       explicit_consent: boolean;
+      avv_annexes_only: boolean;
     }[] = await this.dataSource.query(
       `SELECT documents, version, previous_versions, summary_de, summary_en,
-              short_notice, explicit_consent
+              short_notice, explicit_consent, avv_annexes_only
          FROM legal_announcements WHERE id = $1`,
       [id],
     );
@@ -206,6 +207,7 @@ export class LegalAnnouncementMailer {
           summaryEn: row.summary_en,
           shortNotice: row.short_notice,
           explicitConsent: row.explicit_consent,
+          avvAnnexesOnly: row.avv_annexes_only,
         }
       : null;
     cache.set(id, announcement);

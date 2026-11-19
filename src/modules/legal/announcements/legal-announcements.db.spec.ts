@@ -161,9 +161,12 @@ describeWithDb('Legal announcements against Postgres', () => {
         documents: ['agb', 'avv'],
         version: version(),
         summaryDe: 'Ziffer 5 wird klarer gefasst.',
+        // Vom AVV nur Anhang B/C: keine Zustimmung noetig (AVV 6.3, 12.4).
+        avvAnnexesOnly: true,
       },
       { id: userIds[0], email: 'super@example.org' },
     );
+    expect(created.avvAnnexesOnly).toBe(true);
     expect(created.previousVersions).toEqual({
       agb: legal.config.versions.agb,
       avv: legal.config.versions.avv,
@@ -209,6 +212,7 @@ describeWithDb('Legal announcements against Postgres', () => {
     );
     expect(mailArgs.replyTo).toBe('hello@example.org');
     expect(mailArgs.html).toContain(`https://example.org/agb/${version()}`);
+    expect(mailArgs.html).toContain('Ziffer 6.3');
 
     const listed = (await announcements.list()).find(
       (a) => a.id === created.id,
