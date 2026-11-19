@@ -35,6 +35,7 @@ import {
   PaymentStatus,
 } from '../../database/entities/order.entity';
 import { OrderItemStatus } from '../../database/entities/order-item.entity';
+import { orderStatusFromItems } from '../orders/order-status';
 import {
   PaymentMethod,
   PaymentProvider,
@@ -1547,17 +1548,13 @@ export class RefundsService {
     ) {
       order.status = OrderStatus.COMPLETED;
       order.completedAt = order.completedAt ?? new Date();
-    } else if (
-      active.every(
-        (i) =>
-          i.status === OrderItemStatus.READY ||
-          i.status === OrderItemStatus.DELIVERED,
-      )
-    ) {
-      order.status = OrderStatus.READY;
-      order.readyAt = order.readyAt ?? new Date();
-    } else if (active.some((i) => i.status !== OrderItemStatus.PENDING)) {
-      order.status = OrderStatus.IN_PROGRESS;
+    } else {
+      // Dieselbe Regel wie Kueche und Ausgabe (Positionen ohne Station
+      // halten „fertig“ nicht auf).
+      order.status = orderStatusFromItems(items, order.status);
+      if (order.status === OrderStatus.READY) {
+        order.readyAt = order.readyAt ?? new Date();
+      }
     }
   }
 

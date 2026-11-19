@@ -152,35 +152,103 @@ const item = (
 });
 
 describe('orderStatusFromItems', () => {
+  // Position mit Station (Kueche) bzw. ohne (z. B. Getraenk an der Theke).
+  const k = (status: OrderItemStatus) => ({
+    status,
+    productionStationId: 'station-1',
+  });
+  const n = (status: OrderItemStatus) => ({
+    status,
+    productionStationId: null,
+  });
+
   it('keeps the rule of updateOrderStatus', () => {
-    const s = (status: OrderItemStatus) => ({ status });
     expect(orderStatusFromItems([], OrderStatus.IN_PROGRESS)).toBe(
       OrderStatus.OPEN,
     );
     expect(
       orderStatusFromItems(
-        [s(OrderItemStatus.DELIVERED), s(OrderItemStatus.CANCELLED)],
+        [k(OrderItemStatus.DELIVERED), k(OrderItemStatus.CANCELLED)],
         OrderStatus.OPEN,
       ),
     ).toBe(OrderStatus.READY);
     expect(
       orderStatusFromItems(
-        [s(OrderItemStatus.READY), s(OrderItemStatus.PENDING)],
+        [k(OrderItemStatus.READY), k(OrderItemStatus.PENDING)],
         OrderStatus.OPEN,
       ),
     ).toBe(OrderStatus.IN_PROGRESS);
     expect(
-      orderStatusFromItems([s(OrderItemStatus.PENDING)], OrderStatus.OPEN),
+      orderStatusFromItems([k(OrderItemStatus.PENDING)], OrderStatus.OPEN),
     ).toBe(OrderStatus.OPEN);
   });
   it('returns ready when all active items are ready', () => {
-    const s = (status: OrderItemStatus) => ({ status });
     expect(
       orderStatusFromItems(
-        [s(OrderItemStatus.READY), s(OrderItemStatus.READY)],
+        [k(OrderItemStatus.READY), k(OrderItemStatus.READY)],
         OrderStatus.IN_PROGRESS,
       ),
     ).toBe(OrderStatus.READY);
+  });
+
+  it('items without a station do not hold back ready', () => {
+    // Bratwurst (Kueche) fertig, Mineralwasser ohne Station offen.
+    expect(
+      orderStatusFromItems(
+        [k(OrderItemStatus.READY), n(OrderItemStatus.PENDING)],
+        OrderStatus.IN_PROGRESS,
+      ),
+    ).toBe(OrderStatus.READY);
+    expect(
+      orderStatusFromItems(
+        [k(OrderItemStatus.DELIVERED), n(OrderItemStatus.PENDING)],
+        OrderStatus.READY,
+      ),
+    ).toBe(OrderStatus.READY);
+  });
+
+  it('station items still decide while the station works', () => {
+    expect(
+      orderStatusFromItems(
+        [k(OrderItemStatus.PENDING), n(OrderItemStatus.PENDING)],
+        OrderStatus.OPEN,
+      ),
+    ).toBe(OrderStatus.OPEN);
+    expect(
+      orderStatusFromItems(
+        [
+          k(OrderItemStatus.READY),
+          k(OrderItemStatus.PREPARING),
+          n(OrderItemStatus.PENDING),
+        ],
+        OrderStatus.OPEN,
+      ),
+    ).toBe(OrderStatus.IN_PROGRESS);
+  });
+
+  it('orders without any station item keep the previous rule', () => {
+    expect(
+      orderStatusFromItems([n(OrderItemStatus.PENDING)], OrderStatus.OPEN),
+    ).toBe(OrderStatus.OPEN);
+    expect(
+      orderStatusFromItems(
+        [n(OrderItemStatus.READY), n(OrderItemStatus.PENDING)],
+        OrderStatus.OPEN,
+      ),
+    ).toBe(OrderStatus.IN_PROGRESS);
+    expect(
+      orderStatusFromItems(
+        [n(OrderItemStatus.DELIVERED), n(OrderItemStatus.DELIVERED)],
+        OrderStatus.OPEN,
+      ),
+    ).toBe(OrderStatus.READY);
+    // Stornierte Kuechenposition zaehlt nicht als Stationsposition.
+    expect(
+      orderStatusFromItems(
+        [k(OrderItemStatus.CANCELLED), n(OrderItemStatus.PENDING)],
+        OrderStatus.OPEN,
+      ),
+    ).toBe(OrderStatus.OPEN);
   });
 });
 
@@ -235,6 +303,30 @@ describe('OrdersService.deliverItemsForDevice', () => {
     t.seed([order('o1')], [item('i1', 'o1', OrderItemStatus.READY)]);
     await t.service.deliverItemsForDevice(ORG, ['i1']);
     expect(t.order('o1').status).toBe(OrderStatus.READY);
+  });
+
+  it('items without a station: ready gets readyAt, paid completes', async () => {
+    const t = setup();
+    t.seed(
+      [
+        order('o1', { readyAt: null } as Partial<Order>),
+        order('o2', {
+          paymentStatus: PaymentStatus.PAID,
+          readyAt: null,
+        } as Partial<Order>),
+      ],
+      [
+        item('i1', 'o1', OrderItemStatus.READY, 'station-1'),
+        item('i2', 'o1', OrderItemStatus.PENDING),
+        item('i3', 'o2', OrderItemStatus.READY, 'station-1'),
+        item('i4', 'o2', OrderItemStatus.PENDING),
+      ],
+    );
+    await t.service.deliverItemsForDevice(ORG, ['i1', 'i3']);
+    expect(t.order('o1').status).toBe(OrderStatus.READY);
+    expect(t.order('o1').readyAt).toBeInstanceOf(Date);
+    // Wie bei der Zahlung (workflowDone): nur Stationspositionen zaehlen.
+    expect(t.order('o2').status).toBe(OrderStatus.COMPLETED);
   });
 
   it('skips items that were already delivered', async () => {
@@ -385,6 +477,70 @@ describe('OrdersService — „Nur Bons“ (Abschluss ohne Zahlung)', () => {
       t.service.completeOrdersForDevice(ORG, ['o1']),
     ).rejects.toMatchObject({ response: { reason: 'ORDER_NOT_FULLY_PAID' } });
     expect(t.order('o1').status).toBe(OrderStatus.IN_PROGRESS);
+  });
+});
+
+/**
+ * „Nur Bons“, Theke: Bratwurst (Kueche) fertig, Mineralwasser ohne
+ * Station → die Bestellung ist bereit zur Ausgabe (wie an der Kasse).
+ */
+describe('OrdersService.markItemReadyFromDevice — items without a station', () => {
+  it('marks the order ready and sets readyAt', async () => {
+    const wurst = {
+      id: 'i1',
+      productName: 'Bratwurst',
+      status: OrderItemStatus.PENDING,
+      productionStationId: 'kueche',
+      order: { id: 'o1', organizationId: ORG },
+    } as unknown as OrderItem;
+    const wasser = {
+      id: 'i2',
+      productName: 'Mineralwasser',
+      status: OrderItemStatus.PENDING,
+      productionStationId: null,
+    } as unknown as OrderItem;
+    const orderRow = {
+      id: 'o1',
+      organizationId: ORG,
+      eventId: 'event-1',
+      orderNumber: '4',
+      status: OrderStatus.OPEN,
+      readyAt: null,
+      items: [wurst, wasser],
+    } as unknown as Order;
+    const saved: Pick<Order, 'status' | 'readyAt'>[] = [];
+    const orderRepository = {
+      findOne: jest.fn(() => Promise.resolve(orderRow)),
+      save: jest.fn((o: Order) => {
+        saved.push({ status: o.status, readyAt: o.readyAt });
+        return Promise.resolve(o);
+      }),
+    };
+    const orderItemRepository = {
+      findOne: jest.fn(() => Promise.resolve(wurst)),
+      save: jest.fn((i: OrderItem) => Promise.resolve(i)),
+    };
+    const none = undefined as never;
+    const service = new OrdersService(
+      orderRepository as never,
+      orderItemRepository as never,
+      none,
+      none,
+      none,
+      none,
+      none,
+      none,
+      none,
+      none,
+      { notifyOrderItemStatusChanged: jest.fn() } as never,
+      none,
+    );
+
+    await service.markItemReadyFromDevice(ORG, 'i1');
+
+    expect(saved[0]).toMatchObject({ status: OrderStatus.READY });
+    expect(saved[0].readyAt).toBeInstanceOf(Date);
+    expect(wasser.status).toBe(OrderItemStatus.PENDING);
   });
 });
 
