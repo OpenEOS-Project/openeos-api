@@ -91,9 +91,9 @@ export interface OrderStats {
 }
 
 /**
- * Bestellstatus aus den Positionen (unveraendert die Regel aus
- * updateOrderStatus): keine aktiven Positionen → open, alle ausgegeben →
- * ready, sonst in_progress, sobald eine Position nicht mehr pending ist.
+ * Bestellstatus aus den Positionen (dieselbe Regel wie bei Erstattungen):
+ * keine aktiven Positionen → open, alle fertig oder ausgegeben → ready,
+ * sonst in_progress, sobald eine Position nicht mehr pending ist.
  */
 export function orderStatusFromItems(
   items: Pick<OrderItem, 'status'>[],
@@ -103,7 +103,13 @@ export function orderStatusFromItems(
     (i) => i.status !== OrderItemStatus.CANCELLED,
   );
   if (activeItems.length === 0) return OrderStatus.OPEN;
-  if (activeItems.every((i) => i.status === OrderItemStatus.READY || i.status === OrderItemStatus.DELIVERED)) {
+  if (
+    activeItems.every(
+      (i) =>
+        i.status === OrderItemStatus.READY ||
+        i.status === OrderItemStatus.DELIVERED,
+    )
+  ) {
     return OrderStatus.READY;
   }
   if (activeItems.some((i) => i.status !== OrderItemStatus.PENDING)) {
@@ -151,7 +157,7 @@ export class OrdersService {
     // Optional mit Rueckfall fuer von Hand gebaute Tests (Standardwerte).
     @Optional()
     private readonly eventPhaseService?: EventPhaseService,
-  ) { }
+  ) {}
 
   private get eventPhase(): EventPhaseService {
     return (
@@ -330,14 +336,14 @@ export class OrdersService {
     // Ein Status je Bestellung und die Zahlarten, gleich wie in der Kasse.
     const methods = items.length
       ? await this.orderRepository.manager.query<
-        { order_id: string; methods: string[] }[]
-      >(
-        `SELECT order_id, array_agg(DISTINCT payment_method::text) AS methods
+          { order_id: string; methods: string[] }[]
+        >(
+          `SELECT order_id, array_agg(DISTINCT payment_method::text) AS methods
            FROM payments
            WHERE order_id = ANY($1::uuid[]) AND status IN ('captured', 'refunded')
            GROUP BY order_id`,
-        [items.map((o) => o.id)],
-      )
+          [items.map((o) => o.id)],
+        )
       : [];
     const methodsOf = new Map(methods.map((m) => [m.order_id, m.methods]));
     // Bedienung je Bestellung: verantwortlich (Tisch), sonst aufnehmend.
@@ -350,17 +356,17 @@ export class OrdersService {
     ];
     const waiters = waiterIds.length
       ? await this.orderRepository.manager.query<
-        {
-          id: string;
-          name: string;
-          short_name: string | null;
-          color: string | null;
-        }[]
-      >(
-        `SELECT id, name, short_name, color FROM waiters
+          {
+            id: string;
+            name: string;
+            short_name: string | null;
+            color: string | null;
+          }[]
+        >(
+          `SELECT id, name, short_name, color FROM waiters
             WHERE organization_id = $1 AND id = ANY($2::uuid[])`,
-        [organizationId, waiterIds],
-      )
+          [organizationId, waiterIds],
+        )
       : [];
     const waiterOf = new Map(
       waiters.map((w) => [
@@ -682,11 +688,11 @@ export class OrdersService {
           // Notify POS terminals about stock change
           const event = order.eventId
             ? await this.eventRepository.findOne({
-              where: {
-                id: order.eventId,
-                organizationId: order.organizationId,
-              },
-            })
+                where: {
+                  id: order.eventId,
+                  organizationId: order.organizationId,
+                },
+              })
             : null;
           if (event) {
             this.gatewayService.notifyProductUpdated(
@@ -984,8 +990,8 @@ export class OrdersService {
         const orderIds = Array.from(new Set(items.map((i) => i.orderId)));
         const orders = orderIds.length
           ? await manager.find(Order, {
-            where: { id: In(orderIds), organizationId },
-          })
+              where: { id: In(orderIds), organizationId },
+            })
           : [];
         const orderById = new Map(orders.map((o) => [o.id, o]));
 
@@ -1059,7 +1065,7 @@ export class OrdersService {
             (orderOnly
               ? shouldAutoCompleteOrderOnly(order.fulfillmentType, order.items)
               : order.status === OrderStatus.READY &&
-              order.paymentStatus === PaymentStatus.PAID)
+                order.paymentStatus === PaymentStatus.PAID)
           ) {
             order.status = OrderStatus.COMPLETED;
             order.completedAt = now;
@@ -1484,13 +1490,13 @@ export class OrdersService {
     itemDto:
       | AddOrderItemDto
       | {
-        productId: string;
-        quantity: number;
-        notes?: string;
-        kitchenNotes?: string;
-        selectedOptions?: SelectedOptionDto[];
-        isRefill?: boolean;
-      },
+          productId: string;
+          quantity: number;
+          notes?: string;
+          kitchenNotes?: string;
+          selectedOptions?: SelectedOptionDto[];
+          isRefill?: boolean;
+        },
     user: User,
     chargePfand = true,
   ): Promise<OrderItem> {
@@ -1608,11 +1614,11 @@ export class OrdersService {
       // Notify POS terminals about stock change
       const event = order.eventId
         ? await this.eventRepository.findOne({
-          where: {
-            id: order.eventId,
-            organizationId: order.organizationId,
-          },
-        })
+            where: {
+              id: order.eventId,
+              organizationId: order.organizationId,
+            },
+          })
         : null;
       if (event) {
         this.gatewayService.notifyProductUpdated(
@@ -1669,11 +1675,11 @@ export class OrdersService {
         // Notify POS terminals about stock restoration
         const event = order.eventId
           ? await this.eventRepository.findOne({
-            where: {
-              id: order.eventId,
-              organizationId: order.organizationId,
-            },
-          })
+              where: {
+                id: order.eventId,
+                organizationId: order.organizationId,
+              },
+            })
           : null;
         if (event) {
           this.gatewayService.notifyProductUpdated(
@@ -1879,6 +1885,9 @@ export class OrdersService {
     if (!order) return;
 
     order.status = orderStatusFromItems(order.items, order.status);
+    if (order.status === OrderStatus.READY && !order.readyAt) {
+      order.readyAt = new Date();
+    }
 
     await this.orderRepository.save(order);
   }
