@@ -173,6 +173,15 @@ describe('orderStatusFromItems', () => {
       orderStatusFromItems([s(OrderItemStatus.PENDING)], OrderStatus.OPEN),
     ).toBe(OrderStatus.OPEN);
   });
+  it('returns ready when all active items are ready', () => {
+    const s = (status: OrderItemStatus) => ({ status });
+    expect(
+      orderStatusFromItems(
+        [s(OrderItemStatus.READY), s(OrderItemStatus.READY)],
+        OrderStatus.IN_PROGRESS,
+      ),
+    ).toBe(OrderStatus.READY);
+  });
 });
 
 describe('OrdersService.deliverItemsForDevice', () => {

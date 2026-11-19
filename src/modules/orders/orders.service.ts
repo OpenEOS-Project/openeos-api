@@ -91,9 +91,9 @@ export interface OrderStats {
 }
 
 /**
- * Bestellstatus aus den Positionen (unveraendert die Regel aus
- * updateOrderStatus): keine aktiven Positionen → open, alle ausgegeben →
- * ready, sonst in_progress, sobald eine Position nicht mehr pending ist.
+ * Bestellstatus aus den Positionen (dieselbe Regel wie bei Erstattungen):
+ * keine aktiven Positionen → open, alle fertig oder ausgegeben → ready,
+ * sonst in_progress, sobald eine Position nicht mehr pending ist.
  */
 export function orderStatusFromItems(
   items: Pick<OrderItem, 'status'>[],
@@ -103,7 +103,13 @@ export function orderStatusFromItems(
     (i) => i.status !== OrderItemStatus.CANCELLED,
   );
   if (activeItems.length === 0) return OrderStatus.OPEN;
-  if (activeItems.every((i) => i.status === OrderItemStatus.DELIVERED)) {
+  if (
+    activeItems.every(
+      (i) =>
+        i.status === OrderItemStatus.READY ||
+        i.status === OrderItemStatus.DELIVERED,
+    )
+  ) {
     return OrderStatus.READY;
   }
   if (activeItems.some((i) => i.status !== OrderItemStatus.PENDING)) {
@@ -1879,6 +1885,9 @@ export class OrdersService {
     if (!order) return;
 
     order.status = orderStatusFromItems(order.items, order.status);
+    if (order.status === OrderStatus.READY && !order.readyAt) {
+      order.readyAt = new Date();
+    }
 
     await this.orderRepository.save(order);
   }
