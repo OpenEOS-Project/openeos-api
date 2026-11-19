@@ -154,6 +154,25 @@ describeWithDb('Legal announcements against Postgres', () => {
     );
   const version = () => addDays(berlinToday(), 60);
 
+  it('records acceptance of Anlage 1 next to the AGB and AVV', async () => {
+    services();
+    const id = randomUUID();
+    userIds.push(id);
+    await ds.query(
+      `INSERT INTO users (id, email, first_name, last_name, is_active) VALUES ($1, $2, 'Erika', 'Muster', true)`,
+      [id, mail('anlage1')],
+    );
+    await legal.accept(
+      { id, email: mail('anlage1') },
+      { documents: ['agb', 'avv', 'anlage1'], context: 'registration' },
+    );
+    const rows = await ds.query<{ document: string }[]>(
+      `SELECT document FROM legal_acceptances WHERE user_id = $1 ORDER BY document`,
+      [id],
+    );
+    expect(rows.map((r) => r.document)).toEqual(['agb', 'anlage1', 'avv']);
+  });
+
   it('queues one mail per admin address and sends each exactly once', async () => {
     const { announcements, mailer } = services();
     const created = await announcements.create(
