@@ -4,7 +4,11 @@ import {
 } from '../../database/entities/print-job.entity';
 import { User } from '../../database/entities/user.entity';
 import { fakeReferenceDb } from '../../common/utils/organization-references.fake-spec';
-import { PrintJobsService } from './print-jobs.service';
+import {
+  PrintJobsService,
+  sanitizeAttempts,
+  sanitizePrintedAt,
+} from './print-jobs.service';
 
 type AgentEvent = ReturnType<PrintJobsService['buildAgentJobEvent']>;
 
@@ -200,7 +204,8 @@ describe('PrintJobsService template resolution', () => {
     await Promise.resolve();
 
     expect(retried.status).toBe(PrintJobStatus.QUEUED);
-    expect(retried.attempts).toBe(1);
+    // Manual retries count separately from the agent's print attempts.
+    expect(retried.retryCount).toBe(1);
     expect(gatewayService.sendPrintJobToAgent).toHaveBeenCalledTimes(2);
     expect(sentEvent(1).templateName).toBe('kitchen_ticket');
     expect(sentEvent(1)).toEqual(original);
@@ -386,5 +391,188 @@ describe('PrintJobsService.create references', () => {
     ).rejects.toMatchObject({
       response: { reason: 'PRINT_TEMPLATE_NOT_FOUND' },
     });
+  });
+});
+
+describe('PrintJobsService.updateJobStatus — agent reports', () => {
+  const created = new Date('2026-11-20T12:00:00Z');
+
+  function stored(status: PrintJobStatus, extra: Partial<PrintJob> = {}) {
+    const ctx = setup();
+    const job = {
+      id: 'job-x',
+      organizationId: ORG,
+      printerId: PRINTER,
+      status,
+      attempts: 0,
+      retryCount: 0,
+      error: null,
+      printedAt: null,
+      createdAt: created,
+      ...extra,
+    } as unknown as PrintJob;
+    ctx.jobs.set(job.id, job);
+    return { ...ctx, job };
+  }
+
+  it("stores attempts and the agent's print time on completion", async () => {
+    const { service, printJobRepository } = stored(PrintJobStatus.PRINTING, {
+      error: 'PRINTER_OFFLINE: earlier attempt',
+    });
+    const result = await service.updateJobStatus(
+      'job-x',
+      PrintJobStatus.COMPLETED,
+      undefined,
+      ORG,
+      { attempts: 2, printedAt: '2026-11-20T12:00:20Z' },
+    );
+    expect(result?.changed).toBe(true);
+    expect(printJobRepository.update).toHaveBeenCalledWith(
+      { id: 'job-x' },
+      {
+        status: PrintJobStatus.COMPLETED,
+        error: null,
+        printedAt: new Date('2026-11-20T12:00:20Z'),
+        attempts: 2,
+      },
+    );
+  });
+
+  it('keeps the old behaviour for agents without the extra fields', async () => {
+    const { service, printJobRepository } = stored(PrintJobStatus.PRINTING);
+    await service.updateJobStatus(
+      'job-x',
+      PrintJobStatus.COMPLETED,
+      undefined,
+      ORG,
+    );
+    const update = (
+      printJobRepository.update.mock.calls[0] as unknown[]
+    )[1] as Record<string, unknown>;
+    expect(update).not.toHaveProperty('attempts');
+    expect(update.printedAt).toBeInstanceOf(Date);
+  });
+
+  it('stores attempts of a failure', async () => {
+    const { service, printJobRepository } = stored(PrintJobStatus.PRINTING);
+    await service.updateJobStatus(
+      'job-x',
+      PrintJobStatus.FAILED,
+      'PRINTER_OFFLINE: no paper',
+      ORG,
+      { attempts: 4 },
+    );
+    expect(printJobRepository.update).toHaveBeenCalledWith(
+      { id: 'job-x' },
+      {
+        status: PrintJobStatus.FAILED,
+        error: 'PRINTER_OFFLINE: no paper',
+        attempts: 4,
+      },
+    );
+  });
+
+  it('treats a repeated completion as a no-op (first print time stays)', async () => {
+    const { service, printJobRepository } = stored(PrintJobStatus.COMPLETED, {
+      printedAt: new Date('2026-11-20T12:00:10Z'),
+    });
+    const result = await service.updateJobStatus(
+      'job-x',
+      PrintJobStatus.COMPLETED,
+      undefined,
+      ORG,
+      { attempts: 1, printedAt: '2026-11-20T12:30:00Z' },
+    );
+    expect(result?.changed).toBe(false);
+    expect(printJobRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('never lets a late failure overwrite a completion', async () => {
+    const { service, printJobRepository } = stored(PrintJobStatus.COMPLETED);
+    const result = await service.updateJobStatus(
+      'job-x',
+      PrintJobStatus.FAILED,
+      'TIMEOUT: late',
+      ORG,
+    );
+    expect(result?.changed).toBe(false);
+    expect(printJobRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('lets a completion win over an earlier failure', async () => {
+    const { service, printJobRepository } = stored(PrintJobStatus.FAILED);
+    const result = await service.updateJobStatus(
+      'job-x',
+      PrintJobStatus.COMPLETED,
+      undefined,
+      ORG,
+    );
+    expect(result?.changed).toBe(true);
+    expect(printJobRepository.update).toHaveBeenCalled();
+  });
+});
+
+describe('sanitizeAttempts / sanitizePrintedAt', () => {
+  it('accepts non-negative integers, caps absurd values', () => {
+    expect(sanitizeAttempts(3)).toBe(3);
+    expect(sanitizeAttempts(0)).toBe(0);
+    expect(sanitizeAttempts(2.7)).toBe(2);
+    expect(sanitizeAttempts(10 ** 9)).toBe(1000);
+    for (const bad of [undefined, null, -1, '3', NaN, Infinity]) {
+      expect(sanitizeAttempts(bad)).toBeNull();
+    }
+  });
+
+  it('uses the agent time only if plausible', () => {
+    const now = new Date('2026-11-20T12:10:00Z');
+    const created = new Date('2026-11-20T12:00:00Z');
+    expect(sanitizePrintedAt('2026-11-20T12:05:00Z', created, now)).toEqual(
+      new Date('2026-11-20T12:05:00Z'),
+    );
+    // Small clock skew either way is fine.
+    expect(sanitizePrintedAt('2026-11-20T12:12:00Z', created, now)).toEqual(
+      new Date('2026-11-20T12:12:00Z'),
+    );
+    for (const bad of [
+      undefined,
+      '',
+      'yesterday',
+      42,
+      '2026-11-21T12:00:00Z', // far future
+      '2026-11-19T12:00:00Z', // long before the job existed
+    ]) {
+      expect(sanitizePrintedAt(bad, created, now)).toBe(now);
+    }
+  });
+});
+
+describe('PrintJobsService.retry — limit', () => {
+  it("counts manual retries, not the agent's print attempts", async () => {
+    const { service, jobs } = setup();
+    jobs.set('job-r', {
+      id: 'job-r',
+      organizationId: ORG,
+      printerId: PRINTER,
+      status: PrintJobStatus.FAILED,
+      attempts: 4, // agent tried four times
+      retryCount: 0,
+      payload: { type: 'kitchen', data: {} },
+      printer: { deviceId: AGENT_DEVICE },
+    } as unknown as PrintJob);
+
+    const retried = await service.retry(ORG, 'job-r', user);
+    expect(retried.retryCount).toBe(1);
+    expect(retried.attempts).toBe(4);
+
+    const exhausted = jobs.get('job-r') as PrintJob;
+    exhausted.status = PrintJobStatus.FAILED;
+    exhausted.retryCount = 3;
+    const error: unknown = await service
+      .retry(ORG, 'job-r', user)
+      .catch((e: unknown) => e);
+    expect(
+      (error as { getResponse: () => { params: unknown } }).getResponse()
+        .params,
+    ).toEqual({ max: 3 });
   });
 });

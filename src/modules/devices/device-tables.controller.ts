@@ -31,6 +31,7 @@ import { GatewayService } from '../gateway/gateway.service';
 import { OrdersService } from '../orders/orders.service';
 import { BatchPaymentDto } from '../payments/dto/batch-payment.dto';
 import { TseStatusService } from '../tse/tse-status.service';
+import { PrintHealthService } from '../print-jobs/print-health.service';
 import { PaymentsBatchService } from '../payments/payments-batch.service';
 import { tableKey } from '../tables/tables.constants';
 import { TablesService } from '../tables/tables.service';
@@ -44,6 +45,9 @@ import {
   CompleteOrdersDto,
   DeliverOrderItemsDto,
 } from './dto/device-tables.dto';
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Agent meldet sich alle 30 s; nach drei verpassten Meldungen gilt er als weg. */
 export const PRINTER_STALE_MS = 90_000;
@@ -122,6 +126,8 @@ export class DeviceTablesController {
     private readonly gatewayService: GatewayService,
     @Optional()
     private readonly tseStatus?: TseStatusService,
+    @Optional()
+    private readonly printHealth?: PrintHealthService,
   ) {}
 
   @DeviceCapability(DeviceCapabilityName.SALES)
@@ -328,8 +334,14 @@ export class DeviceTablesController {
   @Get('status')
   @ApiOperation({
     summary: 'Receipt printer and TSE state for the POS status pills',
+    description:
+      '`printHealth`: print state of the printers this POS prints to (own default printer, order-flow printers of the organization, printers of the active stations of `eventId` — or of the active/test event without it); `null` without any such printer.',
   })
-  async getStatus(@CurrentDevice() device: Device) {
+  @ApiQuery({ name: 'eventId', required: false })
+  async getStatus(
+    @CurrentDevice() device: Device,
+    @Query('eventId') eventId?: string,
+  ) {
     const organizationId = requireOrganization(device);
     const organization = await this.organizationRepository.findOne({
       where: { id: organizationId },
@@ -351,8 +363,42 @@ export class DeviceTablesController {
         // Cloud-TSE: null ohne Integration; sonst { state: 'ok' | 'error' |
         // 'creating' | 'inactive', active, serialNumber, clientId, outage }.
         tse: (await this.tseStatus?.deviceStatus(organizationId)) ?? null,
+        printHealth: await this.posPrintHealth(organizationId, device, eventId),
       },
     };
+  }
+
+  /**
+   * Print health for the printers this POS uses. Never fails the status
+   * call: an unknown or foreign `eventId` just contributes no stations.
+   */
+  private async posPrintHealth(
+    organizationId: string,
+    device: Device,
+    eventId: string | undefined,
+  ) {
+    if (!this.printHealth) return null;
+    const event =
+      typeof eventId === 'string' && UUID_PATTERN.test(eventId)
+        ? eventId
+        : ((
+            await this.eventRepository.find({
+              where: {
+                organizationId,
+                status: In([EventStatus.ACTIVE, EventStatus.TEST]),
+              },
+              order: { status: 'ASC' },
+              take: 1,
+              select: { id: true },
+            })
+          )[0]?.id ?? null);
+    const printerIds = await this.printHealth.printerIdsForPosDevice(
+      organizationId,
+      device,
+      event,
+    );
+    if (printerIds.length === 0) return null;
+    return this.printHealth.forOrganization(organizationId, { printerIds });
   }
 
   /**

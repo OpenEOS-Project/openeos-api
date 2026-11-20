@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { In, LessThan, MoreThan, Repository } from 'typeorm';
 import {
   PrintJob,
   Printer,
@@ -32,6 +32,7 @@ import {
 import { Organization } from '../../database/entities/organization.entity';
 import { GatewayService } from '../gateway/gateway.service';
 import { agentTemplateMap } from './builtin-templates';
+import { PRINT_JOB_CANCELLED_ERROR } from './print-health.service';
 
 /** Websocket payload a printer agent receives for one job. */
 interface AgentJobEvent {
@@ -127,7 +128,8 @@ export class PrintJobsService {
 
     // Send full print data to agent via WebSocket — targeted at the printer's
     // agent device. On ack the job moves to PRINTING; unacked jobs stay
-    // QUEUED and are replayed when the agent (re)connects.
+    // QUEUED and are replayed when the agent (re)connects and by the
+    // periodic redelivery (PrintJobRedeliveryService).
     this.dispatchJobToAgent(
       organizationId,
       printer.deviceId,
@@ -160,7 +162,8 @@ export class PrintJobsService {
 
   /**
    * Fire-and-forget delivery with ack handling: on ack the job transitions
-   * QUEUED -> PRINTING, otherwise it stays QUEUED for replay-on-connect.
+   * QUEUED -> PRINTING, otherwise it stays QUEUED for replay-on-connect and
+   * the periodic redelivery.
    */
   private dispatchJobToAgent(
     organizationId: string,
@@ -265,7 +268,7 @@ export class PrintJobsService {
       });
     }
 
-    if (job.attempts >= this.MAX_RETRY_ATTEMPTS) {
+    if ((job.retryCount ?? 0) >= this.MAX_RETRY_ATTEMPTS) {
       throw new BadRequestException({
         code: ErrorCodes.VALIDATION_ERROR,
         reason: ErrorReasons.PRINT_JOB_RETRY_LIMIT,
@@ -276,10 +279,11 @@ export class PrintJobsService {
 
     job.status = PrintJobStatus.QUEUED;
     job.error = null;
-    job.attempts += 1;
+    // `attempts` is what the agent reports; manual retries count separately.
+    job.retryCount = (job.retryCount ?? 0) + 1;
     await this.printJobRepository.save(job);
 
-    this.logger.log(`Print job retry: ${job.id} (attempt ${job.attempts})`);
+    this.logger.log(`Print job retry: ${job.id} (retry ${job.retryCount})`);
 
     // Resend to agent — same payload as the original dispatch
     this.dispatchJobToAgent(
@@ -309,7 +313,7 @@ export class PrintJobsService {
     }
 
     job.status = PrintJobStatus.FAILED;
-    job.error = 'Manuell abgebrochen';
+    job.error = PRINT_JOB_CANCELLED_ERROR;
     await this.printJobRepository.save(job);
 
     this.logger.log(`Print job cancelled: ${job.id}`);
@@ -421,7 +425,11 @@ export class PrintJobsService {
    * Jobs to (re-)deliver to an agent device on connect: everything still
    * QUEUED plus PRINTING jobs that went stale (acked but no outcome reported
    * for 2+ minutes — e.g. the agent crashed mid-print). The agent dedupes by
-   * jobId against its persistent queue, so re-delivery is safe.
+   * jobId against its persistent queue while it still holds the job.
+   *
+   * This replay runs for every agent, old or new. While an agent stays
+   * connected, PRINTING jobs are only sent again to agents announcing
+   * `idempotentJobs` (see PrintJobRedeliveryService).
    */
   async getQueuedJobsForDevice(deviceId: string): Promise<PrintJob[]> {
     const staleBefore = new Date(Date.now() - 2 * 60 * 1000);
@@ -471,16 +479,101 @@ export class PrintJobsService {
   }
 
   /**
-   * Update a job's status, optionally scoped to an organization (printer
-   * agents may only touch jobs of their own org). Returns the job, or null
-   * if it does not exist / belongs to another organization.
+   * Jobs the periodic redelivery hands to connected agents: still QUEUED
+   * (never acked), on a printer of one of the given agent devices, untouched
+   * for `idleMs` (so an initial dispatch still waiting for its ack is not
+   * sent twice) and not older than `maxAgeMs`.
+   */
+  async findQueuedJobsForRedelivery(
+    deviceIds: string[],
+    now: Date,
+    idleMs: number,
+    maxAgeMs: number,
+    limit: number,
+  ): Promise<PrintJob[]> {
+    if (deviceIds.length === 0) return [];
+    return this.printJobRepository.find({
+      where: {
+        status: PrintJobStatus.QUEUED,
+        printer: { deviceId: In(deviceIds) },
+        updatedAt: LessThan(new Date(now.getTime() - idleMs)),
+        createdAt: MoreThan(new Date(now.getTime() - maxAgeMs)),
+      },
+      relations: ['template', 'printer'],
+      order: { createdAt: 'ASC' },
+      take: limit,
+    });
+  }
+
+  /**
+   * PRINTING jobs without an outcome for `staleMs` on printers of the given
+   * agent devices go back to QUEUED, so the redelivery sends them again.
+   * Only for agents that dedupe by job id (`capabilities.idempotentJobs`):
+   * for them a second delivery of a printed job re-reports the outcome
+   * instead of printing twice. Jobs older than `maxAgeMs` are left alone —
+   * the agent's dedupe window is limited (about 24 h).
+   *
+   * The update is guarded by status and `updated_at`, so a report that
+   * lands in between wins. Returns the ids that were re-queued.
+   */
+  async requeueStalePrintingJobs(
+    deviceIds: string[],
+    now: Date,
+    staleMs: number,
+    maxAgeMs: number,
+  ): Promise<string[]> {
+    if (deviceIds.length === 0) return [];
+    const result = await this.printJobRepository
+      .createQueryBuilder()
+      .update(PrintJob)
+      .set({ status: PrintJobStatus.QUEUED })
+      .where('status = :printing', { printing: PrintJobStatus.PRINTING })
+      .andWhere('updated_at < :staleBefore', {
+        staleBefore: new Date(now.getTime() - staleMs),
+      })
+      .andWhere('created_at > :notBefore', {
+        notBefore: new Date(now.getTime() - maxAgeMs),
+      })
+      .andWhere(
+        'printer_id IN (SELECT p.id FROM printers p WHERE p.device_id IN (:...deviceIds))',
+        { deviceIds },
+      )
+      .returning(['id'])
+      .execute();
+    const rows = (result.raw ?? []) as Array<{ id: string }>;
+    return rows.map((row) => row.id);
+  }
+
+  async findJobsWithPrinter(ids: string[]): Promise<PrintJob[]> {
+    if (ids.length === 0) return [];
+    return this.printJobRepository.find({
+      where: { id: In(ids) },
+      relations: ['template', 'printer'],
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  /**
+   * Store the outcome an agent reported for a job (scoped to the agent's
+   * organization). Returns null for unknown/foreign jobs.
+   *
+   * Reports are idempotent: agents that dedupe by job id resend a report
+   * until it is acked and answer a redelivered, already printed job with
+   * its outcome again. A repeated completion therefore changes nothing
+   * (`changed: false`, the first `printedAt` stays), and a failure never
+   * overwrites a completion. A completion after a failure (e.g. printed on
+   * a later attempt) wins.
+   *
+   * `attempts` / `printedAt` come from newer agents; without them the
+   * old behaviour applies (`printedAt` = now, `attempts` untouched).
    */
   async updateJobStatus(
     jobId: string,
-    status: PrintJobStatus,
+    status: PrintJobStatus.COMPLETED | PrintJobStatus.FAILED,
     error?: string,
     organizationId?: string,
-  ): Promise<PrintJob | null> {
+    report: AgentJobReport = {},
+  ): Promise<{ job: PrintJob; changed: boolean } | null> {
     const job = await this.printJobRepository.findOne({
       where: organizationId ? { id: jobId, organizationId } : { id: jobId },
     });
@@ -488,23 +581,42 @@ export class PrintJobsService {
       return null;
     }
 
+    if (job.status === PrintJobStatus.COMPLETED) {
+      if (status !== PrintJobStatus.COMPLETED) {
+        this.logger.warn(
+          `Print job ${jobId} is completed — late failure report ignored`,
+        );
+      }
+      return { job, changed: false };
+    }
+
     const update: {
       status: PrintJobStatus;
       error?: string | null;
       printedAt?: Date;
+      attempts?: number;
     } = { status };
 
-    if (error) {
+    if (status === PrintJobStatus.COMPLETED) {
+      update.error = null;
+      update.printedAt = sanitizePrintedAt(report.printedAt, job.createdAt);
+    } else if (error) {
       update.error = error;
     }
 
-    if (status === PrintJobStatus.COMPLETED) {
-      update.printedAt = new Date();
+    const attempts = sanitizeAttempts(report.attempts);
+    if (attempts !== null) {
+      update.attempts = attempts;
     }
 
     await this.printJobRepository.update({ id: job.id }, update);
-    this.logger.log(`Print job ${jobId} status updated to ${status}`);
-    return job;
+    Object.assign(job, update);
+    this.logger.log(
+      `Print job ${jobId} status updated to ${status}${
+        attempts !== null ? ` (${attempts} attempt(s))` : ''
+      }`,
+    );
+    return { job, changed: true };
   }
 
   private async checkMembership(
@@ -552,4 +664,43 @@ export class PrintJobsService {
       });
     }
   }
+}
+
+/** Optional extras an agent sends with a job report. */
+export interface AgentJobReport {
+  attempts?: unknown;
+  printedAt?: unknown;
+}
+
+/** Highest attempt count accepted from an agent (guards the int column). */
+const MAX_REPORTED_ATTEMPTS = 1000;
+
+/** Positive integer attempt count, or null if absent/invalid. */
+export function sanitizeAttempts(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const attempts = Math.trunc(value);
+  if (attempts < 0) return null;
+  return Math.min(attempts, MAX_REPORTED_ATTEMPTS);
+}
+
+/** Allowed clock skew between agent and server for `printedAt`. */
+const PRINTED_AT_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * The agent's print time if it is plausible: a valid date, not in the
+ * future (beyond clock skew) and not before the job existed (minus skew).
+ * Otherwise the time the report arrived.
+ */
+export function sanitizePrintedAt(
+  value: unknown,
+  createdAt: Date | null | undefined,
+  now: Date = new Date(),
+): Date {
+  if (typeof value !== 'string' || !value) return now;
+  const printedAt = new Date(value);
+  const time = printedAt.getTime();
+  if (Number.isNaN(time)) return now;
+  if (time > now.getTime() + PRINTED_AT_SKEW_MS) return now;
+  if (createdAt && time < createdAt.getTime() - PRINTED_AT_SKEW_MS) return now;
+  return printedAt;
 }

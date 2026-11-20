@@ -2710,9 +2710,15 @@ paths:
       tags: *a24
   /api/device-api/status:
     get:
+      description: "`printHealth`: print state of the printers this POS prints to (own default printer, order-flow printers of the organization, printers of the active stations of `eventId` — or of the active/test event without it); `null` without any such printer."
       operationId: deviceTables_getStatus
       parameters:
         - *a23
+        - name: eventId
+          required: false
+          in: query
+          schema:
+            type: string
       responses:
         "200":
           description: ""
@@ -3070,6 +3076,22 @@ paths:
         "200":
           description: ""
       security: *a30
+      tags: *a31
+  /api/organizations/{organizationId}/print-jobs/health:
+    get:
+      description: "Agents offline with printers assigned, printers not reachable, jobs without outcome for more than 30 s and jobs failed in the last 15 minutes. `status`: `error` (jobs waiting/failed), `warning` (only offline), `ok`. Changes of the job counts are announced as `printHealthChanged` in the organization room."
+      operationId: printJobs_health
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ""
+      security: *a30
+      summary: Print health of the organization
       tags: *a31
   /api/organizations/{organizationId}/print-jobs/{jobId}:
     get:

@@ -81,7 +81,9 @@ function setup() {
     markAgentOffline: jest.fn(),
   };
   const printJobsService = {
-    updateJobStatus: jest.fn(() => Promise.resolve({ printerId: 'p-1' })),
+    updateJobStatus: jest.fn(() =>
+      Promise.resolve({ job: { printerId: 'p-1' }, changed: true }),
+    ),
     agentTemplates: jest.fn(() => Promise.resolve([])),
     getQueuedJobsForDevice: jest.fn(() => Promise.resolve([])),
   };
@@ -524,6 +526,7 @@ describe('AppGateway — device events by device type', () => {
       'completed',
       undefined,
       ORG,
+      { attempts: undefined, printedAt: undefined },
     );
   });
 

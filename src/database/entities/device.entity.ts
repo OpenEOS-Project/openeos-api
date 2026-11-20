@@ -86,6 +86,8 @@ export interface PrinterAgentInfo {
     mdns?: boolean;
     portscan?: boolean;
     spooler?: boolean;
+    /** Dedupes jobs by id and resends job reports until acked. */
+    idempotentJobs?: boolean;
   };
 }
 

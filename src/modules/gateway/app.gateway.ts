@@ -48,6 +48,29 @@ interface SocketData {
   deviceId?: string;
   organizationId?: string;
   deviceType?: string;
+  /**
+   * Printer agent announced `capabilities.idempotentJobs` (handshake
+   * `auth.capabilities` or `agentHeartbeat`). Kept per socket on purpose:
+   * the persisted `agent_info` may still describe an older agent version
+   * that ran before, the live socket describes the one connected now.
+   */
+  idempotentJobs?: boolean;
+}
+
+/** A connected printer agent as the print-job redelivery sees it. */
+export interface ConnectedPrinterAgent {
+  deviceId: string;
+  organizationId: string;
+  /** True only if every socket of the device announced the capability. */
+  idempotentJobs: boolean;
+}
+
+/** `capabilities.idempotentJobs === true` in an untrusted payload. */
+export function announcesIdempotentJobs(source: unknown): boolean {
+  if (!source || typeof source !== 'object') return false;
+  const capabilities = (source as { capabilities?: unknown }).capabilities;
+  if (!capabilities || typeof capabilities !== 'object') return false;
+  return (capabilities as { idempotentJobs?: unknown }).idempotentJobs === true;
 }
 
 type GatewayServer = Server<
@@ -231,6 +254,11 @@ export class AppGateway
           client.data.deviceId = device.id;
           client.data.organizationId = device.organizationId || '';
           client.data.deviceType = device.type;
+          if (device.type === DeviceType.PRINTER_AGENT) {
+            client.data.idempotentJobs = announcesIdempotentJobs(
+              client.handshake.auth,
+            );
+          }
 
           // Global per-device room: presence lookups and cross-replica
           // room operations (reassign/disconnect) target this room.
@@ -693,6 +721,13 @@ export class AppGateway
     if (client.device.type !== (DeviceType.PRINTER_AGENT as string)) {
       return { error: 'Not a printer agent' };
     }
+    // An agent announces its capabilities with every heartbeat; the
+    // redelivery reads them from the live socket (see SocketData).
+    if (client.data) {
+      client.data.idempotentJobs =
+        announcesIdempotentJobs(payload) ||
+        announcesIdempotentJobs(client.handshake?.auth);
+    }
     await this.printerAgentsService.handleAgentHeartbeat(
       client.device.id,
       client.device.organizationId,
@@ -714,18 +749,23 @@ export class AppGateway
     }
     try {
       // Scoped to the agent's organization — returns null for foreign jobs.
-      const job = await this.printJobsService.updateJobStatus(
+      const result = await this.printJobsService.updateJobStatus(
         payload.jobId,
         PrintJobStatus.COMPLETED,
         undefined,
         client.device.organizationId,
+        { attempts: payload.attempts, printedAt: payload.printedAt },
       );
-      if (!job) {
+      if (!result) {
         this.logger.warn(
           `Agent ${client.device.id} reported completion for unknown/foreign job ${payload.jobId}`,
         );
         return { error: 'Job not found' };
       }
+      const { job, changed } = result;
+      // A repeated report (agent resend, redelivered job) is acked again
+      // so the agent can drop it, but nothing changes.
+      if (!changed) return { success: true };
       this.logger.log(
         `Print job completed: ${payload.jobId} (agent: ${payload.agentId})`,
       );
@@ -763,18 +803,22 @@ export class AppGateway
     }
     try {
       // Scoped to the agent's organization — returns null for foreign jobs.
-      const job = await this.printJobsService.updateJobStatus(
+      const result = await this.printJobsService.updateJobStatus(
         payload.jobId,
         PrintJobStatus.FAILED,
         `${payload.errorCode}: ${payload.errorMessage}`,
         client.device.organizationId,
+        { attempts: payload.attempts },
       );
-      if (!job) {
+      if (!result) {
         this.logger.warn(
           `Agent ${client.device.id} reported failure for unknown/foreign job ${payload.jobId}`,
         );
         return { error: 'Job not found' };
       }
+      const { job, changed } = result;
+      // Already completed: a late failure report is acked and ignored.
+      if (!changed) return { success: true };
       this.logger.warn(
         `Print job failed: ${payload.jobId} - ${payload.errorCode}: ${payload.errorMessage}`,
       );
@@ -897,6 +941,38 @@ export class AppGateway
    */
   disconnectDevice(deviceId: string): void {
     this.server.in(`device:${deviceId}`).disconnectSockets(true);
+  }
+
+  /**
+   * All connected printer agents with an organization, across replicas.
+   * An agent counts as idempotent only if each of its sockets announced
+   * it — a job emitted to the device room reaches all of them.
+   */
+  async getConnectedPrinterAgents(): Promise<ConnectedPrinterAgent[]> {
+    const sockets = await this.server.fetchSockets();
+    const agents = new Map<string, ConnectedPrinterAgent>();
+    for (const socket of sockets) {
+      const data = socket.data;
+      if (
+        !data?.deviceId ||
+        !data.organizationId ||
+        data.deviceType !== (DeviceType.PRINTER_AGENT as string)
+      ) {
+        continue;
+      }
+      const idempotent = data.idempotentJobs === true;
+      const known = agents.get(data.deviceId);
+      if (known) {
+        known.idempotentJobs = known.idempotentJobs && idempotent;
+      } else {
+        agents.set(data.deviceId, {
+          deviceId: data.deviceId,
+          organizationId: data.organizationId,
+          idempotentJobs: idempotent,
+        });
+      }
+    }
+    return [...agents.values()];
   }
 
   async isDeviceOnline(deviceId: string): Promise<boolean> {

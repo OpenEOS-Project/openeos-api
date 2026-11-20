@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AppGateway } from './app.gateway';
+import { AppGateway, type ConnectedPrinterAgent } from './app.gateway';
 import {
   type OrderTransferredEvent,
   type WaiterUpdatedEvent,
@@ -10,6 +10,7 @@ import {
   PaymentReceivedEvent,
   PrintJobCreatedEvent,
   PrintJobStatusChangedEvent,
+  PrintHealthChangedEvent,
   PrinterJobEvent,
   PrinterStatusChangedEvent,
   BroadcastMessageEvent,
@@ -188,6 +189,18 @@ export class GatewayService {
     this.appGateway.emitToOrganization(
       organizationId,
       GatewayEvents.PRINT_JOB_STATUS_CHANGED,
+      payload,
+    );
+  }
+
+  /** Druck-Zustand geaendert: Hinweis an Verwaltung und Kassen der Org. */
+  notifyPrintHealthChanged(payload: PrintHealthChangedEvent) {
+    this.logger.debug(
+      `Emitting printHealthChanged for org ${payload.organizationId}: ${payload.waitingJobs} waiting, ${payload.failedJobs} failed`,
+    );
+    this.appGateway.emitToOrganization(
+      payload.organizationId,
+      GatewayEvents.PRINT_HEALTH_CHANGED,
       payload,
     );
   }
@@ -617,5 +630,10 @@ export class GatewayService {
 
   isDeviceOnline(deviceId: string): Promise<boolean> {
     return this.appGateway.isDeviceOnline(deviceId);
+  }
+
+  /** Connected printer agents with their announced job capabilities. */
+  getConnectedPrinterAgents(): Promise<ConnectedPrinterAgent[]> {
+    return this.appGateway.getConnectedPrinterAgents();
   }
 }
