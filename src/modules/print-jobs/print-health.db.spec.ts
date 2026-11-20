@@ -261,6 +261,46 @@ describeWithDb('Print job redelivery and health against Postgres', () => {
     });
   });
 
+  describe('markJobPrinting', () => {
+    it('restarts the stale timer of a printing job, never touches finished ones', async () => {
+      const w = await world();
+      const agent = await w.agent('Pi');
+      const p = await w.printer('Küche', agent);
+      const old = 10 * MINUTE;
+      const queued = await addJob(w.orgId, p, PrintJobStatus.QUEUED, old);
+      const printing = await addJob(w.orgId, p, PrintJobStatus.PRINTING, old);
+      const done = await addJob(w.orgId, p, PrintJobStatus.COMPLETED, old);
+      const failed = await addJob(w.orgId, p, PrintJobStatus.FAILED, old);
+
+      for (const id of [queued, printing, done, failed]) {
+        await jobs.markJobPrinting(id);
+      }
+
+      const rows = await q<{ id: string; status: string; fresh: boolean }>(
+        `SELECT id, status, updated_at > now() - interval '1 minute' AS fresh
+           FROM print_jobs WHERE id = ANY($1::uuid[])`,
+        [[queued, printing, done, failed]],
+      );
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      expect(byId.get(queued)).toMatchObject({
+        status: 'printing',
+        fresh: true,
+      });
+      expect(byId.get(printing)).toMatchObject({
+        status: 'printing',
+        fresh: true,
+      });
+      expect(byId.get(done)).toMatchObject({
+        status: 'completed',
+        fresh: false,
+      });
+      expect(byId.get(failed)).toMatchObject({
+        status: 'failed',
+        fresh: false,
+      });
+    });
+  });
+
   describe('findQueuedJobsForRedelivery', () => {
     it('returns idle queued jobs of the agents, oldest first, with printer', async () => {
       const w = await world();

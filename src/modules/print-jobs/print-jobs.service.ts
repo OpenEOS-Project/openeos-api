@@ -451,10 +451,17 @@ export class PrintJobsService {
   /**
    * Transition a job to PRINTING after the agent acked receipt. Guarded so a
    * late ack can never regress a job that already completed or failed.
+   *
+   * A job that is already PRINTING (replayed on reconnect, redelivered)
+   * gets its `updated_at` refreshed: the agent just confirmed it holds the
+   * job, so the stale timer of the redelivery starts again.
    */
   async markJobPrinting(jobId: string): Promise<void> {
     await this.printJobRepository.update(
-      { id: jobId, status: PrintJobStatus.QUEUED },
+      {
+        id: jobId,
+        status: In([PrintJobStatus.QUEUED, PrintJobStatus.PRINTING]),
+      },
       { status: PrintJobStatus.PRINTING },
     );
   }
