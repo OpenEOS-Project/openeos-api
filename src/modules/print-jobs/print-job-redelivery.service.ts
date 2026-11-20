@@ -78,6 +78,8 @@ export class PrintJobRedeliveryService {
           await this.printHealth.publishChanges(now);
         },
         now,
+        // Twice a minute: the "runs on" line would flood the log.
+        { quiet: true },
       );
     } catch (error) {
       this.logger.warn(

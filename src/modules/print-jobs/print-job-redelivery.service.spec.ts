@@ -83,7 +83,12 @@ function setup(
   };
   const cronLock = {
     runExclusive: jest.fn(
-      async (_name: string, fn: () => Promise<void>, _due?: Date) => {
+      async (
+        _name: string,
+        fn: () => Promise<void>,
+        _due?: Date,
+        _options?: { quiet?: boolean },
+      ) => {
         await fn();
         return true;
       },
@@ -241,6 +246,8 @@ describe('PrintJobRedeliveryService.tick', () => {
     jest.setSystemTime(new Date('2026-11-20T12:00:35Z'));
     await service.tick();
 
+    // Twice a minute: logged quietly.
+    expect(cronLock.runExclusive.mock.calls[0][3]).toEqual({ quiet: true });
     expect(cronLock.runExclusive.mock.calls.map((c) => c[0])).toEqual([
       'print-job-redelivery-a',
       'print-job-redelivery-b',

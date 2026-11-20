@@ -16,12 +16,28 @@ function setup(
     counts?: Array<Record<string, unknown>>;
     online?: string[];
     member?: boolean;
+    /** Events with status active/test and the phase the fake resolves. */
+    events?: Array<{ id: string; phase: string }>;
+    withPhases?: boolean;
   } = {},
 ) {
   const query = jest.fn((_sql: string, _params: unknown[]) =>
     Promise.resolve(options.counts ?? []),
   );
-  const printJobRepository = { query };
+  const events = options.events ?? [];
+  const printJobRepository = {
+    query,
+    manager: { find: jest.fn(() => Promise.resolve(events)) },
+  };
+  const eventPhase =
+    options.withPhases === false
+      ? undefined
+      : {
+          loadOrganization: jest.fn(() => Promise.resolve({ id: ORG })),
+          resolveWith: jest.fn((event: { phase: string }) => ({
+            phase: event.phase,
+          })),
+        };
   const printerRepository = {
     find: jest.fn(() => Promise.resolve(options.printers ?? [])),
   };
@@ -52,6 +68,7 @@ function setup(
     {} as never,
     memberships as never,
     gateway as never,
+    eventPhase as never,
   );
   return { service, query, gateway, printerRepository };
 }
@@ -113,19 +130,62 @@ describe('PrintHealthService.forOrganization', () => {
     ]);
   });
 
-  it('is a warning when only an agent or a printer is offline', async () => {
+  const offlineOnly = [
+    { id: 'p-k', name: 'Küche', deviceId: 'agent-k', isOnline: true },
+    { id: 'p-b', name: 'Bar', deviceId: 'agent-b', isOnline: false },
+  ];
+
+  it('is a warning when only an agent or a printer is offline during an event', async () => {
     const { service } = setup({
-      printers: [
-        { id: 'p-k', name: 'Küche', deviceId: 'agent-k', isOnline: true },
-        { id: 'p-b', name: 'Bar', deviceId: 'agent-b', isOnline: false },
-      ],
+      printers: offlineOnly,
       online: ['agent-k'],
+      events: [{ id: 'e-1', phase: 'active' }],
     });
     const health = await service.forOrganization(ORG, { now: NOW });
-    expect(health.status).toBe('warning');
+    expect(health).toMatchObject({ status: 'warning', eventRunning: true });
     expect(health.printers.map((p) => [p.name, p.issues])).toEqual([
       ['Bar', ['agent_offline']],
     ]);
+  });
+
+  it.each(['test', 'planned'])('also warns in the %s phase', async (phase) => {
+    const { service } = setup({
+      printers: offlineOnly,
+      online: ['agent-k'],
+      events: [{ id: 'e-1', phase }],
+    });
+    await expect(
+      service.forOrganization(ORG, { now: NOW }),
+    ).resolves.toMatchObject({
+      status: 'warning',
+    });
+  });
+
+  it('stays ok between events when something is merely offline', async () => {
+    for (const events of [[], [{ id: 'e-1', phase: 'ended' }]]) {
+      const { service } = setup({ printers: offlineOnly, online: [], events });
+      const health = await service.forOrganization(ORG, { now: NOW });
+      expect(health).toMatchObject({ status: 'ok', eventRunning: false });
+      // The facts stay available for the printers page.
+      expect(health.printers).toHaveLength(2);
+    }
+  });
+
+  it('always reports waiting jobs, event or not', async () => {
+    const { service, query } = setup({
+      printers: offlineOnly,
+      online: [],
+      counts: [
+        { printer_id: 'p-b', waiting: 1, oldest_waiting_at: NOW, failed: 0 },
+      ],
+    });
+    await expect(
+      service.forOrganization(ORG, { now: NOW }),
+    ).resolves.toMatchObject({
+      status: 'error',
+      eventRunning: null,
+    });
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('counts failures, and printers without agent never count as offline', async () => {

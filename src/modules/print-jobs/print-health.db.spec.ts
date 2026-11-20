@@ -451,10 +451,22 @@ describeWithDb('Print job redelivery and health against Postgres', () => {
       const b = await w.printer('B', agent);
       await addJob(w.orgId, b, PrintJobStatus.QUEUED, 2 * MINUTE);
 
+      // Offline only, no event: no warning between events.
+      await expect(
+        health.forOrganization(w.orgId, { printerIds: [a] }),
+      ).resolves.toMatchObject({ status: 'ok', eventRunning: false });
+      await q(
+        `INSERT INTO events (organization_id, name, status) VALUES ($1, 'Fest', 'active')`,
+        [w.orgId],
+      );
       const offline = await health.forOrganization(w.orgId, {
         printerIds: [a],
       });
-      expect(offline).toMatchObject({ status: 'warning', waitingJobs: 0 });
+      expect(offline).toMatchObject({
+        status: 'warning',
+        waitingJobs: 0,
+        eventRunning: true,
+      });
 
       online = [agent];
       await expect(

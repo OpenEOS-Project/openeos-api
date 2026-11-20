@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   forwardRef,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -18,6 +19,20 @@ import {
 } from '../../database/entities';
 import { ErrorCodes, ErrorReasons } from '../../common/constants/error-codes';
 import { GatewayService } from '../gateway/gateway.service';
+import { EventStatus } from '../../database/entities/event.entity';
+import { Event } from '../../database/entities/event.entity';
+import { EventPhaseService } from '../events/event-phase.service';
+import type { EventPhase } from '../../common/utils/event-phase.util';
+
+/**
+ * Phases in which printing matters: real sales, test mode and the test
+ * operation before the sales window opens.
+ */
+const RUNNING_PHASES: ReadonlySet<EventPhase> = new Set([
+  'active',
+  'test',
+  'planned',
+]);
 
 /** A job counts as waiting once it is this old without an outcome. */
 export const PRINT_HEALTH_WAITING_MS = 30_000;
@@ -78,6 +93,13 @@ export interface PrintHealth {
   offlineAgents: PrintHealthAgent[];
   printers: PrintHealthPrinter[];
   thresholds: { waitingSeconds: number; failedWindowMinutes: number };
+  /**
+   * An event of the organization is running (active, test mode or test
+   * operation). Without one, an offline agent or printer alone is no
+   * warning (`status: 'ok'`, `printers` still lists it); waiting or failed
+   * jobs always are. `null` when it was not needed to decide.
+   */
+  eventRunning: boolean | null;
 }
 
 interface JobCountsRow {
@@ -138,6 +160,8 @@ export class PrintHealthService {
     private readonly userOrganizationRepository: Repository<UserOrganization>,
     @Inject(forwardRef(() => GatewayService))
     private readonly gatewayService: GatewayService,
+    @Optional()
+    private readonly eventPhase?: EventPhaseService,
   ) {}
 
   /** Admin view: every active printer of the organization. */
@@ -186,6 +210,7 @@ export class PrintHealthService {
         waitingSeconds: PRINT_HEALTH_WAITING_MS / 1000,
         failedWindowMinutes: PRINT_HEALTH_FAILED_WINDOW_MINUTES,
       },
+      eventRunning: null,
     };
     if (printers.length === 0) return empty;
 
@@ -269,13 +294,42 @@ export class PrintHealthService {
     health.offlineAgents = [...offline.values()];
     health.oldestWaitingAt =
       oldest === null ? null : new Date(oldest).toISOString();
-    health.status =
-      health.waitingJobs > 0 || health.failedJobs > 0
-        ? 'error'
-        : health.printers.length > 0
-          ? 'warning'
-          : 'ok';
+    if (health.waitingJobs > 0 || health.failedJobs > 0) {
+      health.status = 'error';
+    } else if (health.printers.length > 0) {
+      // Offline only: between events that is normal (agent switched off).
+      health.eventRunning = await this.isEventRunning(organizationId, now);
+      health.status = health.eventRunning ? 'warning' : 'ok';
+    } else {
+      health.status = 'ok';
+    }
     return health;
+  }
+
+  /**
+   * Does the organization have an event in a phase where printing matters?
+   * Only events with status active or test can be in one; their phase
+   * (sales window, end) comes from EventPhaseService. Without it (hand-built
+   * tests) the status alone decides.
+   */
+  private async isEventRunning(
+    organizationId: string,
+    now: Date,
+  ): Promise<boolean> {
+    const events = await this.printJobRepository.manager.find(Event, {
+      where: {
+        organizationId,
+        status: In([EventStatus.ACTIVE, EventStatus.TEST]),
+      },
+    });
+    if (events.length === 0) return false;
+    if (!this.eventPhase) return true;
+    const organization = await this.eventPhase.loadOrganization(organizationId);
+    return events.some((event) =>
+      RUNNING_PHASES.has(
+        this.eventPhase!.resolveWith(event, organization, now).phase,
+      ),
+    );
   }
 
   /**

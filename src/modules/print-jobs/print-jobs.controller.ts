@@ -48,7 +48,7 @@ export class PrintJobsController {
   @ApiOperation({
     summary: 'Print health of the organization',
     description:
-      'Agents offline with printers assigned, printers not reachable, jobs without outcome for more than 30 s and jobs failed in the last 15 minutes. `status`: `error` (jobs waiting/failed), `warning` (only offline), `ok`. Changes of the job counts are announced as `printHealthChanged` in the organization room.',
+      'Agents offline with printers assigned, printers not reachable, jobs without outcome for more than 30 s and jobs failed in the last 15 minutes. `status`: `error` (jobs waiting/failed), `warning` (only offline, while an event is running: active, test mode or test operation), `ok`. Changes of the job counts are announced as `printHealthChanged` in the organization room.',
   })
   health(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
