@@ -8,6 +8,7 @@ import {
   DiscoveredPrinter,
   Organization,
   Printer,
+  PrintJob,
   ProductionStation,
   UserOrganization,
 } from '../../database/entities';
@@ -69,6 +70,7 @@ describeWithDb('PrinterAgentsService against Postgres', () => {
       gateway as unknown as GatewayService,
       ds.getRepository(Organization),
       ds.getRepository(ProductionStation),
+      ds.getRepository(PrintJob),
     );
     agents = new PrinterAgentsService(
       ds.getRepository(Device),

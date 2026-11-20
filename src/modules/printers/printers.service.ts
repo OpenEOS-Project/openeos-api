@@ -7,6 +7,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import {
@@ -18,6 +19,15 @@ import {
   ProductionStation,
 } from '../../database/entities';
 import { PrinterConnectionType } from '../../database/entities/printer.entity';
+import {
+  PrintJob,
+  PrintJobStatus,
+} from '../../database/entities/print-job.entity';
+
+/** `payload.type` of an admin test print (no order behind it). */
+export const ADMIN_TEST_PRINT_TYPE = 'admin_test';
+/** Template the agent ships for test prints. */
+const ADMIN_TEST_TEMPLATE = '_admin_test';
 import type { OrganizationSettings } from '../../database/entities/organization.entity';
 import { DeviceType } from '../../database/entities/device.entity';
 import { OrganizationRole } from '../../database/entities/user-organization.entity';
@@ -58,6 +68,8 @@ export class PrintersService {
     private readonly organizationRepository: Repository<Organization>,
     @InjectRepository(ProductionStation)
     private readonly productionStationRepository: Repository<ProductionStation>,
+    @InjectRepository(PrintJob)
+    private readonly printJobRepository: Repository<PrintJob>,
   ) {}
 
   /**
@@ -336,7 +348,7 @@ export class PrintersService {
     organizationId: string,
     printerId: string,
     user: User,
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; jobId?: string }> {
     await this.checkPermission(organizationId, user.id, 'devices');
     const printer = await this.findOne(organizationId, printerId, user);
     return this.dispatchTestPrint(printer);
@@ -345,7 +357,7 @@ export class PrintersService {
   /** Super-admin variant: bypasses org-membership check. */
   async testPrintAsAdmin(
     printerId: string,
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; jobId?: string }> {
     const printer = await this.printerRepository.findOne({
       where: { id: printerId },
     });
@@ -362,10 +374,10 @@ export class PrintersService {
     return this.dispatchTestPrint(printer, { requireOnline: false });
   }
 
-  private dispatchTestPrint(
+  private async dispatchTestPrint(
     printer: Printer,
     options: { requireOnline?: boolean } = { requireOnline: true },
-  ): { success: boolean; message: string } {
+  ): Promise<{ success: boolean; message: string; jobId?: string }> {
     if (!printer.isActive) {
       return { success: false, message: 'Drucker ist deaktiviert' };
     }
@@ -390,33 +402,40 @@ export class PrintersService {
       };
     }
 
-    // Emit a real PRINTER_JOB event so the agent renders + prints the bundled
-    // "receipt" template with a small test payload.
-    const jobId =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `test-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-    // Test jobs are not persisted — fire-and-forget, no ack handling needed.
-    void this.gatewayService.sendPrintJobToAgent(
-      printer.organizationId,
-      printer.deviceId,
-      {
-        jobId,
+    // A real, stored print job (no order): the agent's completion/failure
+    // report finds it, the print health counts it, and the nightly
+    // retention removes it (AuditLogsJob). The event the agent receives is
+    // unchanged — old agents print it exactly as before.
+    const jobId = randomUUID();
+    const data = {
+      printerName: printer.name,
+      jobId,
+      timestamp: new Date().toLocaleString('de-DE', {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      }),
+      body: 'Testdruck aus OpenEOS.',
+    };
+    await this.printJobRepository.save(
+      this.printJobRepository.create({
+        id: jobId,
+        organizationId: printer.organizationId,
         printerId: printer.id,
-        templateName: '_admin_test',
-        copies: 1,
+        templateId: null,
+        orderId: null,
+        orderItemId: null,
+        status: PrintJobStatus.QUEUED,
+        attempts: 0,
         payload: {
-          printerName: printer.name,
-          jobId,
-          timestamp: new Date().toLocaleString('de-DE', {
-            dateStyle: 'short',
-            timeStyle: 'short',
-          }),
-          body: 'Testdruck aus OpenEOS.',
+          type: ADMIN_TEST_PRINT_TYPE,
+          templateName: ADMIN_TEST_TEMPLATE,
+          copies: 1,
+          data,
         },
-      },
+      }),
     );
+
+    void this.sendTestJob(printer, jobId, data);
 
     this.logger.log(
       `Test print dispatched for printer ${printer.name} (${printer.id}) job=${jobId}`,
@@ -425,7 +444,55 @@ export class PrintersService {
     return {
       success: true,
       message: 'Testdruck wurde an den Drucker gesendet',
+      jobId,
     };
+  }
+
+  /**
+   * Deliver the stored test job. On ack it moves to PRINTING; without an
+   * ack it is marked FAILED right away instead of staying QUEUED — a test
+   * print that comes out of the printer hours later (replay on reconnect,
+   * periodic redelivery) helps nobody. A report that arrives anyway still
+   * wins (completion overwrites a failure). Printers without an agent
+   * device get the old broadcast without ack; the job is then PRINTING
+   * until the agent reports.
+   */
+  private async sendTestJob(
+    printer: Printer,
+    jobId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      const acked = await this.gatewayService.sendPrintJobToAgent(
+        printer.organizationId!,
+        printer.deviceId,
+        {
+          jobId,
+          printerId: printer.id,
+          templateName: ADMIN_TEST_TEMPLATE,
+          copies: 1,
+          payload,
+        },
+      );
+      if (acked || !printer.deviceId) {
+        await this.printJobRepository.update(
+          { id: jobId, status: PrintJobStatus.QUEUED },
+          { status: PrintJobStatus.PRINTING },
+        );
+      } else {
+        await this.printJobRepository.update(
+          { id: jobId, status: PrintJobStatus.QUEUED },
+          {
+            status: PrintJobStatus.FAILED,
+            error: 'Drucker-Agent hat den Testdruck nicht angenommen',
+          },
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Test print ${jobId} delivery failed: ${(error as Error).message}`,
+      );
+    }
   }
 
   /**

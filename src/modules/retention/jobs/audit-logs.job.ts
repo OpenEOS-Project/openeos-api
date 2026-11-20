@@ -31,7 +31,9 @@ export const REMOVED_IP = 'removed';
  * (90) Tagen: Admin-Protokoll loeschen bzw. bei Nachweisen pseudonymisieren,
  * IP-Adresse und Browser aus den Aenderungsprotokollen der Betriebsart
  * entfernen. Ausserdem das eigene Protokoll der Loeschlaeufe nach
- * `RETENTION_RUN_LOG_YEARS` (3) Jahren. Ankuendigungen (`retention_notices`)
+ * `RETENTION_RUN_LOG_YEARS` (3) Jahren, und Testdrucke aus der Verwaltung
+ * (Druckauftraege ohne Bestellung, `payload.type = 'admin_test'`) nach
+ * derselben Frist. Ankuendigungen (`retention_notices`)
  * bleiben: sie enthalten nur Kennungen und Daten und markieren, welche
  * Organisation bereits endgueltig geloescht ist.
  */
@@ -47,6 +49,17 @@ export class AuditLogsJob implements RetentionJob {
       EVIDENCE_PREFIXES.map((p) => `${p}%`),
     ];
 
+    ctx.removed(
+      'testPrintJobsDeleted',
+      await affected(
+        manager,
+        `DELETE FROM print_jobs
+          WHERE order_id IS NULL
+            AND payload->>'type' = 'admin_test'
+            AND created_at < $1`,
+        [cutoff],
+      ),
+    );
     ctx.removed(
       'auditEntriesDeleted',
       await affected(
