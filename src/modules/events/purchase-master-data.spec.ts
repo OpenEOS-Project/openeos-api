@@ -248,13 +248,28 @@ describe('EventBillingService — required data at purchase', () => {
   it('checkout: 400 PURCHASE_MASTER_DATA_REQUIRED with the missing fields, no Stripe call', async () => {
     const f = setup(freshOrg());
     const response = await errorOf(
-      f.billing.createStripeCheckout(ORG, EVENT_ID, admin),
+      f.billing.createStripeCheckout(ORG, EVENT_ID, admin, { withTse: true }),
     );
     expect(response).toMatchObject({
       code: ErrorCodes.PURCHASE_MASTER_DATA_REQUIRED,
       params: { missing: 'legalName,street,zip,city,taxNumber', withTse: true },
     });
     expect(f.stripe.createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it('checkout: „Alle Funktionen“ without „Ja“ means no Cloud-TSE and no tax data', async () => {
+    const org = freshOrg({
+      billingAddress: complete.billingAddress,
+      settings: { legalName: 'MV e.V.' },
+    });
+    const f = setup(org);
+    await expect(
+      f.billing.createStripeCheckout(ORG, EVENT_ID, admin),
+    ).resolves.toEqual({ checkoutUrl: 'https://stripe.test/cs_1' });
+    const response = await errorOf(
+      f.billing.createStripeCheckout(ORG, EVENT_ID, admin, { withTse: true }),
+    );
+    expect(response.params?.missing).toBe('street,zip,city,taxNumber');
   });
 
   it('checkout: legacy without Cloud-TSE needs no tax data; with „Ja“ it does', async () => {
@@ -301,6 +316,7 @@ describe('EventBillingService — required data at purchase', () => {
             zip: '12345',
             city: 'Musterstadt',
           },
+          withTse: true,
         },
         admin,
       ),
@@ -391,15 +407,18 @@ describe('EventBillingService — required data at purchase', () => {
     const f = setup(freshOrg());
     const actor = { userId: 'root', ipAddress: '127.0.0.1' };
     expect(
-      (await errorOf(f.billing.assertWaiveMasterData(EVENT_ID, {}, actor)))
-        .code,
+      (
+        await errorOf(
+          f.billing.assertWaiveMasterData(EVENT_ID, { withTse: true }, actor),
+        )
+      ).code,
     ).toBe(ErrorCodes.PURCHASE_MASTER_DATA_REQUIRED);
     expect(
       (
         await errorOf(
           f.billing.assertWaiveMasterData(
             EVENT_ID,
-            { overrideMasterData: true, overrideReason: '  ' },
+            { withTse: true, overrideMasterData: true, overrideReason: '  ' },
             actor,
           ),
         )
@@ -407,7 +426,11 @@ describe('EventBillingService — required data at purchase', () => {
     ).toBe(ErrorCodes.PURCHASE_MASTER_DATA_OVERRIDE_REASON_REQUIRED);
     await f.billing.assertWaiveMasterData(
       EVENT_ID,
-      { overrideMasterData: true, overrideReason: 'Angaben kommen per Mail' },
+      {
+        withTse: true,
+        overrideMasterData: true,
+        overrideReason: 'Angaben kommen per Mail',
+      },
       actor,
     );
     expect(f.audit.record).toHaveBeenCalledWith(

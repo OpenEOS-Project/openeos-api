@@ -257,6 +257,10 @@ export class TseUnitService {
   async qualifyingEvents(
     organizationId: string,
     now = new Date(),
+    options: {
+      /** Nur Veranstaltungen, die mit Cloud-TSE gekauft wurden (gehostet). */
+      tseIncluded?: boolean;
+    } = {},
   ): Promise<QualifyingEvent[]> {
     const selfHosted = this.deployment.isSelfHosted;
     const qb = this.eventRepository
@@ -274,6 +278,7 @@ export class TseUnitService {
       qb.andWhere('event.billingStatus IN (:...statuses)', {
         statuses: [...EVENT_UNLOCKED_BILLING_STATUSES],
       });
+      if (options.tseIncluded) qb.andWhere('event.tseIncluded = true');
     }
     const events = await qb.getMany();
     return events.map((e) => ({

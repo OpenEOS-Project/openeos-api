@@ -1,3 +1,4 @@
+import { isTestPaymentMethod } from '../../common/utils/test-payment.util';
 import type { TsePrintBlock } from '../tse/tse-view';
 import {
   euro,
@@ -179,6 +180,11 @@ export function paymentBlocks(doc: ReceiptDocument): ReceiptBlock[] {
         type: 'row',
         label: 'Rückgeld',
         value: euro(doc.payment.change),
+      });
+    if (isTestPaymentMethod(doc.payment.method))
+      out.push({
+        type: 'note',
+        text: 'Testzahlung: simuliert, es wurde kein Geld kassiert.',
       });
   }
   return out;

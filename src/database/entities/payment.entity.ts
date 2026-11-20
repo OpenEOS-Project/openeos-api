@@ -30,6 +30,17 @@ export enum PaymentMethod {
    * Marken plus Geld traegt die Zahlung die Zahlart des Geldes.
    */
   TOKENS = 'tokens',
+  /**
+   * Testzahlungen („Bar (Test)“, „Karte (Test)“): simuliert, kein Geld.
+   * Nur fuer Testbestellungen (`orders.is_test`, Testmodus und „Geplant“),
+   * in jeder Betriebsart ausser „Nur Bons“ — unabhaengig von Land, TSE und
+   * SumUp. Nie in Kassenlade, Kassenbuch, DSFinV-K, TSE, Kellner-
+   * abrechnung (nur „Training“) oder Erstattung auf echte Zahlarten; beim
+   * Aktivieren mit den Testbestellungen geloescht. Siehe
+   * `test-payment.util.ts`.
+   */
+  TEST_CASH = 'test_cash',
+  TEST_CARD = 'test_card',
 }
 
 export enum PaymentProvider {
@@ -39,6 +50,8 @@ export enum PaymentProvider {
   /** Nur Altdaten (siehe PaymentMethod.PAYPAL). */
   PAYPAL = 'PAYPAL',
   TOKENS = 'TOKENS',
+  /** Testzahlung (`test_cash`/`test_card`): simuliert, kein Anbieter. */
+  TEST = 'TEST',
 }
 
 export enum PaymentTransactionStatus {

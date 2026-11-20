@@ -41,6 +41,7 @@ import { assertMayManageOrders } from '../orders/order-permissions';
 import { planSplitPayment } from './split-payment';
 import { assertPaymentsAllowed } from '../../common/utils/operating-mode.util';
 import { assertIntegrationEnabled } from '../integrations/integration-catalog';
+import { assertTestPaymentAllowed } from '../../common/utils/test-payment.util';
 import { TseSigningService } from '../tse/tse-signing.service';
 import { endOfDay, startOfDay } from '../../common/utils/date-range.util';
 
@@ -102,6 +103,8 @@ export class PaymentsService {
     if (order.closedWithoutPaymentAt) {
       throw closedWithoutPaymentError([order.id]);
     }
+    // Testzahlung nur fuer Testbestellungen.
+    assertTestPaymentAllowed(createDto.paymentMethod, [order]);
 
     const remainingAmount = Number(order.total) - Number(order.paidAmount);
     if (createDto.amount > remainingAmount) {
@@ -225,6 +228,7 @@ export class PaymentsService {
         if (current.closedWithoutPaymentAt) {
           throw closedWithoutPaymentError([current.id]);
         }
+        assertTestPaymentAllowed(splitDto.paymentMethod, [current]);
 
         // Positionen pruefen, Betrag berechnen; nie mehr als offen ist.
         const plan = planSplitPayment(current, splitDto.items, splitDto.amount);
@@ -453,6 +457,9 @@ export class PaymentsService {
       case PaymentMethod.SUMUP_TERMINAL:
       case PaymentMethod.SUMUP_ONLINE:
         return PaymentProvider.SUMUP;
+      case PaymentMethod.TEST_CASH:
+      case PaymentMethod.TEST_CARD:
+        return PaymentProvider.TEST;
       default:
         return PaymentProvider.CASH;
     }

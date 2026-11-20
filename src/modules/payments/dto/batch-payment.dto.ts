@@ -29,6 +29,9 @@ export const BATCH_PAYMENT_METHODS = [
   PaymentMethod.CARD,
   PaymentMethod.SUMUP_TERMINAL,
   PaymentMethod.TOKENS,
+  // Simuliert, nur fuer Testbestellungen (test-payment.util.ts).
+  PaymentMethod.TEST_CASH,
+  PaymentMethod.TEST_CARD,
 ] as const;
 
 /** Hoechstzahl Marken je Typ und Kassierung. */
@@ -95,7 +98,12 @@ export class BatchPaymentDto extends TokenTenderFields {
   @IsUUIDLoose({ each: true })
   orderIds: string[];
 
-  @ApiProperty({ enum: BATCH_PAYMENT_METHODS, example: 'cash' })
+  @ApiProperty({
+    enum: BATCH_PAYMENT_METHODS,
+    example: 'cash',
+    description:
+      '`test_cash`/`test_card` („Bar (Test)“, „Karte (Test)“): simulierte Testzahlung ohne Geld, nur für Testbestellungen (sonst 403 TEST_PAYMENT_REQUIRES_TEST_ORDER); nie in Kassenlade, Kassenbuch, TSE oder DSFinV-K.',
+  })
   @IsIn(BATCH_PAYMENT_METHODS)
   paymentMethod: BatchPaymentMethod;
 

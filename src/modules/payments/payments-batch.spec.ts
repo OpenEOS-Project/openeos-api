@@ -627,3 +627,89 @@ describe('PaymentsBatchService.payBatch — Betriebsart „Bargeldlos“', () =>
     });
   });
 });
+
+describe('PaymentsBatchService.payBatch — Testzahlungen („Bar (Test)“, „Karte (Test)“)', () => {
+  const ORGS: [string, Row][] = [
+    // Deutschland, „Alle Funktionen“ ohne TSE: echtes Bargeld gesperrt.
+    [
+      'DE full without TSE',
+      { id: ORG, country: 'DE', operatingMode: 'full', settings: {} },
+    ],
+    [
+      'DE cashless',
+      { id: ORG, country: 'DE', operatingMode: 'cashless', settings: {} },
+    ],
+    [
+      'AT full',
+      { id: ORG, country: 'AT', operatingMode: 'full', settings: {} },
+    ],
+  ];
+
+  it.each(ORGS)(
+    '%s: books test_cash/test_card on test orders, provider TEST, no SumUp needed',
+    async (_label, organization) => {
+      for (const method of [PaymentMethod.TEST_CASH, PaymentMethod.TEST_CARD]) {
+        const { db, pay } = setup();
+        db.organization = organization;
+        db.events[0].status = EventStatus.TEST;
+        db.orders.push(order('o1', { isTest: true }));
+        db.items.push(item('i1', 'o1'));
+
+        const result = await pay({
+          orderIds: ['o1'],
+          paymentMethod: method as BatchPaymentDto['paymentMethod'],
+          amountReceived: 20,
+        });
+        expect(db.payments).toHaveLength(1);
+        expect(db.payments[0]).toMatchObject({
+          paymentMethod: method,
+          paymentProvider: PaymentProvider.TEST,
+          amount: 10,
+        });
+        // Kein Bargeld: kein erhaltener Betrag, kein Rueckgeld gebucht.
+        expect(db.payments[0].metadata).not.toHaveProperty('amountReceived');
+        expect(result.change).toBe(0);
+        expect(byId(db.orders, 'o1').paymentStatus).toBe(PaymentStatus.PAID);
+      }
+    },
+  );
+
+  it.each([[PaymentMethod.TEST_CASH], [PaymentMethod.TEST_CARD]])(
+    '%s on a real order: 403 TEST_PAYMENT_REQUIRES_TEST_ORDER, nothing booked',
+    async (method) => {
+      const { db, pay } = setup();
+      db.orders.push(order('o1', { isTest: true }), order('o2'));
+
+      await expect(
+        pay({
+          orderIds: ['o1', 'o2'],
+          paymentMethod: method as BatchPaymentDto['paymentMethod'],
+        }),
+      ).rejects.toMatchObject({
+        status: 403,
+        response: { reason: 'TEST_PAYMENT_REQUIRES_TEST_ORDER' },
+      });
+      expect(db.payments).toHaveLength(0);
+    },
+  );
+
+  it('„Nur Bons“: no test payment either (403 ORDER_ONLY_MODE)', async () => {
+    const { db, pay } = setup();
+    db.organization = { id: ORG, country: 'DE', operatingMode: 'orders_only' };
+    db.orders.push(order('o1', { isTest: true }));
+    await expect(
+      pay({ orderIds: ['o1'], paymentMethod: PaymentMethod.TEST_CASH }),
+    ).rejects.toMatchObject({ response: { code: 'ORDER_ONLY_MODE' } });
+    expect(db.payments).toHaveLength(0);
+  });
+
+  it('DE full without TSE: real cash stays blocked, also for test orders', async () => {
+    const { db, pay } = setup();
+    db.organization = { id: ORG, country: 'DE', operatingMode: 'full' };
+    db.orders.push(order('o1', { isTest: true }));
+    await expect(
+      pay({ orderIds: ['o1'], paymentMethod: PaymentMethod.CASH }),
+    ).rejects.toMatchObject({ response: { code: 'TSE_REQUIRED_FOR_CASH' } });
+    expect(db.payments).toHaveLength(0);
+  });
+});

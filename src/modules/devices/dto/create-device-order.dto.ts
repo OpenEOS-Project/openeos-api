@@ -28,7 +28,12 @@ import {
  * ist immer die letzte (Trinkgeld, erhaltenes Bargeld).
  */
 export class DeviceOrderPaymentDto extends TokenTenderFields {
-  @ApiProperty({ enum: BATCH_PAYMENT_METHODS, example: 'cash' })
+  @ApiProperty({
+    enum: BATCH_PAYMENT_METHODS,
+    example: 'cash',
+    description:
+      '`test_cash`/`test_card` („Bar (Test)“, „Karte (Test)“): simulierte Testzahlung ohne Geld, nur für Testbestellungen (sonst 403 TEST_PAYMENT_REQUIRES_TEST_ORDER); nie in Kassenlade, Kassenbuch, TSE oder DSFinV-K.',
+  })
   @IsIn(BATCH_PAYMENT_METHODS)
   paymentMethod: BatchPaymentMethod;
 

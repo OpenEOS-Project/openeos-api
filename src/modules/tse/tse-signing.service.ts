@@ -1,3 +1,4 @@
+import { isTestPaymentMethod } from '../../common/utils/test-payment.util';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -448,6 +449,9 @@ export class TseSigningService {
         relations: { itemPayments: { orderItem: true } },
       });
       if (!payment) return null;
+      // Testzahlung („Bar (Test)“, „Karte (Test)“): simuliert, kein
+      // Geschaeftsvorfall — nichts zu signieren (test-payment.util.ts).
+      if (isTestPaymentMethod(payment.paymentMethod)) return null;
       const order = await this.orderRepository.findOne({
         where: { id: payment.orderId },
         relations: { items: true },
@@ -555,6 +559,8 @@ export class TseSigningService {
    */
   async signRefund(refund: Refund): Promise<TseReceiptView | null> {
     try {
+      // Rueckgabe einer Testzahlung: wie die Testzahlung selbst ohne TSE.
+      if (isTestPaymentMethod(refund.paymentMethod)) return null;
       if (!(await this.isActive(refund.organizationId))) return null;
       const vatExempt = await this.vatExempt(refund.organizationId);
       const amountCents = cents(refund.amount); // negativ

@@ -1222,7 +1222,7 @@ paths:
       tags: *a14
   /api/organizations/{id}/operating-mode:
     get:
-      description: "Betriebsart (`orders_only` „Nur Bons“, `cashless` „Bargeldlos“, `full` „Alle Funktionen“), Bestand (`operatingModeLegacy`), Land, TSE, abgeleitete Werte (`cashAllowed`, `pricesVisible`), wählbare Betriebsarten (`options`, Gründe `unavailableReason`: `country_required`, `tse_required`, `tse_coming_soon` = Cloud-TSE bald verfügbar, `paid_event_required`) und Verlauf."
+      description: "Betriebsart (`orders_only` „Nur Bons“, `cashless` „Bargeldlos“, `full` „Alle Funktionen“), Bestand (`operatingModeLegacy`), Land, TSE, abgeleitete Werte (`cashAllowed`, `pricesVisible`), wählbare Betriebsarten (`options`, Grund `unavailableReason`: `country_required`; `full` ist auch in Deutschland ohne TSE wählbar, Bargeld dann gesperrt, bis eine TSE aktiv ist — siehe `cashAllowed`), Herstellerbescheinigung (`certificateAvailable`: DE, solange kein Bargeld möglich ist) und Verlauf."
       operationId: organizations_getOperatingMode
       parameters:
         - name: id
@@ -6411,6 +6411,8 @@ paths:
               - google_pay
               - apple_pay
               - tokens
+              - test_cash
+              - test_card
         - name: status
           required: false
           in: query
@@ -14220,7 +14222,10 @@ components:
             - card
             - sumup_terminal
             - tokens
+            - test_cash
+            - test_card
           example: cash
+          description: "`test_cash`/`test_card` („Bar (Test)“, „Karte (Test)“): simulierte Testzahlung ohne Geld, nur für Testbestellungen (sonst 403 TEST_PAYMENT_REQUIRES_TEST_ORDER); nie in Kassenlade, Kassenbuch, TSE oder DSFinV-K."
         orderIds:
           description: Weitere offene Bestellungen (z. B. Gastbestellungen am Tisch), die in derselben Zahlung beglichen werden. Die neue Bestellung kommt automatisch als letzte dazu.
           type: array
@@ -14348,6 +14353,8 @@ components:
             - sumup_online
             - google_pay
             - apple_pay
+            - test_cash
+            - test_card
         providerTransactionId:
           type: string
           example: pi_1234567890
@@ -14401,6 +14408,8 @@ components:
             - google_pay
             - apple_pay
             - tokens
+            - test_cash
+            - test_card
           example: cash
           description: Zahlart. Wertmarken (`tokens`) nimmt die Kasse beim Kassieren an, nicht beim Aufteilen (400 TOKEN_LINES_INVALID).
         items:
@@ -14609,6 +14618,7 @@ components:
           type: string
           enum: *a128
           example: cash
+          description: "`test_cash`/`test_card` („Bar (Test)“, „Karte (Test)“): simulierte Testzahlung ohne Geld, nur für Testbestellungen (sonst 403 TEST_PAYMENT_REQUIRES_TEST_ORDER); nie in Kassenlade, Kassenbuch, TSE oder DSFinV-K."
         amountReceived:
           type: number
           example: 50

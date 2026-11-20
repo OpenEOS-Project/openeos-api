@@ -3,15 +3,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Herstellerbescheinigung fuer Organisationen in Deutschland in den
- * Betriebsarten „Nur Bons“ (`orders_only`) und „Bargeldlos“ (`cashless`).
+ * Herstellerbescheinigung fuer Organisationen in Deutschland, solange
+ * OpenEOS fuer sie kein Bargeld erfassen kann: Betriebsarten „Nur Bons“
+ * (`orders_only`), „Bargeldlos“ (`cashless`) und „Alle Funktionen“ (`full`)
+ * ohne aktive TSE.
  *
  * Laut BMF-Antwort (2026-10) hat eine Software eine Kassenfunktion, sobald
  * sie Bargeld erfassen kann — auch wenn der Verein das nur selbst
- * einschalten koennte. In beiden Betriebsarten kann OpenEOS kein Bargeld
- * erfassen, und Bargeld (Betriebsart „Alle Funktionen“) ist in Deutschland
- * nur mit aktiver zertifizierter TSE waehlbar — das belegt diese
- * Bescheinigung fuer die Verfahrensdokumentation. Dieses Modul baut den
+ * einschalten koennte. In Deutschland erfasst OpenEOS Bargeld in keiner
+ * Betriebsart ohne aktive zertifizierte TSE (Pruefung bei jeder
+ * Barzahlung); weder der Verein noch der Hersteller koennen das
+ * einschalten — das belegt diese Bescheinigung fuer die
+ * Verfahrensdokumentation. Bei „Alle Funktionen“ gilt sie nur bis zur
+ * Aktivierung einer TSE (ab dann werden Barzahlungen TSE-gesichert
+ * erfasst). Dieses Modul baut den
  * Inhalt (rein, testbar) und setzt ihn mit pdfkit als A4-PDF.
  *
  * Der Text beschreibt nur die technische Konfiguration; die steuerliche
@@ -33,7 +38,7 @@ export interface CertificateHistoryEntry {
   bySupport: boolean;
 }
 
-export type CertificateMode = 'orders_only' | 'cashless';
+export type CertificateMode = 'orders_only' | 'cashless' | 'full';
 
 export interface CertificateInput {
   organization: {
@@ -121,6 +126,9 @@ export function modeLabel(mode: string): string {
   if (mode === 'cashless') {
     return '„Bargeldlos“ (Karte und Online-Zahlung, ohne Bargeld)';
   }
+  if (mode === 'full') {
+    return '„Alle Funktionen“ ohne aktive TSE (Karte und Online-Zahlung; Bargeld gesperrt, bis eine TSE aktiv ist)';
+  }
   return modeShortLabel(mode);
 }
 
@@ -188,14 +196,22 @@ export function buildCertificateContent(
   ];
   const orgAddress = addressLines(input.organization.address);
   const ordersOnly = input.mode === 'orders_only';
-  const name = modeShortLabel(input.mode);
+  const name =
+    input.mode === 'full'
+      ? '„Alle Funktionen“ (ohne aktive TSE)'
+      : modeShortLabel(input.mode);
 
   const sections: CertificateSection[] = [
     {
       heading: 'Bescheinigung',
       paragraphs: [
         `Der Hersteller bescheinigt, dass für die oben genannte Organisation seit dem ${since} die Betriebsart ${name} eingestellt ist. Bargeld kann in dieser Organisation nicht erfasst werden; Bargeld ist ausschließlich mit aktiver zertifizierter TSE möglich.`,
-        `Die Organisation kann selbst zwischen den Betriebsarten „Nur Bons“ und „Bargeldlos“ wechseln – in beiden gibt es in OpenEOS kein Bargeld. Die Betriebsart „Alle Funktionen“, die Bargeld erfasst, lässt sich für Organisationen in Deutschland nur einstellen, wenn für die Organisation eine zertifizierte Cloud-TSE aktiv ist. Weder die Organisation noch der Hersteller können Bargeld ohne aktive TSE einschalten${input.tseActive ? '.' : '; derzeit ist für die Organisation keine TSE aktiv.'} Das Land der Organisation, an dem diese Regel hängt, kann die Organisation nach dem ersten Festlegen nicht selbst ändern.`,
+        `Die Organisation kann selbst zwischen den Betriebsarten „Nur Bons“, „Bargeldlos“ und „Alle Funktionen“ wechseln. Bargeld erfasst OpenEOS für Organisationen in Deutschland in keiner Betriebsart ohne aktive zertifizierte Cloud-TSE: Der Server prüft das bei jeder einzelnen Barzahlung, nicht nur beim Umschalten. In „Nur Bons“ und „Bargeldlos“ gibt es kein Bargeld, auch nicht mit TSE. Weder die Organisation noch der Hersteller können Bargeld ohne aktive TSE einschalten${input.tseActive ? '.' : '; derzeit ist für die Organisation keine TSE aktiv.'} Das Land der Organisation, an dem diese Regel hängt, kann die Organisation nach dem ersten Festlegen nicht selbst ändern.`,
+        ...(input.mode === 'full'
+          ? [
+              'In der Betriebsart „Alle Funktionen“ wird Bargeld erst erfasst, sobald für die Organisation eine zertifizierte Cloud-TSE aktiv ist; jede Barzahlung ist dann TSE-gesichert. Diese Bescheinigung gilt deshalb nur für den Zeitraum ohne aktive TSE.',
+            ]
+          : []),
         'Jeder Wechsel der Betriebsart wird mit Zeitpunkt, handelnder Person, alter und neuer Betriebsart (beim Hersteller zusätzlich mit Grund) protokolliert; der Verlauf ist unten abgedruckt.',
       ],
     },
@@ -240,6 +256,16 @@ export function buildCertificateContent(
             'Unbare Zahlungen erfasst OpenEOS weiterhin: Kartenzahlungen an der Kasse (über ein angebundenes SumUp-Terminal oder ein eigenes Kartengerät) sowie Online-Zahlungen und Vorkasse im Online-Shop oder bei der Bestellung per QR-Code. Erstattungen sind nur auf diese unbaren Zahlungen möglich.',
           ],
         },
+    ...(ordersOnly
+      ? []
+      : [
+          {
+            heading: 'Testzahlungen im Testmodus',
+            paragraphs: [
+              'Solange eine Veranstaltung im Testmodus ist, bietet die Kasse für Testbestellungen simulierte Zahlarten an („Bar (Test)“, „Karte (Test)“). Dabei wird kein Geld erfasst: Testzahlungen öffnen keine Kassenlade, stehen nicht im Kassenbuch, nicht im DSFinV-K-Export und nicht in den Kellnerabrechnungen (dort nur als Training ohne Geld) und werden beim Aktivieren der Veranstaltung mit allen Testbestellungen gelöscht. Der Server nimmt sie nur für Testbestellungen an.',
+            ],
+          },
+        ]),
     {
       heading: 'Bargeld außerhalb von OpenEOS',
       paragraphs: [

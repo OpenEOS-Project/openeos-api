@@ -36,10 +36,13 @@ import {
 
 /**
  * Was der Bezahldialog zur Cloud-TSE sagt:
- * - `included`: „Alle Funktionen“ in Deutschland (ausdruecklich gewaehlt) —
- *   die TSE gehoert dazu und wird automatisch eingerichtet.
- * - `optional`: Bestand in Deutschland (Bargeld ohne TSE) — der Dialog
- *   fragt „Mit Cloud-TSE (Bargeld rechtssicher)?“.
+ * - `included`: nicht mehr vergeben (bis 2026-11-19: „Alle Funktionen“ in
+ *   Deutschland bekam die TSE automatisch). Bleibt im Typ fuer aeltere
+ *   Oberflaechen.
+ * - `optional`: Deutschland, „Alle Funktionen“ (auch Bestand) — der Dialog
+ *   fragt „Mit Cloud-TSE (Bargeld rechtssicher)?“. Ohne ausdrueckliches Ja
+ *   keine TSE und kein Zuschlag (Entscheidung 2026-11-20: „Alle Funktionen“
+ *   ist seitdem Standard fuer neue Organisationen).
  * - `null`: keine TSE (Bargeldlos, Nur Bons, andere Laender, Server ohne
  *   Cloud-TSE).
  */
@@ -122,7 +125,7 @@ interface LockedOrg {
 function offerWithTse(organization: OperatingModeOrg): TseCheckoutOffer {
   if ((organization.country ?? '').toUpperCase() !== 'DE') return null;
   if (getOperatingMode(organization) !== 'full') return null;
-  return organization.operatingModeLegacy === true ? 'optional' : 'included';
+  return 'optional';
 }
 
 /**
@@ -230,8 +233,9 @@ export class TseAutoActivationService {
       const org = await this.lock(manager, params.organizationId);
       if (!org || (org.country ?? '').toUpperCase() !== 'DE') return null;
       if (org.operating_mode !== 'full') return null;
+      // Nur mit ausdruecklichem Ja beim Kauf (auch in „Alle Funktionen“).
+      if (params.withTse !== true) return null;
       const legacy = org.operating_mode_legacy === true;
-      if (legacy && params.withTse !== true) return null;
 
       let modeSwitched = false;
       if (legacy) {
@@ -271,15 +275,20 @@ export class TseAutoActivationService {
   // ------------------------------------------------------- Betriebsart
 
   /**
-   * Nach einem Wechsel auf „Alle Funktionen“ (Verein oder Support): mit
-   * bezahlter Veranstaltung in Deutschland folgt die TSE automatisch.
+   * Nach einem Wechsel auf „Alle Funktionen“ (Verein oder Support): die TSE
+   * folgt automatisch nur fuer eine bezahlte Veranstaltung, die mit Cloud-TSE
+   * gekauft wurde (`tse_included`).
    */
   async onModeSwitchedToFull(
     organizationId: string,
     actorUserId: string | null,
   ): Promise<TseAutoResult> {
     if (!this.config.enabled) return NOTHING;
-    const first = (await this.units.qualifyingEvents(organizationId))[0];
+    const first = (
+      await this.units.qualifyingEvents(organizationId, new Date(), {
+        tseIncluded: true,
+      })
+    )[0];
     if (!first) return NOTHING;
     const enabled = await this.dataSource.transaction(async (manager) => {
       const org = await this.lock(manager, organizationId);
@@ -316,16 +325,20 @@ export class TseAutoActivationService {
   }
 
   /**
-   * Darf „Alle Funktionen“ in Deutschland ohne aktive TSE gewaehlt werden?
-   * Ja, wenn der Server die TSE anbietet und eine bezahlte Veranstaltung
-   * ansteht — die TSE folgt dann automatisch. Liefert den Plan (oder `null`).
+   * Wann folgt die TSE automatisch? Nur fuer eine anstehende Veranstaltung,
+   * die mit Cloud-TSE gekauft wurde (`tse_included`). Liefert den Plan
+   * (oder `null`).
    */
   async planFor(
     organization: Pick<Organization, 'id' | 'settings'>,
     now = new Date(),
   ): Promise<TseSetupPlan | null> {
     if (!this.config.enabled) return null;
-    const first = (await this.units.qualifyingEvents(organization.id, now))[0];
+    const first = (
+      await this.units.qualifyingEvents(organization.id, now, {
+        tseIncluded: true,
+      })
+    )[0];
     if (!first) return null;
     return planOf(first, organization.settings, now);
   }

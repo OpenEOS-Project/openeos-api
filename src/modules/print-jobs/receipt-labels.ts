@@ -15,6 +15,9 @@ export const PAYMENT_LABELS: Readonly<Record<string, string>> = {
   google_pay: 'Google Pay',
   apple_pay: 'Apple Pay',
   tokens: 'Wertmarken',
+  // Testzahlungen: simuliert, ausdruecklich ohne Geld.
+  test_cash: 'Bar (Test – kein Geld)',
+  test_card: 'Karte (Test – kein Geld)',
 };
 
 /** Anzeigename einer Zahlart; Unbekanntes bleibt wie geliefert. */
