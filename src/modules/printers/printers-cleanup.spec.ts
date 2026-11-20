@@ -75,6 +75,7 @@ describe('PrintersService.clearPrinterReferences', () => {
       gatewayService as never,
       organizationRepository as never,
       productionStationRepository as never,
+      undefined as never,
     );
     return {
       service,

@@ -29,6 +29,7 @@ function setup(
     events?: EventRow[];
     orgSettings?: Record<string, unknown>;
     printers?: Record<string, unknown>[];
+    printHealth?: Record<string, jest.Mock>;
   } = {},
 ) {
   const events = options.events ?? [
@@ -156,6 +157,8 @@ function setup(
     ordersService as never,
     paymentsBatchService as never,
     gatewayService as never,
+    undefined,
+    options.printHealth as never,
   );
   const device = (settings: Record<string, unknown> = {}) =>
     ({ id: 'device-1', organizationId: ORG, settings }) as unknown as Device;
@@ -350,6 +353,7 @@ describe('DeviceTablesController', () => {
           lastSeenAt: printers[0].lastSeenAt,
         },
         tse: null,
+        printHealth: null,
       });
     });
 
@@ -361,7 +365,53 @@ describe('DeviceTablesController', () => {
 
       const bare = setup({ printers });
       await expect(bare.controller.getStatus(bare.device())).resolves.toEqual({
-        data: { printer: null, tse: null },
+        data: { printer: null, tse: null, printHealth: null },
+      });
+    });
+
+    describe('printHealth', () => {
+      const health = { status: 'error', waitingJobs: 3 };
+      function withHealth(printerIds: string[]) {
+        const printHealth = {
+          printerIdsForPosDevice: jest.fn(() => Promise.resolve(printerIds)),
+          forOrganization: jest.fn(() => Promise.resolve(health)),
+        };
+        return {
+          ...setup({ printers, orgSettings, printHealth }),
+          printHealth,
+        };
+      }
+
+      it('reports the health of the printers of the given event', async () => {
+        const { controller, device, printHealth } = withHealth(['p-1', 'p-2']);
+        const pos = device({ defaultPrinterId: 'p-device' });
+        const { data } = await controller.getStatus(pos, EVENT);
+        expect(printHealth.printerIdsForPosDevice).toHaveBeenCalledWith(
+          ORG,
+          pos,
+          EVENT,
+        );
+        expect(printHealth.forOrganization).toHaveBeenCalledWith(ORG, {
+          printerIds: ['p-1', 'p-2'],
+        });
+        expect(data.printHealth).toBe(health);
+      });
+
+      it('falls back to the active event without (or with a malformed) eventId', async () => {
+        const { controller, device, printHealth } = withHealth(['p-1']);
+        await controller.getStatus(device());
+        await controller.getStatus(device(), 'not-a-uuid');
+        expect(printHealth.printerIdsForPosDevice.mock.calls).toEqual([
+          [ORG, expect.anything(), EVENT],
+          [ORG, expect.anything(), EVENT],
+        ]);
+      });
+
+      it('is null when the POS prints to no printer', async () => {
+        const { controller, device, printHealth } = withHealth([]);
+        const { data } = await controller.getStatus(device());
+        expect(data.printHealth).toBeNull();
+        expect(printHealth.forOrganization).not.toHaveBeenCalled();
       });
     });
 

@@ -61,8 +61,13 @@ export class PrintJob extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   error: string | null;
 
+  /** Print attempts the agent reported for the last delivery. */
   @Column({ type: 'int', default: 0 })
   attempts: number;
+
+  /** Manual retries via `POST …/print-jobs/:id/retry` (limited). */
+  @Column({ name: 'retry_count', type: 'int', default: 0 })
+  retryCount: number;
 
   @Column({
     name: 'printed_at',

@@ -111,6 +111,20 @@ export interface PrintJobStatusChangedEvent {
   error?: string;
 }
 
+/**
+ * Druck-Zustand einer Organisation hat sich geaendert (Bons warten laenger
+ * als 30 s, Fehldrucke, Agent offline). Nur ein Hinweis: Verwaltung und
+ * Kassen laden ihren Zustand daraufhin neu (`GET …/print-jobs/health`
+ * bzw. `GET /device-api/status`).
+ */
+export interface PrintHealthChangedEvent {
+  organizationId: string;
+  /** Jobs without outcome for more than 30 s. */
+  waitingJobs: number;
+  /** Jobs failed within the last 15 minutes (not cancelled by hand). */
+  failedJobs: number;
+}
+
 export interface DeviceHeartbeatEvent {
   deviceId: string;
   deviceToken: string;
@@ -139,9 +153,18 @@ export interface PrinterJobEvent {
 }
 
 // Printer Agent Events (Agent -> Server)
+//
+// Both reports are answered with an ack: `{ success: true }` once the
+// outcome is stored (also for a repeated report of a job that is already
+// completed), `{ error }` otherwise. Agents announcing
+// `capabilities.idempotentJobs` resend a report until it is acked.
 export interface PrinterJobCompleteEvent {
   jobId: string;
   agentId: string;
+  /** Print attempts the agent needed (optional, newer agents). */
+  attempts?: number;
+  /** When the ticket actually came out of the printer (ISO 8601, optional). */
+  printedAt?: string;
 }
 
 export interface PrinterJobFailedEvent {
@@ -149,6 +172,8 @@ export interface PrinterJobFailedEvent {
   agentId: string;
   errorCode: string;
   errorMessage: string;
+  /** Print attempts the agent made before giving up (optional). */
+  attempts?: number;
 }
 
 export interface BroadcastMessageEvent {
@@ -299,6 +324,12 @@ export interface AgentHeartbeatEvent {
     mdns?: boolean;
     portscan?: boolean;
     spooler?: boolean;
+    /**
+     * The agent dedupes `printerJob` by `jobId` (about 24 h) and resends
+     * job reports until they are acked. Only then does the server
+     * re-deliver jobs stuck in `printing` (see PrintJobRedeliveryService).
+     */
+    idempotentJobs?: boolean;
   };
   printers?: Array<{
     fingerprint?: string;
@@ -334,6 +365,8 @@ export const GatewayEvents = {
   PRINT_JOB_CREATED: 'printJobCreated',
   PRINT_JOB_STATUS_CHANGED: 'printJobStatusChanged',
   PRINTER_STATUS_CHANGED: 'printerStatusChanged',
+  // Druck-Zustand der Organisation (Hinweis, Clients laden neu)
+  PRINT_HEALTH_CHANGED: 'printHealthChanged',
   PRINTER_JOB: 'printerJob',
   BROADCAST_MESSAGE: 'broadcastMessage',
 

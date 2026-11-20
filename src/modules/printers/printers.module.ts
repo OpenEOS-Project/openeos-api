@@ -11,6 +11,7 @@ import {
   Organization,
   ProductionStation,
   UserOrganization,
+  PrintJob,
 } from '../../database/entities';
 import { GatewayModule } from '../gateway/gateway.module';
 
@@ -23,6 +24,7 @@ import { GatewayModule } from '../gateway/gateway.module';
       Organization,
       ProductionStation,
       UserOrganization,
+      PrintJob,
     ]),
     forwardRef(() => GatewayModule),
   ],

@@ -9,6 +9,15 @@ const LOCK_TTL_MS = 10 * 60 * 1000;
 
 type LockClient = Pick<RedisClient, 'set'>;
 
+export interface RunExclusiveOptions {
+  /**
+   * Log "runs on …" / "runs on another instance" at debug level instead of
+   * log — for jobs that run every few seconds and would flood the log.
+   * A skipped run because Redis is unavailable is always logged as error.
+   */
+  quiet?: boolean;
+}
+
 /**
  * Keeps a scheduled job (`@Cron`) to one run per due time, however many API
  * instances are up. Every instance fires the cron at the same minute; the
@@ -38,7 +47,10 @@ export class CronLockService {
     name: string,
     job: () => Promise<void>,
     dueAt: Date = new Date(),
+    options: RunExclusiveOptions = {},
   ): Promise<boolean> {
+    const note = (message: string) =>
+      options.quiet ? this.logger.debug(message) : this.logger.log(message);
     const slot = dueAt.toISOString().slice(0, 16); // UTC, per minute
     const key = `openeos:cron:${name}:${slot}`;
 
@@ -57,11 +69,11 @@ export class CronLockService {
     }
 
     if (!claimed) {
-      this.logger.log(`Job "${name}" (${slot}) runs on another instance`);
+      note(`Job "${name}" (${slot}) runs on another instance`);
       return false;
     }
 
-    this.logger.log(`Job "${name}" (${slot}) runs on ${this.owner}`);
+    note(`Job "${name}" (${slot}) runs on ${this.owner}`);
     await job();
     return true;
   }

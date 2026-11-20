@@ -4,6 +4,8 @@ import { PrintJobsController } from './print-jobs.controller';
 import { PrintJobsService } from './print-jobs.service';
 import { OrderPrintService } from './order-print.service';
 import { PrintRoutingService } from './print-routing.service';
+import { PrintHealthService } from './print-health.service';
+import { PrintJobRedeliveryService } from './print-job-redelivery.service';
 import {
   PrintJob,
   Printer,
@@ -33,7 +35,18 @@ import { GatewayModule } from '../gateway/gateway.module';
     forwardRef(() => GatewayModule),
   ],
   controllers: [PrintJobsController],
-  providers: [PrintJobsService, OrderPrintService, PrintRoutingService],
-  exports: [PrintJobsService, OrderPrintService, PrintRoutingService],
+  providers: [
+    PrintJobsService,
+    OrderPrintService,
+    PrintRoutingService,
+    PrintHealthService,
+    PrintJobRedeliveryService,
+  ],
+  exports: [
+    PrintJobsService,
+    OrderPrintService,
+    PrintRoutingService,
+    PrintHealthService,
+  ],
 })
 export class PrintJobsModule {}

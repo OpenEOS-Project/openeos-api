@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { CronLockService } from './cron-lock.service';
 
 /** Minimal stand-in for Redis `SET key value NX PX ttl`. */
@@ -107,5 +108,27 @@ describe('CronLockService', () => {
 
     expect(ran).toBe(false);
     expect(job).not.toHaveBeenCalled();
+  });
+
+  it('logs the per-run lines at debug level when asked to be quiet', async () => {
+    const log = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+    const debug = jest
+      .spyOn(Logger.prototype, 'debug')
+      .mockImplementation(() => undefined);
+    const redis = fakeRedis();
+    const [a, b] = [1, 2].map(() => new CronLockService(redis as never));
+    const job = jest.fn(() => Promise.resolve());
+
+    await a.runExclusive('chatty', job, dueAt, { quiet: true });
+    await b.runExclusive('chatty', job, dueAt, { quiet: true });
+    expect(log).not.toHaveBeenCalled();
+    expect(debug).toHaveBeenCalledTimes(2);
+
+    await a.runExclusive('normal', job, dueAt);
+    expect(log).toHaveBeenCalledTimes(1);
+    log.mockRestore();
+    debug.mockRestore();
   });
 });

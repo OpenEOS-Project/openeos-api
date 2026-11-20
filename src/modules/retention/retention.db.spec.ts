@@ -665,7 +665,31 @@ describeWithDb('Retention jobs against Postgres', () => {
         [orgId, ago(100)],
       );
 
+      // Testdrucke aus der Verwaltung (ohne Bestellung) nach derselben Frist.
+      const [printer] = await sql(
+        `INSERT INTO printers (organization_id, name, connection_type, type) VALUES ($1, 'Test', 'network', 'receipt') RETURNING id`,
+        [orgId],
+      );
+      const testJob = async (type: string, createdAt: Date) =>
+        (
+          await one(
+            `INSERT INTO print_jobs (organization_id, printer_id, status, payload, created_at)
+             VALUES ($1, $2, 'completed', $3, $4) RETURNING id`,
+            [orgId, printer.id, { type, data: {} }, createdAt],
+          )
+        ).id;
+      const oldTest = await testJob('admin_test', ago(100));
+      const recentTest = await testJob('admin_test', ago(10));
+      const oldOther = await testJob('kitchen', ago(100));
+
       await run('audit_logs');
+
+      const jobsLeft = (
+        await sql(`SELECT id FROM print_jobs WHERE id = ANY($1::uuid[])`, [
+          [oldTest, recentTest, oldOther],
+        ])
+      ).map((r) => r.id);
+      expect(jobsLeft.sort()).toEqual([recentTest, oldOther].sort());
 
       expect(
         await sql(`SELECT 1 FROM admin_audit_logs WHERE id = $1`, [oldView]),
