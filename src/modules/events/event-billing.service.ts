@@ -93,7 +93,7 @@ export interface EventPrice {
 
 /**
  * Cloud-TSE beim Freischalten (Deutschland): ob sie dazugehoert
- * (`included`), ob der Dialog fragt (`optional`, Bestand) oder ob es keine
+ * (`included`, nicht mehr vergeben), ob der Dialog fragt (`optional`, DE „Alle Funktionen“ inkl. Bestand) oder ob es keine
  * gibt (`null`), dazu der Zuschlag je Veranstaltung (`TSE_EVENT_SURCHARGE_EUR`,
  * 0 = inklusive, keine eigene Position) und fehlende Stammdaten.
  */
@@ -292,8 +292,9 @@ export class EventBillingService {
   }
 
   /**
-   * Gehoert die TSE zu dieser Freischaltung, und was kostet sie? Bei
-   * „Alle Funktionen“ (DE) immer, im Bestand nach der Antwort `withTse`.
+   * Gehoert die TSE zu dieser Freischaltung, und was kostet sie? In
+   * Deutschland bei „Alle Funktionen“ (auch Bestand) nur nach der Antwort
+   * `withTse` — ohne ausdrueckliches Ja keine TSE und kein Zuschlag.
    */
   private tseChoice(
     organization: Organization,
@@ -306,7 +307,7 @@ export class EventBillingService {
 
   /**
    * Nach dem Freischalten: Cloud-TSE automatisch einschalten (DE, „Alle
-   * Funktionen“ oder Bestand mit „Ja“). Darf die Freischaltung nie
+   * Funktionen“ bzw. Bestand, nur mit „Ja“). Darf die Freischaltung nie
    * zurueckdrehen — Fehler werden nur protokolliert.
    */
   private async followUpTse(

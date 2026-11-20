@@ -39,6 +39,7 @@ const admin = { id: 'user-1', email: 'admin@example.org' } as User;
 
 type Kind =
   | 'de-full'
+  | 'de-full-yes'
   | 'de-legacy-yes'
   | 'de-legacy-no'
   | 'de-cashless'
@@ -79,6 +80,7 @@ function orgFor(kind: Kind): Organization {
   } as unknown as Organization;
   switch (kind) {
     case 'de-full':
+    case 'de-full-yes':
       return base;
     case 'de-legacy-yes':
     case 'de-legacy-no':
@@ -93,7 +95,11 @@ function orgFor(kind: Kind): Organization {
 }
 
 const answerOf = (kind: Kind): boolean | undefined =>
-  kind === 'de-legacy-yes' ? true : kind === 'de-legacy-no' ? false : undefined;
+  kind === 'de-legacy-yes' || kind === 'de-full-yes'
+    ? true
+    : kind === 'de-legacy-no'
+      ? false
+      : undefined;
 
 function setup(
   kind: Kind,
@@ -189,19 +195,20 @@ function setup(
   const unlocked = () =>
     ['paid', 'invoice', 'waived'].includes(event.billingStatus);
   const units = {
-    qualifyingEvents: jest.fn(() =>
-      Promise.resolve(
-        unlocked()
-          ? [
-              {
-                id: event.id,
-                name: event.name,
-                startDate: event.startDate,
-                endDate: event.endDate,
-              },
-            ]
-          : [],
-      ),
+    qualifyingEvents: jest.fn(
+      (_org?: string, _now?: Date, opts: { tseIncluded?: boolean } = {}) =>
+        Promise.resolve(
+          unlocked() && (!opts.tseIncluded || event.tseIncluded === true)
+            ? [
+                {
+                  id: event.id,
+                  name: event.name,
+                  startDate: event.startDate,
+                  endDate: event.endDate,
+                },
+              ]
+            : [],
+        ),
     ),
     // Wie der SQL-Filter: beginnt vor morgen 6 Uhr und laeuft noch.
     autoCreate: jest.fn((now: Date, organizationId: string | null) => {
@@ -402,7 +409,9 @@ describe('Cloud-TSE all inclusive: organization × unlock path', () => {
     Kind,
     { enabled: boolean; modeSwitched: boolean; included: boolean | null }
   > = {
-    'de-full': { enabled: true, modeSwitched: false, included: true },
+    // Seit 2026-11-20: „Alle Funktionen“ ohne ausdrueckliches Ja → keine TSE.
+    'de-full': { enabled: false, modeSwitched: false, included: false },
+    'de-full-yes': { enabled: true, modeSwitched: false, included: true },
     'de-legacy-yes': { enabled: true, modeSwitched: true, included: true },
     'de-legacy-no': { enabled: false, modeSwitched: false, included: false },
     'de-cashless': { enabled: false, modeSwitched: false, included: null },
@@ -484,7 +493,7 @@ describe('Cloud-TSE all inclusive: organization × unlock path', () => {
   }
 
   it('starts the TSE right away when the event already runs', async () => {
-    const t = setup('de-full', {
+    const t = setup('de-full-yes', {
       eventStart: new Date(NOW.getTime() - 2 * 3600_000),
     });
     await t.unlock('checkout');
@@ -501,7 +510,7 @@ describe('Cloud-TSE all inclusive: organization × unlock path', () => {
   });
 
   it('keeps a manually enabled integration as it is (no second audit entry)', async () => {
-    const t = setup('de-full', { alreadyEnabled: true });
+    const t = setup('de-full-yes', { alreadyEnabled: true });
     await t.unlock('checkout');
     expect(t.integration()).toEqual({
       enabled: true,
@@ -542,7 +551,7 @@ describe('Cloud-TSE all inclusive: organization × unlock path', () => {
 
 describe('Cloud-TSE price hook TSE_EVENT_SURCHARGE_EUR', () => {
   it('0 € → no extra line, no metadata, nothing stored', async () => {
-    const t = setup('de-full', { surcharge: 0 });
+    const t = setup('de-full-yes', { surcharge: 0 });
     await t.unlock('checkout');
     const params = (
       t.stripe.createCheckoutSession.mock.calls[0] as unknown[]
@@ -558,7 +567,7 @@ describe('Cloud-TSE price hook TSE_EVENT_SURCHARGE_EUR', () => {
     expect(t.event.priceCharged).toBe(25);
     const info = await t.billing.getBillingInfo(ORG, EVENT_ID, admin);
     expect(info.tse).toMatchObject({
-      offer: 'included',
+      offer: 'optional',
       surcharge: 0,
       included: true,
       surchargeCharged: null,
@@ -566,7 +575,7 @@ describe('Cloud-TSE price hook TSE_EVENT_SURCHARGE_EUR', () => {
   });
 
   it('> 0 € → one "Cloud-TSE" line per event in checkout, stored and part of the charged amount', async () => {
-    const t = setup('de-full', {
+    const t = setup('de-full-yes', {
       surcharge: 4.5,
       eventStart: new Date('2026-12-12T15:00:00Z'),
     });
@@ -618,8 +627,13 @@ describe('Cloud-TSE price hook TSE_EVENT_SURCHARGE_EUR', () => {
     });
   });
 
-  it('> 0 € but legacy answering no / cashless / AT → no surcharge', async () => {
-    for (const kind of ['de-legacy-no', 'de-cashless', 'at-full'] as Kind[]) {
+  it('> 0 € but full or legacy without a yes / cashless / AT → no surcharge', async () => {
+    for (const kind of [
+      'de-full',
+      'de-legacy-no',
+      'de-cashless',
+      'at-full',
+    ] as Kind[]) {
       const t = setup(kind, { surcharge: 4.5 });
       await t.unlock('checkout');
       const params = (
@@ -636,7 +650,7 @@ describe('Cloud-TSE price hook TSE_EVENT_SURCHARGE_EUR', () => {
   });
 
   it('a waived event costs no surcharge', async () => {
-    const t = setup('de-full', { surcharge: 4.5 });
+    const t = setup('de-full-yes', { surcharge: 4.5 });
     await t.unlock('waived');
     expect(t.event.tseIncluded).toBe(true);
     expect(t.event.tseSurcharge).toBeNull();
@@ -667,9 +681,10 @@ describe('Cloud-TSE price hook TSE_EVENT_SURCHARGE_EUR', () => {
 });
 
 describe('Cloud-TSE after switching to „Alle Funktionen“', () => {
-  it('enables the integration with a paid event (source operating_mode)', async () => {
+  it('enables the integration with an event bought with Cloud-TSE (source operating_mode)', async () => {
     const t = setup('de-full');
     t.event.billingStatus = 'paid';
+    t.event.tseIncluded = true;
     const result = await t.tseAuto.onModeSwitchedToFull(ORG, admin.id);
     expect(result).toMatchObject({
       integrationEnabled: true,
@@ -683,6 +698,18 @@ describe('Cloud-TSE after switching to „Alle Funktionen“', () => {
     expect(t.audit[0]).toMatchObject({
       reason: 'automatisch beim Wechsel auf „Alle Funktionen“',
     });
+  });
+
+  it('does nothing for a paid event bought without Cloud-TSE', async () => {
+    const t = setup('de-full');
+    t.event.billingStatus = 'paid';
+    t.event.tseIncluded = false;
+    const result = await t.tseAuto.onModeSwitchedToFull(ORG, admin.id);
+    expect(result.tseFollows).toBe(false);
+    expect(t.integration()).toBeNull();
+    expect(
+      await t.tseAuto.planFor({ id: ORG, settings: null } as never),
+    ).toBeNull();
   });
 
   it('does nothing without a paid event', async () => {
