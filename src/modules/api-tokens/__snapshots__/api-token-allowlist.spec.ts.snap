@@ -16,6 +16,7 @@ exports[`API token allowlist matches the documented matrix (ki-plan.md section 8
   "read GET /events/:eventId/products/:productId",
   "catalog:write PATCH /events/:eventId/products/:productId",
   "catalog:write PATCH /events/:eventId/products/:productId/availability",
+  "read GET /events/:eventId/products/export",
   "catalog:write POST /events/:eventId/products/import",
   "read GET /events/:eventId/products/low-stock",
   "monitoring:read GET /monitoring/metrics",
