@@ -5093,7 +5093,7 @@ paths:
       tags: *a48
   /api/organizations/{organizationId}/events:
     post:
-      description: Legt eine neue Veranstaltung mit Status `inactive` an. Scope `events:write` und Modulrecht Veranstaltungen; freischalten und aktivieren geht nur in der App.
+      description: Legt eine neue Veranstaltung mit Status `inactive` an. Scope `events:write` und Modulrecht Veranstaltungen; freischalten und aktivieren geht nur in der App. Mit `copyFromEventId` übernimmt sie Kategorien, Produkte und Produktionsstationen jener Veranstaltung in derselben Transaktion (Zusammenfassung in `copySummary`); ohne Angabe oder mit `null` bleibt sie leer. Dieselbe Vorlage mit gleichem Namen und Beginn binnen 30 Sekunden ein zweites Mal → 409 `EVENT_COPY_IN_PROGRESS`.
       operationId: createEvent
       parameters:
         - name: organizationId
@@ -5443,7 +5443,7 @@ paths:
       tags: *a51
   /api/organizations/{organizationId}/events/{eventId}/copy-from/{sourceEventId}:
     post:
-      description: Kopiert Kategorien und Produkte aus `sourceEventId` in diese Veranstaltung; was übernommen wird, steuert der Body. Scope `events:write`.
+      description: Übernimmt Kategorien und Produkte aus `sourceEventId` in diese Veranstaltung samt der Produktionsstationen, auf die sie zeigen; was übernommen wird, steuert der Body (ohne Auswahl alles). Gleichnamige Kategorien (gleiche Ebene) und Stationen werden weiterverwendet; Produkte, deren Name in der Zielkategorie schon vorkommt, übersprungen (`skippedProducts`), außer mit `includeDuplicates`. Steuersatz, Pfandart, Station, Optionen, Symbol, Bild, Favorit und Druckeinstellungen kommen mit; bei steuerbefreiten Organisationen Steuersatz 0. Alles oder nichts. Scope `events:write`.
       operationId: copyEventCatalog
       parameters:
         - name: organizationId
@@ -5482,6 +5482,37 @@ paths:
       summary: Katalog aus anderer Veranstaltung kopieren
       tags: *a51
       x-api-token-scope: events:write
+  /api/organizations/{organizationId}/events/{eventId}/duplicate:
+    post:
+      description: "Legt eine neue Veranstaltung (Status `inactive`) mit Name und Zeitraum aus dem Body an und übernimmt aus `eventId`: Kategorien, Produkte, Produktionsstationen, Einstellungen (Kassier- und Tischmodus samt Bereichen, Vorlauf, Vorverkauf, Shop; Shop-Tage um den Abstand der Beginne verschoben), Wertmarken nur dieser Veranstaltung, Schichtpläne als Entwurf (Aufgaben und Schichten verschoben, ohne Anmeldungen) und Bedienungen nur dieser Veranstaltung mit neuen PINs (`waiters[].pin`, nur in dieser Antwort). Nie Abrechnung, TSE, Bestellungen; Bestand nur mit `copyStock`. Schichtpläne nur mit Recht „Schichtpläne“, Bedienungen nur mit Recht „Bedienungen“ — sonst `skipped`. Nur in der App (kein API-Token)."
+      operationId: duplicateEvent
+      parameters:
+        - name: organizationId
+          required: true
+          in: path
+          description: ID der Organisation
+          schema:
+            format: uuid
+            type: string
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung, die dupliziert wird
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DuplicateEventDto"
+      responses:
+        "201":
+          description: ""
+      security: *a52
+      summary: Veranstaltung duplizieren
+      tags: *a51
   /api/public/shop/{eventId}:
     get:
       operationId: eventsShopPublic_getShop
@@ -6163,7 +6194,7 @@ paths:
       x-api-token-scope: read
   /api/events/{eventId}/products/import:
     post:
-      description: Legt mehrere Produkte aus einer CSV-Liste in einem Aufruf an, fehlende Kategorien werden ergänzt; mit `dryRun` nur Vorschau. Scope `catalog:write`.
+      description: "Legt mehrere Produkte aus einer CSV-Liste in einem Aufruf an, fehlende Kategorien werden ergänzt; mit `dryRun` nur Vorschau. Trenner Komma oder Semikolon (erkannt an der Kopfzeile), Dezimalpunkt oder -komma. Optionale Spalte `taxRate` (auch `Steuersatz`, `MwSt`): nur Sätze, die die Organisation führen darf. In `icon` eine pos-icon-ID oder ein Linien-Symbol `oe:<name>`. Die Datei aus `GET …/products/export` liest der Import unverändert wieder ein. Scope `catalog:write`."
       operationId: importProducts
       parameters:
         - name: eventId
@@ -6188,6 +6219,34 @@ paths:
       summary: Produkte importieren (CSV)
       tags: *a61
       x-api-token-scope: catalog:write
+  /api/events/{eventId}/products/export:
+    get:
+      description: "Alle Produkte der Veranstaltung im Format des CSV-Imports (`POST …/products/import` liest die Datei unverändert wieder ein): Semikolon, UTF-8 mit BOM, Dezimalkomma — passend für Excel (de-DE). Spalten: `category;name;description;price;taxRate;pfand;icon;ingredients;choices;extras;available;trackInventory;stockQuantity;sortOrder`. Unterkategorien stehen mit ihrem eigenen Namen; Fotos und Stationen kennt das Format nicht. Optionen: `choices` = `Gruppe: A | B +0,50 || Gruppe2?: …` (`?` optional, `*` Vorauswahl), `extras` = `A +0,50 | B` oder `Gruppe: … || Gruppe2!: …` (`!` Pflicht). Scope `read`."
+      operationId: exportProducts
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: 'CSV-Datei als Download (`Content-Disposition: attachment; filename="produkte_<veranstaltung>.csv"`)'
+          content:
+            text/csv:
+              schema:
+                type: string
+              example: "category;name;description;price;taxRate;pfand;icon;ingredients;choices;extras;available;trackInventory;stockQuantity;sortOrder\r
+
+                Getränke;Cola 0,5 l;;3,50;19;1,00;cola;;;;ja;nein;0;1\r\n"
+      security:
+        - *a60
+        - API-token: []
+      summary: Produkte als CSV exportieren
+      tags: *a61
+      x-api-token-scope: read
   /api/events/{eventId}/products/low-stock:
     get:
       description: Produkte mit Bestandsführung, deren Bestand die Warnschwelle (`lowStockThreshold`) erreicht oder unterschritten hat. Scope `read`.
@@ -15611,6 +15670,12 @@ components:
             allowOnlineOrders: true
             requireTableNumber: false
           description: Event-Einstellungen
+        copyFromEventId:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+          nullable: true
+          description: "Vorlage: übernimmt Kategorien, Produkte und Produktionsstationen dieser Veranstaltung (derselben Organisation) in derselben Transaktion. Ohne Angabe oder `null` entsteht eine leere Veranstaltung (Verhalten wie bisher). Die Web-App schickt die Auswahl im Dialog immer mit (Standard: die zuletzt begonnene Veranstaltung)."
       required:
         - name
         - startDate
@@ -15660,6 +15725,35 @@ components:
           type: boolean
           example: false
           description: "Wenn true, wird auch der Bestand kopiert. Standard: false (Bestand wird auf 0 gesetzt)"
+        includeDuplicates:
+          type: boolean
+          example: false
+          description: "Gleichnamige Kategorien (gleiche Ebene, ohne Groß-/Kleinschreibung) werden immer weiterverwendet. Ein Produkt, dessen Name in der Zielkategorie schon vorkommt, wird übersprungen — außer mit `true`. Standard: false."
+    DuplicateEventDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Sommerfest 2027
+          description: Name der Kopie
+        description:
+          type: string
+          description: Beschreibung; ohne Angabe die der Vorlage
+        startDate:
+          type: string
+          example: 2027-07-15T00:00:00.000Z
+          description: Beginn der Kopie. Shop-Öffnungstage und Schichten wandern um denselben Abstand in Kalendertagen mit.
+        endDate:
+          type: string
+          example: 2027-07-16T00:00:00.000Z
+          description: Ende der Kopie; ohne Angabe endet sie am Starttag.
+        copyStock:
+          type: boolean
+          example: false
+          description: "Bestand der Produkte mitnehmen. Standard: false (Bestand 0)."
+      required:
+        - name
+        - startDate
     CreateShopWithdrawalDto:
       type: object
       properties:

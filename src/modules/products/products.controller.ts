@@ -10,12 +10,15 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiBody,
   ApiOperation,
   ApiParam,
+  ApiProduces,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -63,7 +66,7 @@ export class ProductsController {
     operationId: 'importProducts',
     summary: 'Produkte importieren (CSV)',
     description:
-      'Legt mehrere Produkte aus einer CSV-Liste in einem Aufruf an, fehlende Kategorien werden ergänzt; mit `dryRun` nur Vorschau. Scope `catalog:write`.',
+      'Legt mehrere Produkte aus einer CSV-Liste in einem Aufruf an, fehlende Kategorien werden ergänzt; mit `dryRun` nur Vorschau. Trenner Komma oder Semikolon (erkannt an der Kopfzeile), Dezimalpunkt oder -komma. Optionale Spalte `taxRate` (auch `Steuersatz`, `MwSt`): nur Sätze, die die Organisation führen darf. In `icon` eine pos-icon-ID oder ein Linien-Symbol `oe:<name>`. Die Datei aus `GET …/products/export` liest der Import unverändert wieder ein. Scope `catalog:write`.',
   })
   async importProducts(
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -76,6 +79,44 @@ export class ProductsController {
       user,
     );
     return { data: result };
+  }
+
+  // Vor ':productId' registriert.
+  @ApiTokenAccess(TokenScope.READ)
+  @Get('export')
+  @ApiOperation({
+    operationId: 'exportProducts',
+    summary: 'Produkte als CSV exportieren',
+    description:
+      'Alle Produkte der Veranstaltung im Format des CSV-Imports (`POST …/products/import` liest die Datei unverändert wieder ein): Semikolon, UTF-8 mit BOM, Dezimalkomma — passend für Excel (de-DE). Spalten: `category;name;description;price;taxRate;pfand;icon;ingredients;choices;extras;available;trackInventory;stockQuantity;sortOrder`. Unterkategorien stehen mit ihrem eigenen Namen; Fotos und Stationen kennt das Format nicht. Optionen: `choices` = `Gruppe: A | B +0,50 || Gruppe2?: …` (`?` optional, `*` Vorauswahl), `extras` = `A +0,50 | B` oder `Gruppe: … || Gruppe2!: …` (`!` Pflicht). Scope `read`.',
+  })
+  @ApiProduces('text/csv')
+  @ApiResponse({
+    status: 200,
+    description:
+      'CSV-Datei als Download (`Content-Disposition: attachment; filename="produkte_<veranstaltung>.csv"`)',
+    content: {
+      'text/csv': {
+        schema: { type: 'string' },
+        example:
+          'category;name;description;price;taxRate;pfand;icon;ingredients;choices;extras;available;trackInventory;stockQuantity;sortOrder\r\n' +
+          'Getränke;Cola 0,5 l;;3,50;19;1,00;cola;;;;ja;nein;0;1\r\n',
+      },
+    },
+  })
+  async exportProducts(
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @CurrentUser() user: User,
+    @Res() res: Response,
+  ): Promise<void> {
+    const file = await this.productsService.exportProducts(eventId, user);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${file.filename}"`,
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(file.csv);
   }
 
   @ApiTokenAccess(TokenScope.READ)

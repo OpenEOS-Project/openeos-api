@@ -30,7 +30,7 @@ import {
 } from '../../common/dto/pagination.dto';
 import { CreateProductDto, UpdateProductDto, AdjustStockDto } from './dto';
 import { ImportProductsDto } from './dto/import-products.dto';
-import { parseProductCsv } from './product-csv';
+import { parseProductCsv, serializeProductCsv } from './product-csv';
 import {
   assertReferencesInOrganization,
   type ReferenceCheck,
@@ -557,6 +557,19 @@ export class ProductsService {
     const pfandByAmount = new Map(
       existingPfand.map((p) => [roundAmount(Number(p.amount)), p]),
     );
+    // Steuersatz-Spalte (optional): nur Saetze, die die Organisation fuehren darf.
+    const allowedRates = parsed.rows.some((row) => row.taxRate !== null)
+      ? await this.allowedTaxRates(event.organizationId)
+      : [];
+    for (const row of parsed.rows) {
+      if (
+        !row.error &&
+        row.taxRate !== null &&
+        !allowedRates.includes(Number(row.taxRate))
+      ) {
+        row.error = `Steuersatz ${row.taxRate} % ist für diese Organisation nicht zulässig`;
+      }
+    }
 
     // Collect new categories/pfand the import would introduce (preview + plan).
     const newCategoryNames: string[] = [];
@@ -647,7 +660,11 @@ export class ProductsService {
           row.pfand !== null
             ? (pfandByAmount.get(roundAmount(row.pfand))?.id ?? null)
             : null;
-        const imageUrl = row.iconId ? `pos-icon:${row.iconId}` : null;
+        // `oe:<name>` ist ein Linien-Symbol (Spalte `icon`), alles andere
+        // eine pos-icon-ID (Bild).
+        const lineIcon = row.iconId?.startsWith('oe:') ? row.iconId : null;
+        const imageUrl =
+          row.iconId && !lineIcon ? `pos-icon:${row.iconId}` : null;
 
         if (action === 'create') {
           await this.productRepository.save(
@@ -660,6 +677,8 @@ export class ProductsService {
               options: row.options,
               pfandTypeId,
               imageUrl,
+              icon: lineIcon,
+              ...(row.taxRate !== null ? { taxRate: row.taxRate } : {}),
               isAvailable: row.isAvailable,
               trackInventory: row.trackInventory,
               stockQuantity: row.stockQuantity,
@@ -674,7 +693,13 @@ export class ProductsService {
           existing.price = row.price;
           existing.options = row.options;
           existing.pfandTypeId = pfandTypeId;
-          existing.imageUrl = imageUrl;
+          // Leere Spalte laesst Symbol und Foto stehen (ein Foto passt nicht
+          // in die CSV und ginge beim Wiedereinlesen sonst verloren).
+          if (row.iconId) {
+            existing.imageUrl = imageUrl;
+            existing.icon = lineIcon;
+          }
+          if (row.taxRate !== null) existing.taxRate = row.taxRate;
           existing.isAvailable = row.isAvailable;
           if (row.sortOrder !== null) existing.sortOrder = row.sortOrder;
           await this.productRepository.save(existing);
@@ -711,6 +736,71 @@ export class ProductsService {
       })),
       fatalError: null,
     };
+  }
+
+  /**
+   * Produkte als CSV im Format des Imports (Rundreise): Kategorie (bei
+   * Unterkategorien deren Name), Preis, Steuersatz, Pfand (Betrag der
+   * Pfandart), Symbol, Optionen, Verfuegbarkeit, Bestand, Reihenfolge.
+   */
+  async exportProducts(
+    eventId: string,
+    user: User,
+  ): Promise<{ filename: string; csv: string }> {
+    const event = await this.getEventAndCheckMembership(eventId, user.id);
+    const [categories, products, pfandTypes] = await Promise.all([
+      this.categoryRepository.find({ where: { eventId } }),
+      this.productRepository.find({
+        where: { eventId },
+        order: { sortOrder: 'ASC', name: 'ASC' },
+      }),
+      this.pfandTypeRepository.find({
+        where: { organizationId: event.organizationId },
+      }),
+    ]);
+    const categoryById = new Map(categories.map((c) => [c.id, c]));
+    const pfandById = new Map(pfandTypes.map((p) => [p.id, Number(p.amount)]));
+    const categorySort = (id: string) => {
+      const c = categoryById.get(id);
+      const parent = c?.parentId ? categoryById.get(c.parentId) : null;
+      return [parent?.sortOrder ?? c?.sortOrder ?? 0, c?.sortOrder ?? 0];
+    };
+    const sorted = [...products].sort((a, b) => {
+      const [pa, ca] = categorySort(a.categoryId);
+      const [pb, cb] = categorySort(b.categoryId);
+      return pa - pb || ca - cb || a.sortOrder - b.sortOrder;
+    });
+    const csv = serializeProductCsv(
+      sorted.map((p) => ({
+        category: categoryById.get(p.categoryId)?.name ?? '',
+        name: p.name,
+        description: p.description,
+        price: Number(p.price),
+        taxRate:
+          p.taxRate === null || p.taxRate === undefined
+            ? null
+            : Number(p.taxRate),
+        pfand: p.pfandTypeId ? (pfandById.get(p.pfandTypeId) ?? null) : null,
+        imageUrl: p.imageUrl,
+        icon: p.icon,
+        options: p.options,
+        isAvailable: p.isAvailable,
+        trackInventory: p.trackInventory,
+        stockQuantity: p.stockQuantity,
+        sortOrder: p.sortOrder,
+      })),
+    );
+    const slug =
+      event.name
+        .toLowerCase()
+        .replace(/[äÄ]/g, 'ae')
+        .replace(/[öÖ]/g, 'oe')
+        .replace(/[üÜ]/g, 'ue')
+        .replace(/ß/g, 'ss')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 60) || 'veranstaltung';
+    return { filename: `produkte_${slug}.csv`, csv };
   }
 
   private async getEvent(eventId: string): Promise<Event> {

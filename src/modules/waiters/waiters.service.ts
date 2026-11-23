@@ -336,6 +336,108 @@ export class WaitersService {
     return views.map((view, i) => ({ ...view, pin: created[i].pin }));
   }
 
+  /**
+   * Bedienungen einer Veranstaltung in eine neue uebernehmen (Veranstaltung
+   * duplizieren): Name, Kurzname, Farbe, Rolle, Schalter und Lohnkonto.
+   * Jede bekommt eine neue PIN — gespeichert ist nur ein Pruefwert, die
+   * alte laesst sich nicht mitnehmen. Laeuft in der Transaktion des
+   * Aufrufers; die Rechte prueft er (`assertCanManage`).
+   */
+  async copyEventWaiters(
+    manager: EntityManager,
+    organizationId: string,
+    sourceEventId: string,
+    targetEventId: string,
+    userId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      shortName: string | null;
+      color: string | null;
+      role: WaiterRole;
+      eventId: string | null;
+      pin: string;
+    }>
+  > {
+    const repo = manager.getRepository(Waiter);
+    const sources = await repo.find({
+      where: {
+        organizationId,
+        eventId: sourceEventId,
+        isActive: true,
+        anonymizedAt: IsNull(),
+      },
+      order: { createdAt: 'ASC' },
+    });
+    if (!sources.length) return [];
+    const organization = await this.lockOrganization(manager, organizationId);
+    await this.assertLimit(manager, organization, sources.length);
+    const waiters = await repo.save(
+      sources.map((source) =>
+        repo.create({
+          organizationId,
+          eventId: targetEventId,
+          name: source.name,
+          shortName: source.shortName,
+          color: source.color,
+          role: source.role,
+          permissions: cleanPermissions(source.permissions),
+          isEmployee: source.isEmployee === true,
+          userId: source.userId,
+          isActive: true,
+          createdByUserId: userId,
+        }),
+      ),
+    );
+    const pins = await this.pins.generate(
+      organizationId,
+      waiters.map((w) => ({ ownerType: 'waiter' as const, ownerId: w.id })),
+      waiterSettings(organization).pinLength,
+      manager,
+    );
+    return waiters.map((w) => ({
+      id: w.id,
+      name: w.name,
+      shortName: w.shortName,
+      color: w.color,
+      role: w.role,
+      eventId: w.eventId,
+      pin: pins.get(w.id)!,
+    }));
+  }
+
+  /** Protokoll zu `copyEventWaiters` (nach der Transaktion). */
+  async auditCopiedWaiters(
+    organizationId: string,
+    user: Pick<User, 'id'>,
+    details: { count: number; eventId: string; sourceEventId: string },
+    meta: RequestMeta = {},
+  ): Promise<void> {
+    if (!details.count) return;
+    await this.audit(
+      AdminAction.WAITER_CREATED,
+      organizationId,
+      null,
+      user,
+      meta,
+      { ...details, bulk: true, copied: true },
+    );
+  }
+
+  /** Darf der Nutzer Bedienungen verwalten? (ohne Ausnahme) */
+  async canManage(
+    organizationId: string,
+    user: Pick<User, 'id'>,
+  ): Promise<boolean> {
+    try {
+      await this.assertCanManage(organizationId, user);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // ------------------------------------------------------------ Aendern
 
   async update(

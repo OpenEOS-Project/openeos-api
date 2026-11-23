@@ -30,4 +30,13 @@ export class CopyProductsDto {
   @IsOptional()
   @IsBoolean()
   copyStock?: boolean;
+
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'Gleichnamige Kategorien (gleiche Ebene, ohne Groß-/Kleinschreibung) werden immer weiterverwendet. Ein Produkt, dessen Name in der Zielkategorie schon vorkommt, wird übersprungen — außer mit `true`. Standard: false.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  includeDuplicates?: boolean;
 }

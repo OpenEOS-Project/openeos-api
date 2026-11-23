@@ -7,10 +7,11 @@ import {
   Inject,
   Optional,
   forwardRef,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Repository, In } from 'typeorm';
+import { Repository, In, EntityManager, IsNull, MoreThan } from 'typeorm';
 import {
   Event,
   Organization,
@@ -38,13 +39,27 @@ import {
   PaginatedResult,
   createPaginatedResult,
 } from '../../common/dto/pagination.dto';
-import { CreateEventDto, UpdateEventDto, CopyProductsDto } from './dto';
+import {
+  CreateEventDto,
+  UpdateEventDto,
+  CopyProductsDto,
+  DuplicateEventDto,
+} from './dto';
+import {
+  CatalogCopyResult,
+  EventCopyService,
+  dayKeyDiff,
+  duplicateEventSettings,
+} from './event-copy.service';
 import { GatewayService } from '../gateway/gateway.service';
 import {
   countBillableDays,
+  listEventDayKeys,
   normalizeBusinessDayStartHour,
+  toDateKey,
 } from '../../common/utils/event-schedule.util';
 import { TestOrderCleanupService } from './test-order-cleanup.service';
+import type { RequestMeta } from '../waiters/waiters.service';
 import { retireEventWaiters } from '../waiters/waiter-retire';
 import {
   EventPhaseFields,
@@ -82,7 +97,14 @@ export class EventsService {
     // Optional mit Rueckfall fuer von Hand gebaute Tests (Standardwerte).
     @Optional()
     private readonly eventPhaseService?: EventPhaseService,
+    // Optional wie oben: von Hand gebaute Tests kopieren nichts.
+    @Optional()
+    private readonly eventCopy?: EventCopyService,
   ) {}
+
+  private get copier(): EventCopyService {
+    return this.eventCopy ?? new EventCopyService();
+  }
 
   private get eventPhase(): EventPhaseService {
     return (
@@ -184,7 +206,7 @@ export class EventsService {
     organizationId: string,
     createDto: CreateEventDto,
     user: User,
-  ): Promise<Event> {
+  ): Promise<Event & { copySummary?: CatalogCopyResult }> {
     await this.checkPermission(organizationId, user.id, 'events');
 
     const startDate = new Date(createDto.startDate);
@@ -208,11 +230,260 @@ export class EventsService {
       settings,
     });
 
-    await this.eventRepository.save(event);
+    // Ohne Vorlage wie bisher: eine leere Veranstaltung.
+    if (!createDto.copyFromEventId) {
+      await this.eventRepository.save(event);
+      this.logger.log(`Event created: ${event.name} (${event.id})`);
+      return event;
+    }
 
-    this.logger.log(`Event created: ${event.name} (${event.id})`);
+    const source = await this.findSourceEvent(
+      organizationId,
+      createDto.copyFromEventId,
+    );
+    // Anlegen und Uebernahme in einer Transaktion: scheitert die Kopie,
+    // gibt es auch die Veranstaltung nicht.
+    const copySummary = await this.eventRepository.manager.transaction(
+      async (manager) => {
+        await this.guardRepeatedCopy(manager, organizationId, {
+          name: event.name,
+          startDate,
+          sourceEventId: source.id,
+        });
+        event.copiedFromEventId = source.id;
+        await manager.getRepository(Event).save(event);
+        const { maps: _maps, ...result } = await this.copier.copyCatalog(
+          manager,
+          {
+            organizationId,
+            sourceEventId: source.id,
+            targetEventId: event.id,
+            allStations: true,
+          },
+        );
+        return result;
+      },
+    );
 
-    return event;
+    this.logger.log(
+      `Event created: ${event.name} (${event.id}) from ${source.id} (${copySummary.productsCopied} products)`,
+    );
+    return Object.assign(event, { copySummary });
+  }
+
+  /**
+   * Veranstaltung duplizieren: neue Veranstaltung mit Name und Zeitraum aus
+   * dem Dialog; Karte, Stationen, Einstellungen, Wertmarken, Schichtplaene
+   * (als Entwurf, ohne Anmeldungen) und Bedienungen dieser Veranstaltung
+   * (mit neuen PINs). Nie Abrechnung, TSE, Bestellungen oder Bestand
+   * (Bestand nur mit `copyStock`). Schichtplaene bzw. Bedienungen nur mit
+   * dem jeweiligen Recht; sonst stehen sie in `skipped`.
+   */
+  async duplicate(
+    organizationId: string,
+    sourceEventId: string,
+    dto: DuplicateEventDto,
+    user: User,
+    meta: RequestMeta = {},
+  ): Promise<{
+    event: Event;
+    copied: CatalogCopyResult & {
+      tokenTypes: number;
+      shiftPlans: number;
+      shifts: number;
+      waiters: number;
+    };
+    waiters: Array<{
+      id: string;
+      name: string;
+      shortName: string | null;
+      color: string | null;
+      role: string;
+      eventId: string | null;
+      pin: string;
+    }>;
+    skipped: { shiftPlans: boolean; waiters: boolean };
+  }> {
+    const membership = await this.checkPermission(
+      organizationId,
+      user.id,
+      'events',
+    );
+    const isAdmin = membership.role === OrganizationRole.ADMIN;
+    const canShiftPlans = isAdmin || !!membership.permissions?.shiftPlans;
+    const canWaiters = await this.copier.canManageWaiters(organizationId, user);
+
+    const source = await this.findSourceEvent(organizationId, sourceEventId);
+
+    const startDate = new Date(dto.startDate);
+    const endDate = dto.endDate ? new Date(dto.endDate) : startDate;
+    this.assertChronological(startDate, endDate);
+
+    const organization = await this.organizationRepository.findOne({
+      where: { id: organizationId },
+    });
+    const timezone = organization?.settings?.timezone || 'Europe/Berlin';
+    // Abstand in Kalendertagen (Zeitzone der Organisation): Shop-Tage und
+    // Schichten wandern so mit, dass der Wochentag stimmt, wenn er stimmt.
+    const offsetDays = source.startDate
+      ? dayKeyDiff(
+          toDateKey(source.startDate, timezone),
+          toDateKey(startDate, timezone),
+        )
+      : 0;
+
+    const result = await this.eventRepository.manager.transaction(
+      async (manager) => {
+        await this.guardRepeatedCopy(manager, organizationId, {
+          name: dto.name,
+          startDate,
+          sourceEventId: source.id,
+        });
+
+        const areaIds = source.settings?.tables?.areaIds ?? [];
+        const settings = duplicateEventSettings(
+          source.settings,
+          offsetDays,
+          source.startDate
+            ? listEventDayKeys(startDate, endDate, timezone)
+            : [],
+          await this.copier.knownAreaIds(manager, organizationId, areaIds),
+        );
+
+        const event = await manager.getRepository(Event).save(
+          manager.getRepository(Event).create({
+            organizationId,
+            name: dto.name,
+            description:
+              dto.description !== undefined
+                ? dto.description
+                : source.description,
+            startDate,
+            endDate,
+            status: EventStatus.INACTIVE,
+            settings,
+            copiedFromEventId: source.id,
+          }),
+        );
+
+        const { maps, ...catalog } = await this.copier.copyCatalog(manager, {
+          organizationId,
+          sourceEventId: source.id,
+          targetEventId: event.id,
+          copyStock: dto.copyStock === true,
+          allStations: true,
+        });
+        const tokenTypes = await this.copier.copyEventTokenTypes(
+          manager,
+          organizationId,
+          source.id,
+          event.id,
+          maps,
+        );
+        const shifts = canShiftPlans
+          ? await this.copier.copyEventShiftPlans(
+              manager,
+              organizationId,
+              source,
+              event,
+              offsetDays,
+            )
+          : { plans: 0, shifts: 0 };
+        const waiters = canWaiters
+          ? await this.copier.copyEventWaiters(
+              manager,
+              organizationId,
+              source.id,
+              event.id,
+              user.id,
+            )
+          : [];
+
+        return { event, catalog, tokenTypes, shifts, waiters };
+      },
+    );
+
+    await this.copier.auditCopiedWaiters(
+      organizationId,
+      user,
+      {
+        count: result.waiters.length,
+        eventId: result.event.id,
+        sourceEventId: source.id,
+      },
+      meta,
+    );
+    this.logger.log(
+      `Event ${source.id} duplicated as ${result.event.id} (${result.catalog.productsCopied} products, ${result.shifts.plans} shift plans, ${result.waiters.length} waiters)`,
+    );
+
+    return {
+      event: result.event,
+      copied: {
+        ...result.catalog,
+        tokenTypes: result.tokenTypes,
+        shiftPlans: result.shifts.plans,
+        shifts: result.shifts.shifts,
+        waiters: result.waiters.length,
+      },
+      waiters: result.waiters,
+      skipped: { shiftPlans: !canShiftPlans, waiters: !canWaiters },
+    };
+  }
+
+  /** Vorlage derselben Organisation, nicht geloescht. */
+  private async findSourceEvent(
+    organizationId: string,
+    sourceEventId: string,
+  ): Promise<Event> {
+    const source = await this.eventRepository.findOne({
+      where: { id: sourceEventId, organizationId },
+    });
+    if (!source) {
+      throw new NotFoundException({
+        code: ErrorCodes.NOT_FOUND,
+        reason: ErrorReasons.SOURCE_EVENT_NOT_FOUND,
+        message: 'Quell-Event nicht gefunden',
+      });
+    }
+    return source;
+  }
+
+  /**
+   * Doppelklick: dieselbe Kopie (Name, Beginn, Vorlage) binnen weniger
+   * Sekunden ein zweites Mal. Die Sperre auf die Organisation reiht
+   * gleichzeitige Aufrufe hintereinander; der zweite sieht dann die eben
+   * angelegte Veranstaltung und bricht ab, statt sie zu verdoppeln.
+   */
+  private async guardRepeatedCopy(
+    manager: EntityManager,
+    organizationId: string,
+    copy: { name: string; startDate: Date; sourceEventId: string },
+  ): Promise<void> {
+    await manager.query(
+      `SELECT id FROM organizations WHERE id = $1 FOR UPDATE`,
+      [organizationId],
+    );
+    const recent = await manager.getRepository(Event).findOne({
+      where: {
+        organizationId,
+        name: copy.name,
+        startDate: copy.startDate,
+        copiedFromEventId: copy.sourceEventId,
+        createdAt: MoreThan(new Date(Date.now() - 30_000)),
+        deletedAt: IsNull(),
+      },
+      select: { id: true },
+    });
+    if (recent) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        reason: ErrorReasons.EVENT_COPY_IN_PROGRESS,
+        message:
+          'Diese Veranstaltung wurde gerade schon angelegt. Lade die Liste neu.',
+        params: { eventId: recent.id },
+      });
+    }
   }
 
   async findAll(
@@ -759,14 +1030,20 @@ export class EventsService {
     return toDeactivate;
   }
 
-  // Copy categories and products from another event
+  /**
+   * Katalog aus einer anderen Veranstaltung uebernehmen (Produktseite,
+   * Assistent): gleichnamige Kategorien und Stationen werden
+   * weiterverwendet, schon vorhandene Produkte uebersprungen (ausser
+   * `includeDuplicates`). Die Zielveranstaltung ist waehrenddessen gesperrt
+   * — ein Doppelklick uebernimmt nichts doppelt.
+   */
   async copyFromEvent(
     organizationId: string,
     targetEventId: string,
     sourceEventId: string,
     copyDto: CopyProductsDto,
     user: User,
-  ): Promise<{ categoriesCopied: number; productsCopied: number }> {
+  ): Promise<CatalogCopyResult> {
     await this.checkPermission(organizationId, user.id, 'events');
 
     const targetEvent = await this.findOne(organizationId, targetEventId, user);
@@ -787,115 +1064,50 @@ export class EventsService {
 
     await this.checkMembership(sourceEvent.organizationId, user.id);
 
-    let sourceCategories: Category[];
-    if (copyDto.categoryIds && copyDto.categoryIds.length > 0) {
-      sourceCategories = await this.categoryRepository.find({
-        where: { eventId: sourceEventId, id: In(copyDto.categoryIds) },
-      });
-    } else {
-      sourceCategories = await this.categoryRepository.find({
-        where: { eventId: sourceEventId },
-      });
-    }
-
-    let sourceProducts: Product[];
-    if (copyDto.productIds && copyDto.productIds.length > 0) {
-      sourceProducts = await this.productRepository.find({
-        where: { eventId: sourceEventId, id: In(copyDto.productIds) },
-      });
-    } else if (copyDto.categoryIds && copyDto.categoryIds.length > 0) {
-      sourceProducts = await this.productRepository.find({
-        where: { eventId: sourceEventId, categoryId: In(copyDto.categoryIds) },
-      });
-    } else {
-      sourceProducts = await this.productRepository.find({
-        where: { eventId: sourceEventId },
-      });
-    }
-
     // All or nothing: a copy that fails halfway must not leave a partial
     // menu in the target event.
-    const categoryIdMap = new Map<string, string>();
-    let productsCopied = 0;
-    await this.eventRepository.manager.transaction(async (manager) => {
-      const categoryRepo = manager.getRepository(Category);
-      const productRepo = manager.getRepository(Product);
-
-      const topLevelCategories = sourceCategories.filter((c) => !c.parentId);
-      for (const sourceCategory of topLevelCategories) {
-        const newCategory = categoryRepo.create({
-          eventId: targetEventId,
-          name: sourceCategory.name,
-          description: sourceCategory.description,
-          color: sourceCategory.color,
-          icon: sourceCategory.icon,
-          sortOrder: sourceCategory.sortOrder,
-          isActive: sourceCategory.isActive,
-          printSettings: sourceCategory.printSettings,
-          parentId: null,
-        });
-        await categoryRepo.save(newCategory);
-        categoryIdMap.set(sourceCategory.id, newCategory.id);
-      }
-
-      const childCategories = sourceCategories.filter((c) => c.parentId);
-      for (const sourceCategory of childCategories) {
-        const newParentId = categoryIdMap.get(sourceCategory.parentId!) || null;
-        const newCategory = categoryRepo.create({
-          eventId: targetEventId,
-          name: sourceCategory.name,
-          description: sourceCategory.description,
-          color: sourceCategory.color,
-          icon: sourceCategory.icon,
-          sortOrder: sourceCategory.sortOrder,
-          isActive: sourceCategory.isActive,
-          printSettings: sourceCategory.printSettings,
-          parentId: newParentId,
-        });
-        await categoryRepo.save(newCategory);
-        categoryIdMap.set(sourceCategory.id, newCategory.id);
-      }
-
-      for (const sourceProduct of sourceProducts) {
-        const newCategoryId = categoryIdMap.get(sourceProduct.categoryId);
-        if (!newCategoryId) {
-          continue;
+    const result = await this.eventRepository.manager.transaction(
+      async (manager) => {
+        await manager.query(`SELECT id FROM events WHERE id = $1 FOR UPDATE`, [
+          targetEventId,
+        ]);
+        const { maps: _maps, ...copied } = await this.copier.copyCatalog(
+          manager,
+          {
+            organizationId,
+            sourceEventId,
+            targetEventId,
+            categoryIds: copyDto.categoryIds,
+            productIds: copyDto.productIds,
+            copyStock: copyDto.copyStock === true,
+            includeDuplicates: copyDto.includeDuplicates === true,
+          },
+        );
+        if (copied.productsCopied > 0 || copied.categoriesCopied > 0) {
+          await manager
+            .getRepository(Event)
+            .update(
+              { id: targetEvent.id },
+              { copiedFromEventId: sourceEventId },
+            );
         }
-
-        const newProduct = productRepo.create({
-          eventId: targetEventId,
-          categoryId: newCategoryId,
-          name: sourceProduct.name,
-          description: sourceProduct.description,
-          price: sourceProduct.price,
-          imageUrl: sourceProduct.imageUrl,
-          isActive: sourceProduct.isActive,
-          isAvailable: sourceProduct.isAvailable,
-          trackInventory: sourceProduct.trackInventory,
-          stockQuantity: copyDto.copyStock ? sourceProduct.stockQuantity : 0,
-          stockUnit: sourceProduct.stockUnit,
-          options: sourceProduct.options,
-          printSettings: sourceProduct.printSettings,
-          sortOrder: sourceProduct.sortOrder,
-          icon: sourceProduct.icon,
-          isFavorite: sourceProduct.isFavorite,
-        });
-        await productRepo.save(newProduct);
-        productsCopied++;
-      }
-
-      targetEvent.copiedFromEventId = sourceEventId;
-      await manager.getRepository(Event).save(targetEvent);
-    });
-
-    this.logger.log(
-      `Copied ${categoryIdMap.size} categories and ${productsCopied} products from event ${sourceEventId} to ${targetEventId}`,
+        return copied;
+      },
     );
 
-    return {
-      categoriesCopied: categoryIdMap.size,
-      productsCopied,
-    };
+    if (
+      result.productsCopied > 0 ||
+      result.categoriesCopied > 0 ||
+      result.stationsCopied > 0
+    ) {
+      this.gatewayService.notifyMenuRefresh(
+        organizationId,
+        targetEventId,
+        'catalog-copy',
+      );
+    }
+
+    return result;
   }
 
   // Internal helper used by other modules (e.g. orders) to get event and check membership
