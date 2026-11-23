@@ -19,7 +19,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { EventsService } from './events.service';
-import { CreateEventDto, UpdateEventDto, CopyProductsDto } from './dto';
+import {
+  CreateEventDto,
+  UpdateEventDto,
+  CopyProductsDto,
+  DuplicateEventDto,
+} from './dto';
 import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
 import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
@@ -47,7 +52,7 @@ export class EventsController {
     operationId: 'createEvent',
     summary: 'Veranstaltung anlegen',
     description:
-      'Legt eine neue Veranstaltung mit Status `inactive` an. Scope `events:write` und Modulrecht Veranstaltungen; freischalten und aktivieren geht nur in der App.',
+      'Legt eine neue Veranstaltung mit Status `inactive` an. Scope `events:write` und Modulrecht Veranstaltungen; freischalten und aktivieren geht nur in der App. Mit `copyFromEventId` übernimmt sie Kategorien, Produkte und Produktionsstationen jener Veranstaltung in derselben Transaktion (Zusammenfassung in `copySummary`); ohne Angabe oder mit `null` bleibt sie leer. Dieselbe Vorlage mit gleichem Namen und Beginn binnen 30 Sekunden ein zweites Mal → 409 `EVENT_COPY_IN_PROGRESS`.',
   })
   async create(
     @Param('organizationId', ParseUUIDPipe) organizationId: string,
@@ -229,7 +234,7 @@ export class EventsController {
     operationId: 'copyEventCatalog',
     summary: 'Katalog aus anderer Veranstaltung kopieren',
     description:
-      'Kopiert Kategorien und Produkte aus `sourceEventId` in diese Veranstaltung; was übernommen wird, steuert der Body. Scope `events:write`.',
+      'Übernimmt Kategorien und Produkte aus `sourceEventId` in diese Veranstaltung samt der Produktionsstationen, auf die sie zeigen; was übernommen wird, steuert der Body (ohne Auswahl alles). Gleichnamige Kategorien (gleiche Ebene) und Stationen werden weiterverwendet; Produkte, deren Name in der Zielkategorie schon vorkommt, übersprungen (`skippedProducts`), außer mit `includeDuplicates`. Steuersatz, Pfandart, Station, Optionen, Symbol, Bild, Favorit und Druckeinstellungen kommen mit; bei steuerbefreiten Organisationen Steuersatz 0. Alles oder nichts. Scope `events:write`.',
   })
   @ApiParam({
     name: 'eventId',
@@ -256,5 +261,37 @@ export class EventsController {
       user,
     );
     return { data: result };
+  }
+
+  @Post(':eventId/duplicate')
+  @ApiOperation({
+    operationId: 'duplicateEvent',
+    summary: 'Veranstaltung duplizieren',
+    description:
+      'Legt eine neue Veranstaltung (Status `inactive`) mit Name und Zeitraum aus dem Body an und übernimmt aus `eventId`: Kategorien, Produkte, Produktionsstationen, Einstellungen (Kassier- und Tischmodus samt Bereichen, Vorlauf, Vorverkauf, Shop; Shop-Tage um den Abstand der Beginne verschoben), Wertmarken nur dieser Veranstaltung, Schichtpläne als Entwurf (Aufgaben und Schichten verschoben, ohne Anmeldungen) und Bedienungen nur dieser Veranstaltung mit neuen PINs (`waiters[].pin`, nur in dieser Antwort). Nie Abrechnung, TSE, Bestellungen; Bestand nur mit `copyStock`. Schichtpläne nur mit Recht „Schichtpläne“, Bedienungen nur mit Recht „Bedienungen“ — sonst `skipped`. Nur in der App (kein API-Token).',
+  })
+  @ApiParam({
+    name: 'eventId',
+    description: 'ID der Veranstaltung, die dupliziert wird',
+    format: 'uuid',
+  })
+  async duplicate(
+    @Param('organizationId', ParseUUIDPipe) organizationId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Body() dto: DuplicateEventDto,
+    @CurrentUser() user: User,
+  ) {
+    const result = await this.eventsService.duplicate(
+      organizationId,
+      eventId,
+      dto,
+      user,
+    );
+    return {
+      data: {
+        ...result,
+        event: await this.eventPhase.decorate(result.event),
+      },
+    };
   }
 }

@@ -77,7 +77,7 @@ Die aktive Veranstaltung bestimmt, welche Produkte an der Kasse erscheinen und w
 
 ## Für Agenten
 - \`list_events\`, \`get_event\`, \`create_event\` (legt immer \`inactive\` an), \`update_event\`.
-- \`copy_event\` kopiert Kategorien und Produkte aus einer früheren Veranstaltung; Steuersatz, Pfand und Stationen danach mit \`upsert_products\` nachziehen.
+- \`copy_event\` übernimmt Kategorien und Produkte aus einer früheren Veranstaltung samt Steuersatz, Pfand und Stationen; gleichnamige Kategorien werden zusammengeführt, vorhandene Produkte übersprungen.
 - Produktionsstationen (Küche, Grill, Theke) je Veranstaltung: \`list_production_stations\`, \`create_production_station\`; Drucker kommen aus \`list_printers\`.
 `,
   },

@@ -39,6 +39,7 @@ import {
 
 import { EventsShopWithdrawalController } from './events-shop-withdrawal.controller';
 import { ShopWithdrawalService } from './shop-withdrawal.service';
+import { EventCopyService } from './event-copy.service';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { ShopWithdrawalService } from './shop-withdrawal.service';
     StripeDisputeService,
     StripeInvoiceService,
     ShopWithdrawalService,
+    EventCopyService,
   ],
   exports: [
     EventsService,

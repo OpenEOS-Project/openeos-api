@@ -763,7 +763,12 @@ describe('events', () => {
       ORG,
       EVENT,
       EVENT2,
-      { categoryIds: undefined, productIds: undefined, copyStock: false },
+      {
+        categoryIds: undefined,
+        productIds: undefined,
+        copyStock: false,
+        includeDuplicates: false,
+      },
       ctx.user,
     );
   });

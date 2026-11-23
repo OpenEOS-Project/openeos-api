@@ -1439,7 +1439,7 @@ paths:
         - Veranstaltungen
       x-api-token-scope: read
     post:
-      description: Legt eine neue Veranstaltung mit Status `inactive` an. Scope `events:write` und Modulrecht Veranstaltungen; freischalten und aktivieren geht nur in der App.
+      description: Legt eine neue Veranstaltung mit Status `inactive` an. Scope `events:write` und Modulrecht Veranstaltungen; freischalten und aktivieren geht nur in der App. Mit `copyFromEventId` übernimmt sie Kategorien, Produkte und Produktionsstationen jener Veranstaltung in derselben Transaktion (Zusammenfassung in `copySummary`); ohne Angabe oder mit `null` bleibt sie leer. Dieselbe Vorlage mit gleichem Namen und Beginn binnen 30 Sekunden ein zweites Mal → 409 `EVENT_COPY_IN_PROGRESS`.
       operationId: createEvent
       parameters:
         - name: organizationId
@@ -1552,7 +1552,7 @@ paths:
       x-api-token-scope: events:write
   /api/organizations/{organizationId}/events/{eventId}/copy-from/{sourceEventId}:
     post:
-      description: Kopiert Kategorien und Produkte aus `sourceEventId` in diese Veranstaltung; was übernommen wird, steuert der Body. Scope `events:write`.
+      description: Übernimmt Kategorien und Produkte aus `sourceEventId` in diese Veranstaltung samt der Produktionsstationen, auf die sie zeigen; was übernommen wird, steuert der Body (ohne Auswahl alles). Gleichnamige Kategorien (gleiche Ebene) und Stationen werden weiterverwendet; Produkte, deren Name in der Zielkategorie schon vorkommt, übersprungen (`skippedProducts`), außer mit `includeDuplicates`. Steuersatz, Pfandart, Station, Optionen, Symbol, Bild, Favorit und Druckeinstellungen kommen mit; bei steuerbefreiten Organisationen Steuersatz 0. Alles oder nichts. Scope `events:write`.
       operationId: copyEventCatalog
       parameters:
         - name: organizationId
@@ -1914,7 +1914,7 @@ paths:
       x-api-token-scope: catalog:write
   /api/events/{eventId}/products/import:
     post:
-      description: Legt mehrere Produkte aus einer CSV-Liste in einem Aufruf an, fehlende Kategorien werden ergänzt; mit `dryRun` nur Vorschau. Scope `catalog:write`.
+      description: "Legt mehrere Produkte aus einer CSV-Liste in einem Aufruf an, fehlende Kategorien werden ergänzt; mit `dryRun` nur Vorschau. Trenner Komma oder Semikolon (erkannt an der Kopfzeile), Dezimalpunkt oder -komma. Optionale Spalte `taxRate` (auch `Steuersatz`, `MwSt`): nur Sätze, die die Organisation führen darf. In `icon` eine pos-icon-ID oder ein Linien-Symbol `oe:<name>`. Die Datei aus `GET …/products/export` liest der Import unverändert wieder ein. Scope `catalog:write`."
       operationId: importProducts
       parameters:
         - name: eventId
@@ -1940,6 +1940,35 @@ paths:
       tags:
         - Produkte
       x-api-token-scope: catalog:write
+  /api/events/{eventId}/products/export:
+    get:
+      description: "Alle Produkte der Veranstaltung im Format des CSV-Imports (`POST …/products/import` liest die Datei unverändert wieder ein): Semikolon, UTF-8 mit BOM, Dezimalkomma — passend für Excel (de-DE). Spalten: `category;name;description;price;taxRate;pfand;icon;ingredients;choices;extras;available;trackInventory;stockQuantity;sortOrder`. Unterkategorien stehen mit ihrem eigenen Namen; Aufpreise bei Auswahl-Optionen kennt das Format nicht. Scope `read`."
+      operationId: exportProducts
+      parameters:
+        - name: eventId
+          required: true
+          in: path
+          description: ID der Veranstaltung
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          description: 'CSV-Datei als Download (`Content-Disposition: attachment; filename="produkte_<veranstaltung>.csv"`)'
+          content:
+            text/csv:
+              schema:
+                type: string
+              example: "category;name;description;price;taxRate;pfand;icon;ingredients;choices;extras;available;trackInventory;stockQuantity;sortOrder\r
+
+                Getränke;Cola 0,5 l;;3,50;19;1,00;cola;;;;ja;nein;0;1\r\n"
+      security:
+        - *a11
+        - API-token: []
+      summary: Produkte als CSV exportieren
+      tags:
+        - Produkte
+      x-api-token-scope: read
   /api/events/{eventId}/products/low-stock:
     get:
       description: Produkte mit Bestandsführung, deren Bestand die Warnschwelle (`lowStockThreshold`) erreicht oder unterschritten hat. Scope `read`.
@@ -4928,6 +4957,12 @@ components:
             allowOnlineOrders: true
             requireTableNumber: false
           description: Event-Einstellungen
+        copyFromEventId:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+          nullable: true
+          description: "Vorlage: übernimmt Kategorien, Produkte und Produktionsstationen dieser Veranstaltung (derselben Organisation) in derselben Transaktion. Ohne Angabe oder `null` entsteht eine leere Veranstaltung (Verhalten wie bisher). Die Web-App schickt die Auswahl im Dialog immer mit (Standard: die zuletzt begonnene Veranstaltung)."
       required:
         - name
         - startDate
@@ -4977,6 +5012,10 @@ components:
           type: boolean
           example: false
           description: "Wenn true, wird auch der Bestand kopiert. Standard: false (Bestand wird auf 0 gesetzt)"
+        includeDuplicates:
+          type: boolean
+          example: false
+          description: "Gleichnamige Kategorien (gleiche Ebene, ohne Groß-/Kleinschreibung) werden immer weiterverwendet. Ein Produkt, dessen Name in der Zielkategorie schon vorkommt, wird übersprungen — außer mit `true`. Standard: false."
     CreateCategoryDto:
       type: object
       properties:

@@ -302,7 +302,7 @@ export class EventTools {
     return defineTool({
       name: 'copy_event',
       description:
-        'Copy categories and products from one event of this organization into another (e.g. last year into this year). Without categoryIds/productIds everything is copied. Tax rates, Pfand and station links are not copied — set them afterwards with upsert_products.',
+        'Copy categories and products from one event of this organization into another (e.g. last year into this year). Without categoryIds/productIds everything is copied; selected products bring their categories along. Tax rate, Pfand, production station (copied or reused by name), options, icon, image, favorite and print settings come along. Categories with the same name are reused; products whose name already exists in the target category are skipped unless includeDuplicates is true.',
       inputSchema: z
         .object({
           targetEventId: uuid,
@@ -310,6 +310,7 @@ export class EventTools {
           categoryIds: z.array(uuid).max(200).optional(),
           productIds: z.array(uuid).max(500).optional(),
           copyStock: z.boolean().default(false),
+          includeDuplicates: z.boolean().default(false),
           ...confirmInput,
         })
         .strict(),
@@ -324,6 +325,7 @@ export class EventTools {
           categoryIds: input.categoryIds,
           productIds: input.productIds,
           copyStock: input.copyStock,
+          includeDuplicates: input.includeDuplicates,
         };
         if (!input.confirm) {
           await this.organizations.checkPermission(
@@ -340,9 +342,13 @@ export class EventTools {
             : categories.length;
           const productCount = input.productIds?.length
             ? products.filter((p) => input.productIds!.includes(p.id)).length
-            : products.length;
+            : input.categoryIds?.length
+              ? products.filter((p) =>
+                  input.categoryIds!.includes(p.categoryId),
+                ).length
+              : products.length;
           return preview(
-            `Würde ${categoryCount} Kategorien und ${productCount} Produkte von „${source.name}“ nach „${target.name}“ kopieren`,
+            `Würde ${categoryCount} Kategorien und ${productCount} Produkte von „${source.name}“ nach „${target.name}“ übernehmen (gleichnamige Kategorien werden zusammengeführt${input.includeDuplicates ? '' : ', schon vorhandene Produkte übersprungen'})`,
             {
               source: compactEvent(source),
               target: compactEvent(target),
@@ -358,9 +364,12 @@ export class EventTools {
           dto,
           ctx.user,
         );
+        const skipped = result.productsSkipped
+          ? `, ${result.productsSkipped} übersprungen (schon vorhanden)`
+          : '';
         return done(
-          `${result.categoriesCopied} Kategorien und ${result.productsCopied} Produkte von „${source.name}“ nach „${target.name}“ kopiert`,
-          result,
+          `${result.productsCopied} Produkte von „${source.name}“ nach „${target.name}“ übernommen${skipped}; Kategorien: ${result.categoriesCopied} neu, ${result.categoriesMerged} zusammengeführt; Stationen: ${result.stationsCopied} neu, ${result.stationsMerged} zusammengeführt`,
+          { ...result },
         );
       },
     });

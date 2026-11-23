@@ -16,8 +16,13 @@ export interface ParsedProductRow {
   price: number;
   /** Deposit amount in EUR, or null when the column was empty. */
   pfand: number | null;
+  /** VAT rate in percent, or null when the column was missing/empty. */
+  taxRate: number | null;
   options: ProductOptions;
-  /** pos-icon-database icon id (stored as imageUrl `pos-icon:<id>`), or null. */
+  /**
+   * pos-icon-database icon id (stored as imageUrl `pos-icon:<id>`), or a
+   * line icon `oe:<name>` (stored in `icon`), or null.
+   */
   iconId: string | null;
   isAvailable: boolean;
   trackInventory: boolean;
@@ -39,6 +44,11 @@ const HEADER_ALIASES: Record<string, string> = {
   preis: 'price',
   pfand: 'pfand',
   deposit: 'pfand',
+  taxrate: 'taxRate',
+  steuersatz: 'taxRate',
+  mwst: 'taxRate',
+  ust: 'taxRate',
+  vat: 'taxRate',
   icon: 'icon',
   symbol: 'icon',
   bild: 'icon',
@@ -232,6 +242,7 @@ export function parseProductCsv(csv: string): CsvParseResult {
     const category = col(cells, 'category');
     const price = parseNumber(col(cells, 'price'));
     const pfand = parseNumber(col(cells, 'pfand'));
+    const taxRate = parseNumber(col(cells, 'taxRate').replace('%', ''));
 
     const groups: ProductOptionGroup[] = [];
     const ing = parseIngredients(col(cells, 'ingredients'));
@@ -247,6 +258,8 @@ export function parseProductCsv(csv: string): CsvParseResult {
     else if (price < 0) error = 'Preis darf nicht negativ sein';
     else if (pfand !== null && pfand < 0)
       error = 'Pfand darf nicht negativ sein';
+    else if (taxRate !== null && (taxRate < 0 || taxRate > 100))
+      error = 'Ungültiger Steuersatz';
 
     rows.push({
       line,
@@ -255,6 +268,7 @@ export function parseProductCsv(csv: string): CsvParseResult {
       description: col(cells, 'description') || null,
       price: price ?? 0,
       pfand: pfand !== null && pfand > 0 ? Math.round(pfand * 100) / 100 : null,
+      taxRate,
       options: { groups },
       iconId: col(cells, 'icon').trim() || null,
       isAvailable: parseBool(col(cells, 'available'), true),
@@ -266,4 +280,150 @@ export function parseProductCsv(csv: string): CsvParseResult {
   }
 
   return { rows, fatalError: null };
+}
+
+// ---------------------------------------------------------------- Export
+
+/** Spalten des Exports — genau die, die `parseProductCsv` liest. */
+export const PRODUCT_CSV_EXPORT_COLUMNS = [
+  'category',
+  'name',
+  'description',
+  'price',
+  'taxRate',
+  'pfand',
+  'icon',
+  'ingredients',
+  'choices',
+  'extras',
+  'available',
+  'trackInventory',
+  'stockQuantity',
+  'sortOrder',
+] as const;
+
+export interface ProductCsvExportRow {
+  category: string;
+  name: string;
+  description: string | null;
+  price: number;
+  taxRate: number | null;
+  /** Pfandbetrag in Euro (Pfandart der Organisation), sonst null. */
+  pfand: number | null;
+  imageUrl: string | null;
+  icon: string | null;
+  options: ProductOptions | null;
+  isAvailable: boolean;
+  trackInventory: boolean;
+  stockQuantity: number;
+  sortOrder: number;
+}
+
+/** Dezimalkomma wie Excel (de-DE); der Import liest Punkt und Komma. */
+function formatDecimal(value: number): string {
+  const n = Number(value) || 0;
+  return (Math.round(n * 100) / 100).toFixed(2).replace('.', ',');
+}
+
+function formatRate(value: number): string {
+  const n = Number(value) || 0;
+  return Number.isInteger(n) ? String(n) : String(n).replace('.', ',');
+}
+
+/** Feld quoten, wenn es Trenner, Anfuehrungszeichen oder Umbrueche enthaelt. */
+function quoteField(value: string, delimiter: string): string {
+  // Formeln in Excel nicht ausfuehren lassen (CSV-Injection).
+  const safe =
+    /^[=+\-@\t\r]/.test(value) && !/^-?[0-9]/.test(value) ? `'${value}` : value;
+  return safe.includes(delimiter) ||
+    safe.includes('"') ||
+    safe.includes('\n') ||
+    safe.includes('\r')
+    ? `"${safe.replace(/"/g, '""')}"`
+    : safe;
+}
+
+/** Optionsnamen duerfen die Trenner der Zellen nicht enthalten. */
+function cleanOptionName(name: string): string {
+  return name.replace(/\|/g, '/').replace(/:/g, ' ').trim();
+}
+
+/**
+ * Optionen in die drei Spalten des Imports: Zutaten (abwaehlbar), Auswahl
+ * (je Gruppe eine Wahl) und Extras (mit Aufpreis). Der Import kennt keine
+ * Aufpreise bei der Auswahl und nur eine Extras-Gruppe — mehrere
+ * Mehrfach-Gruppen werden zu „Extras“ zusammengefasst.
+ */
+function optionColumns(options: ProductOptions | null): {
+  ingredients: string;
+  choices: string;
+  extras: string;
+} {
+  const groups = options?.groups ?? [];
+  const ingredients = groups
+    .filter((g) => g.type === 'ingredients')
+    .flatMap((g) => g.options.map((o) => cleanOptionName(o.name)))
+    .filter(Boolean)
+    .join(' | ');
+  const choices = groups
+    .filter((g) => g.type === 'single' && g.options.length > 0)
+    .map(
+      (g) =>
+        `${cleanOptionName(g.name)}: ${g.options
+          .map((o) => cleanOptionName(o.name))
+          .join(' | ')}`,
+    )
+    .join(' || ');
+  const extras = groups
+    .filter((g) => g.type === 'multiple')
+    .flatMap((g) => g.options)
+    .map((o) => {
+      const name = cleanOptionName(o.name);
+      const modifier = Number(o.priceModifier) || 0;
+      return modifier > 0 ? `${name} +${formatDecimal(modifier)}` : name;
+    })
+    .filter(Boolean)
+    .join(' | ');
+  return { ingredients, choices, extras };
+}
+
+/** Symbol fuer die Spalte `icon`: pos-icon-ID oder `oe:<name>`. */
+function iconCell(imageUrl: string | null, icon: string | null): string {
+  if (imageUrl?.startsWith('pos-icon:')) return imageUrl.slice(9);
+  if (icon?.startsWith('oe:')) return icon;
+  return '';
+}
+
+/**
+ * Produkte als CSV, die der Import unveraendert wieder liest: Semikolon,
+ * UTF-8 mit BOM, Dezimalkomma, CRLF — passend fuer Excel (de-DE).
+ */
+export function serializeProductCsv(rows: ProductCsvExportRow[]): string {
+  const delimiter = ';';
+  const lines: string[] = [PRODUCT_CSV_EXPORT_COLUMNS.join(delimiter)];
+  for (const row of rows) {
+    const options = optionColumns(row.options);
+    const cells: Record<(typeof PRODUCT_CSV_EXPORT_COLUMNS)[number], string> = {
+      category: row.category,
+      name: row.name,
+      description: (row.description ?? '').replace(/\r?\n/g, ' '),
+      price: formatDecimal(row.price),
+      taxRate: row.taxRate === null ? '' : formatRate(row.taxRate),
+      pfand: row.pfand ? formatDecimal(row.pfand) : '',
+      icon: iconCell(row.imageUrl, row.icon),
+      ingredients: options.ingredients,
+      choices: options.choices,
+      extras: options.extras,
+      available: row.isAvailable ? 'ja' : 'nein',
+      trackInventory: row.trackInventory ? 'ja' : 'nein',
+      stockQuantity: String(row.stockQuantity ?? 0),
+      sortOrder: String(row.sortOrder ?? 0),
+    };
+    lines.push(
+      PRODUCT_CSV_EXPORT_COLUMNS.map((key) =>
+        quoteField(cells[key], delimiter),
+      ).join(delimiter),
+    );
+  }
+  return '\ufeff' + lines.join('\r\n') + '\r\n';
 }

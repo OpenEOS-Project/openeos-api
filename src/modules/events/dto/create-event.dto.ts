@@ -6,6 +6,7 @@ import {
   IsObject,
   IsDateString,
   IsNotEmpty,
+  IsUUID,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -49,4 +50,16 @@ export class CreateEventDto {
   @IsOptional()
   @IsObject()
   settings?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    nullable: true,
+    description:
+      'Vorlage: übernimmt Kategorien, Produkte und Produktionsstationen dieser Veranstaltung (derselben Organisation) in derselben Transaktion. Ohne Angabe oder `null` entsteht eine leere Veranstaltung (Verhalten wie bisher). Die Web-App schickt die Auswahl im Dialog immer mit (Standard: die zuletzt begonnene Veranstaltung).',
+  })
+  @IsOptional()
+  @IsUUID('4', { message: 'Ungültige Vorlage-ID' })
+  copyFromEventId?: string | null;
 }
