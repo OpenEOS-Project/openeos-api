@@ -174,6 +174,27 @@ export function duplicateEventSettings(
   return settings;
 }
 
+/**
+ * Vorhandene Eintraege nach Schluessel: mehrere gleichnamige werden der
+ * Reihe nach vergeben (der letzte bleibt), damit eine wiederholte Uebernahme
+ * dieselben Zuordnungen trifft.
+ */
+function nameMatcher<T>(
+  items: T[],
+  keyOf: (item: T) => string,
+): (key: string) => T | undefined {
+  const queues = new Map<string, T[]>();
+  for (const item of items) {
+    const key = keyOf(item);
+    queues.set(key, [...(queues.get(key) ?? []), item]);
+  }
+  return (key) => {
+    const queue = queues.get(key);
+    if (!queue) return undefined;
+    return queue.length > 1 ? queue.shift() : queue[0];
+  };
+}
+
 @Injectable()
 export class EventCopyService {
   private readonly logger = new Logger(EventCopyService.name);
@@ -299,12 +320,15 @@ export class EventCopyService {
     // und sieht danach die schon uebernommenen Eintraege).
     const targetCategories = await categoryRepo.find({
       where: { eventId: targetEventId },
+      order,
     });
     const targetProducts = await productRepo.find({
       where: { eventId: targetEventId },
+      order,
     });
     const targetStations = await stationRepo.find({
       where: { eventId: targetEventId },
+      order,
     });
 
     const maps: CatalogCopyMaps = {
@@ -323,13 +347,13 @@ export class EventCopyService {
     };
 
     // 1. Stationen — erster Durchgang ohne Folgestation.
-    const stationByName = new Map(
-      targetStations.map((s) => [nameKey(s.name), s]),
-    );
+    // Nur mit Stationen zusammenfuehren, die schon vorher da waren — zwei
+    // gleichnamige Stationen der Quelle bleiben zwei.
+    const stationMatch = nameMatcher(targetStations, (x) => nameKey(x.name));
     const createdStations: Array<{ source: ProductionStation; id: string }> =
       [];
     for (const source of selectedStations) {
-      const existing = stationByName.get(nameKey(source.name));
+      const existing = stationMatch(nameKey(source.name));
       if (existing) {
         maps.stations.set(source.id, existing.id);
         result.stationsMerged++;
@@ -348,7 +372,6 @@ export class EventCopyService {
           handoffStationId: null,
         }),
       );
-      stationByName.set(nameKey(station.name), station);
       maps.stations.set(source.id, station.id);
       createdStations.push({ source, id: station.id });
       result.stationsCopied++;
@@ -379,11 +402,11 @@ export class EventCopyService {
     );
     const categoryKey = (parentId: string | null, name: string) =>
       `${parentId ?? ''}|${nameKey(name)}`;
-    const categoryByKey = new Map<string, Category>();
-    for (const c of targetCategories) {
-      const key = categoryKey(c.parentId, c.name);
-      if (!categoryByKey.has(key)) categoryByKey.set(key, c);
-    }
+    const categoryMatch = nameMatcher(targetCategories, (x) =>
+      categoryKey(x.parentId, x.name),
+    );
+    /** Quellkategorie → Station, wenn die Zielkategorie selbst keine hat. */
+    const inheritedStation = new Map<string, string>();
     const targetCategoryName = new Map(
       targetCategories.map((c) => [c.id, c.name]),
     );
@@ -392,10 +415,16 @@ export class EventCopyService {
         ? (maps.categories.get(source.parentId) ?? null)
         : null;
       const key = categoryKey(parentId, source.name);
-      const existing = categoryByKey.get(key);
+      const existing = categoryMatch(key);
       if (existing) {
         maps.categories.set(source.id, existing.id);
         result.categoriesMerged++;
+        const station = source.productionStationId
+          ? maps.stations.get(source.productionStationId)
+          : undefined;
+        if (station && !existing.productionStationId) {
+          inheritedStation.set(source.id, station);
+        }
         continue;
       }
       const category = await categoryRepo.save(
@@ -414,7 +443,6 @@ export class EventCopyService {
             : null,
         }),
       );
-      categoryByKey.set(key, category);
       targetCategoryName.set(category.id, category.name);
       maps.categories.set(source.id, category.id);
       result.categoriesCopied++;
@@ -461,7 +489,9 @@ export class EventCopyService {
           sortOrder: source.sortOrder,
           productionStationId: source.productionStationId
             ? (maps.stations.get(source.productionStationId) ?? null)
-            : null,
+            : // Zusammengefuehrte Kategorie ohne Station: das Routing der
+              // Quellkategorie ans Produkt haengen.
+              (inheritedStation.get(source.categoryId) ?? null),
           // Pfandarten gehoeren der Organisation: gleiche ID.
           pfandTypeId: source.pfandTypeId,
         }),
@@ -499,6 +529,17 @@ export class EventCopyService {
     ) =>
       (ids ?? []).map((id) => map.get(id)).filter((id): id is string => !!id);
     for (const source of sources) {
+      const allowedCategoryIds = remap(
+        source.allowedCategoryIds,
+        maps.categories,
+      );
+      const allowedProductIds = remap(source.allowedProductIds, maps.products);
+      // Leere Listen heissen „fuer alles einloesbar“: faellt die ganze
+      // Beschraenkung weg, kommt die Marke ausgeschaltet mit.
+      const lostRestriction =
+        (source.allowedCategoryIds?.length ?? 0) +
+          (source.allowedProductIds?.length ?? 0) >
+          0 && allowedCategoryIds.length + allowedProductIds.length === 0;
       await repo.save(
         repo.create({
           organizationId,
@@ -507,11 +548,11 @@ export class EventCopyService {
           value: source.value,
           kind: source.kind,
           vatRate: source.vatRate,
-          allowedCategoryIds: remap(source.allowedCategoryIds, maps.categories),
-          allowedProductIds: remap(source.allowedProductIds, maps.products),
+          allowedCategoryIds,
+          allowedProductIds,
           color: source.color,
           buybackAllowed: source.buybackAllowed,
-          isActive: source.isActive,
+          isActive: source.isActive && !lostRestriction,
           sortOrder: source.sortOrder,
         }),
       );

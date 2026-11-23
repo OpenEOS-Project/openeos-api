@@ -72,6 +72,21 @@ describe('product CSV export', () => {
               ],
             },
             {
+              name: 'Größe',
+              type: 'single',
+              required: false,
+              options: [
+                { name: 'Klein', priceModifier: -0.5, default: false },
+                { name: 'Groß', priceModifier: 1.5, default: true },
+              ],
+            },
+            {
+              name: 'Soße',
+              type: 'multiple',
+              required: true,
+              options: [{ name: 'Mayo', priceModifier: 0, default: true }],
+            },
+            {
               name: 'Extras',
               type: 'multiple',
               required: false,
@@ -119,6 +134,13 @@ describe('product CSV export', () => {
   it('neutralises spreadsheet formulas in text cells', () => {
     const csv = serializeProductCsv([{ ...base, name: '=HYPERLINK("x")' }]);
     expect(csv).toContain(`"'=HYPERLINK(""x"")"`);
+  });
+});
+
+describe('product CSV export – formulas', () => {
+  it('reads the protected cell back unchanged', () => {
+    const csv = serializeProductCsv([{ ...base, name: '- ohne Zwiebeln' }]);
+    expect(parseProductCsv(csv).rows[0].name).toBe('- ohne Zwiebeln');
   });
 });
 

@@ -88,7 +88,7 @@ export class ProductsController {
     operationId: 'exportProducts',
     summary: 'Produkte als CSV exportieren',
     description:
-      'Alle Produkte der Veranstaltung im Format des CSV-Imports (`POST …/products/import` liest die Datei unverändert wieder ein): Semikolon, UTF-8 mit BOM, Dezimalkomma — passend für Excel (de-DE). Spalten: `category;name;description;price;taxRate;pfand;icon;ingredients;choices;extras;available;trackInventory;stockQuantity;sortOrder`. Unterkategorien stehen mit ihrem eigenen Namen; Aufpreise bei Auswahl-Optionen kennt das Format nicht. Scope `read`.',
+      'Alle Produkte der Veranstaltung im Format des CSV-Imports (`POST …/products/import` liest die Datei unverändert wieder ein): Semikolon, UTF-8 mit BOM, Dezimalkomma — passend für Excel (de-DE). Spalten: `category;name;description;price;taxRate;pfand;icon;ingredients;choices;extras;available;trackInventory;stockQuantity;sortOrder`. Unterkategorien stehen mit ihrem eigenen Namen; Fotos und Stationen kennt das Format nicht. Optionen: `choices` = `Gruppe: A | B +0,50 || Gruppe2?: …` (`?` optional, `*` Vorauswahl), `extras` = `A +0,50 | B` oder `Gruppe: … || Gruppe2!: …` (`!` Pflicht). Scope `read`.',
   })
   @ApiProduces('text/csv')
   @ApiResponse({

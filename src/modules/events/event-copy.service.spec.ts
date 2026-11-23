@@ -601,6 +601,48 @@ describe('EventCopyService.copyCatalog', () => {
     ).toHaveLength(3);
   });
 
+  it('keeps routing when merged into a category without a station', async () => {
+    const db = new FakeDb();
+    const s = seedSource(db);
+    db.insert(Category, {
+      eventId: s.target.id,
+      parentId: null,
+      name: 'Getränke',
+      productionStationId: null,
+    });
+    const result = await new EventCopyService().copyCatalog(db.manager, {
+      organizationId: ORG,
+      sourceEventId: s.source.id,
+      targetEventId: s.target.id,
+      productIds: [s.cola.id],
+    });
+    const cola = db
+      .rows<Product>(Product)
+      .find((p) => p.eventId === s.target.id && p.name === 'Cola')!;
+    expect(cola.productionStationId).toBe(
+      result.maps.stations.get(s.stations.bar.id),
+    );
+  });
+
+  it('keeps two stations of the same name apart', async () => {
+    const db = new FakeDb();
+    const s = seedSource(db);
+    db.insert(ProductionStation, {
+      eventId: s.source.id,
+      name: 'bar',
+      handoffStationId: null,
+    });
+    const run = () =>
+      new EventCopyService().copyCatalog(db.manager, {
+        organizationId: ORG,
+        sourceEventId: s.source.id,
+        targetEventId: s.target.id,
+        allStations: true,
+      });
+    expect((await run()).stationsCopied).toBe(5);
+    expect(await run()).toMatchObject({ stationsCopied: 0, productsCopied: 0 });
+  });
+
   it('brings only referenced stations and their follow-up chain', async () => {
     const db = new FakeDb();
     const s = seedSource(db);
@@ -695,6 +737,31 @@ describe('EventCopyService – token types and shift plans', () => {
       // Bratwurst kam nicht mit, die unbekannte ID auch nicht.
       allowedProductIds: [],
     });
+  });
+
+  it('deactivates a token type that would lose its whole restriction', async () => {
+    const db = new FakeDb();
+    const s = seedSource(db);
+    db.insert(TokenType, {
+      organizationId: ORG,
+      eventId: s.source.id,
+      name: 'Marke',
+      value: 2,
+      allowedCategoryIds: [],
+      allowedProductIds: [randomUUID()],
+      isActive: true,
+    });
+    await new EventCopyService().copyEventTokenTypes(
+      db.manager,
+      ORG,
+      s.source.id,
+      s.target.id,
+      { categories: new Map(), products: new Map(), stations: new Map() },
+    );
+    const copy = db
+      .rows<TokenType>(TokenType)
+      .find((t) => t.eventId === s.target.id)!;
+    expect(copy.isActive).toBe(false);
   });
 
   it('copies shift plans as drafts with shifted dates and no registrations', async () => {

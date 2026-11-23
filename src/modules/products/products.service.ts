@@ -693,8 +693,12 @@ export class ProductsService {
           existing.price = row.price;
           existing.options = row.options;
           existing.pfandTypeId = pfandTypeId;
-          existing.imageUrl = imageUrl;
-          existing.icon = lineIcon;
+          // Leere Spalte laesst Symbol und Foto stehen (ein Foto passt nicht
+          // in die CSV und ginge beim Wiedereinlesen sonst verloren).
+          if (row.iconId) {
+            existing.imageUrl = imageUrl;
+            existing.icon = lineIcon;
+          }
           if (row.taxRate !== null) existing.taxRate = row.taxRate;
           existing.isAvailable = row.isAvailable;
           if (row.sortOrder !== null) existing.sortOrder = row.sortOrder;

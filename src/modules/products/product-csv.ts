@@ -1,4 +1,5 @@
 import type {
+  ProductOption,
   ProductOptions,
   ProductOptionGroup,
 } from '../../database/entities/product.entity';
@@ -152,7 +153,43 @@ function parseIngredients(cell: string): ProductOptionGroup | null {
   };
 }
 
-/** `Sauce: Ketchup | Mayo || Brot: Weiß | Körner` -> single-choice groups. */
+/** `*Käse +0,50` -> name, surcharge (or `-0,50`) and the default mark `*`. */
+function parseOptionEntry(entry: string): {
+  name: string;
+  priceModifier: number;
+  isDefault: boolean;
+} {
+  const marked = entry.startsWith('*');
+  const text = marked ? entry.slice(1).trim() : entry;
+  const m = text.match(/^(.*?\S)\s*([+-])\s*(\d+(?:[.,]\d{1,2})?)$/);
+  // `-` nur mit Leerzeichen davor und Betrag mit Nachkommastellen — „Cola 0-5“
+  // oder „Größe XS-40“ sind Namen.
+  const negativeOk = m?.[2] === '+' || /\s-\s*\d+[.,]\d{2}$/.test(text);
+  if (m && negativeOk) {
+    const amount = parseNumber(m[3]) ?? 0;
+    return {
+      name: m[1].trim(),
+      priceModifier: m[2] === '-' ? -amount : amount,
+      isDefault: marked,
+    };
+  }
+  return { name: text, priceModifier: 0, isDefault: marked };
+}
+
+function parseEntries(cell: string) {
+  return cell
+    .split('|')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(parseOptionEntry)
+    .filter((o) => o.name.length > 0);
+}
+
+/**
+ * `Sauce: Ketchup | Mayo +0,50 || Brot?: Weiß | *Körner` -> single-choice
+ * groups. `?` after the group name makes it optional, `*` marks the default
+ * (otherwise the first option).
+ */
 function parseChoices(cell: string): ProductOptionGroup[] {
   const groups: ProductOptionGroup[] = [];
   for (const chunk of cell.split('||')) {
@@ -160,42 +197,55 @@ function parseChoices(cell: string): ProductOptionGroup[] {
     if (!part) continue;
     const sep = part.indexOf(':');
     if (sep === -1) continue;
-    const groupName = part.slice(0, sep).trim();
-    const optionNames = part
-      .slice(sep + 1)
-      .split('|')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (!groupName || optionNames.length === 0) continue;
+    const rawName = part.slice(0, sep).trim();
+    const optional = rawName.endsWith('?');
+    const groupName = optional ? rawName.slice(0, -1).trim() : rawName;
+    const entries = parseEntries(part.slice(sep + 1));
+    if (!groupName || entries.length === 0) continue;
+    const marked = entries.findIndex((e) => e.isDefault);
+    // Ohne Markierung ist die erste Option einer Pflichtauswahl vorgewaehlt.
+    const defaultIndex = marked >= 0 ? marked : optional ? -1 : 0;
     groups.push({
       name: groupName,
       type: 'single',
-      required: true,
-      options: optionNames.map((name, idx) => ({
+      required: !optional,
+      options: entries.map(({ name, priceModifier }, idx) => ({
         name,
-        priceModifier: 0,
-        default: idx === 0,
+        priceModifier,
+        default: idx === defaultIndex,
       })),
     });
   }
   return groups;
 }
 
-/** `Käse +0.50 | Bacon +1.00` -> one multiple-choice "Extras" group. */
-function parseExtras(cell: string): ProductOptionGroup | null {
-  const options = cell
-    .split('|')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const m = entry.match(/^(.*?)(?:\s*\+\s*([0-9.,]+))?\s*$/);
-      const name = (m?.[1] ?? entry).trim();
-      const priceModifier = m?.[2] ? (parseNumber(m[2]) ?? 0) : 0;
-      return { name, priceModifier };
-    })
-    .filter((o) => o.name.length > 0);
-  if (options.length === 0) return null;
-  return { name: 'Extras', type: 'multiple', required: false, options };
+/**
+ * `Käse +0.50 | Bacon +1.00` -> one multiple-choice "Extras" group. With
+ * several groups: `Saucen: Mayo | Senf || Beilage!: Pommes +2,00 | Salat`
+ * (`!` = required).
+ */
+function parseExtras(cell: string): ProductOptionGroup[] {
+  const groups: ProductOptionGroup[] = [];
+  for (const chunk of cell.split('||')) {
+    const first = chunk.split('|', 1)[0];
+    const sep = first.indexOf(':');
+    const rawName = sep > 0 ? first.slice(0, sep).trim() : 'Extras';
+    const required = rawName.endsWith('!');
+    const name = (required ? rawName.slice(0, -1).trim() : rawName) || 'Extras';
+    const entries = parseEntries(sep > 0 ? chunk.slice(sep + 1) : chunk);
+    if (entries.length === 0) continue;
+    groups.push({
+      name,
+      type: 'multiple',
+      required,
+      options: entries.map((e) => ({
+        name: e.name,
+        priceModifier: e.priceModifier,
+        ...(e.isDefault ? { default: true } : {}),
+      })),
+    });
+  }
+  return groups;
 }
 
 export interface CsvParseResult {
@@ -231,7 +281,9 @@ export function parseProductCsv(csv: string): CsvParseResult {
 
   const col = (cells: string[], key: string): string => {
     const idx = header.indexOf(key);
-    return idx === -1 ? '' : (cells[idx] ?? '').trim();
+    const value = idx === -1 ? '' : (cells[idx] ?? '').trim();
+    // Schutz-Apostroph des Exports (quoteField) wieder entfernen.
+    return /^'[=+\-@]/.test(value) ? value.slice(1) : value;
   };
 
   const rows: ParsedProductRow[] = [];
@@ -248,8 +300,7 @@ export function parseProductCsv(csv: string): CsvParseResult {
     const ing = parseIngredients(col(cells, 'ingredients'));
     if (ing) groups.push(ing);
     groups.push(...parseChoices(col(cells, 'choices')));
-    const extras = parseExtras(col(cells, 'extras'));
-    if (extras) groups.push(extras);
+    groups.push(...parseExtras(col(cells, 'extras')));
 
     let error: string | null = null;
     if (!name) error = 'Name fehlt';
@@ -345,45 +396,59 @@ function quoteField(value: string, delimiter: string): string {
 
 /** Optionsnamen duerfen die Trenner der Zellen nicht enthalten. */
 function cleanOptionName(name: string): string {
-  return name.replace(/\|/g, '/').replace(/:/g, ' ').trim();
+  return name.replace(/\|/g, '/').replace(/:/g, ' ').replace(/^\*+/, '').trim();
+}
+
+function optionCell(option: ProductOption, markDefault: boolean): string {
+  const modifier = Number(option.priceModifier) || 0;
+  const amount =
+    modifier === 0
+      ? ''
+      : ` ${modifier < 0 ? '-' : '+'}${formatDecimal(Math.abs(modifier))}`;
+  return `${markDefault ? '*' : ''}${cleanOptionName(option.name)}${amount}`;
 }
 
 /**
- * Optionen in die drei Spalten des Imports: Zutaten (abwaehlbar), Auswahl
- * (je Gruppe eine Wahl) und Extras (mit Aufpreis). Der Import kennt keine
- * Aufpreise bei der Auswahl und nur eine Extras-Gruppe — mehrere
- * Mehrfach-Gruppen werden zu „Extras“ zusammengefasst.
+ * Optionen in die drei Spalten des Imports: Zutaten (abwaehlbar, eine
+ * Gruppe), Auswahl (je Gruppe eine Wahl) und Extras (Mehrfachwahl).
  */
 function optionColumns(options: ProductOptions | null): {
   ingredients: string;
   choices: string;
   extras: string;
 } {
-  const groups = options?.groups ?? [];
+  const groups = (options?.groups ?? []).filter((g) => g.options.length > 0);
   const ingredients = groups
     .filter((g) => g.type === 'ingredients')
     .flatMap((g) => g.options.map((o) => cleanOptionName(o.name)))
     .filter(Boolean)
     .join(' | ');
   const choices = groups
-    .filter((g) => g.type === 'single' && g.options.length > 0)
-    .map(
-      (g) =>
-        `${cleanOptionName(g.name)}: ${g.options
-          .map((o) => cleanOptionName(o.name))
-          .join(' | ')}`,
-    )
-    .join(' || ');
-  const extras = groups
-    .filter((g) => g.type === 'multiple')
-    .flatMap((g) => g.options)
-    .map((o) => {
-      const name = cleanOptionName(o.name);
-      const modifier = Number(o.priceModifier) || 0;
-      return modifier > 0 ? `${name} +${formatDecimal(modifier)}` : name;
+    .filter((g) => g.type === 'single')
+    .map((g) => {
+      const chosen = g.options.findIndex((o) => o.default);
+      // Die erste Option einer Pflichtauswahl braucht keine Markierung.
+      const implicit = g.required && chosen <= 0;
+      return `${cleanOptionName(g.name)}${g.required ? '' : '?'}: ${g.options
+        .map((o, i) => optionCell(o, !implicit && i === chosen))
+        .join(' | ')}`;
     })
-    .filter(Boolean)
-    .join(' | ');
+    .join(' || ');
+  const multiple = groups.filter((g) => g.type === 'multiple');
+  const plain =
+    multiple.length === 1 &&
+    multiple[0].name === 'Extras' &&
+    !multiple[0].required;
+  const extras = multiple
+    .map((g) => {
+      const cells = g.options
+        .map((o) => optionCell(o, !!o.default))
+        .join(' | ');
+      return plain
+        ? cells
+        : `${cleanOptionName(g.name)}${g.required ? '!' : ''}: ${cells}`;
+    })
+    .join(' || ');
   return { ingredients, choices, extras };
 }
 
