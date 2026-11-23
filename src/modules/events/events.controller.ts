@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -25,7 +26,12 @@ import {
   CopyProductsDto,
   DuplicateEventDto,
 } from './dto';
-import { CurrentUser, ApiTokenAccess } from '../../common/decorators';
+import {
+  ApiTokenAccess,
+  CurrentUser,
+  RevealSecrets,
+} from '../../common/decorators';
+import type { Request } from 'express';
 import { TokenScope } from '../api-tokens/api-scopes';
 import { User } from '../../database/entities';
 import { PaginationDto } from '../../common/dto/pagination.dto';
@@ -263,6 +269,8 @@ export class EventsController {
     return { data: result };
   }
 
+  // Neue PINs der Bedienungen: nur in dieser Antwort.
+  @RevealSecrets('pin')
   @Post(':eventId/duplicate')
   @ApiOperation({
     operationId: 'duplicateEvent',
@@ -280,12 +288,14 @@ export class EventsController {
     @Param('eventId', ParseUUIDPipe) eventId: string,
     @Body() dto: DuplicateEventDto,
     @CurrentUser() user: User,
+    @Req() req: Request,
   ) {
     const result = await this.eventsService.duplicate(
       organizationId,
       eventId,
       dto,
       user,
+      { ipAddress: req.ip, userAgent: req.headers['user-agent'] },
     );
     return {
       data: {

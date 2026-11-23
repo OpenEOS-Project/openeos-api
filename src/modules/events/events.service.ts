@@ -59,6 +59,7 @@ import {
   toDateKey,
 } from '../../common/utils/event-schedule.util';
 import { TestOrderCleanupService } from './test-order-cleanup.service';
+import type { RequestMeta } from '../waiters/waiters.service';
 import { retireEventWaiters } from '../waiters/waiter-retire';
 import {
   EventPhaseFields,
@@ -283,6 +284,7 @@ export class EventsService {
     sourceEventId: string,
     dto: DuplicateEventDto,
     user: User,
+    meta: RequestMeta = {},
   ): Promise<{
     event: Event;
     copied: CatalogCopyResult & {
@@ -401,11 +403,16 @@ export class EventsService {
       },
     );
 
-    await this.copier.auditCopiedWaiters(organizationId, user, {
-      count: result.waiters.length,
-      eventId: result.event.id,
-      sourceEventId: source.id,
-    });
+    await this.copier.auditCopiedWaiters(
+      organizationId,
+      user,
+      {
+        count: result.waiters.length,
+        eventId: result.event.id,
+        sourceEventId: source.id,
+      },
+      meta,
+    );
     this.logger.log(
       `Event ${source.id} duplicated as ${result.event.id} (${result.catalog.productsCopied} products, ${result.shifts.plans} shift plans, ${result.waiters.length} waiters)`,
     );

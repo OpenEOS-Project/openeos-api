@@ -31,6 +31,8 @@ import {
   nameKey,
   shiftDayKey,
 } from './event-copy.service';
+import { REVEAL_SECRETS_KEY } from '../../common/decorators/reveal-secrets.decorator';
+import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
 import { TestOrderCleanupService } from './test-order-cleanup.service';
 
@@ -1004,6 +1006,20 @@ describe('EventsService – create with template', () => {
     expect(
       db.rows<Event>(Event).filter((e) => e.name === 'Doppelt'),
     ).toHaveLength(1);
+  });
+});
+
+describe('EventsController – duplicate', () => {
+  it('lets the new PINs through the response redaction', () => {
+    expect(
+      Reflect.getMetadata(
+        REVEAL_SECRETS_KEY,
+        Object.getOwnPropertyDescriptor(
+          EventsController.prototype,
+          'duplicate',
+        )!.value as object,
+      ),
+    ).toEqual(['pin']);
   });
 });
 

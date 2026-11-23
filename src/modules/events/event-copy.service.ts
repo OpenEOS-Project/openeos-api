@@ -15,7 +15,7 @@ import {
 } from '../../database/entities';
 import { ShiftPlanStatus } from '../../database/entities/shift-plan.entity';
 import type { EventSettings } from '../../database/entities/event.entity';
-import { WaitersService } from '../waiters/waiters.service';
+import { WaitersService, type RequestMeta } from '../waiters/waiters.service';
 
 /**
  * Uebernahme aus einer anderen Veranstaltung derselben Organisation — ein
@@ -667,8 +667,9 @@ export class EventCopyService {
     organizationId: string,
     user: { id: string },
     details: { count: number; eventId: string; sourceEventId: string },
+    meta: RequestMeta = {},
   ): Promise<void> {
-    await this.waiters?.auditCopiedWaiters(organizationId, user, details);
+    await this.waiters?.auditCopiedWaiters(organizationId, user, details, meta);
   }
 
   /** Bereiche der Organisation (fuer `settings.tables.areaIds`). */
